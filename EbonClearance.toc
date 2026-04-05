@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: |cff4db8ffEbonClearance|r |cff9aff4d[v2.0.0]|r
+## Notes: |cffffb84dProject Ebonhold utility addon|r — Whitelist-based auto-vendoring, item deletion control, Greedy Scavenger management, and auto-invite tools.
+## Author: James
+## Version: 2.0.0
+## SavedVariables: EbonClearanceDB
+
+EbonClearance.lua

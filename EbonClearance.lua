@@ -207,17 +207,19 @@ local function EnsureDB()
     if type(DB.summonDelay) ~= "number" then DB.summonDelay = 1.6 end
 
     if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.015 end
+    if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then DB.merchantMode = "goblin" end
 
     if type(DB.muteGreedy) ~= "boolean" then DB.muteGreedy = true end
     if type(DB.hideGreedyChat) ~= "boolean" then DB.hideGreedyChat = DB.muteGreedy end
     if type(DB.hideGreedyBubbles) ~= "boolean" then DB.hideGreedyBubbles = DB.muteGreedy end
 
+    if type(DB.enabled) ~= "boolean" then DB.enabled = true end
     if type(DB.enableOnlyListedChars) ~= "boolean" then DB.enableOnlyListedChars = false end
 
     if type(DB.inventoryWorthTotal) ~= "number" then DB.inventoryWorthTotal = 0 end
     if type(DB.inventoryWorthCount) ~= "number" then DB.inventoryWorthCount = 0 end
     if type(DB.whitelist)               ~= "table"   then DB.whitelist               = {}    end
-    if type(DB.whitelistMinQuality)     ~= "number"  then DB.whitelistMinQuality     = 0     end
+    if type(DB.whitelistMinQuality)     ~= "number"  then DB.whitelistMinQuality     = 1     end
     if type(DB.whitelistQualityEnabled) ~= "boolean" then DB.whitelistQualityEnabled = false end
     if type(DB.minimapButtonAngle)      ~= "number"  then DB.minimapButtonAngle      = 220   end
 
@@ -246,6 +248,7 @@ local function EHS_IsCharacterAllowed()
 end
 
 EHS_IsAddonEnabledForChar = function()
+    if DB and DB.enabled == false then return false end
     return EHS_IsCharacterAllowed()
 end
 
@@ -431,12 +434,12 @@ local goldThisVendoring = 0
 local worker = CreateFrame("Frame")
 worker:Hide()
 
-local function BuildQueue()
+local function BuildQueue(junkOnly)
     wipe(queue)
     queueIndex = 1
     goldThisVendoring = 0
-    -- Whitelist selling: only items explicitly on the whitelist (by item ID)
-    -- or optionally items meeting the quality threshold are queued for sale.
+    -- Grey items (quality 0) are always sold as junk at any merchant.
+    -- Whitelist/quality threshold selling only runs when the merchant mode allows it.
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
@@ -446,14 +449,13 @@ local function BuildQueue()
                 if itemCount and itemCount > 0 and not locked then
                     local name, link, quality, level, minLevel, itemType, subType,
                           stackCount, equipLoc, icon, sellPrice = GetItemInfo(itemID)
-                    local whitelistPass = IsInSet(DB.whitelist, itemID)
+                    local isJunk = (quality ~= nil) and (quality == 0) and sellPrice and sellPrice > 0
+                    local whitelistPass = not junkOnly and IsInSet(DB.whitelist, itemID)
                     local qualityPass = false
-                    if DB.whitelistQualityEnabled == true and sellPrice and sellPrice > 0 then
-                        -- Sell items AT or BELOW the chosen quality (junk filter).
-                        -- Grey (0) = only grey junk. White (1) = grey + white. etc.
+                    if not junkOnly and DB.whitelistQualityEnabled == true and sellPrice and sellPrice > 0 then
                         qualityPass = (quality ~= nil) and (quality <= DB.whitelistMinQuality)
                     end
-                    if qualityPass or whitelistPass then
+                    if isJunk or qualityPass or whitelistPass then
                         queue[#queue+1] = {
                             type   = "sell",
                             bag    = bag,
@@ -567,19 +569,35 @@ local function ShouldRunNow()
     return true
 end
 
+local function EHS_IsMerchantAllowed()
+    local mode = DB and DB.merchantMode or "goblin"
+    if mode == "any" then
+        -- Only normal merchants (not Goblin Merchant)
+        local targetName = UnitExists("target") and UnitName("target") or ""
+        return targetName ~= TARGET_NAME
+    elseif mode == "both" then
+        return true
+    else
+        -- "goblin" (default): only the Goblin Merchant
+        return UnitExists("target") and UnitName("target") == TARGET_NAME
+    end
+end
+
 local function StartRun()
     if not EHS_IsAddonEnabledForChar() then return end
     if running then return end
     if not ShouldRunNow() then return end
 
+    local merchantAllowed = EHS_IsMerchantAllowed()
+
     HookDeletePopupOnce()
 
     running = true
 
-    
+
     EHS_RecordInventoryWorthSample()
 
-    
+
     if DB and DB.repairGear == true and CanMerchantRepair and CanMerchantRepair() and GetRepairAllCost and RepairAllItems then
         local repairCost, canRepair = GetRepairAllCost()
         if canRepair and repairCost and repairCost > 0 and GetMoney and GetMoney() >= repairCost then
@@ -589,7 +607,7 @@ local function StartRun()
         end
     end
 
-    BuildQueue()
+    BuildQueue(not merchantAllowed)
 
     if #queue == 0 then
         PrintNice("Found nothing to sell.")
@@ -614,11 +632,12 @@ local function MakeHeader(parent, text, y)
     return fs
 end
 
+local EC_PANEL_WIDTH = 440  -- usable width inside the default Interface Options panel
+
 local function MakeLabel(parent, text, x, y)
     local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     fs:SetPoint("TOPLEFT", x, y)
-    local w = (InterfaceOptionsFramePanelContainer and InterfaceOptionsFramePanelContainer:GetWidth()) or 640
-    fs:SetWidth(math.max(200, w - 60))
+    fs:SetWidth(EC_PANEL_WIDTH - x)
     fs:SetJustifyH("LEFT")
     fs:SetJustifyV("TOP")
     if fs.SetWordWrap then fs:SetWordWrap(true) end
@@ -662,8 +681,7 @@ end
 
 
 local function CreateListUI(parent, titleText, setTableName, x, y)
-    local w = (InterfaceOptionsFramePanelContainer and InterfaceOptionsFramePanelContainer:GetWidth() or 640) - 60
-
+    local w = EC_PANEL_WIDTH - x
     local box = CreateFrame("Frame", nil, parent)
     box:SetPoint("TOPLEFT", x, y)
     box:SetSize(w, 320)
@@ -697,45 +715,43 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         end
     end)
 
+    local sortMode = "id_asc"  -- default: sort by ID ascending
+
+    -- Search row: Search box then Clear, Sort label, ID, Name buttons all on one line
     local searchLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     searchLabel:SetPoint("TOPLEFT", 0, -52)
     searchLabel:SetText("Search:")
 
-    local search = CreateFrame("EditBox", "EbonClearanceSearchInput_"..setTableName, box, "InputBoxTemplate")
-    search:SetAutoFocus(false)
-    search:SetSize(180, 20)
-    search:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
-    search:SetMaxLetters(40)
-    search:SetText("")
-    StyleInputBox(search)
+    local sortNameBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
+    sortNameBtn:SetSize(62, 20)
+    sortNameBtn:SetPoint("TOPRIGHT", box, "TOPRIGHT", 0, -52)
+    sortNameBtn:SetText("Name \226\150\178")
+
+    local sortIDBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
+    sortIDBtn:SetSize(50, 20)
+    sortIDBtn:SetPoint("RIGHT", sortNameBtn, "LEFT", -4, 0)
+    sortIDBtn:SetText("ID \226\150\178")
 
     local clearSearch = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
     clearSearch:SetSize(46, 20)
-    clearSearch:SetPoint("LEFT", search, "RIGHT", 8, 0)
+    clearSearch:SetPoint("RIGHT", sortIDBtn, "LEFT", -8, 0)
     clearSearch:SetText("Clear")
 
-    local sortMode = "id_asc"  -- default: sort by ID ascending
-
-    local sortLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    sortLabel:SetPoint("TOPLEFT", 280, -52)
-    sortLabel:SetText("Sort:")
-
-    local sortIDBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
-    sortIDBtn:SetSize(62, 20)
-    sortIDBtn:SetPoint("LEFT", sortLabel, "RIGHT", 6, 0)
-    sortIDBtn:SetText("ID \226\150\178")
-
-    local sortNameBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
-    sortNameBtn:SetSize(76, 20)
-    sortNameBtn:SetPoint("LEFT", sortIDBtn, "RIGHT", 4, 0)
-    sortNameBtn:SetText("Name \226\150\178")
+    local search = CreateFrame("EditBox", "EbonClearanceSearchInput_"..setTableName, box, "InputBoxTemplate")
+    search:SetAutoFocus(false)
+    search:SetHeight(20)
+    search:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
+    search:SetPoint("RIGHT", clearSearch, "LEFT", -8, 0)
+    search:SetMaxLetters(40)
+    search:SetText("")
+    StyleInputBox(search)
 
     local scroll = CreateFrame("ScrollFrame", "EbonClearanceListScroll_"..setTableName, box, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, -78)
     scroll:SetPoint("BOTTOMRIGHT", -26, 8)
 
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(w, 1)
+    content:SetSize(w - 26, 1)
     scroll:SetScrollChild(content)
 
     local rows = {}
@@ -795,13 +811,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             if MatchesSearch(id, name, searchText) then
                 local row = CreateFrame("Frame", nil, content)
                 row:SetPoint("TOPLEFT", 0, rowY)
-                row:SetSize(w - 30, 22)
-
-                local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-                text:SetPoint("LEFT", 2, 0)
-                text:SetWidth(w - 120)
-                text:SetJustifyH("LEFT")
-                text:SetText(string.format("|cffb6ffb6%d|r  %s", id, name))
+                row:SetSize(w - 26, 22)
 
                 local rm = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
                 rm:SetSize(72, 18)
@@ -811,6 +821,12 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                     DB[setTableName][id] = nil
                     Refresh()
                 end)
+
+                local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+                text:SetPoint("LEFT", 2, 0)
+                text:SetWidth(w - 106)
+                text:SetJustifyH("LEFT")
+                text:SetText(string.format("|cffb6ffb6%d|r  %s", id, name))
 
                 rows[#rows+1] = row
                 rowY = rowY - 22
@@ -952,19 +968,20 @@ local function EHS_CreateMinimapButton()
     local bg = btn:CreateTexture(nil, "BACKGROUND")
     bg:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Background")
     bg:SetSize(53, 53)
-    bg:SetPoint("TOPLEFT", btn, "TOPLEFT", -11, 11)
+    bg:SetPoint("CENTER", btn, "CENTER", -1, 1)
 
     -- Icon
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
     icon:SetSize(20, 20)
     icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    btn.icon = icon
 
     -- Border ring
     local border = btn:CreateTexture(nil, "OVERLAY")
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     border:SetSize(53, 53)
-    border:SetPoint("TOPLEFT", btn, "TOPLEFT", -11, 11)
+    border:SetPoint("CENTER", btn, "CENTER", 10, -10)
 
     EHS_UpdateMinimapPos()
 
@@ -1001,27 +1018,30 @@ local function EHS_CreateMinimapButton()
             InterfaceOptionsFrame_OpenToCategory(MainOptions)
         elseif button == "RightButton" then
             if not DB then return end
-            DB.whitelistQualityEnabled = not DB.whitelistQualityEnabled
-            local state = DB.whitelistQualityEnabled
-                and "|cffffff00ON|r"
-                or  "|cff888888OFF|r"
-            PrintNice("Quality Threshold Selling: " .. state)
-            local wp = _G["EbonClearanceOptionsWhitelist"]
-            if wp and wp.whitelistQualityCB then
-                wp.whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
+            DB.enabled = not DB.enabled
+            local state = DB.enabled
+                and "|cff00ff00Enabled|r"
+                or  "|cffff4444Disabled|r"
+            PrintNice("Addon " .. state)
+            if self.icon then
+                self.icon:SetDesaturated(not DB.enabled)
             end
-            if wp and wp.RefreshQualityDropDown then wp:RefreshQualityDropDown() end
         end
     end)
+
+    -- Apply initial desaturation if disabled
+    if DB and DB.enabled == false then
+        icon:SetDesaturated(true)
+    end
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("EbonClearance")
-        GameTooltip:AddLine("Left-click: Options  |  Right-click: Toggle Quality Selling", 1, 1, 1)
-        local stateStr = (DB and DB.whitelistQualityEnabled == true)
-            and "|cffffff00ON|r"
-            or  "|cff888888OFF|r"
-        GameTooltip:AddLine("Quality Threshold: " .. stateStr)
+        GameTooltip:AddLine("Left-click: Options  |  Right-click: Toggle Addon", 1, 1, 1)
+        local stateStr = (DB and DB.enabled ~= false)
+            and "|cff00ff00Enabled|r"
+            or  "|cffff4444Disabled|r"
+        GameTooltip:AddLine("Status: " .. stateStr)
         GameTooltip:Show()
     end)
 
@@ -1084,11 +1104,17 @@ MainOptions:SetScript("OnShow", function(self)
 
     MakeHeader(self, "EbonClearance v2.0.0", -16)
 
-    MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Whitelist-based vendoring and item management.", 16, -44)
-    MakeLabel(self, "Automatically sells whitelisted items when you open any merchant. Works best with the |cffb6ffb6Goblin Merchant|r but is compatible with all vendors.", 16, -64)
+    local welcomeLabel = MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Whitelist-based vendoring and item management.", 16, -44)
+    local descLabel2 = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
+    descLabel2:SetWidth(EC_PANEL_WIDTH - 16)
+    descLabel2:SetJustifyH("LEFT")
+    descLabel2:SetJustifyV("TOP")
+    if descLabel2.SetWordWrap then descLabel2:SetWordWrap(true) end
+    descLabel2:SetText("Automatically sells non-whitelisted items at merchants. Configure which merchants to use under Merchant Settings.")
 
     local money = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    money:SetPoint("TOPLEFT", 16, -110)
+    money:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)
     self.statsMoney = money
 
     local sold = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -1114,7 +1140,7 @@ MainOptions:SetScript("OnShow", function(self)
 
     local mostSold = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     mostSold:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -6)
-    mostSold:SetWidth(560)
+    mostSold:SetWidth(EC_PANEL_WIDTH - 16)
     mostSold:SetJustifyH("LEFT")
     self.statsMostSold = mostSold
 
@@ -1146,20 +1172,66 @@ local MerchantPanel = CreateFrame("Frame", "EbonClearanceOptionsMerchant", Inter
 MerchantPanel.name = "Merchant Settings"
 MerchantPanel.parent = "EbonClearance"
 
+local EHS_MERCHANT_MODES = {
+    { text = "|cffb6ffb6Goblin Merchant|r Only",   value = "goblin" },
+    { text = "Normal Merchants Only",               value = "any"    },
+    { text = "Both (All Merchants)",                value = "both"   },
+}
+
 MerchantPanel:SetScript("OnShow", function(self)
     EnsureDB()
     if self.inited then
         if self.repairCB then self.repairCB:SetChecked(DB.repairGear) end
         if self.speedSlider then self.speedSlider:SetValue(DB.vendorInterval or 0.015) end
+        if self.RefreshMerchantModeDropDown then self:RefreshMerchantModeDropDown() end
         return
     end
     self.inited = true
 
     MakeHeader(self, "Merchant Settings", -16)
-    MakeLabel(self, "These settings control automatic vendoring when you open any merchant.", 16, -44)
+    MakeLabel(self, "These settings control automatic vendoring behaviour.", 16, -44)
+    MakeLabel(self, "Grey items are always sold as junk at any merchant.", 16, -60)
+
+    -- Merchant mode dropdown
+    local modeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    modeLabel:SetPoint("TOPLEFT", 16, -90)
+    modeLabel:SetText("Sell at:")
+
+    local modeDD = CreateFrame("Frame", "EbonClearanceMerchantModeDD", self, "UIDropDownMenuTemplate")
+    modeDD:SetPoint("LEFT", modeLabel, "RIGHT", -8, -2)
+
+    local function GetModeText(mode)
+        for _, entry in ipairs(EHS_MERCHANT_MODES) do
+            if entry.value == mode then return entry.text end
+        end
+        return EHS_MERCHANT_MODES[1].text
+    end
+
+    local function MerchantModeInit(frame, level)
+        for _, entry in ipairs(EHS_MERCHANT_MODES) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = entry.text
+            info.value = entry.value
+            info.checked = (DB.merchantMode == entry.value)
+            info.func = function()
+                DB.merchantMode = entry.value
+                UIDropDownMenu_SetText(modeDD, entry.text)
+                PlaySound("igMainMenuOptionCheckBoxOn")
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end
+
+    UIDropDownMenu_SetWidth(modeDD, 180)
+    UIDropDownMenu_SetText(modeDD, GetModeText(DB.merchantMode))
+    UIDropDownMenu_Initialize(modeDD, MerchantModeInit)
+
+    self.RefreshMerchantModeDropDown = function()
+        UIDropDownMenu_SetText(modeDD, GetModeText(DB.merchantMode))
+    end
 
     local repairCB = CreateFrame("CheckButton", "EbonClearanceRepairGearCB", self, "InterfaceOptionsCheckButtonTemplate")
-    repairCB:SetPoint("TOPLEFT", 16, -90)
+    repairCB:SetPoint("TOPLEFT", 16, -110)
     repairCB:SetChecked(DB.repairGear)
     local rt = _G[repairCB:GetName() .. "Text"]
     if rt then
@@ -1185,7 +1257,6 @@ end)
 InterfaceOptions_AddCategory(MerchantPanel)
 
 local EHS_WHITELIST_QUALITIES = {
-    { text = ColorTextByQuality(0, "Grey (Poor)"),      value = 0 },
     { text = ColorTextByQuality(1, "White (Common)"),   value = 1 },
     { text = ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
     { text = ColorTextByQuality(3, "Blue (Rare)"),      value = 3 },
@@ -1208,18 +1279,24 @@ WhitelistPanel:SetScript("OnShow", function(self)
 
     MakeHeader(self, "Whitelist Settings", -16)
 
-    MakeLabel(self,
-        "Items on the whitelist below are sold at any merchant by Item ID.",
+    local descLabel = MakeLabel(self,
+        "Grey items are always sold as junk automatically. Items on the whitelist below are also sold by Item ID.",
         16, -44)
-    MakeLabel(self,
-        "|cffff4444WARNING:|r When the quality threshold below is enabled, it overrides the whitelist " ..
-        "and ALL items at or below the chosen quality level will be sold regardless of the whitelist. " ..
-        "Use either the whitelist for selective selling, or the quality threshold for bulk selling -- not both.",
-        16, -58)
+
+    local warnLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    warnLabel:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
+    warnLabel:SetWidth(EC_PANEL_WIDTH - 16)
+    warnLabel:SetJustifyH("LEFT")
+    warnLabel:SetJustifyV("TOP")
+    if warnLabel.SetWordWrap then warnLabel:SetWordWrap(true) end
+    warnLabel:SetText(
+        "|cffff4444WARNING:|r When the quality threshold below is enabled, ALL items at or below the " ..
+        "chosen quality level will be sold in addition to the whitelist. " ..
+        "Use either the whitelist for selective selling, or the quality threshold for bulk selling.")
 
     local whitelistQualityCB = CreateFrame("CheckButton", "EbonClearanceWhitelistQualityCB",
         self, "InterfaceOptionsCheckButtonTemplate")
-    whitelistQualityCB:SetPoint("TOPLEFT", 16, -110)
+    whitelistQualityCB:SetPoint("TOPLEFT", warnLabel, "BOTTOMLEFT", 0, -8)
     whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
     local wqt = _G["EbonClearanceWhitelistQualityCBText"]
     if wqt then
@@ -1235,13 +1312,13 @@ WhitelistPanel:SetScript("OnShow", function(self)
     self.whitelistQualityCB = whitelistQualityCB
 
     local ddLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    ddLabel:SetPoint("TOPLEFT", self, "TOPLEFT", 300, -110)
+    ddLabel:SetPoint("TOPLEFT", whitelistQualityCB, "BOTTOMLEFT", 0, -4)
     ddLabel:SetText("Sell items up to quality:")
 
     local qualityDD = CreateFrame("Frame", "EbonClearanceWhitelistQualityDropDown",
         self, "UIDropDownMenuTemplate")
-    qualityDD:SetPoint("TOPLEFT", ddLabel, "BOTTOMLEFT", -16, -2)
-    UIDropDownMenu_SetWidth(qualityDD, 180)
+    qualityDD:SetPoint("LEFT", ddLabel, "RIGHT", -8, -2)
+    UIDropDownMenu_SetWidth(qualityDD, 160)
 
     UIDropDownMenu_Initialize(qualityDD, function(frame, level)
         local info = UIDropDownMenu_CreateInfo()
@@ -1261,8 +1338,9 @@ WhitelistPanel:SetScript("OnShow", function(self)
     end)
 
     function self:RefreshQualityDropDown()
-        local cur = DB.whitelistMinQuality or 0
-        local label = EHS_WHITELIST_QUALITIES[1].text  -- fallback to Grey
+        local cur = DB.whitelistMinQuality or 1
+        if cur < 1 then cur = 1; DB.whitelistMinQuality = 1 end
+        local label = EHS_WHITELIST_QUALITIES[1].text  -- fallback to White
         for i = 1, #EHS_WHITELIST_QUALITIES do
             if EHS_WHITELIST_QUALITIES[i].value == cur then
                 label = EHS_WHITELIST_QUALITIES[i].text
@@ -1279,15 +1357,15 @@ WhitelistPanel:SetScript("OnShow", function(self)
     end
     self:RefreshQualityDropDown()
 
-    self.listUI = CreateListUI(self, "Whitelist Items", "whitelist", 16, -160)
-    self.listUI:SetHeight(250)
+    self.listUI = CreateListUI(self, "Whitelist Items", "whitelist", 16, -190)
+    self.listUI:SetHeight(200)
     self.listUI:Refresh()
 
     local noteFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     noteFS:SetPoint("BOTTOMLEFT", 16, 8)
-    noteFS:SetWidth(500)
+    noteFS:SetWidth(EC_PANEL_WIDTH - 16)
     noteFS:SetJustifyH("LEFT")
-    noteFS:SetText("|cffaaaaaa Listed items are always sold regardless of the quality threshold above.|r")
+    noteFS:SetText("|cffaaaaaa Grey items are always sold as junk. Listed items are also sold regardless of the quality threshold.|r")
 end)
 
 InterfaceOptions_AddCategory(WhitelistPanel)
@@ -1376,14 +1454,13 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
     local exportScroll = CreateFrame("ScrollFrame", "EbonClearanceExportScroll", self, "UIPanelScrollFrameTemplate")
     exportScroll:SetPoint("TOPLEFT", 16, -96)
-    exportScroll:SetPoint("RIGHT", self, "RIGHT", -40, 0)
-    exportScroll:SetHeight(50)
+    exportScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
 
     local exportBox = CreateFrame("EditBox", "EbonClearanceExportBox", exportScroll)
     exportBox:SetAutoFocus(false)
     exportBox:SetMultiLine(true)
     exportBox:SetFontObject("GameFontHighlightSmall")
-    exportBox:SetWidth(540)
+    exportBox:SetWidth(560)
     exportBox:SetText("")
     exportBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
     exportScroll:SetScrollChild(exportBox)
@@ -1406,14 +1483,13 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
     local importScroll = CreateFrame("ScrollFrame", "EbonClearanceImportScroll", self, "UIPanelScrollFrameTemplate")
     importScroll:SetPoint("TOPLEFT", 16, -178)
-    importScroll:SetPoint("RIGHT", self, "RIGHT", -40, 0)
-    importScroll:SetHeight(50)
+    importScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
 
     local importBox = CreateFrame("EditBox", "EbonClearanceImportBox", importScroll)
     importBox:SetAutoFocus(false)
     importBox:SetMultiLine(true)
     importBox:SetFontObject("GameFontHighlightSmall")
-    importBox:SetWidth(540)
+    importBox:SetWidth(560)
     importBox:SetText("")
     importBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
     importScroll:SetScrollChild(importBox)
@@ -1430,7 +1506,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
     local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     statusFS:SetPoint("TOPLEFT", 16, -264)
-    statusFS:SetWidth(540)
+    statusFS:SetWidth(EC_PANEL_WIDTH - 16)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")
 
@@ -1481,12 +1557,17 @@ DeletePanel:SetScript("OnShow", function(self)
     self.inited = true
 
     MakeHeader(self, "Deletion Settings", -16)
-    MakeLabel(self, "If enabled, items on this list will be deleted from your bags.", 16, -44)
-    MakeLabel(self, "Add Items by Shift-Clicking an item, drag & drop into the text field below, or type the ItemID and press Add.", 16, -68)
-
+    local delDesc = MakeLabel(self, "If enabled, items on this list will be deleted from your bags.", 16, -44)
+    local delHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    delHint:SetPoint("TOPLEFT", delDesc, "BOTTOMLEFT", 0, -4)
+    delHint:SetWidth(EC_PANEL_WIDTH - 16)
+    delHint:SetJustifyH("LEFT")
+    delHint:SetJustifyV("TOP")
+    if delHint.SetWordWrap then delHint:SetWordWrap(true) end
+    delHint:SetText("Add Items by Shift-Clicking an item, drag & drop into the text field below, or type the ItemID and press Add.")
 
     local delCB = CreateFrame("CheckButton", "EbonClearanceEnableDeleteCB", self, "InterfaceOptionsCheckButtonTemplate")
-    delCB:SetPoint("TOPLEFT", 16, -94)
+    delCB:SetPoint("TOPLEFT", delHint, "BOTTOMLEFT", 0, -6)
     delCB:SetChecked(DB.enableDeletion)
     local dt = _G[delCB:GetName() .. "Text"]
     if dt then
@@ -1500,7 +1581,7 @@ DeletePanel:SetScript("OnShow", function(self)
     end)
 
 
-    self.listUI = CreateListUI(self, "Deletion List", "deleteList", 16, -124)
+    self.listUI = CreateListUI(self, "Deletion List", "deleteList", 16, -130)
     self.listUI:Refresh()
 end)
 
@@ -1573,8 +1654,7 @@ CharPanel.name = "Character Settings"
 CharPanel.parent = "EbonClearance"
 
 local function CreateNameListUI(parent, titleText, setTableName, x, y)
-    local w = (InterfaceOptionsFramePanelContainer and InterfaceOptionsFramePanelContainer:GetWidth() or 640) - 60
-
+    local w = EC_PANEL_WIDTH - x
     local box = CreateFrame("Frame", nil, parent)
     box:SetPoint("TOPLEFT", x, y)
     box:SetSize(w, 320)
@@ -1609,7 +1689,7 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     scroll:SetPoint("BOTTOMRIGHT", -26, 8)
 
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(w, 1)
+    content:SetSize(w - 26, 1)
     scroll:SetScrollChild(content)
 
     local rows = {}
@@ -1641,13 +1721,7 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
 
             local row = CreateFrame("Frame", nil, content)
             row:SetPoint("TOPLEFT", 0, rowY)
-            row:SetSize(w - 30, 22)
-
-            local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-            text:SetPoint("LEFT", 2, 0)
-            text:SetWidth(w - 120)
-            text:SetJustifyH("LEFT")
-            text:SetText("|cffb6ffb6"..name.."|r")
+            row:SetSize(w - 26, 22)
 
             local rm = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
             rm:SetSize(72, 18)
@@ -1657,6 +1731,12 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
                 DB[setTableName][name] = nil
                 Refresh()
             end)
+
+            local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+            text:SetPoint("LEFT", 2, 0)
+            text:SetWidth(w - 106)
+            text:SetJustifyH("LEFT")
+            text:SetText("|cffb6ffb6"..name.."|r")
 
             rows[#rows+1] = row
             rowY = rowY - 22
@@ -1696,17 +1776,16 @@ CharPanel:SetScript("OnShow", function(self)
     self.inited = true
 
     MakeHeader(self, "Character Settings", -16)
-    MakeLabel(self, "Prevents this addon from running on characters you didn't intend.", 16, -44)
-    MakeLabel(self, "If enabled, EbonClearance runs only on characters listed below.", 16, -66)
+    local charDesc = MakeLabel(self, "Prevents this addon from running on characters you didn't intend. If enabled, EbonClearance runs only on characters listed below.", 16, -44)
 
     local cb = CreateFrame("CheckButton", "EbonClearanceEnableOnlyListedCharsCB", self, "InterfaceOptionsCheckButtonTemplate")
-    cb:SetPoint("TOPLEFT", 16, -82)
+    cb:SetPoint("TOPLEFT", charDesc, "BOTTOMLEFT", 0, -8)
     cb:SetChecked(DB.enableOnlyListedChars)
 
     local t = _G[cb:GetName() .. "Text"]
     if t then
         t:SetText("Enable Only for Listed Characters")
-        t:SetWidth(420)
+        t:SetWidth(EC_PANEL_WIDTH - 60)
         t:SetJustifyH("LEFT")
     end
 
@@ -1716,9 +1795,7 @@ CharPanel:SetScript("OnShow", function(self)
     end)
     self.onlyCB = cb
 
-    MakeLabel(self, "Add names: Type + Enter, click Add, or use Add Me for the current character.", 16, -108)
-
-    self.listUI = CreateNameListUI(self, "Allowed Characters", "allowedChars", 16, -138)
+    self.listUI = CreateNameListUI(self, "Allowed Characters", "allowedChars", 16, -100)
     self.listUI:Refresh()
 end)
 
@@ -1756,14 +1833,15 @@ SlashCmdList["ECDEBUG"] = function()
                 local _, itemCount, locked = GetContainerItemInfo(bag, slot)
                 if itemCount and itemCount > 0 and not locked then
                     local name, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+                    local junk = (quality ~= nil) and (quality == 0) and sellPrice and sellPrice > 0
                     local wp = IsInSet(DB.whitelist, itemID)
                     local qp = false
                     if DB.whitelistQualityEnabled == true and sellPrice and sellPrice > 0 then
-                        qp = (quality ~= nil) and (quality <= (DB.whitelistMinQuality or 0))
+                        qp = (quality ~= nil) and (quality <= (DB.whitelistMinQuality or 1))
                     end
-                    if wp or qp then
-                        PrintNice(string.format("|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s wp=%s qp=%s sp=%s name=%s",
-                            bag, slot, itemID, tostring(quality), tostring(wp), tostring(qp), tostring(sellPrice), tostring(name)))
+                    if junk or wp or qp then
+                        PrintNice(string.format("|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s junk=%s wp=%s qp=%s sp=%s name=%s",
+                            bag, slot, itemID, tostring(quality), tostring(junk), tostring(wp), tostring(qp), tostring(sellPrice), tostring(name)))
                     end
                 end
             end

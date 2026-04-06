@@ -222,6 +222,17 @@ local function EnsureDB()
     if type(DB.whitelistMinQuality)     ~= "number"  then DB.whitelistMinQuality     = 1     end
     if type(DB.whitelistQualityEnabled) ~= "boolean" then DB.whitelistQualityEnabled = false end
     if type(DB.minimapButtonAngle)      ~= "number"  then DB.minimapButtonAngle      = 220   end
+    if type(DB.keepBagsOpen)            ~= "boolean" then DB.keepBagsOpen            = true  end
+
+    -- Whitelist profiles migration
+    if type(DB.whitelistProfiles) ~= "table" then
+        DB.whitelistProfiles = {}
+        local snapshot = {}
+        for k, v in pairs(DB.whitelist) do snapshot[k] = v end
+        DB.whitelistProfiles["Default"] = snapshot
+        DB.activeProfileName = "Default"
+    end
+    if type(DB.activeProfileName) ~= "string" then DB.activeProfileName = "Default" end
 
 if not DB._seededLists then
     if DB.deleteList and not next(DB.deleteList) then
@@ -231,6 +242,20 @@ if not DB._seededLists then
     DB._seededLists = true
 end
 
+end
+
+-- Keep bags open when merchant closes
+local EC_keepBagsFlag = false
+
+local function EC_OpenAllBags()
+    if OpenAllBags then
+        OpenAllBags()
+    elseif OpenBackpack then
+        OpenBackpack()
+        for i = 1, 4 do
+            if OpenBag then OpenBag(i) end
+        end
+    end
 end
 
 EHS_GetPlayerName = function()
@@ -273,6 +298,87 @@ local function SortedKeys(setTable)
     end
     table.sort(t)
     return t
+end
+
+-- Whitelist profile functions
+local function EC_ValidateProfileName(name)
+    if type(name) ~= "string" then return false, "Invalid name." end
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then return false, "Profile name cannot be empty." end
+    if name:find("[:|]") then return false, "Profile name cannot contain : or | characters." end
+    return true, name
+end
+
+local function EC_CountItems(tbl)
+    local n = 0
+    for k, v in pairs(tbl) do
+        if type(k) == "number" and (v == true or v == 1) then n = n + 1 end
+    end
+    return n
+end
+
+local function EC_SaveProfile(name)
+    local ok, cleaned = EC_ValidateProfileName(name)
+    if not ok then return false, cleaned end
+    name = cleaned
+    local snapshot = {}
+    for k, v in pairs(DB.whitelist) do snapshot[k] = v end
+    DB.whitelistProfiles[name] = snapshot
+    DB.activeProfileName = name
+    local count = EC_CountItems(snapshot)
+    return true, string.format("Saved profile \"|cffffff00%s|r\" (%d items).", name, count)
+end
+
+local function EC_LoadProfile(name)
+    if type(name) ~= "string" or not DB.whitelistProfiles[name] then
+        return false, string.format("Profile \"%s\" not found.", tostring(name))
+    end
+    wipe(DB.whitelist)
+    for k, v in pairs(DB.whitelistProfiles[name]) do
+        DB.whitelist[k] = v
+    end
+    DB.activeProfileName = name
+    local count = EC_CountItems(DB.whitelist)
+    -- Refresh the whitelist panel if it exists
+    local wp = _G["EbonClearanceOptionsWhitelist"]
+    if wp and wp.listUI then wp.listUI:Refresh() end
+    return true, string.format("Loaded profile \"|cffffff00%s|r\" (%d items).", name, count)
+end
+
+local function EC_DeleteProfile(name)
+    if type(name) ~= "string" or not DB.whitelistProfiles[name] then
+        return false, string.format("Profile \"%s\" not found.", tostring(name))
+    end
+    -- Count remaining profiles
+    local count = 0
+    for _ in pairs(DB.whitelistProfiles) do count = count + 1 end
+    if count <= 1 then
+        return false, "Cannot delete the only remaining profile."
+    end
+    DB.whitelistProfiles[name] = nil
+    if DB.activeProfileName == name then
+        DB.activeProfileName = next(DB.whitelistProfiles) or "Default"
+    end
+    return true, string.format("Deleted profile \"|cffffff00%s|r\".", name)
+end
+
+local function EC_RenameProfile(oldName, newName)
+    if type(oldName) ~= "string" or not DB.whitelistProfiles[oldName] then
+        return false, string.format("Profile \"%s\" not found.", tostring(oldName))
+    end
+    local ok, cleaned = EC_ValidateProfileName(newName)
+    if not ok then return false, cleaned end
+    newName = cleaned
+    if newName == oldName then return true, "Name unchanged." end
+    if DB.whitelistProfiles[newName] then
+        return false, string.format("A profile named \"%s\" already exists.", newName)
+    end
+    DB.whitelistProfiles[newName] = DB.whitelistProfiles[oldName]
+    DB.whitelistProfiles[oldName] = nil
+    if DB.activeProfileName == oldName then
+        DB.activeProfileName = newName
+    end
+    return true, string.format("Renamed \"|cffffff00%s|r\" to \"|cffffff00%s|r\".", oldName, newName)
 end
 
 local function CopperToColoredText(copper)
@@ -1141,7 +1247,7 @@ MainOptions:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    MakeHeader(self, "EbonClearance v2.0.0", -16)
+    MakeHeader(self, "EbonClearance v2.0.2", -16)
 
     local welcomeLabel = MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Whitelist-based vendoring and item management.", 16, -44)
     local descLabel2 = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -1221,6 +1327,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     EnsureDB()
     if self.inited then
         if self.repairCB then self.repairCB:SetChecked(DB.repairGear) end
+        if self.keepBagsCB then self.keepBagsCB:SetChecked(DB.keepBagsOpen) end
         if self.speedSlider then self.speedSlider:SetValue(DB.vendorInterval or 0.015) end
         if self.RefreshMerchantModeDropDown then self:RefreshMerchantModeDropDown() end
         return
@@ -1284,7 +1391,22 @@ MerchantPanel:SetScript("OnShow", function(self)
     end)
     self.repairCB = repairCB
 
-    local speedSlider = AddSlider(self, "EbonClearanceVendoringSpeedSlider", repairCB,
+    local keepBagsCB = CreateFrame("CheckButton", "EbonClearanceKeepBagsOpenCB", self, "InterfaceOptionsCheckButtonTemplate")
+    keepBagsCB:SetPoint("TOPLEFT", repairCB, "BOTTOMLEFT", 0, -6)
+    keepBagsCB:SetChecked(DB.keepBagsOpen)
+    local kbt = _G[keepBagsCB:GetName() .. "Text"]
+    if kbt then
+        kbt:SetText("Keep bags open when merchant window closes")
+        kbt:SetWidth(EC_PANEL_WIDTH - 60)
+        kbt:SetJustifyH("LEFT")
+    end
+    keepBagsCB:SetScript("OnClick", function()
+        DB.keepBagsOpen = keepBagsCB:GetChecked() and true or false
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    self.keepBagsCB = keepBagsCB
+
+    local speedSlider = AddSlider(self, "EbonClearanceVendoringSpeedSlider", keepBagsCB,
         "Vendoring Speed", 0.005, 0.250, 0.005,
         function() return DB.vendorInterval or 0.015 end,
         function(v) DB.vendorInterval = v end,
@@ -1408,6 +1530,233 @@ WhitelistPanel:SetScript("OnShow", function(self)
 end)
 
 InterfaceOptions_AddCategory(WhitelistPanel)
+
+-- ============================================================
+-- Whitelist Profiles Panel
+-- ============================================================
+local ProfilesPanel = CreateFrame("Frame", "EbonClearanceOptionsProfiles", InterfaceOptionsFramePanelContainer)
+ProfilesPanel.name = "Whitelist Profiles"
+ProfilesPanel.parent = "EbonClearance"
+
+ProfilesPanel:SetScript("OnShow", function(self)
+    EnsureDB()
+    if self.inited then
+        if self.RefreshProfileList then self:RefreshProfileList() end
+        return
+    end
+    self.inited = true
+
+    MakeHeader(self, "Whitelist Profiles", -16)
+    MakeLabel(self, "Save and load different whitelists as named profiles. Useful for swapping between farming locations.", 16, -44)
+
+    -- Active profile indicator
+    local activeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    activeLabel:SetPoint("TOPLEFT", 16, -76)
+    activeLabel:SetWidth(EC_PANEL_WIDTH - 16)
+    activeLabel:SetJustifyH("LEFT")
+    self.activeLabel = activeLabel
+
+    -- Save row: input + Save button
+    local saveLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    saveLabel:SetPoint("TOPLEFT", 16, -98)
+    saveLabel:SetText("Profile name:")
+
+    local saveInput = CreateFrame("EditBox", "EbonClearanceProfileSaveInput", self, "InputBoxTemplate")
+    saveInput:SetAutoFocus(false)
+    saveInput:SetSize(180, 20)
+    saveInput:SetPoint("LEFT", saveLabel, "RIGHT", 8, 0)
+    saveInput:SetMaxLetters(30)
+    saveInput:SetText(DB.activeProfileName or "Default")
+    StyleInputBox(saveInput)
+
+    local saveBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    saveBtn:SetSize(80, 22)
+    saveBtn:SetPoint("LEFT", saveInput, "RIGHT", 8, 0)
+    saveBtn:SetText("Save")
+
+    -- Status text
+    local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    statusFS:SetPoint("TOPLEFT", 16, -120)
+    statusFS:SetWidth(EC_PANEL_WIDTH - 16)
+    statusFS:SetJustifyH("LEFT")
+    statusFS:SetText("")
+    self.statusFS = statusFS
+
+    -- Profile list scroll area
+    local listLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    listLabel:SetPoint("TOPLEFT", 16, -140)
+    listLabel:SetText("Saved Profiles")
+
+    local scroll = CreateFrame("ScrollFrame", "EbonClearanceProfileListScroll", self, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 16, -158)
+    scroll:SetSize(EC_PANEL_WIDTH - 42, 160)
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(EC_PANEL_WIDTH - 42, 1)
+    scroll:SetScrollChild(content)
+
+    local rowPool = {}
+    local activeRows = 0
+    local listW = EC_PANEL_WIDTH - 42
+
+    local function GetRow(index)
+        if rowPool[index] then return rowPool[index] end
+        local row = CreateFrame("Frame", nil, content)
+        row:SetSize(listW, 22)
+
+        local delBtn = CreateFrame("Button", "EbonClearanceProfileDel_"..index, content, "UIPanelButtonTemplate")
+        delBtn:SetSize(58, 18)
+        delBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        delBtn:SetText("Delete")
+
+        local loadBtn = CreateFrame("Button", "EbonClearanceProfileLoad_"..index, content, "UIPanelButtonTemplate")
+        loadBtn:SetSize(52, 18)
+        loadBtn:SetPoint("RIGHT", delBtn, "LEFT", -4, 0)
+        loadBtn:SetText("Load")
+
+        local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        text:SetPoint("LEFT", row, "LEFT", 2, 0)
+        text:SetPoint("RIGHT", loadBtn, "LEFT", -4, 0)
+        text:SetJustifyH("LEFT")
+
+        row.text = text
+        row.loadBtn = loadBtn
+        row.delBtn = delBtn
+        rowPool[index] = row
+        return row
+    end
+
+    local function HideAllRows()
+        for i = 1, activeRows do
+            if rowPool[i] then
+                rowPool[i]:Hide()
+                rowPool[i].loadBtn:Hide()
+                rowPool[i].delBtn:Hide()
+            end
+        end
+        activeRows = 0
+    end
+
+    -- Rename row
+    local renameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    renameLabel:SetPoint("TOPLEFT", 16, -328)
+    renameLabel:SetText("Rename active profile:")
+
+    local renameInput = CreateFrame("EditBox", "EbonClearanceProfileRenameInput", self, "InputBoxTemplate")
+    renameInput:SetAutoFocus(false)
+    renameInput:SetSize(150, 20)
+    renameInput:SetPoint("LEFT", renameLabel, "RIGHT", 8, 0)
+    renameInput:SetMaxLetters(30)
+    renameInput:SetText("")
+    StyleInputBox(renameInput)
+
+    local renameBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    renameBtn:SetSize(70, 22)
+    renameBtn:SetPoint("LEFT", renameInput, "RIGHT", 8, 0)
+    renameBtn:SetText("Rename")
+
+    function self:RefreshProfileList()
+        HideAllRows()
+
+        -- Update active indicator
+        local activeName = DB.activeProfileName or "Default"
+        activeLabel:SetText("Active profile: |cff00ff00" .. activeName .. "|r")
+        saveInput:SetText(activeName)
+        renameInput:SetText(activeName)
+
+        -- Collect and sort profile names
+        local names = {}
+        for name in pairs(DB.whitelistProfiles) do
+            if type(name) == "string" then names[#names + 1] = name end
+        end
+        table.sort(names, function(a, b) return a:lower() < b:lower() end)
+
+        local shown = 0
+        local rowY = -4
+        for i = 1, #names do
+            local pName = names[i]
+            shown = shown + 1
+            local row = GetRow(shown)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 0, rowY)
+
+            local isActive = (pName == DB.activeProfileName)
+            local count = EC_CountItems(DB.whitelistProfiles[pName])
+            local label = isActive
+                and string.format("|cff00ff00%s|r  |cff888888(%d items, active)|r", pName, count)
+                or  string.format("|cffffff00%s|r  |cff888888(%d items)|r", pName, count)
+            row.text:SetText(label)
+
+            row.loadBtn:SetScript("OnClick", function()
+                local ok, msg = EC_LoadProfile(pName)
+                statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+                if ok then
+                    PrintNice(msg)
+                    PlaySound("igMainMenuOptionCheckBoxOn")
+                end
+                self:RefreshProfileList()
+            end)
+
+            row.delBtn:SetScript("OnClick", function()
+                local ok, msg = EC_DeleteProfile(pName)
+                statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+                if ok then
+                    PrintNice(msg)
+                    PlaySound("igMainMenuOptionCheckBoxOn")
+                end
+                self:RefreshProfileList()
+            end)
+
+            row:Show()
+            row.loadBtn:Show()
+            row.delBtn:Show()
+            rowY = rowY - 22
+        end
+
+        activeRows = shown
+        content:SetHeight(math.max(1, (shown * 22) + 8))
+    end
+
+    saveBtn:SetScript("OnClick", function()
+        local name = saveInput:GetText()
+        local ok, msg = EC_SaveProfile(name)
+        statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+        if ok then
+            PrintNice(msg)
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            self:RefreshProfileList()
+        else
+            PlaySound("igMainMenuOptionCheckBoxOff")
+        end
+    end)
+
+    saveInput:SetScript("OnEnterPressed", function()
+        saveBtn:Click()
+        saveInput:ClearFocus()
+    end)
+
+    renameBtn:SetScript("OnClick", function()
+        local newName = renameInput:GetText()
+        local ok, msg = EC_RenameProfile(DB.activeProfileName, newName)
+        statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+        if ok then
+            PrintNice(msg)
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            self:RefreshProfileList()
+        else
+            PlaySound("igMainMenuOptionCheckBoxOff")
+        end
+    end)
+
+    renameInput:SetScript("OnEnterPressed", function()
+        renameBtn:Click()
+        renameInput:ClearFocus()
+    end)
+
+    self:RefreshProfileList()
+end)
+
+InterfaceOptions_AddCategory(ProfilesPanel)
 
 -- ============================================================
 -- Whitelist Import / Export Panel
@@ -1859,7 +2208,55 @@ end)
 InterfaceOptions_AddCategory(CharPanel)
 
 SLASH_EBONCLEARANCE1 = "/ec"
-SlashCmdList["EBONCLEARANCE"] = function()
+SlashCmdList["EBONCLEARANCE"] = function(msg)
+    msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if msg == "" then
+        InterfaceOptionsFrame_OpenToCategory(MainOptions)
+        InterfaceOptionsFrame_OpenToCategory(MainOptions)
+        return
+    end
+
+    local cmd, rest = msg:match("^(%S+)%s*(.*)")
+    cmd = (cmd or ""):lower()
+    rest = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+    if cmd == "profile" or cmd == "profiles" then
+        local sub, arg = rest:match("^(%S+)%s*(.*)")
+        sub = (sub or ""):lower()
+        arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+        if sub == "save" and arg ~= "" then
+            EnsureDB()
+            local ok, msg = EC_SaveProfile(arg)
+            PrintNice(msg)
+        elseif sub == "load" and arg ~= "" then
+            EnsureDB()
+            local ok, msg = EC_LoadProfile(arg)
+            PrintNice(msg)
+        elseif sub == "delete" and arg ~= "" then
+            EnsureDB()
+            local ok, msg = EC_DeleteProfile(arg)
+            PrintNice(msg)
+        elseif sub == "list" or sub == "" then
+            EnsureDB()
+            PrintNice("Whitelist Profiles:")
+            local names = {}
+            for name in pairs(DB.whitelistProfiles) do
+                if type(name) == "string" then names[#names + 1] = name end
+            end
+            table.sort(names, function(a, b) return a:lower() < b:lower() end)
+            for i = 1, #names do
+                local count = EC_CountItems(DB.whitelistProfiles[names[i]])
+                local tag = (names[i] == DB.activeProfileName) and " |cff00ff00(active)|r" or ""
+                PrintNice(string.format("  |cffffff00%s|r - %d items%s", names[i], count, tag))
+            end
+        else
+            PrintNice("Usage: /ec profile save|load|delete|list <name>")
+        end
+        return
+    end
+
+    -- Unknown subcommand - open options
     InterfaceOptionsFrame_OpenToCategory(MainOptions)
     InterfaceOptionsFrame_OpenToCategory(MainOptions)
 end
@@ -1935,6 +2332,7 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
+        EC_keepBagsFlag = true
         if not EHS_IsAddonEnabledForChar() then
             return
         end
@@ -1945,6 +2343,11 @@ f:SetScript("OnEvent", function(self, event, ...)
         running = false
         worker:Hide()
         pendingDelete = nil
+        -- Reopen bags after merchant closes
+        if DB and DB.keepBagsOpen and EC_keepBagsFlag then
+            EHS_Delay(0.8, EC_OpenAllBags)
+        end
+        EC_keepBagsFlag = false
 
     end
 

@@ -754,12 +754,38 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     content:SetSize(w - 26, 1)
     scroll:SetScrollChild(content)
 
-    local rows = {}
-    local function WipeRows()
-        for i = 1, #rows do
-            rows[i]:Hide()
-            rows[i] = nil
+    local rowPool = {}
+    local activeRows = 0
+
+    local function GetRow(index)
+        if rowPool[index] then return rowPool[index] end
+        local row = CreateFrame("Frame", nil, content)
+        row:SetSize(w - 26, 22)
+
+        local rm = CreateFrame("Button", "EbonClearanceListRM_"..setTableName.."_"..index, content, "UIPanelButtonTemplate")
+        rm:SetSize(72, 18)
+        rm:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        rm:SetText("Remove")
+
+        local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        text:SetPoint("LEFT", row, "LEFT", 2, 0)
+        text:SetWidth(w - 106)
+        text:SetJustifyH("LEFT")
+
+        row.rm = rm
+        row.text = text
+        rowPool[index] = row
+        return row
+    end
+
+    local function HideAllRows()
+        for i = 1, activeRows do
+            if rowPool[i] then
+                rowPool[i]:Hide()
+                rowPool[i].rm:Hide()
+            end
         end
+        activeRows = 0
     end
 
     local function MatchesSearch(id, name, searchText)
@@ -772,7 +798,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     end
 
     local function Refresh()
-        WipeRows()
+        HideAllRows()
 
         local searchText = ""
         if search and search.GetText then
@@ -809,31 +835,22 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             local name = GetItemInfo(id) or ("ItemID: " .. id)
 
             if MatchesSearch(id, name, searchText) then
-                local row = CreateFrame("Frame", nil, content)
+                shown = shown + 1
+                local row = GetRow(shown)
+                row:ClearAllPoints()
                 row:SetPoint("TOPLEFT", 0, rowY)
-                row:SetSize(w - 26, 22)
-
-                local rm = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-                rm:SetSize(72, 18)
-                rm:SetPoint("RIGHT", -2, 0)
-                rm:SetText("Remove")
-                rm:SetScript("OnClick", function()
+                row.text:SetText(string.format("|cffb6ffb6%d|r  %s", id, name))
+                row.rm:SetScript("OnClick", function()
                     DB[setTableName][id] = nil
                     Refresh()
                 end)
-
-                local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-                text:SetPoint("LEFT", 2, 0)
-                text:SetWidth(w - 106)
-                text:SetJustifyH("LEFT")
-                text:SetText(string.format("|cffb6ffb6%d|r  %s", id, name))
-
-                rows[#rows+1] = row
+                row:Show()
+                row.rm:Show()
                 rowY = rowY - 22
-                shown = shown + 1
             end
         end
 
+        activeRows = shown
         content:SetHeight(math.max(1, (shown * 22) + 8))
     end
 
@@ -1692,12 +1709,38 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     content:SetSize(w - 26, 1)
     scroll:SetScrollChild(content)
 
-    local rows = {}
-    local function WipeRows()
-        for i = 1, #rows do
-            rows[i]:Hide()
-            rows[i] = nil
+    local rowPool = {}
+    local activeRows = 0
+
+    local function GetRow(index)
+        if rowPool[index] then return rowPool[index] end
+        local row = CreateFrame("Frame", nil, content)
+        row:SetSize(w - 26, 22)
+
+        local rm = CreateFrame("Button", "EbonClearanceNameRM_"..setTableName.."_"..index, content, "UIPanelButtonTemplate")
+        rm:SetSize(72, 18)
+        rm:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        rm:SetText("Remove")
+
+        local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        text:SetPoint("LEFT", row, "LEFT", 2, 0)
+        text:SetWidth(w - 106)
+        text:SetJustifyH("LEFT")
+
+        row.rm = rm
+        row.text = text
+        rowPool[index] = row
+        return row
+    end
+
+    local function HideAllRows()
+        for i = 1, activeRows do
+            if rowPool[i] then
+                rowPool[i]:Hide()
+                rowPool[i].rm:Hide()
+            end
         end
+        activeRows = 0
     end
 
     local function SortedNames(t)
@@ -1710,39 +1753,31 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     end
 
     local function Refresh()
-        WipeRows()
+        HideAllRows()
 
         local setTable = DB[setTableName]
         local keys = SortedNames(setTable)
 
+        local shown = 0
         local rowY = -4
         for i = 1, #keys do
             local name = keys[i]
-
-            local row = CreateFrame("Frame", nil, content)
+            shown = shown + 1
+            local row = GetRow(shown)
+            row:ClearAllPoints()
             row:SetPoint("TOPLEFT", 0, rowY)
-            row:SetSize(w - 26, 22)
-
-            local rm = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            rm:SetSize(72, 18)
-            rm:SetPoint("RIGHT", -2, 0)
-            rm:SetText("Remove")
-            rm:SetScript("OnClick", function()
+            row.text:SetText("|cffb6ffb6"..name.."|r")
+            row.rm:SetScript("OnClick", function()
                 DB[setTableName][name] = nil
                 Refresh()
             end)
-
-            local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-            text:SetPoint("LEFT", 2, 0)
-            text:SetWidth(w - 106)
-            text:SetJustifyH("LEFT")
-            text:SetText("|cffb6ffb6"..name.."|r")
-
-            rows[#rows+1] = row
+            row:Show()
+            row.rm:Show()
             rowY = rowY - 22
         end
 
-        content:SetHeight(math.max(1, (#keys * 22) + 8))
+        activeRows = shown
+        content:SetHeight(math.max(1, (shown * 22) + 8))
     end
 
     addBtn:SetScript("OnClick", function()

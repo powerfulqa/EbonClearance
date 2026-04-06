@@ -1307,6 +1307,24 @@ MainOptions:SetScript("OnShow", function(self)
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
 
+    -- Slash commands reference
+    local cmdHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    cmdHeader:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -16)
+    cmdHeader:SetText("Slash Commands")
+
+    local cmdText = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    cmdText:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 0, -6)
+    cmdText:SetWidth(EC_PANEL_WIDTH - 16)
+    cmdText:SetJustifyH("LEFT")
+    if cmdText.SetWordWrap then cmdText:SetWordWrap(true) end
+    cmdText:SetText(
+        "|cffffff00/ec|r  Open settings\n" ..
+        "|cffffff00/ec profile list|r  Show all saved profiles\n" ..
+        "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n" ..
+        "|cffffff00/ec profile load <name>|r  Load a saved profile\n" ..
+        "|cffffff00/ec profile delete <name>|r  Delete a profile\n" ..
+        "|cffffff00/ecdebug|r  Show debug info and bag scan")
+
     RefreshStats()
 end)
 

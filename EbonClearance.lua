@@ -797,6 +797,8 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         return false
     end
 
+    local pendingRetry = false
+
     local function Refresh()
         HideAllRows()
 
@@ -830,9 +832,20 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
 
         local shown = 0
         local rowY = -4
+        local hasUncached = false
         for i = 1, #keys do
             local id = keys[i]
-            local name = GetItemInfo(id) or ("ItemID: " .. id)
+            local name = GetItemInfo(id)
+            if not name then
+                hasUncached = true
+                -- Request item data from server via tooltip query
+                if GameTooltip and GameTooltip.SetHyperlink then
+                    GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+                    GameTooltip:SetHyperlink("item:"..id..":0:0:0:0:0:0:0")
+                    GameTooltip:Hide()
+                end
+                name = "ItemID: " .. id
+            end
 
             if MatchesSearch(id, name, searchText) then
                 shown = shown + 1
@@ -852,6 +865,15 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
 
         activeRows = shown
         content:SetHeight(math.max(1, (shown * 22) + 8))
+
+        -- If any items were uncached, retry after a delay to pick up server responses
+        if hasUncached and not pendingRetry then
+            pendingRetry = true
+            EHS_Delay(1.5, function()
+                pendingRetry = false
+                Refresh()
+            end)
+        end
     end
 
     addBtn:SetScript("OnClick", function()

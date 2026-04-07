@@ -21,8 +21,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           echo "Building version: $VERSION"
-          sed -i "s/@VERSION@/$VERSION/g" EbonClearance.toc
-          sed -i "s/@VERSION@/$VERSION/g" EbonClearance.lua
+          # Replace @VERSION@ placeholder or any previous vX.Y.Z version string
+          sed -i "s/@VERSION@/$VERSION/g" EbonClearance.toc EbonClearance.lua
+          sed -i "s/\[v[0-9]*\.[0-9]*\.[0-9]*\]/[$VERSION]/g" EbonClearance.toc
+          sed -i "s/^## Version: .*/## Version: $VERSION/" EbonClearance.toc
+          sed -i "s/EbonClearance v[0-9]*\.[0-9]*\.[0-9]*/EbonClearance $VERSION/g" EbonClearance.lua
 
       - name: Package addon
         run: |

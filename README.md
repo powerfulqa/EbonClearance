@@ -8,7 +8,7 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 ## What It Does
 
-**Whitelist-based auto-vendoring** - When you open a vendor, EbonClearance will automatically sell items that aren't on your whitelist. Rather than telling it what to sell, you tell it what to keep. Everything else goes. You can choose whether this runs at the Goblin Merchant only, normal merchants only, or both.
+**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also enable a quality threshold to bulk-sell everything at or below a chosen rarity. You choose whether this runs at the Goblin Merchant only, normal merchants only, or both.
 
 **Auto-sell grey junk** - All grey (Poor quality) items are sold automatically at any merchant, regardless of your whitelist or merchant mode settings. No setup needed.
 
@@ -29,7 +29,7 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 1. Head to the [latest release](https://github.com/powerfulqa/EbonClearance/releases/latest) and download the zip file
 2. Extract the `EbonClearance` folder into your `Interface/AddOns` directory
 3. Log in and type `/ec` to open the configuration panel
-4. Add items to your whitelist (the things you want to keep) by shift-clicking them or entering their item IDs
+4. Add items to your whitelist (the things you want to sell) by shift-clicking them or entering their item IDs
 5. Optionally set up a delete list for unsellable items you want automatically destroyed
 
 The addon is character-aware, so you can restrict it to specific characters if you'd rather not have it running on every alt.

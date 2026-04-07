@@ -1260,14 +1260,14 @@ MainOptions:SetScript("OnShow", function(self)
 
     MakeHeader(self, "EbonClearance v2.0.2", -16)
 
-    local welcomeLabel = MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Whitelist-based vendoring and item management.", 16, -44)
+    local welcomeLabel = MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.", 16, -44)
     local descLabel2 = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
     descLabel2:SetWidth(EC_PANEL_WIDTH - 16)
     descLabel2:SetJustifyH("LEFT")
     descLabel2:SetJustifyV("TOP")
     if descLabel2.SetWordWrap then descLabel2:SetWordWrap(true) end
-    descLabel2:SetText("Automatically sells non-whitelisted items at merchants. Configure which merchants to use under Merchant Settings.")
+    descLabel2:SetText("Grey junk is sold automatically. Add items to your whitelist to sell them too, or enable the quality threshold to sell everything up to a chosen rarity. Configure which merchants to use under Merchant Settings.")
 
     local money = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     money:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)

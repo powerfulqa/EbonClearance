@@ -12,7 +12,7 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 **Auto-sell grey junk** - All grey (Poor quality) items are sold automatically at any merchant, regardless of your whitelist or merchant mode settings. No setup needed.
 
-**Whitelist profiles** - Save and load different whitelists as named profiles. Handy for swapping between farming locations or activities without maintaining one massive list. Manage profiles through the settings panel or with `/ec profile save|load|delete|list`.
+**Whitelist profiles** - Save and load different whitelists as named profiles. Handy for swapping between farming locations or activities without maintaining one massive list. Manage profiles through the settings panel or with slash commands.
 
 **Item deletion** - For items that can't be sold, the addon can automatically destroy them. You manage a separate delete list of item IDs to control exactly what gets removed.
 
@@ -28,9 +28,9 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 1. Head to the [latest release](https://github.com/powerfulqa/EbonClearance/releases/latest) and download the zip file
 2. Extract the `EbonClearance` folder into your `Interface/AddOns` directory
-2. Log in and type `/ec` to open the configuration panel
-3. Add items to your whitelist (the things you want to keep) by shift-clicking them or entering their item IDs
-4. Optionally set up a delete list for unsellable items you want automatically destroyed
+3. Log in and type `/ec` to open the configuration panel
+4. Add items to your whitelist (the things you want to keep) by shift-clicking them or entering their item IDs
+5. Optionally set up a delete list for unsellable items you want automatically destroyed
 
 The addon is character-aware, so you can restrict it to specific characters if you'd rather not have it running on every alt.
 
@@ -44,12 +44,22 @@ All settings are accessible through `/ec`, which opens a scrollable config panel
 - Save and load whitelist profiles for different situations
 - Set a minimum quality threshold for the whitelist (so anything above a certain rarity is kept automatically)
 - Keep bags open when leaving a merchant
+- Import and export whitelists as shareable strings
 - View lifetime and session statistics
 - Control which characters the addon is active on
 - Adjust the vendor sell speed and summon delay
 - Right-click the minimap button to quickly enable or disable the addon
 
-There's also `/ecdebug` if you need to poke around under the bonnet.
+## Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/ec` | Open the settings panel |
+| `/ec profile list` | Show all saved whitelist profiles |
+| `/ec profile save <name>` | Save the current whitelist as a named profile |
+| `/ec profile load <name>` | Load a saved profile into the active whitelist |
+| `/ec profile delete <name>` | Delete a saved profile |
+| `/ecdebug` | Show debug info and run a bag scan |
 
 ## Requirements
 

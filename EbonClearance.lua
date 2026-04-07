@@ -738,7 +738,17 @@ local function MakeHeader(parent, text, y)
     return fs
 end
 
-local EC_PANEL_WIDTH = 440  -- usable width inside the default Interface Options panel
+local EC_PANEL_WIDTH = 440  -- default fallback; updated dynamically in OnShow
+
+local function EC_UpdatePanelWidth()
+    local container = InterfaceOptionsFramePanelContainer
+    if container and container.GetWidth then
+        local w = container:GetWidth()
+        if w and w > 100 then
+            EC_PANEL_WIDTH = w - 40
+        end
+    end
+end
 
 local function MakeLabel(parent, text, x, y)
     local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -1197,6 +1207,7 @@ end
 
 MainOptions:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
 
     local function GetMostItem(countTable)
         local bestID, bestCount = nil, 0
@@ -1343,6 +1354,7 @@ local EHS_MERCHANT_MODES = {
 
 MerchantPanel:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
     if self.inited then
         if self.repairCB then self.repairCB:SetChecked(DB.repairGear) end
         if self.keepBagsCB then self.keepBagsCB:SetChecked(DB.keepBagsOpen) end
@@ -1448,6 +1460,7 @@ WhitelistPanel.parent = "EbonClearance"
 
 WhitelistPanel:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
     if self.inited then
         if self.whitelistQualityCB then self.whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled) end
         if self.RefreshQualityDropDown then self:RefreshQualityDropDown() end
@@ -1558,6 +1571,7 @@ ProfilesPanel.parent = "EbonClearance"
 
 ProfilesPanel:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
     if self.inited then
         if self.RefreshProfileList then self:RefreshProfileList() end
         return
@@ -1833,6 +1847,7 @@ end
 
 ImportExportPanel:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
     if self.inited then return end
     self.inited = true
 
@@ -1956,6 +1971,7 @@ DeletePanel.parent = "EbonClearance"
 
 DeletePanel:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
     if self.inited then
         if self.listUI then self.listUI:Refresh() end
         return
@@ -2002,6 +2018,7 @@ ScavengerPanel.parent = "EbonClearance"
 
 ScavengerPanel:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
     if self.inited then
         if self.sumCB then self.sumCB:SetChecked(DB.summonGreedy) end
         if self.delaySlider then self.delaySlider:SetValue(DB.summonDelay or 1.6) end
@@ -2192,6 +2209,7 @@ end
 
 CharPanel:SetScript("OnShow", function(self)
     EnsureDB()
+    EC_UpdatePanelWidth()
     if self.inited then
         if self.onlyCB then self.onlyCB:SetChecked(DB.enableOnlyListedChars) end
         if self.listUI then self.listUI:Refresh() end

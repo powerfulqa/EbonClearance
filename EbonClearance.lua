@@ -1247,7 +1247,7 @@ MainOptions:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    MakeHeader(self, "EbonClearance v2.0.2", -16)
+    MakeHeader(self, "EbonClearance @VERSION@", -16)
 
     local welcomeLabel = MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Whitelist-based vendoring and item management.", 16, -44)
     local descLabel2 = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")

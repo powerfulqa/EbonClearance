@@ -15,6 +15,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Inject version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          echo "Building version: $VERSION"
+          sed -i "s/@VERSION@/$VERSION/g" EbonClearance.toc
+          sed -i "s/@VERSION@/$VERSION/g" EbonClearance.lua
+
       - name: Package addon
         run: |
           mkdir -p EbonClearance

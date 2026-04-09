@@ -1500,9 +1500,9 @@ WhitelistPanel:SetScript("OnShow", function(self)
     warnLabel:SetJustifyV("TOP")
     if warnLabel.SetWordWrap then warnLabel:SetWordWrap(true) end
     warnLabel:SetText(
-        "|cffff4444WARNING:|r When the quality threshold below is enabled, ALL items at or below the " ..
-        "chosen quality level will be sold in addition to the whitelist. " ..
-        "Use either the whitelist for selective selling, or the quality threshold for bulk selling.")
+        "|cffff4444WARNING:|r The quality threshold and the whitelist work together. When the threshold is enabled, " ..
+        "everything at or below the chosen quality with a vendor price will be sold, on top of any items in your whitelist. " ..
+        "Grey junk is always sold regardless of either setting.")
 
     local whitelistQualityCB = CreateFrame("CheckButton", "EbonClearanceWhitelistQualityCB",
         self, "InterfaceOptionsCheckButtonTemplate")

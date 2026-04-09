@@ -570,6 +570,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     EC_petCheckElapsed = 0
 
     if not DB or not DB.summonGreedy then return end
+    if not EHS_IsAddonEnabledForChar() then return end
     if IsMounted() then return end
     if running then return end
 
@@ -2727,7 +2728,7 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "UNIT_AURA" then
         local unit = ...
-        if unit == "player" and DB and DB.summonGreedy then
+        if unit == "player" and DB and DB.summonGreedy and EHS_IsAddonEnabledForChar() then
             local mounted = IsMounted()
             if mounted and not EC_wasMounted then
                 DismissGreedyScavenger()

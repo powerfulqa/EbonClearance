@@ -16,7 +16,7 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 **Item deletion** - For items that can't be sold, the addon can automatically destroy them. You manage a separate delete list of item IDs to control exactly what gets removed.
 
-**Greedy Scavenger management** - If you've used Project Ebonhold's Greedy Scavenger pet, you'll know it loves to talk. EbonClearance can mute its chat messages and speech bubbles, and optionally auto-summon it when you log in.
+**Greedy Scavenger management** - If you've used Project Ebonhold's Greedy Scavenger pet, you'll know it loves to talk. EbonClearance can mute its chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck.
 
 **Auto-repair** - Your gear gets repaired automatically whenever you visit a vendor, and the cost is tracked over time.
 
@@ -39,9 +39,12 @@ EbonClearance started life as a fork of [EbonholdStuff](https://github.com/Badut
 | **Equipped item protection** | No | Yes - gear is never touched, bag slots verified |
 | **Item deletion** | Yes | Yes |
 | **Greedy Scavenger management** | Yes | Yes |
+| **Mount detection** | No | Yes - auto-dismiss on mount, re-summon on dismount |
+| **Pet stuck detection** | No | Yes - re-summons if it despawns or wanders |
+| **Sell cap (disconnect protection)** | Yes (80/pulse) | Yes (80/run) |
 | **Auto-repair** | Yes | Yes |
 | **Auto-inviting system** | Yes | Removed |
-| **Minimap button** | No | Yes |
+| **Minimap button** | No | Yes - includes free bag slot count |
 | **Keep bags open** | No | Yes |
 | **Session/lifetime stats** | Yes | Yes |
 | **Character restrictions** | Yes | Yes |
@@ -93,6 +96,14 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - Project Ebonhold server
 
 ## Changelog
+
+### v2.0.6
+
+- **Mount detection** - Greedy Scavenger is automatically dismissed when you mount up and re-summoned when you dismount.
+- **Bag slot indicator** - The minimap button tooltip now shows your free bag slots, colour-coded green, yellow or red.
+- **Pet stuck detection** - If the Greedy Scavenger despawns or gets stuck, it's automatically re-summoned every 5 seconds.
+- **Sell cap** - Vendoring is now capped at 80 items per merchant visit to prevent client disconnects. Any leftover items are picked up on the next visit.
+- **Duplicate function cleanup** - Removed a duplicate pet summon function that was left over from earlier development.
 
 ### v2.0.5
 

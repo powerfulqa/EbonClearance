@@ -501,29 +501,31 @@ local function DismissGreedyScavenger()
     end
 end
 
-local function SummonGoblinMerchant()
+local GOBLIN_MERCHANT_SPELL_ID = 600126
+
+local function FindGoblinMerchantIndex()
     local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then return end
+    if not num or num <= 0 then return nil end
     for i = 1, num do
-        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
-        if creatureName == TARGET_NAME then
-            if not isSummoned then
-                CallCompanion("CRITTER", i)
-            end
-            return
+        local _, creatureName, spellID, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if creatureName == TARGET_NAME or spellID == GOBLIN_MERCHANT_SPELL_ID then
+            return i, isSummoned
         end
+    end
+    return nil
+end
+
+local function SummonGoblinMerchant()
+    local idx, isSummoned = FindGoblinMerchantIndex()
+    if idx and not isSummoned then
+        CallCompanion("CRITTER", idx)
     end
 end
 
 local function DismissGoblinMerchant()
-    local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then return end
-    for i = 1, num do
-        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
-        if creatureName == TARGET_NAME and isSummoned then
-            CallCompanion("CRITTER", i)
-            return
-        end
+    local idx, isSummoned = FindGoblinMerchantIndex()
+    if idx and isSummoned then
+        CallCompanion("CRITTER", idx)
     end
 end
 

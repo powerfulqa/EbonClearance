@@ -2254,7 +2254,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     cycleNote:SetPoint("TOPLEFT", cycleCB, "BOTTOMLEFT", 26, -2)
     cycleNote:SetWidth(EC_PANEL_WIDTH - 60)
     cycleNote:SetJustifyH("LEFT")
-    cycleNote:SetText("|cff888888You still need to right-click the Goblin Merchant to open the vendor window.|r")
+    cycleNote:SetText("|cff888888The Goblin Merchant is targeted for you when bags hit the threshold. Just right-click to sell - that's the only input needed.|r")
 
     local threshSlider = AddSlider(self, "EbonClearanceBagThresholdSlider", cycleNote,
         "Bag slots remaining before selling", 0, 10, 1,

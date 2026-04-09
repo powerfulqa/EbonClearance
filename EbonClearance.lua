@@ -561,6 +561,15 @@ local function EHS_SummonGreedyWithDelay()
     EHS_Delay((DB and DB.summonDelay) or 1.6, SummonGreedyScavenger)
 end
 
+local function EC_GetFreeBagSlots()
+    local free = 0
+    for bag = 0, 4 do
+        local numFree = GetContainerNumFreeSlots(bag)
+        if numFree then free = free + numFree end
+    end
+    return free
+end
+
 -- Pet stuck detection + auto-loot cycle bag monitoring
 local EC_petCheckFrame = CreateFrame("Frame")
 local EC_petCheckElapsed = 0
@@ -1236,16 +1245,6 @@ local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, 
     end)
 
     return s
-end
-
-
-local function EC_GetFreeBagSlots()
-    local free = 0
-    for bag = 0, 4 do
-        local numFree = GetContainerNumFreeSlots(bag)
-        if numFree then free = free + numFree end
-    end
-    return free
 end
 
 local function EHS_UpdateMinimapPos()

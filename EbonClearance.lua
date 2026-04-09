@@ -657,20 +657,15 @@ local function DoNextAction()
 
     if action.type == "sell" then
 
+        UseContainerItem(action.bag, action.slot)
         DB.totalItemsSold = (DB.totalItemsSold or 0) + (action.count or 1)
         DB.soldItemCounts = DB.soldItemCounts or {}
         if action.itemID then
             DB.soldItemCounts[action.itemID] = (DB.soldItemCounts[action.itemID] or 0) + (action.count or 1)
         end
-        UseContainerItem(action.bag, action.slot)
 
     elseif action.type == "delete" then
 
-        DB.totalItemsDeleted = (DB.totalItemsDeleted or 0) + (action.count or 1)
-        DB.deletedItemCounts = DB.deletedItemCounts or {}
-        if action.itemID then
-            DB.deletedItemCounts[action.itemID] = (DB.deletedItemCounts[action.itemID] or 0) + (action.count or 1)
-        end
         ClearCursor()
         PickupContainerItem(action.bag, action.slot)
         local cursorType, cursorID = GetCursorInfo()
@@ -679,6 +674,11 @@ local function DoNextAction()
             pendingDelete = { bag = action.bag, slot = action.slot, itemID = action.itemID }
             DeleteCursorItem()
             ClearCursor()
+            DB.totalItemsDeleted = (DB.totalItemsDeleted or 0) + (action.count or 1)
+            DB.deletedItemCounts = DB.deletedItemCounts or {}
+            if action.itemID then
+                DB.deletedItemCounts[action.itemID] = (DB.deletedItemCounts[action.itemID] or 0) + (action.count or 1)
+            end
         else
             ClearCursor()
             pendingDelete = nil
@@ -1243,7 +1243,7 @@ MainOptions:SetScript("OnShow", function(self)
         if not id then return "None" end
         local name = GetItemInfo(id)
         if name then
-            return string.format("|cff24ffb6%d|r - %s", id, name)
+            return string.format("|cff24ffb6%s|r", name)
         end
         return "ItemID: " .. tostring(id)
     end
@@ -1320,9 +1320,15 @@ MainOptions:SetScript("OnShow", function(self)
     mostSold:SetJustifyH("LEFT")
     self.statsMostSold = mostSold
 
+    local statsNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    statsNote:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -4)
+    statsNote:SetWidth(EC_PANEL_WIDTH - 16)
+    statsNote:SetJustifyH("LEFT")
+    statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
+
     local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", self, "UIPanelButtonTemplate")
     resetBtn:SetSize(170, 22)
-    resetBtn:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -12)
+    resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -8)
     resetBtn:SetText("Reset All Stats")
     resetBtn:SetScript("OnClick", function()
         DB.totalCopper = 0

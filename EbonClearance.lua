@@ -2440,65 +2440,6 @@ end)
 
 InterfaceOptions_AddCategory(CharPanel)
 
-SLASH_EBONCLEARANCE1 = "/ec"
-SlashCmdList["EBONCLEARANCE"] = function(msg)
-    msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    if msg == "" then
-        InterfaceOptionsFrame_OpenToCategory(MainOptions)
-        InterfaceOptionsFrame_OpenToCategory(MainOptions)
-        return
-    end
-
-    local cmd, rest = msg:match("^(%S+)%s*(.*)")
-    cmd = (cmd or ""):lower()
-    rest = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
-
-    if cmd == "profile" or cmd == "profiles" then
-        local sub, arg = rest:match("^(%S+)%s*(.*)")
-        sub = (sub or ""):lower()
-        arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
-
-        if sub == "save" and arg ~= "" then
-            EnsureDB()
-            local ok, msg = EC_SaveProfile(arg)
-            PrintNice(msg)
-        elseif sub == "load" and arg ~= "" then
-            EnsureDB()
-            local ok, msg = EC_LoadProfile(arg)
-            PrintNice(msg)
-        elseif sub == "delete" and arg ~= "" then
-            EnsureDB()
-            local ok, msg = EC_DeleteProfile(arg)
-            PrintNice(msg)
-        elseif sub == "list" or sub == "" then
-            EnsureDB()
-            PrintNice("Whitelist Profiles:")
-            local names = {}
-            for name in pairs(DB.whitelistProfiles) do
-                if type(name) == "string" then names[#names + 1] = name end
-            end
-            table.sort(names, function(a, b) return a:lower() < b:lower() end)
-            for i = 1, #names do
-                local count = EC_CountItems(DB.whitelistProfiles[names[i]])
-                local tag = (names[i] == DB.activeProfileName) and " |cff00ff00(active)|r" or ""
-                PrintNice(string.format("  |cffffff00%s|r - %d items%s", names[i], count, tag))
-            end
-        else
-            PrintNice("Usage: /ec profile save|load|delete|list <name>")
-        end
-        return
-    end
-
-    if cmd == "bugreport" then
-        EC_ShowBugReport()
-        return
-    end
-
-    -- Unknown subcommand - open options
-    InterfaceOptionsFrame_OpenToCategory(MainOptions)
-    InterfaceOptionsFrame_OpenToCategory(MainOptions)
-end
-
 -- Bug report diagnostic snapshot
 local function EC_CopperToPlainText(copper)
     if not copper or copper <= 0 then return "0" end
@@ -2641,6 +2582,65 @@ local function EC_ShowBugReport()
     EC_bugReportFrame.editBox:HighlightText()
     EC_bugReportFrame.editBox:SetFocus()
     PrintNice("Bug report generated. Copy the text from the window.")
+end
+
+SLASH_EBONCLEARANCE1 = "/ec"
+SlashCmdList["EBONCLEARANCE"] = function(msg)
+    msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if msg == "" then
+        InterfaceOptionsFrame_OpenToCategory(MainOptions)
+        InterfaceOptionsFrame_OpenToCategory(MainOptions)
+        return
+    end
+
+    local cmd, rest = msg:match("^(%S+)%s*(.*)")
+    cmd = (cmd or ""):lower()
+    rest = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+    if cmd == "profile" or cmd == "profiles" then
+        local sub, arg = rest:match("^(%S+)%s*(.*)")
+        sub = (sub or ""):lower()
+        arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+        if sub == "save" and arg ~= "" then
+            EnsureDB()
+            local ok, msg = EC_SaveProfile(arg)
+            PrintNice(msg)
+        elseif sub == "load" and arg ~= "" then
+            EnsureDB()
+            local ok, msg = EC_LoadProfile(arg)
+            PrintNice(msg)
+        elseif sub == "delete" and arg ~= "" then
+            EnsureDB()
+            local ok, msg = EC_DeleteProfile(arg)
+            PrintNice(msg)
+        elseif sub == "list" or sub == "" then
+            EnsureDB()
+            PrintNice("Whitelist Profiles:")
+            local names = {}
+            for name in pairs(DB.whitelistProfiles) do
+                if type(name) == "string" then names[#names + 1] = name end
+            end
+            table.sort(names, function(a, b) return a:lower() < b:lower() end)
+            for i = 1, #names do
+                local count = EC_CountItems(DB.whitelistProfiles[names[i]])
+                local tag = (names[i] == DB.activeProfileName) and " |cff00ff00(active)|r" or ""
+                PrintNice(string.format("  |cffffff00%s|r - %d items%s", names[i], count, tag))
+            end
+        else
+            PrintNice("Usage: /ec profile save|load|delete|list <name>")
+        end
+        return
+    end
+
+    if cmd == "bugreport" then
+        EC_ShowBugReport()
+        return
+    end
+
+    -- Unknown subcommand - open options
+    InterfaceOptionsFrame_OpenToCategory(MainOptions)
+    InterfaceOptionsFrame_OpenToCategory(MainOptions)
 end
 
 SLASH_ECDEBUG1 = "/ecdebug"

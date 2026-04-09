@@ -1866,7 +1866,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
     MakeLabel(self, "Export your current whitelist to a string. Give it a name so others know what it is.", 16, -44)
 
     local exportNameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    exportNameLabel:SetPoint("TOPLEFT", 16, -68)
+    exportNameLabel:SetPoint("TOPLEFT", 16, -80)
     exportNameLabel:SetText("List name:")
 
     local exportNameBox = CreateFrame("EditBox", "EbonClearanceExportNameBox", self, "InputBoxTemplate")
@@ -1883,7 +1883,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
     exportBtn:SetText("Export")
 
     local exportScroll = CreateFrame("ScrollFrame", "EbonClearanceExportScroll", self, "UIPanelScrollFrameTemplate")
-    exportScroll:SetPoint("TOPLEFT", 16, -96)
+    exportScroll:SetPoint("TOPLEFT", 16, -108)
     exportScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
 
     local exportBox = CreateFrame("EditBox", "EbonClearanceExportBox", exportScroll)
@@ -1909,10 +1909,10 @@ ImportExportPanel:SetScript("OnShow", function(self)
     end)
 
     -- === IMPORT SECTION ===
-    MakeLabel(self, "Paste an exported whitelist string below and click Import.", 16, -158)
+    MakeLabel(self, "Paste an exported whitelist string below and click Import.", 16, -170)
 
     local importScroll = CreateFrame("ScrollFrame", "EbonClearanceImportScroll", self, "UIPanelScrollFrameTemplate")
-    importScroll:SetPoint("TOPLEFT", 16, -178)
+    importScroll:SetPoint("TOPLEFT", 16, -190)
     importScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
 
     local importBox = CreateFrame("EditBox", "EbonClearanceImportBox", importScroll)
@@ -1926,7 +1926,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
     local importMergeBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
     importMergeBtn:SetSize(120, 22)
-    importMergeBtn:SetPoint("TOPLEFT", 16, -236)
+    importMergeBtn:SetPoint("TOPLEFT", 16, -248)
     importMergeBtn:SetText("Import (Merge)")
 
     local importReplaceBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
@@ -1935,7 +1935,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
     importReplaceBtn:SetText("Import (Replace)")
 
     local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statusFS:SetPoint("TOPLEFT", 16, -264)
+    statusFS:SetPoint("TOPLEFT", 16, -276)
     statusFS:SetWidth(EC_PANEL_WIDTH - 16)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")

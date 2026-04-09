@@ -207,7 +207,7 @@ local function EnsureDB()
     if type(DB.summonDelay) ~= "number" then DB.summonDelay = 1.6 end
 
     if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.015 end
-    if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 40 end
+    if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 80 end
     if type(DB.autoLootCycle) ~= "boolean" then DB.autoLootCycle = false end
     if type(DB.bagFullThreshold) ~= "number" then DB.bagFullThreshold = 2 end
     if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then DB.merchantMode = "goblin" end
@@ -479,6 +479,8 @@ local function SummonGreedyScavenger()
         local creatureID, creatureName, spellID, icon, isSummoned = GetCompanionInfo("CRITTER", i)
         if creatureName == PET_NAME then
             if not isSummoned then
+                -- Dismiss any active critter first, then summon Scavenger
+                if DismissCompanion then DismissCompanion("CRITTER") end
                 CallCompanion("CRITTER", i)
             end
             if DB and DB.autoLootCycle then
@@ -490,13 +492,17 @@ local function SummonGreedyScavenger()
 end
 
 local function DismissGreedyScavenger()
-    local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then return end
-    for i = 1, num do
-        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
-        if creatureName == PET_NAME and isSummoned then
-            CallCompanion("CRITTER", i)
-            return
+    if DismissCompanion then
+        DismissCompanion("CRITTER")
+    else
+        local num = GetNumCompanions("CRITTER")
+        if not num or num <= 0 then return end
+        for i = 1, num do
+            local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+            if creatureName == PET_NAME and isSummoned then
+                CallCompanion("CRITTER", i)
+                return
+            end
         end
     end
 end
@@ -516,16 +522,21 @@ local function FindGoblinMerchantIndex()
 end
 
 local function SummonGoblinMerchant()
-    local idx, isSummoned = FindGoblinMerchantIndex()
-    if idx and not isSummoned then
-        CallCompanion("CRITTER", idx)
-    end
+    local idx = FindGoblinMerchantIndex()
+    if not idx then return end
+    -- Dismiss any active critter first
+    if DismissCompanion then DismissCompanion("CRITTER") end
+    CallCompanion("CRITTER", idx)
 end
 
 local function DismissGoblinMerchant()
     local idx, isSummoned = FindGoblinMerchantIndex()
     if idx and isSummoned then
-        CallCompanion("CRITTER", idx)
+        if DismissCompanion then
+            DismissCompanion("CRITTER")
+        else
+            CallCompanion("CRITTER", idx)
+        end
     end
 end
 
@@ -575,8 +586,46 @@ end
 -- Pet stuck detection + auto-loot cycle bag monitoring
 local EC_petCheckFrame = CreateFrame("Frame")
 local EC_petCheckElapsed = 0
+local EC_summonGoblinPending = false
+local EC_summonGoblinTimer = 0
+local EC_targetGoblinPending = false
+local EC_targetGoblinTimer = 0
 
 EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
+    -- Delayed Goblin Merchant summon (after dismiss completes)
+    if EC_summonGoblinPending then
+        EC_summonGoblinTimer = EC_summonGoblinTimer - elapsed
+        if EC_summonGoblinTimer <= 0 then
+            EC_summonGoblinPending = false
+            local idx = FindGoblinMerchantIndex()
+            if idx then
+                CallCompanion("CRITTER", idx)
+                EC_targetGoblinPending = true
+                EC_targetGoblinTimer = 2.0
+            else
+                PrintNice("|cffff4444Goblin Merchant not found in companion list!|r")
+                EC_lootCycleState = "looting"
+            end
+        end
+        return
+    end
+
+    -- Delayed target after Goblin Merchant summon
+    if EC_targetGoblinPending then
+        EC_targetGoblinTimer = EC_targetGoblinTimer - elapsed
+        if EC_targetGoblinTimer <= 0 then
+            EC_targetGoblinPending = false
+            local _, nowSummoned = FindGoblinMerchantIndex()
+            if nowSummoned then
+                PrintNice("|cff00ff00Goblin Merchant summoned - right-click it to sell.|r")
+            else
+                PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
+                EC_lootCycleState = "looting"
+            end
+        end
+        return
+    end
+
     EC_petCheckElapsed = EC_petCheckElapsed + elapsed
     if EC_petCheckElapsed < 5 then return end
     EC_petCheckElapsed = 0
@@ -603,14 +652,12 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         local free = EC_GetFreeBagSlots()
         if free <= (DB.bagFullThreshold or 2) then
             EC_lootCycleState = "waiting_merchant"
-            DismissGreedyScavenger()
-            EHS_Delay(1.0, function()
-                SummonGoblinMerchant()
-                EHS_Delay(1.5, function()
-                    TargetByName(TARGET_NAME, true)
-                    PrintNice("Bags nearly full. Goblin Merchant summoned - right-click to sell.")
-                end)
-            end)
+            PrintNice("|cffffff00Bags nearly full! Summoning Goblin Merchant...|r")
+            -- Dismiss active critter
+            if DismissCompanion then DismissCompanion("CRITTER") end
+            -- Summon Goblin Merchant after delay to let dismiss complete
+            EC_summonGoblinPending = true
+            EC_summonGoblinTimer = 1.5
             return
         end
     end
@@ -741,7 +788,7 @@ local function BuildQueue(junkOnly)
         end
     end
 
-    local cap = DB.maxItemsPerRun or 40
+    local cap = DB.maxItemsPerRun or 80
     if #queue > cap then
         local removed = #queue - cap
         for i = #queue, cap + 1, -1 do
@@ -761,9 +808,13 @@ local function FinishRun()
         #queue, CopperToColoredText(goldThisVendoring)))
 
     if DB and DB.autoLootCycle then
-        DismissGoblinMerchant()
+        -- Don't dismiss the Goblin here - MERCHANT_CLOSED handles that.
+        -- Just re-summon the Scavenger after a delay to continue the cycle.
+        EC_lootCycleState = "idle"
+        EHS_SummonGreedyWithDelay()
+    else
+        EHS_SummonGreedyWithDelay()
     end
-    EHS_SummonGreedyWithDelay()
 end
 
 local function DoNextAction()
@@ -2767,6 +2818,10 @@ f:SetScript("OnEvent", function(self, event, ...)
         running = false
         worker:Hide()
         pendingDelete = nil
+        -- Reset cycle state so the stuck detection can re-summon the Scavenger
+        if EC_lootCycleState == "selling" then
+            EC_lootCycleState = "idle"
+        end
         -- Reopen bags after merchant closes
         if DB and DB.keepBagsOpen and EC_keepBagsFlag then
             EHS_Delay(0.8, EC_OpenAllBags)

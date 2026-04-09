@@ -228,12 +228,19 @@ local function EnsureDB()
     -- Whitelist profiles migration
     if type(DB.whitelistProfiles) ~= "table" then
         DB.whitelistProfiles = {}
-        local snapshot = {}
-        for k, v in pairs(DB.whitelist) do snapshot[k] = v end
-        DB.whitelistProfiles["Default"] = snapshot
-        DB.activeProfileName = "Default"
+        DB.whitelistProfiles["Default"] = {}
+        local hasItems = next(DB.whitelist) ~= nil
+        if hasItems then
+            local snapshot = {}
+            for k, v in pairs(DB.whitelist) do snapshot[k] = v end
+            DB.whitelistProfiles["Imported"] = snapshot
+            DB.activeProfileName = "Imported"
+        else
+            DB.activeProfileName = "Default"
+        end
     end
     if type(DB.activeProfileName) ~= "string" then DB.activeProfileName = "Default" end
+    DB.whitelistProfiles["Default"] = {}
 
 if not DB._seededLists then
     if DB.deleteList and not next(DB.deleteList) then
@@ -322,6 +329,9 @@ local function EC_SaveProfile(name)
     local ok, cleaned = EC_ValidateProfileName(name)
     if not ok then return false, cleaned end
     name = cleaned
+    if name == "Default" then
+        return false, "The Default profile is locked to empty and cannot be overwritten."
+    end
     local snapshot = {}
     for k, v in pairs(DB.whitelist) do snapshot[k] = v end
     DB.whitelistProfiles[name] = snapshot
@@ -350,6 +360,9 @@ local function EC_DeleteProfile(name)
     if type(name) ~= "string" or not DB.whitelistProfiles[name] then
         return false, string.format("Profile \"%s\" not found.", tostring(name))
     end
+    if name == "Default" then
+        return false, "The Default profile cannot be deleted."
+    end
     -- Count remaining profiles
     local count = 0
     for _ in pairs(DB.whitelistProfiles) do count = count + 1 end
@@ -367,9 +380,15 @@ local function EC_RenameProfile(oldName, newName)
     if type(oldName) ~= "string" or not DB.whitelistProfiles[oldName] then
         return false, string.format("Profile \"%s\" not found.", tostring(oldName))
     end
+    if oldName == "Default" then
+        return false, "The Default profile cannot be renamed."
+    end
     local ok, cleaned = EC_ValidateProfileName(newName)
     if not ok then return false, cleaned end
     newName = cleaned
+    if newName == "Default" then
+        return false, "Cannot rename a profile to \"Default\"."
+    end
     if newName == oldName then return true, "Name unchanged." end
     if DB.whitelistProfiles[newName] then
         return false, string.format("A profile named \"%s\" already exists.", newName)

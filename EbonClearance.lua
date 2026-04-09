@@ -595,16 +595,22 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     if EC_lootCycleState == "waiting_merchant" or EC_lootCycleState == "selling" then return end
 
     -- Stuck detection: re-summon Greedy Scavenger if it despawned
+    -- But only if no other companion is currently out (e.g. bank mule, mailbox)
     local num = GetNumCompanions("CRITTER")
     if not num or num <= 0 then return end
+    local greedyIndex = nil
+    local anyPetOut = false
     for i = 1, num do
         local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
-        if creatureName == PET_NAME then
-            if not isSummoned then
-                CallCompanion("CRITTER", i)
-            end
-            return
+        if isSummoned then
+            anyPetOut = true
         end
+        if creatureName == PET_NAME then
+            greedyIndex = i
+        end
+    end
+    if greedyIndex and not anyPetOut then
+        CallCompanion("CRITTER", greedyIndex)
     end
 end)
 

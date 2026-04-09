@@ -1277,7 +1277,8 @@ MainOptions:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    MakeHeader(self, "EbonClearance v2.0.4", -16)
+    local addonVersion = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
+    MakeHeader(self, "EbonClearance " .. addonVersion, -16)
 
     local welcomeLabel = MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.", 16, -44)
     local descLabel2 = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -1501,8 +1502,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
     if warnLabel.SetWordWrap then warnLabel:SetWordWrap(true) end
     warnLabel:SetText(
         "|cffff4444WARNING:|r The quality threshold and the whitelist work together. When the threshold is enabled, " ..
-        "everything at or below the chosen quality with a vendor price will be sold, on top of any items in your whitelist. " ..
-        "Grey junk is always sold regardless of either setting.")
+        "everything at or below the chosen quality with a vendor price will be sold, on top of any items in your whitelist.")
 
     local whitelistQualityCB = CreateFrame("CheckButton", "EbonClearanceWhitelistQualityCB",
         self, "InterfaceOptionsCheckButtonTemplate")
@@ -1575,7 +1575,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
     noteFS:SetPoint("BOTTOMLEFT", 16, 8)
     noteFS:SetWidth(EC_PANEL_WIDTH - 16)
     noteFS:SetJustifyH("LEFT")
-    noteFS:SetText("|cffaaaaaa Grey items are always sold as junk. Listed items are also sold regardless of the quality threshold.|r")
+    noteFS:SetText("|cffaaaaaa Listed items are always sold regardless of the quality threshold.|r")
 end)
 
 InterfaceOptions_AddCategory(WhitelistPanel)
@@ -2361,7 +2361,7 @@ SlashCmdList["ECDEBUG"] = function()
     if wlCount == 0 then PrintNice("  (whitelist is empty)") end
 
     -- Scan bags and check which items would be sold
-    PrintNice("|cffffff00--- Bag scan ---)|r")
+    PrintNice("|cffffff00--- Bag scan ---|r")
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do

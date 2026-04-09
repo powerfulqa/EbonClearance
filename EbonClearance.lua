@@ -207,6 +207,7 @@ local function EnsureDB()
     if type(DB.summonDelay) ~= "number" then DB.summonDelay = 1.6 end
 
     if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.015 end
+    if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 80 end
     if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then DB.merchantMode = "goblin" end
 
     if type(DB.muteGreedy) ~= "boolean" then DB.muteGreedy = true end
@@ -483,12 +484,19 @@ local function SummonGreedyScavenger()
     end
 end
 
-local function EHS_SummonGreedyWithDelay()
-    if not DB or not DB.summonGreedy then return end
-    local d = tonumber(DB.summonDelay) or 1.6
-    if d < 0 then d = 0 end
-    EHS_Delay(d, SummonGreedyScavenger)
+local function DismissGreedyScavenger()
+    local num = GetNumCompanions("CRITTER")
+    if not num or num <= 0 then return end
+    for i = 1, num do
+        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if creatureName == PET_NAME and isSummoned then
+            CallCompanion("CRITTER", i)
+            return
+        end
+    end
 end
+
+local EC_wasMounted = false
 
 local EHS_delayFrame = CreateFrame("Frame")
 local EHS_timers = {}
@@ -520,7 +528,31 @@ local function EHS_SummonGreedyWithDelay()
     EHS_Delay((DB and DB.summonDelay) or 1.6, SummonGreedyScavenger)
 end
 
+-- Pet stuck detection: re-summon if the Greedy Scavenger despawns or gets stuck
+local EC_petCheckFrame = CreateFrame("Frame")
+local EC_petCheckElapsed = 0
 
+EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
+    EC_petCheckElapsed = EC_petCheckElapsed + elapsed
+    if EC_petCheckElapsed < 5 then return end
+    EC_petCheckElapsed = 0
+
+    if not DB or not DB.summonGreedy then return end
+    if IsMounted() then return end
+    if running then return end
+
+    local num = GetNumCompanions("CRITTER")
+    if not num or num <= 0 then return end
+    for i = 1, num do
+        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if creatureName == PET_NAME then
+            if not isSummoned then
+                CallCompanion("CRITTER", i)
+            end
+            return
+        end
+    end
+end)
 
 local pendingDelete = nil
 local deletePopupHooked = false
@@ -619,6 +651,15 @@ local function BuildQueue(junkOnly)
                 end
             end
         end
+    end
+
+    local cap = DB.maxItemsPerRun or 80
+    if #queue > cap then
+        local removed = #queue - cap
+        for i = #queue, cap + 1, -1 do
+            queue[i] = nil
+        end
+        PrintNice(string.format("|cffffff00Capped at %d items this run (%d skipped). Visit again to sell the rest.|r", cap, removed))
     end
 end
 
@@ -1117,6 +1158,15 @@ local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, 
 end
 
 
+local function EC_GetFreeBagSlots()
+    local free = 0
+    for bag = 0, 4 do
+        local numFree = GetContainerNumFreeSlots(bag)
+        if numFree then free = free + numFree end
+    end
+    return free
+end
+
 local function EHS_UpdateMinimapPos()
     local btn = _G["EbonClearanceMinimapButton"]
     if not btn then return end
@@ -1216,6 +1266,9 @@ local function EHS_CreateMinimapButton()
             and "|cff00ff00Enabled|r"
             or  "|cffff4444Disabled|r"
         GameTooltip:AddLine("Status: " .. stateStr)
+        local freeSlots = EC_GetFreeBagSlots()
+        local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
+        GameTooltip:AddLine("Free bag slots: " .. slotColor .. freeSlots .. "|r")
         GameTooltip:Show()
     end)
 
@@ -2400,6 +2453,7 @@ f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("MERCHANT_SHOW")
 f:RegisterEvent("MERCHANT_CLOSED")
+f:RegisterEvent("UNIT_AURA")
 
 
 f:SetScript("OnEvent", function(self, event, ...)
@@ -2427,6 +2481,18 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
         EHS_InstallGreedyMuteOnce()
         StartRun()
+
+    elseif event == "UNIT_AURA" then
+        local unit = ...
+        if unit == "player" and DB and DB.summonGreedy then
+            local mounted = IsMounted()
+            if mounted and not EC_wasMounted then
+                DismissGreedyScavenger()
+            elseif not mounted and EC_wasMounted then
+                EHS_SummonGreedyWithDelay()
+            end
+            EC_wasMounted = mounted
+        end
 
     elseif event == "MERCHANT_CLOSED" then
         running = false

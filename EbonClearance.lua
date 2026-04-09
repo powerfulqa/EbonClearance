@@ -1597,7 +1597,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
     self.inited = true
 
     MakeHeader(self, "Whitelist Profiles", -16)
-    MakeLabel(self, "Save and load different whitelists as named profiles. Useful for swapping between farming locations.", 16, -44)
+    MakeLabel(self, "Save and load different whitelists as named profiles. Useful for swapping between farming locations. The Default profile is always empty and can't be changed, so give your profile a name before saving.", 16, -44)
 
     -- Active profile indicator
     local activeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")

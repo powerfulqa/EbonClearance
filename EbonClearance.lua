@@ -1470,6 +1470,7 @@ MainOptions:SetScript("OnShow", function(self)
         "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n" ..
         "|cffffff00/ec profile load <name>|r  Load a saved profile\n" ..
         "|cffffff00/ec profile delete <name>|r  Delete a profile\n" ..
+        "|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports\n" ..
         "|cffffff00/ecdebug|r  Show debug info and bag scan")
 
     RefreshStats()

@@ -94,6 +94,15 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 
 ## Changelog
 
+### v2.0.5
+
+- **Most Sold Item display fixed** - Removed the item ID from the stats display so it just shows the item name and count, avoiding confusion with quantities.
+- **Stat accuracy improved** - Sell and delete counts now only increment after the action succeeds, not before. Delete counts only tick up if the item was actually picked up and destroyed.
+- **Buyback note** - Added a note to the stats panel that counts don't account for items bought back from a merchant.
+- **Version header from TOC** - The settings panel header now pulls the version from the TOC file instead of being hardcoded.
+- **Duplicate grey junk text trimmed** - The "grey items are always sold" message was repeated three times on the Whitelist Settings page. Now it's mentioned once at the top.
+- **Debug typo fixed** - Removed a stray bracket from the bag scan debug output.
+
 ### v2.0.4
 
 - **Search Clear button removed** - The Clear button next to the search filter in Whitelist Settings has been removed to avoid confusion with the profile Clear button. To clear a whitelist, use the Clear button on the Profiles panel instead.

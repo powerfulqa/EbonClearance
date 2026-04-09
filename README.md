@@ -102,8 +102,9 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 
 ### v2.0.7
 
-- **Auto-loot cycle** - New opt-in feature in Scavenger Settings. When enabled, monitors your free bag slots while the Greedy Scavenger is looting. When bags are nearly full, dismisses the pet, summons the Goblin Merchant and auto-targets it. Right-click to sell, then the Scavenger is re-summoned to carry on. Configurable bag threshold slider.
+- **Auto-loot cycle** - New opt-in feature in Scavenger Settings. Continuously loops: loot with the Greedy Scavenger, sell when bags are full, then loot again. When your free bag slots hit the threshold, the pet is dismissed, the Goblin Merchant is summoned and auto-targeted for you. Just right-click to sell and the cycle continues. Enabling the cycle automatically turns on pet summoning, and turning off summoning disables the cycle.
 - **Slider format fix** - The bag threshold slider now shows whole numbers instead of seconds.
+- **Scavenger Settings layout** - Fixed the description text overlapping the summon checkbox. Added a grey hint explaining that right-clicking the merchant is the only player input needed.
 
 ### v2.0.6
 

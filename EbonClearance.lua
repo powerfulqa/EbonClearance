@@ -862,7 +862,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
 
     local sortMode = "id_asc"  -- default: sort by ID ascending
 
-    -- Search row: Search box then Clear, Sort label, ID, Name buttons all on one line
+    -- Search row: Search box then ID, Name sort buttons all on one line
     local searchLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     searchLabel:SetPoint("TOPLEFT", 0, -52)
     searchLabel:SetText("Search:")
@@ -877,16 +877,11 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     sortIDBtn:SetPoint("RIGHT", sortNameBtn, "LEFT", -4, 0)
     sortIDBtn:SetText("ID \226\150\178")
 
-    local clearSearch = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
-    clearSearch:SetSize(46, 20)
-    clearSearch:SetPoint("RIGHT", sortIDBtn, "LEFT", -8, 0)
-    clearSearch:SetText("Clear")
-
     local search = CreateFrame("EditBox", "EbonClearanceSearchInput_"..setTableName, box, "InputBoxTemplate")
     search:SetAutoFocus(false)
     search:SetHeight(20)
     search:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
-    search:SetPoint("RIGHT", clearSearch, "LEFT", -8, 0)
+    search:SetPoint("RIGHT", sortIDBtn, "LEFT", -8, 0)
     search:SetMaxLetters(40)
     search:SetText("")
     StyleInputBox(search)
@@ -1039,11 +1034,6 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     end)
 
     search:SetScript("OnTextChanged", function()
-        Refresh()
-    end)
-
-    clearSearch:SetScript("OnClick", function()
-        search:SetText("")
         Refresh()
     end)
 

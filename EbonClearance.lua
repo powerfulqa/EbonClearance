@@ -208,6 +208,8 @@ local function EnsureDB()
 
     if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.015 end
     if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 80 end
+    if type(DB.autoLootCycle) ~= "boolean" then DB.autoLootCycle = false end
+    if type(DB.bagFullThreshold) ~= "number" then DB.bagFullThreshold = 2 end
     if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then DB.merchantMode = "goblin" end
 
     if type(DB.muteGreedy) ~= "boolean" then DB.muteGreedy = true end
@@ -479,6 +481,9 @@ local function SummonGreedyScavenger()
             if not isSummoned then
                 CallCompanion("CRITTER", i)
             end
+            if DB and DB.autoLootCycle then
+                EC_lootCycleState = "looting"
+            end
             return
         end
     end
@@ -496,7 +501,34 @@ local function DismissGreedyScavenger()
     end
 end
 
+local function SummonGoblinMerchant()
+    local num = GetNumCompanions("CRITTER")
+    if not num or num <= 0 then return end
+    for i = 1, num do
+        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if creatureName == TARGET_NAME then
+            if not isSummoned then
+                CallCompanion("CRITTER", i)
+            end
+            return
+        end
+    end
+end
+
+local function DismissGoblinMerchant()
+    local num = GetNumCompanions("CRITTER")
+    if not num or num <= 0 then return end
+    for i = 1, num do
+        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if creatureName == TARGET_NAME and isSummoned then
+            CallCompanion("CRITTER", i)
+            return
+        end
+    end
+end
+
 local EC_wasMounted = false
+local EC_lootCycleState = "idle"
 
 local EHS_delayFrame = CreateFrame("Frame")
 local EHS_timers = {}
@@ -528,7 +560,7 @@ local function EHS_SummonGreedyWithDelay()
     EHS_Delay((DB and DB.summonDelay) or 1.6, SummonGreedyScavenger)
 end
 
--- Pet stuck detection: re-summon if the Greedy Scavenger despawns or gets stuck
+-- Pet stuck detection + auto-loot cycle bag monitoring
 local EC_petCheckFrame = CreateFrame("Frame")
 local EC_petCheckElapsed = 0
 
@@ -541,6 +573,27 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     if IsMounted() then return end
     if running then return end
 
+    -- Auto-loot cycle: check bag space while looting
+    if DB.autoLootCycle and EC_lootCycleState == "looting" then
+        local free = EC_GetFreeBagSlots()
+        if free <= (DB.bagFullThreshold or 2) then
+            EC_lootCycleState = "waiting_merchant"
+            DismissGreedyScavenger()
+            EHS_Delay(1.0, function()
+                SummonGoblinMerchant()
+                EHS_Delay(1.5, function()
+                    TargetByName(TARGET_NAME, true)
+                    PrintNice("Bags nearly full. Goblin Merchant summoned - right-click to sell.")
+                end)
+            end)
+            return
+        end
+    end
+
+    -- Don't re-summon scavenger while waiting for merchant or selling
+    if EC_lootCycleState == "waiting_merchant" or EC_lootCycleState == "selling" then return end
+
+    -- Stuck detection: re-summon Greedy Scavenger if it despawned
     local num = GetNumCompanions("CRITTER")
     if not num or num <= 0 then return end
     for i = 1, num do
@@ -672,6 +725,9 @@ local function FinishRun()
     PrintNice(string.format("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
         #queue, CopperToColoredText(goldThisVendoring)))
 
+    if DB and DB.autoLootCycle then
+        DismissGoblinMerchant()
+    end
     EHS_SummonGreedyWithDelay()
 end
 
@@ -2131,6 +2187,8 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if self.muteCB then self.muteCB:SetChecked(DB.muteGreedy) end
         if self.chatCB then self.chatCB:SetChecked(DB.hideGreedyChat) end
         if self.bubCB then self.bubCB:SetChecked(DB.hideGreedyBubbles) end
+        if self.cycleCB then self.cycleCB:SetChecked(DB.autoLootCycle) end
+        if self.threshSlider then self.threshSlider:SetValue(DB.bagFullThreshold or 2) end
         return
     end
     self.inited = true
@@ -2173,6 +2231,21 @@ ScavengerPanel:SetScript("OnShow", function(self)
         -16)
     self.delaySlider = delaySlider
 	delaySlider:SetWidth(200)
+
+    local cycleCB = AddCheckbox(self, "EbonClearanceAutoLootCycleCB", delaySlider,
+        "Enable auto-loot cycle (summon merchant when bags are full)",
+        function() return DB.autoLootCycle end,
+        function(v) DB.autoLootCycle = v end,
+        -16)
+    self.cycleCB = cycleCB
+
+    local threshSlider = AddSlider(self, "EbonClearanceBagThresholdSlider", cycleCB,
+        "Bag slots remaining before selling", 0, 10, 1,
+        function() return DB.bagFullThreshold or 2 end,
+        function(v) DB.bagFullThreshold = v end,
+        -16)
+    self.threshSlider = threshSlider
+    threshSlider:SetWidth(200)
 end)
 
 InterfaceOptions_AddCategory(ScavengerPanel)
@@ -2476,6 +2549,9 @@ f:SetScript("OnEvent", function(self, event, ...)
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
         EC_keepBagsFlag = true
+        if DB and DB.autoLootCycle then
+            EC_lootCycleState = "selling"
+        end
         if not EHS_IsAddonEnabledForChar() then
             return
         end

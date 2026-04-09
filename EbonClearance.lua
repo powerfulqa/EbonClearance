@@ -207,7 +207,7 @@ local function EnsureDB()
     if type(DB.summonDelay) ~= "number" then DB.summonDelay = 1.6 end
 
     if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.015 end
-    if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 80 end
+    if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 40 end
     if type(DB.autoLootCycle) ~= "boolean" then DB.autoLootCycle = false end
     if type(DB.bagFullThreshold) ~= "number" then DB.bagFullThreshold = 2 end
     if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then DB.merchantMode = "goblin" end
@@ -575,6 +575,18 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     if IsMounted() then return end
     if running then return end
 
+    -- If auto-loot cycle is on and Scavenger is already out, ensure state is "looting"
+    if DB.autoLootCycle and EC_lootCycleState == "idle" then
+        local num = GetNumCompanions("CRITTER")
+        for i = 1, (num or 0) do
+            local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+            if creatureName == PET_NAME and isSummoned then
+                EC_lootCycleState = "looting"
+                break
+            end
+        end
+    end
+
     -- Auto-loot cycle: check bag space while looting
     if DB.autoLootCycle and EC_lootCycleState == "looting" then
         local free = EC_GetFreeBagSlots()
@@ -613,6 +625,9 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Don't re-summon if we recently dismissed for mounting (wait for mount cast to finish)
     if greedyIndex and not anyPetOut and (GetTime() - EC_mountDismissTime) > 10 then
         CallCompanion("CRITTER", greedyIndex)
+        if DB and DB.autoLootCycle then
+            EC_lootCycleState = "looting"
+        end
     end
 end)
 
@@ -715,7 +730,7 @@ local function BuildQueue(junkOnly)
         end
     end
 
-    local cap = DB.maxItemsPerRun or 80
+    local cap = DB.maxItemsPerRun or 40
     if #queue > cap then
         local removed = #queue - cap
         for i = #queue, cap + 1, -1 do

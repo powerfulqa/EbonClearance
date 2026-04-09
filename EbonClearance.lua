@@ -472,6 +472,9 @@ ChatEdit_InsertLink = function(link)
 end
 
 local function SummonGreedyScavenger()
+    -- Don't summon while mounted (delayed calls from dismount can race with remounting)
+    if IsMounted and IsMounted() then return end
+
     local num = GetNumCompanions("CRITTER")
     if not num or num <= 0 then return end
 
@@ -483,6 +486,7 @@ local function SummonGreedyScavenger()
                 if DismissCompanion then DismissCompanion("CRITTER") end
                 CallCompanion("CRITTER", i)
             end
+            EC_addonDismissed = false
             if DB and DB.autoLootCycle then
                 EC_lootCycleState = "looting"
             end
@@ -492,6 +496,7 @@ local function SummonGreedyScavenger()
 end
 
 local function DismissGreedyScavenger()
+    EC_addonDismissed = true
     if DismissCompanion then
         DismissCompanion("CRITTER")
     else
@@ -543,6 +548,7 @@ end
 local EC_wasMounted = false
 local EC_mountDismissTime = 0
 local EC_lootCycleState = "idle"
+local EC_addonDismissed = false  -- true when our code dismissed the Scavenger (mount, cycle, etc)
 
 local EHS_delayFrame = CreateFrame("Frame")
 local EHS_timers = {}
@@ -667,6 +673,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
 
     -- Stuck detection: re-summon Greedy Scavenger if it despawned
     -- But only if no other companion is currently out (e.g. bank mule, mailbox)
+    -- And only if the addon dismissed it (not the user manually)
     local num = GetNumCompanions("CRITTER")
     if not num or num <= 0 then return end
     local greedyIndex = nil
@@ -680,8 +687,19 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             greedyIndex = i
         end
     end
-    -- Don't re-summon if we recently dismissed for mounting (wait for mount cast to finish)
-    if greedyIndex and not anyPetOut and (GetTime() - EC_mountDismissTime) > 10 then
+
+    -- If any pet is out (Scavenger or otherwise), nothing to do
+    if anyPetOut then return end
+
+    -- Don't re-summon if we recently dismissed for mounting
+    if (GetTime() - EC_mountDismissTime) <= 10 then return end
+
+    -- Only re-summon if our code dismissed it (mount, cycle, etc)
+    -- If the user manually unsummoned, respect that
+    if not EC_addonDismissed then return end
+
+    if greedyIndex then
+        EC_addonDismissed = false
         CallCompanion("CRITTER", greedyIndex)
         if DB and DB.autoLootCycle then
             EC_lootCycleState = "looting"

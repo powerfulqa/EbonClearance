@@ -8,21 +8,47 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 ## What It Does
 
-**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also enable a quality threshold to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). You choose whether this runs at the Goblin Merchant only, normal merchants only, or both. The addon includes safety checks to ensure only loose bag items are ever sold — equipped gear is always protected, and each item is verified before being vendored.
+**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they'll be automatically sold when you visit a merchant. You can also set a quality threshold to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). Works with the Goblin Merchant, normal vendors, or both. The addon only ever touches loose bag items - your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
 
 **Auto-sell grey junk** - All grey (Poor quality) items are sold automatically at any merchant, regardless of your whitelist or merchant mode settings. No setup needed.
 
-**Whitelist profiles** - Save and load different whitelists as named profiles. Handy for swapping between farming locations or activities without maintaining one massive list. You can clear a profile's contents from the profile list, and the Default profile is always locked to empty so new characters start with a clean slate. Manage profiles through the settings panel or with slash commands.
+**Whitelist profiles** - Save and load different whitelists as named profiles. Handy for swapping between farming spots or activities without keeping one massive list. Each profile has a Clear button if you want to empty it out, and the Default profile is always locked to empty so new characters start fresh. Manage profiles through the settings panel or with slash commands.
 
 **Item deletion** - For items that can't be sold, the addon can automatically destroy them. You manage a separate delete list of item IDs to control exactly what gets removed.
 
 **Greedy Scavenger management** - If you've used Project Ebonhold's Greedy Scavenger pet, you'll know it loves to talk. EbonClearance can mute its chat messages and speech bubbles, and optionally auto-summon it when you log in.
 
-**Auto-repair** - Gear repairs are handled automatically whenever you visit a vendor, with the cost tracked over time.
+**Auto-repair** - Your gear gets repaired automatically whenever you visit a vendor, and the cost is tracked over time.
 
 **Keep bags open** - Optionally prevents the game from closing your bag windows when you leave a merchant or the Goblin Merchant despawns.
 
 **Session and lifetime statistics** - Keeps a running tally of gold earned, items sold, items deleted, repair costs and average inventory value. All viewable through the config panel.
+
+## Coming from EbonholdStuff?
+
+EbonClearance started life as a fork of [EbonholdStuff](https://github.com/Badutski2/EbonholdStuff) by James. The biggest change is the selling philosophy - EbonholdStuff sells everything and you blacklist what to keep, whereas EbonClearance only sells items you've explicitly whitelisted. Nothing gets sold unless you've told it to.
+
+| Feature | EbonholdStuff | EbonClearance |
+|---------|:---:|:---:|
+| **Selling approach** | Blacklist (sells everything, you protect items) | Whitelist (only sells what you list) |
+| **Grey junk auto-sell** | Yes | Yes |
+| **Quality filtering** | Fixed (protects green and above) | Configurable threshold (White, Green or Blue) |
+| **Whitelist/Blacklist profiles** | No | Yes - save, load, clear and rename profiles |
+| **Import/Export lists** | No | Yes - shareable text strings |
+| **Default profile safety** | N/A | Default profile locked to empty for new characters |
+| **Equipped item protection** | No | Yes - gear is never touched, bag slots verified |
+| **Item deletion** | Yes | Yes |
+| **Greedy Scavenger management** | Yes | Yes |
+| **Auto-repair** | Yes | Yes |
+| **Auto-inviting system** | Yes | Removed |
+| **Minimap button** | No | Yes |
+| **Keep bags open** | No | Yes |
+| **Session/lifetime stats** | Yes | Yes |
+| **Character restrictions** | Yes | Yes |
+
+**Removed from EbonholdStuff:** The auto-inviting system (keyword whispers, raid conversion, loot rules) was dropped to keep the addon focused on inventory management.
+
+**If you're switching over:** Your old blacklist won't carry across. You'll need to build up a whitelist of items you actually want to sell. This is a bit more setup upfront but means the addon can never sell something you didn't expect.
 
 ## Installation
 
@@ -36,13 +62,13 @@ The addon is character-aware, so you can restrict it to specific characters if y
 
 ## Configuration
 
-All settings are accessible through `/ec`, which opens a scrollable config panel. From there you can:
+All settings live under `/ec`, which opens a scrollable config panel. From there you can:
 
 - Choose which merchants the addon works with (Goblin Merchant, normal vendors, or both)
 - Toggle auto-vendoring, deletion, repairs and Greedy Scavenger features on or off
 - Manage your whitelist and delete list
 - Save and load whitelist profiles for different situations
-- Set a minimum quality threshold for the whitelist (White, Green or Blue — so anything above your chosen rarity is kept automatically)
+- Set a quality threshold for the whitelist (White, Green or Blue - anything above your chosen rarity is kept)
 - Keep bags open when leaving a merchant
 - Import and export whitelists as shareable strings
 - View lifetime and session statistics
@@ -70,11 +96,11 @@ All settings are accessible through `/ec`, which opens a scrollable config panel
 
 ### v2.0.3
 
-- **Safety: equipped item protection** — The addon now verifies each item before selling or deleting, preventing any chance of equipped gear being touched. Items are also checked against their original slot to guard against bag contents shifting mid-vendoring.
-- **Default profile locked to empty** — The Default whitelist profile is always empty and cannot be saved to, deleted or renamed. New characters start with a clean slate instead of inheriting another character's whitelist.
-- **Clear button on profiles** — Each profile row in the Saved Profiles list now has a Clear button to wipe its contents without deleting the profile.
-- **Quality dropdown capped at Blue** — The sell-by-quality threshold no longer offers Epic (Purple) as an option. Existing settings above Blue are automatically capped.
-- **UI overlap fixes** — Fixed the "Allowed Characters" label overlapping the checkbox in Character Settings, and the "List name" overlapping the description in the Import/Export panel.
+- **Equipped item protection** - Every item is now checked before being sold or deleted, so your equipped gear can never be touched. Bag slots are also verified in case items shift around mid-vendoring.
+- **Default profile locked to empty** - The Default profile is always empty and can't be saved to, deleted or renamed. New characters start fresh instead of picking up another character's whitelist.
+- **Clear button on profiles** - Each profile in the Saved Profiles list now has a Clear button to empty it out without deleting it.
+- **Quality dropdown capped at Blue** - The sell-by-quality threshold tops out at Blue (Rare) now. Epic has been removed. If you had it set to Epic, it's been bumped down to Blue automatically.
+- **UI overlap fixes** - Sorted the "Allowed Characters" label overlapping the checkbox in Character Settings, and the "List name" sitting on top of the description in Import/Export.
 
 ### v2.0.2
 
@@ -82,7 +108,7 @@ All settings are accessible through `/ec`, which opens a scrollable config panel
 
 ### v2.0.0
 
-- Initial release with whitelist-based auto-vendoring, item deletion, Greedy Scavenger management, whitelist profiles, import/export, auto-repair and session statistics.
+- First release. Whitelist-based auto-vendoring, item deletion, Greedy Scavenger management, whitelist profiles, import/export, auto-repair and session stats.
 
 ## Licence
 

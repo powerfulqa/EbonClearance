@@ -1177,7 +1177,8 @@ local function ColorTextByQuality(quality, text)
     return hex .. text .. "|r"
 end
 
-local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, getter, setter, yOff)
+local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, getter, setter, yOff, fmt)
+    fmt = fmt or "%.3fs"
     local s = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
     s:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOff or -16)
     s:SetMinMaxValues(minVal, maxVal)
@@ -1189,12 +1190,12 @@ local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, 
     local high = _G[name .. "High"]
     local text = _G[name .. "Text"]
 
-    if low then low:SetText(string.format("%.3fs", minVal)) end
-    if high then high:SetText(string.format("%.3fs", maxVal)) end
+    if low then low:SetText(string.format(fmt, minVal)) end
+    if high then high:SetText(string.format(fmt, maxVal)) end
 
     local function RefreshText(v)
         if text then
-            text:SetText(labelText .. ": " .. string.format("%.3fs", v))
+            text:SetText(labelText .. ": " .. string.format(fmt, v))
         end
     end
     RefreshText(getter())
@@ -2194,7 +2195,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     self.inited = true
 
     MakeHeader(self, "Scavenger Settings", -16)
-    MakeLabel(self, "Controls summoning and muting of |cffff7f7fGreedy Scavenger|r.", 16, -44)
+    MakeLabel(self, "Controls summoning and muting of |cffff7f7fGreedy Scavenger|r. The auto-loot cycle will continuously loot and sell while your bags fill up.", 16, -44)
 
     local sumCB = CreateFrame("CheckButton", "EbonClearanceSummonGreedyCB", self, "InterfaceOptionsCheckButtonTemplate")
     sumCB:SetPoint("TOPLEFT", 16, -76)
@@ -2207,6 +2208,10 @@ ScavengerPanel:SetScript("OnShow", function(self)
     end
     sumCB:SetScript("OnClick", function()
         DB.summonGreedy = sumCB:GetChecked() and true or false
+        if not DB.summonGreedy and DB.autoLootCycle then
+            DB.autoLootCycle = false
+            if self.cycleCB then self.cycleCB:SetChecked(false) end
+        end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
     self.sumCB = sumCB
@@ -2233,9 +2238,15 @@ ScavengerPanel:SetScript("OnShow", function(self)
 	delaySlider:SetWidth(200)
 
     local cycleCB = AddCheckbox(self, "EbonClearanceAutoLootCycleCB", delaySlider,
-        "Enable auto-loot cycle (summon merchant when bags are full)",
+        "Enable auto-loot cycle (loot, sell, repeat)",
         function() return DB.autoLootCycle end,
-        function(v) DB.autoLootCycle = v end,
+        function(v)
+            DB.autoLootCycle = v
+            if v then
+                DB.summonGreedy = true
+                if self.sumCB then self.sumCB:SetChecked(true) end
+            end
+        end,
         -16)
     self.cycleCB = cycleCB
 
@@ -2243,7 +2254,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         "Bag slots remaining before selling", 0, 10, 1,
         function() return DB.bagFullThreshold or 2 end,
         function(v) DB.bagFullThreshold = v end,
-        -16)
+        -16, "%d")
     self.threshSlider = threshSlider
     threshSlider:SetWidth(200)
 end)

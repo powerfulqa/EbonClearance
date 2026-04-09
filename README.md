@@ -18,6 +18,8 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 **Greedy Scavenger management** - If you've used Project Ebonhold's Greedy Scavenger pet, you'll know it loves to talk. EbonClearance can mute its chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck.
 
+**Auto-loot cycle** - When enabled, the addon watches your free bag slots while the Greedy Scavenger is looting. When bags are nearly full it dismisses the pet, summons the Goblin Merchant and auto-targets it for you. Just right-click to sell, and the Scavenger is re-summoned to carry on looting. Configurable bag threshold in Scavenger Settings.
+
 **Auto-repair** - Your gear gets repaired automatically whenever you visit a vendor, and the cost is tracked over time.
 
 **Keep bags open** - Optionally prevents the game from closing your bag windows when you leave a merchant or the Goblin Merchant despawns.
@@ -39,6 +41,7 @@ EbonClearance started life as a fork of [EbonholdStuff](https://github.com/Badut
 | **Equipped item protection** | No | Yes - gear is never touched, bag slots verified |
 | **Item deletion** | Yes | Yes |
 | **Greedy Scavenger management** | Yes | Yes |
+| **Auto-loot cycle** | Yes - full summon/dismiss/sell loop | Yes - bag monitoring, merchant summon and auto-target |
 | **Mount detection** | No | Yes - auto-dismiss on mount, re-summon on dismount |
 | **Pet stuck detection** | No | Yes - re-summons if it despawns or wanders |
 | **Sell cap (disconnect protection)** | Yes (80/pulse) | Yes (80/run) |
@@ -96,6 +99,11 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - Project Ebonhold server
 
 ## Changelog
+
+### v2.0.7
+
+- **Auto-loot cycle** - New opt-in feature in Scavenger Settings. When enabled, monitors your free bag slots while the Greedy Scavenger is looting. When bags are nearly full, dismisses the pet, summons the Goblin Merchant and auto-targets it. Right-click to sell, then the Scavenger is re-summoned to carry on. Configurable bag threshold slider.
+- **Slider format fix** - The bag threshold slider now shows whole numbers instead of seconds.
 
 ### v2.0.6
 

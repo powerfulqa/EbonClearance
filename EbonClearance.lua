@@ -528,6 +528,7 @@ local function DismissGoblinMerchant()
 end
 
 local EC_wasMounted = false
+local EC_mountDismissTime = 0
 local EC_lootCycleState = "idle"
 
 local EHS_delayFrame = CreateFrame("Frame")
@@ -609,7 +610,8 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             greedyIndex = i
         end
     end
-    if greedyIndex and not anyPetOut then
+    -- Don't re-summon if we recently dismissed for mounting (wait for mount cast to finish)
+    if greedyIndex and not anyPetOut and (GetTime() - EC_mountDismissTime) > 10 then
         CallCompanion("CRITTER", greedyIndex)
     end
 end)
@@ -2738,6 +2740,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             local mounted = IsMounted()
             if mounted and not EC_wasMounted then
                 DismissGreedyScavenger()
+                EC_mountDismissTime = GetTime()
             elseif not mounted and EC_wasMounted then
                 EHS_SummonGreedyWithDelay()
             end

@@ -561,7 +561,8 @@ local function BuildQueue(junkOnly)
                     if not junkOnly and DB.whitelistQualityEnabled == true and sellPrice and sellPrice > 0 then
                         qualityPass = (quality ~= nil) and (quality <= DB.whitelistMinQuality)
                     end
-                    if isJunk or qualityPass or whitelistPass then
+                    -- Safety: never touch equipped items, only loose bag contents.
+                    if (isJunk or qualityPass or whitelistPass) and not IsEquippedItem(itemID) then
                         queue[#queue+1] = {
                             type   = "sell",
                             bag    = bag,
@@ -584,7 +585,7 @@ local function BuildQueue(junkOnly)
             local slots = GetContainerNumSlots(bag)
             for slot = 1, slots do
                 local itemID = GetContainerItemID(bag, slot)
-                if itemID and IsInSet(DB.deleteList, itemID) then
+                if itemID and IsInSet(DB.deleteList, itemID) and not IsEquippedItem(itemID) then
                     local texture, itemCount, locked = GetContainerItemInfo(bag, slot)
                     if itemCount and itemCount > 0 and not locked then
                         queue[#queue+1] = {
@@ -626,8 +627,16 @@ local function DoNextAction()
         return
     end
 
+    -- Safety: verify the item at this slot still matches what we queued.
+    -- Bags can shift between queue build and execution (player moves items, etc).
+    local currentID = GetContainerItemID(action.bag, action.slot)
+    if currentID ~= action.itemID then
+        queueIndex = queueIndex + 1
+        return
+    end
+
     if action.type == "sell" then
-        
+
         DB.totalItemsSold = (DB.totalItemsSold or 0) + (action.count or 1)
         DB.soldItemCounts = DB.soldItemCounts or {}
         if action.itemID then
@@ -636,7 +645,7 @@ local function DoNextAction()
         UseContainerItem(action.bag, action.slot)
 
     elseif action.type == "delete" then
-        
+
         DB.totalItemsDeleted = (DB.totalItemsDeleted or 0) + (action.count or 1)
         DB.deletedItemCounts = DB.deletedItemCounts or {}
         if action.itemID then

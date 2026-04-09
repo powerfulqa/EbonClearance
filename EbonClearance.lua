@@ -2198,7 +2198,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     MakeLabel(self, "Controls summoning and muting of |cffff7f7fGreedy Scavenger|r. The auto-loot cycle will continuously loot and sell while your bags fill up.", 16, -44)
 
     local sumCB = CreateFrame("CheckButton", "EbonClearanceSummonGreedyCB", self, "InterfaceOptionsCheckButtonTemplate")
-    sumCB:SetPoint("TOPLEFT", 16, -76)
+    sumCB:SetPoint("TOPLEFT", 16, -96)
     sumCB:SetChecked(DB.summonGreedy)
     local st = _G[sumCB:GetName() .. "Text"]
     if st then
@@ -2250,7 +2250,13 @@ ScavengerPanel:SetScript("OnShow", function(self)
         -16)
     self.cycleCB = cycleCB
 
-    local threshSlider = AddSlider(self, "EbonClearanceBagThresholdSlider", cycleCB,
+    local cycleNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    cycleNote:SetPoint("TOPLEFT", cycleCB, "BOTTOMLEFT", 26, -2)
+    cycleNote:SetWidth(EC_PANEL_WIDTH - 60)
+    cycleNote:SetJustifyH("LEFT")
+    cycleNote:SetText("|cff888888You still need to right-click the Goblin Merchant to open the vendor window.|r")
+
+    local threshSlider = AddSlider(self, "EbonClearanceBagThresholdSlider", cycleNote,
         "Bag slots remaining before selling", 0, 10, 1,
         function() return DB.bagFullThreshold or 2 end,
         function(v) DB.bagFullThreshold = v end,

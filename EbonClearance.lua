@@ -1601,14 +1601,14 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
     -- Active profile indicator
     local activeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    activeLabel:SetPoint("TOPLEFT", 16, -76)
+    activeLabel:SetPoint("TOPLEFT", 16, -96)
     activeLabel:SetWidth(EC_PANEL_WIDTH - 16)
     activeLabel:SetJustifyH("LEFT")
     self.activeLabel = activeLabel
 
     -- Save row: input + Save button
     local saveLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    saveLabel:SetPoint("TOPLEFT", 16, -98)
+    saveLabel:SetPoint("TOPLEFT", 16, -118)
     saveLabel:SetText("Profile name:")
 
     local saveInput = CreateFrame("EditBox", "EbonClearanceProfileSaveInput", self, "InputBoxTemplate")
@@ -1626,7 +1626,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
     -- Status text
     local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statusFS:SetPoint("TOPLEFT", 16, -120)
+    statusFS:SetPoint("TOPLEFT", 16, -140)
     statusFS:SetWidth(EC_PANEL_WIDTH - 16)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")
@@ -1634,11 +1634,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
     -- Profile list scroll area
     local listLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    listLabel:SetPoint("TOPLEFT", 16, -140)
+    listLabel:SetPoint("TOPLEFT", 16, -160)
     listLabel:SetText("Saved Profiles")
 
     local scroll = CreateFrame("ScrollFrame", "EbonClearanceProfileListScroll", self, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 16, -158)
+    scroll:SetPoint("TOPLEFT", 16, -178)
     scroll:SetSize(EC_PANEL_WIDTH - 42, 160)
 
     local content = CreateFrame("Frame", nil, scroll)
@@ -1696,7 +1696,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
     -- Rename row
     local renameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    renameLabel:SetPoint("TOPLEFT", 16, -328)
+    renameLabel:SetPoint("TOPLEFT", 16, -348)
     renameLabel:SetText("Rename active profile:")
 
     local renameInput = CreateFrame("EditBox", "EbonClearanceProfileRenameInput", self, "InputBoxTemplate")

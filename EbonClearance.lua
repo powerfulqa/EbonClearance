@@ -220,6 +220,7 @@ local function EnsureDB()
     if type(DB.inventoryWorthCount) ~= "number" then DB.inventoryWorthCount = 0 end
     if type(DB.whitelist)               ~= "table"   then DB.whitelist               = {}    end
     if type(DB.whitelistMinQuality)     ~= "number"  then DB.whitelistMinQuality     = 1     end
+    if DB.whitelistMinQuality > 3 then DB.whitelistMinQuality = 3 end
     if type(DB.whitelistQualityEnabled) ~= "boolean" then DB.whitelistQualityEnabled = false end
     if type(DB.minimapButtonAngle)      ~= "number"  then DB.minimapButtonAngle      = 220   end
     if type(DB.keepBagsOpen)            ~= "boolean" then DB.keepBagsOpen            = true  end
@@ -1460,7 +1461,6 @@ local EHS_WHITELIST_QUALITIES = {
     { text = ColorTextByQuality(1, "White (Common)"),   value = 1 },
     { text = ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
     { text = ColorTextByQuality(3, "Blue (Rare)"),      value = 3 },
-    { text = ColorTextByQuality(4, "Epic (Purple)"),    value = 4 },
 }
 
 local WhitelistPanel = CreateFrame("Frame", "EbonClearanceOptionsWhitelist", InterfaceOptionsFramePanelContainer)

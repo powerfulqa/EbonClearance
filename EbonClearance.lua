@@ -1669,9 +1669,14 @@ ProfilesPanel:SetScript("OnShow", function(self)
         delBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         delBtn:SetText("Delete")
 
+        local clearBtn = CreateFrame("Button", "EbonClearanceProfileClear_"..index, content, "UIPanelButtonTemplate")
+        clearBtn:SetSize(52, 18)
+        clearBtn:SetPoint("RIGHT", delBtn, "LEFT", -4, 0)
+        clearBtn:SetText("Clear")
+
         local loadBtn = CreateFrame("Button", "EbonClearanceProfileLoad_"..index, content, "UIPanelButtonTemplate")
         loadBtn:SetSize(52, 18)
-        loadBtn:SetPoint("RIGHT", delBtn, "LEFT", -4, 0)
+        loadBtn:SetPoint("RIGHT", clearBtn, "LEFT", -4, 0)
         loadBtn:SetText("Load")
 
         local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -1681,6 +1686,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
         row.text = text
         row.loadBtn = loadBtn
+        row.clearBtn = clearBtn
         row.delBtn = delBtn
         rowPool[index] = row
         return row
@@ -1691,6 +1697,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
             if rowPool[i] then
                 rowPool[i]:Hide()
                 rowPool[i].loadBtn:Hide()
+                rowPool[i].clearBtn:Hide()
                 rowPool[i].delBtn:Hide()
             end
         end
@@ -1767,9 +1774,31 @@ ProfilesPanel:SetScript("OnShow", function(self)
                 self:RefreshProfileList()
             end)
 
+            row.clearBtn:SetScript("OnClick", function()
+                if DB.whitelistProfiles[pName] then
+                    wipe(DB.whitelistProfiles[pName])
+                    if pName == DB.activeProfileName then
+                        wipe(DB.whitelist)
+                        local wp = _G["EbonClearanceOptionsWhitelist"]
+                        if wp and wp.listUI then wp.listUI:Refresh() end
+                    end
+                    statusFS:SetText("|cff00ff00Cleared profile \"|cffffff00" .. pName .. "|r|cff00ff00\".|r")
+                    PrintNice(string.format("Cleared profile \"|cffffff00%s|r\".", pName))
+                    PlaySound("igMainMenuOptionCheckBoxOn")
+                end
+                self:RefreshProfileList()
+            end)
+
+            local isDefault = (pName == "Default")
             row:Show()
             row.loadBtn:Show()
-            row.delBtn:Show()
+            if isDefault then
+                row.clearBtn:Hide()
+                row.delBtn:Hide()
+            else
+                row.clearBtn:Show()
+                row.delBtn:Show()
+            end
             rowY = rowY - 22
         end
 

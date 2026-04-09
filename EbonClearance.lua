@@ -2488,9 +2488,158 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         return
     end
 
+    if cmd == "bugreport" then
+        EC_ShowBugReport()
+        return
+    end
+
     -- Unknown subcommand - open options
     InterfaceOptionsFrame_OpenToCategory(MainOptions)
     InterfaceOptionsFrame_OpenToCategory(MainOptions)
+end
+
+-- Bug report diagnostic snapshot
+local function EC_CopperToPlainText(copper)
+    if not copper or copper <= 0 then return "0" end
+    local gold = math.floor(copper / 10000)
+    local silver = math.floor((copper % 10000) / 100)
+    local cop = copper % 100
+    if gold > 0 then
+        return string.format("%dg %ds %dc", gold, silver, cop)
+    elseif silver > 0 then
+        return string.format("%ds %dc", silver, cop)
+    else
+        return string.format("%dc", cop)
+    end
+end
+
+local function EC_BuildBugReport()
+    EnsureDB()
+    local lines = {}
+    local function add(s) lines[#lines + 1] = s end
+
+    local version = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
+    local player = UnitName("player") or "Unknown"
+    local realm = GetRealmName() or "Unknown"
+    local dateStr = date("%Y-%m-%d %H:%M")
+
+    add("=== EbonClearance Bug Report ===")
+    add("Version: " .. version)
+    add("Character: " .. player .. " - " .. realm)
+    add("Date: " .. dateStr)
+    add("")
+
+    add("--- Settings ---")
+    add("Enabled: " .. tostring(DB.enabled))
+    add("Merchant Mode: " .. tostring(DB.merchantMode))
+    add("Repair Gear: " .. tostring(DB.repairGear))
+    add("Keep Bags Open: " .. tostring(DB.keepBagsOpen))
+    add("Enable Deletion: " .. tostring(DB.enableDeletion))
+    add("Vendor Interval: " .. tostring(DB.vendorInterval))
+    add("Max Items Per Run: " .. tostring(DB.maxItemsPerRun))
+    add("Enable Only Listed Chars: " .. tostring(DB.enableOnlyListedChars))
+    add("")
+
+    add("--- Scavenger ---")
+    add("Summon Greedy: " .. tostring(DB.summonGreedy))
+    add("Summon Delay: " .. tostring(DB.summonDelay))
+    add("Mute Greedy: " .. tostring(DB.muteGreedy))
+    add("Hide Chat: " .. tostring(DB.hideGreedyChat))
+    add("Hide Bubbles: " .. tostring(DB.hideGreedyBubbles))
+    add("Auto-Loot Cycle: " .. tostring(DB.autoLootCycle))
+    add("Bag Full Threshold: " .. tostring(DB.bagFullThreshold))
+    add("")
+
+    add("--- Whitelist ---")
+    add("Quality Threshold Enabled: " .. tostring(DB.whitelistQualityEnabled))
+    add("Quality Level: " .. tostring(DB.whitelistMinQuality))
+    add("Active Profile: " .. tostring(DB.activeProfileName))
+    add("Whitelist Items: " .. tostring(EC_CountItems(DB.whitelist)))
+    add("Delete List Items: " .. tostring(EC_CountItems(DB.deleteList)))
+    add("")
+
+    add("--- Profiles ---")
+    local names = {}
+    for name in pairs(DB.whitelistProfiles) do
+        if type(name) == "string" then names[#names + 1] = name end
+    end
+    table.sort(names, function(a, b) return a:lower() < b:lower() end)
+    for i = 1, #names do
+        local count = EC_CountItems(DB.whitelistProfiles[names[i]])
+        local tag = (names[i] == DB.activeProfileName) and " (active)" or ""
+        add(names[i] .. " (" .. count .. " items)" .. tag)
+    end
+    add("")
+
+    add("--- Stats ---")
+    add("Total Money Made: " .. EC_CopperToPlainText(DB.totalCopper or 0))
+    add("Total Items Sold: " .. tostring(DB.totalItemsSold or 0))
+    add("Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0))
+    add("Total Repairs: " .. tostring(DB.totalRepairs or 0))
+    add("Total Repair Cost: " .. EC_CopperToPlainText(DB.totalRepairCopper or 0))
+    add("")
+
+    add("--- Bags ---")
+    add("Free Slots: " .. tostring(EC_GetFreeBagSlots()))
+
+    return table.concat(lines, "\n")
+end
+
+local EC_bugReportFrame = nil
+
+local function EC_ShowBugReport()
+    if not EC_bugReportFrame then
+        local f = CreateFrame("Frame", "EbonClearanceBugReportFrame", UIParent)
+        f:SetSize(460, 360)
+        f:SetPoint("CENTER")
+        f:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 8, right = 8, top = 8, bottom = 8 }
+        })
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+        f:SetFrameStrata("DIALOG")
+        tinsert(UISpecialFrames, "EbonClearanceBugReportFrame")
+
+        local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        title:SetPoint("TOP", 0, -14)
+        title:SetText("EbonClearance Bug Report")
+
+        local hint = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
+        hint:SetText("|cff888888Press Ctrl+A then Ctrl+C to copy this report.|r")
+
+        local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        closeBtn:SetPoint("TOPRIGHT", -4, -4)
+
+        local scroll = CreateFrame("ScrollFrame", "EbonClearanceBugReportScroll", f, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 16, -50)
+        scroll:SetPoint("BOTTOMRIGHT", -32, 16)
+
+        local editBox = CreateFrame("EditBox", "EbonClearanceBugReportBox", scroll)
+        editBox:SetAutoFocus(false)
+        editBox:SetMultiLine(true)
+        editBox:SetFontObject("GameFontHighlightSmall")
+        editBox:SetWidth(400)
+        editBox:SetText("")
+        editBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+        scroll:SetScrollChild(editBox)
+
+        f.editBox = editBox
+        EC_bugReportFrame = f
+    end
+
+    local report = EC_BuildBugReport()
+    EC_bugReportFrame.editBox:SetText(report)
+    EC_bugReportFrame:Show()
+    EC_bugReportFrame.editBox:HighlightText()
+    EC_bugReportFrame.editBox:SetFocus()
+    PrintNice("Bug report generated. Copy the text from the window.")
 end
 
 SLASH_ECDEBUG1 = "/ecdebug"

@@ -91,6 +91,7 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 | `/ec profile save <name>` | Save the current whitelist as a named profile |
 | `/ec profile load <name>` | Load a saved profile into the active whitelist |
 | `/ec profile delete <name>` | Delete a saved profile |
+| `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report |
 | `/ecdebug` | Show debug info and run a bag scan |
 
 ## Requirements
@@ -105,6 +106,7 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - **Auto-loot cycle** - New opt-in feature in Scavenger Settings. Continuously loops: loot with the Greedy Scavenger, sell when bags are full, then loot again. When your free bag slots hit the threshold, the pet is dismissed, the Goblin Merchant is summoned and auto-targeted for you. Just right-click to sell and the cycle continues. Enabling the cycle automatically turns on pet summoning, and turning off summoning disables the cycle.
 - **Slider format fix** - The bag threshold slider now shows whole numbers instead of seconds.
 - **Scavenger Settings layout** - Fixed the description text overlapping the summon checkbox. Added a grey hint explaining that right-clicking the merchant is the only player input needed.
+- **Bug report command** - `/ec bugreport` opens a window with a full diagnostic snapshot of your settings, profiles, stats and bag space. Copy and paste it into a GitHub issue.
 
 ### v2.0.6
 

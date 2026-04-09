@@ -8,11 +8,11 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 ## What It Does
 
-**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also enable a quality threshold to bulk-sell everything at or below a chosen rarity. You choose whether this runs at the Goblin Merchant only, normal merchants only, or both.
+**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also enable a quality threshold to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). You choose whether this runs at the Goblin Merchant only, normal merchants only, or both. The addon includes safety checks to ensure only loose bag items are ever sold — equipped gear is always protected, and each item is verified before being vendored.
 
 **Auto-sell grey junk** - All grey (Poor quality) items are sold automatically at any merchant, regardless of your whitelist or merchant mode settings. No setup needed.
 
-**Whitelist profiles** - Save and load different whitelists as named profiles. Handy for swapping between farming locations or activities without maintaining one massive list. Manage profiles through the settings panel or with slash commands.
+**Whitelist profiles** - Save and load different whitelists as named profiles. Handy for swapping between farming locations or activities without maintaining one massive list. You can clear a profile's contents from the profile list, and the Default profile is always locked to empty so new characters start with a clean slate. Manage profiles through the settings panel or with slash commands.
 
 **Item deletion** - For items that can't be sold, the addon can automatically destroy them. You manage a separate delete list of item IDs to control exactly what gets removed.
 
@@ -42,7 +42,7 @@ All settings are accessible through `/ec`, which opens a scrollable config panel
 - Toggle auto-vendoring, deletion, repairs and Greedy Scavenger features on or off
 - Manage your whitelist and delete list
 - Save and load whitelist profiles for different situations
-- Set a minimum quality threshold for the whitelist (so anything above a certain rarity is kept automatically)
+- Set a minimum quality threshold for the whitelist (White, Green or Blue — so anything above your chosen rarity is kept automatically)
 - Keep bags open when leaving a merchant
 - Import and export whitelists as shareable strings
 - View lifetime and session statistics
@@ -65,6 +65,24 @@ All settings are accessible through `/ec`, which opens a scrollable config panel
 
 - World of Warcraft (WotLK client, Interface 30300)
 - Project Ebonhold server
+
+## Changelog
+
+### v2.0.3
+
+- **Safety: equipped item protection** — The addon now verifies each item before selling or deleting, preventing any chance of equipped gear being touched. Items are also checked against their original slot to guard against bag contents shifting mid-vendoring.
+- **Default profile locked to empty** — The Default whitelist profile is always empty and cannot be saved to, deleted or renamed. New characters start with a clean slate instead of inheriting another character's whitelist.
+- **Clear button on profiles** — Each profile row in the Saved Profiles list now has a Clear button to wipe its contents without deleting the profile.
+- **Quality dropdown capped at Blue** — The sell-by-quality threshold no longer offers Epic (Purple) as an option. Existing settings above Blue are automatically capped.
+- **UI overlap fixes** — Fixed the "Allowed Characters" label overlapping the checkbox in Character Settings, and the "List name" overlapping the description in the Import/Export panel.
+
+### v2.0.2
+
+- Fixed misleading whitelist description across UI and README.
+
+### v2.0.0
+
+- Initial release with whitelist-based auto-vendoring, item deletion, Greedy Scavenger management, whitelist profiles, import/export, auto-repair and session statistics.
 
 ## Licence
 

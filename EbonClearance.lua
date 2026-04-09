@@ -2246,7 +2246,7 @@ CharPanel:SetScript("OnShow", function(self)
     end)
     self.onlyCB = cb
 
-    self.listUI = CreateNameListUI(self, "Allowed Characters", "allowedChars", 16, -100)
+    self.listUI = CreateNameListUI(self, "Allowed Characters", "allowedChars", 16, -130)
     self.listUI:Refresh()
 end)
 

@@ -221,6 +221,7 @@ local function EnsureDB()
     if type(DB.whitelistQualityEnabled) ~= "boolean" then DB.whitelistQualityEnabled = false end
     if type(DB.minimapButtonAngle)      ~= "number"  then DB.minimapButtonAngle      = 220   end
     if type(DB.keepBagsOpen)            ~= "boolean" then DB.keepBagsOpen            = true  end
+    if type(DB.blacklist)               ~= "table"   then DB.blacklist               = {}    end
 
     -- Whitelist profiles migration
     if type(DB.whitelistProfiles) ~= "table" then
@@ -238,6 +239,7 @@ local function EnsureDB()
     end
     if type(DB.activeProfileName) ~= "string" then DB.activeProfileName = "Default" end
     DB.whitelistProfiles["Default"] = {}
+    if type(DB.blacklistProfiles) ~= "table" then DB.blacklistProfiles = {} end
 
 if not DB._seededLists then
     if DB.deleteList and not next(DB.deleteList) then
@@ -316,9 +318,13 @@ local function EC_SaveProfile(name)
     local snapshot = {}
     for k, v in pairs(DB.whitelist) do snapshot[k] = v end
     DB.whitelistProfiles[name] = snapshot
+    local blSnapshot = {}
+    for k, v in pairs(DB.blacklist) do blSnapshot[k] = v end
+    DB.blacklistProfiles[name] = blSnapshot
     DB.activeProfileName = name
-    local count = EC_CountItems(snapshot)
-    return true, string.format("Saved profile \"|cffffff00%s|r\" (%d items).", name, count)
+    local wlCount = EC_CountItems(snapshot)
+    local blCount = EC_CountItems(blSnapshot)
+    return true, string.format("Saved profile \"|cffffff00%s|r\" (%d whitelist, %d blacklist).", name, wlCount, blCount)
 end
 
 local function EC_LoadProfile(name)
@@ -329,12 +335,21 @@ local function EC_LoadProfile(name)
     for k, v in pairs(DB.whitelistProfiles[name]) do
         DB.whitelist[k] = v
     end
+    wipe(DB.blacklist)
+    if DB.blacklistProfiles[name] then
+        for k, v in pairs(DB.blacklistProfiles[name]) do
+            DB.blacklist[k] = v
+        end
+    end
     DB.activeProfileName = name
-    local count = EC_CountItems(DB.whitelist)
-    -- Refresh the whitelist panel if it exists
+    local wlCount = EC_CountItems(DB.whitelist)
+    local blCount = EC_CountItems(DB.blacklist)
+    -- Refresh panels if they exist
     local wp = _G["EbonClearanceOptionsWhitelist"]
     if wp and wp.listUI then wp.listUI:Refresh() end
-    return true, string.format("Loaded profile \"|cffffff00%s|r\" (%d items).", name, count)
+    local bp = _G["EbonClearanceOptionsBlacklist"]
+    if bp and bp.listUI then bp.listUI:Refresh() end
+    return true, string.format("Loaded profile \"|cffffff00%s|r\" (%d whitelist, %d blacklist).", name, wlCount, blCount)
 end
 
 local function EC_DeleteProfile(name)
@@ -351,6 +366,7 @@ local function EC_DeleteProfile(name)
         return false, "Cannot delete the only remaining profile."
     end
     DB.whitelistProfiles[name] = nil
+    DB.blacklistProfiles[name] = nil
     if DB.activeProfileName == name then
         DB.activeProfileName = next(DB.whitelistProfiles) or "Default"
     end
@@ -376,6 +392,10 @@ local function EC_RenameProfile(oldName, newName)
     end
     DB.whitelistProfiles[newName] = DB.whitelistProfiles[oldName]
     DB.whitelistProfiles[oldName] = nil
+    if DB.blacklistProfiles[oldName] then
+        DB.blacklistProfiles[newName] = DB.blacklistProfiles[oldName]
+        DB.blacklistProfiles[oldName] = nil
+    end
     if DB.activeProfileName == oldName then
         DB.activeProfileName = newName
     end
@@ -662,7 +682,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         local free = EC_GetFreeBagSlots()
         if free <= (DB.bagFullThreshold or 2) then
             EC_lootCycleState = "waiting_merchant"
-            PrintNice("|cffffff00Bags nearly full! Summoning Goblin Merchant...|r")
+            PrintNice(string.format("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free))
             -- Dismiss active critter
             if DismissCompanion then DismissCompanion("CRITTER") end
             -- Summon Goblin Merchant after delay to let dismiss complete
@@ -779,14 +799,16 @@ local function BuildQueue(junkOnly)
                 if itemCount and itemCount > 0 and not locked then
                     local name, link, quality, level, minLevel, itemType, subType,
                           stackCount, equipLoc, icon, sellPrice = GetItemInfo(itemID)
-                    local isJunk = (quality ~= nil) and (quality == 0) and sellPrice and sellPrice > 0
-                    local whitelistPass = not junkOnly and IsInSet(DB.whitelist, itemID)
+                    local hasSellPrice = sellPrice and sellPrice > 0
+                    local isJunk = (quality ~= nil) and (quality == 0) and hasSellPrice
+                    local whitelistPass = not junkOnly and hasSellPrice and IsInSet(DB.whitelist, itemID)
                     local qualityPass = false
-                    if not junkOnly and DB.whitelistQualityEnabled == true and sellPrice and sellPrice > 0 then
+                    if not junkOnly and DB.whitelistQualityEnabled == true and hasSellPrice then
                         qualityPass = (quality ~= nil) and (quality <= DB.whitelistMinQuality)
                     end
-                    -- Safety: never touch equipped items, only loose bag contents.
-                    if (isJunk or qualityPass or whitelistPass) and not IsEquippedItem(itemID) then
+                    -- Safety: never touch equipped or blacklisted items.
+                    local blacklisted = IsInSet(DB.blacklist, itemID)
+                    if (isJunk or qualityPass or whitelistPass) and not IsEquippedItem(itemID) and not blacklisted then
                         queue[#queue+1] = {
                             type   = "sell",
                             bag    = bag,
@@ -843,21 +865,30 @@ local function FinishRun()
     EC_batchTotalSold = EC_batchTotalSold + #queue
     EC_batchTotalGold = EC_batchTotalGold + (goldThisVendoring or 0)
 
-    -- Check if merchant is still open and there are more items to sell
+    -- Check if merchant is still open - delay re-scan so server can process sold items
     if MerchantFrame and MerchantFrame:IsShown() then
-        local merchantAllowed = EC_IsMerchantAllowed()
-        BuildQueue(not merchantAllowed)
-        if #queue > 0 then
-            PrintNice(string.format("Batch sold |cffffff00%d|r items. More to sell, continuing...", EC_batchTotalSold))
-            EC_Delay(0.5, function()
-                if MerchantFrame and MerchantFrame:IsShown() then
-                    running = true
-                    worker.t = 0
-                    worker:Show()
+        PrintNice(string.format("Batch sold |cffffff00%d|r items. Checking for more...", EC_batchTotalSold))
+        EC_Delay(1.0, function()
+            if not MerchantFrame or not MerchantFrame:IsShown() then return end
+            local merchantAllowed = EC_IsMerchantAllowed()
+            BuildQueue(not merchantAllowed)
+            if #queue > 0 then
+                running = true
+                worker.t = 0
+                worker:Show()
+            else
+                -- Nothing left - print final summary
+                PrintNice(string.format("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
+                    EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold)))
+                if DB and DB.autoLootCycle then
+                    EC_lootCycleState = "idle"
+                    EC_SummonGreedyWithDelay()
+                else
+                    EC_SummonGreedyWithDelay()
                 end
-            end)
-            return
-        end
+            end
+        end)
+        return
     end
 
     -- All done - print final summary
@@ -1713,7 +1744,7 @@ MerchantPanel:SetScript("OnShow", function(self)
 	speedSlider:SetWidth(200)
 end)
 
-InterfaceOptions_AddCategory(MerchantPanel)
+
 
 local EC_WHITELIST_QUALITIES = {
     { text = ColorTextByQuality(1, "White (Common)"),   value = 1 },
@@ -1722,7 +1753,7 @@ local EC_WHITELIST_QUALITIES = {
 }
 
 local WhitelistPanel = CreateFrame("Frame", "EbonClearanceOptionsWhitelist", InterfaceOptionsFramePanelContainer)
-WhitelistPanel.name = "Whitelist Settings"
+WhitelistPanel.name = "Whitelist - Sell"
 WhitelistPanel.parent = "EbonClearance"
 
 WhitelistPanel:SetScript("OnShow", function(self)
@@ -1815,8 +1846,64 @@ WhitelistPanel:SetScript("OnShow", function(self)
     end
     self:RefreshQualityDropDown()
 
-    self.listUI = CreateListUI(self, "Whitelist Items", "whitelist", 16, -190)
-    self.listUI:SetHeight(200)
+    -- Scan bags buttons
+    local function ScanBagsForQuality(quality)
+        local added = 0
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag)
+            for slot = 1, slots do
+                local itemID = GetContainerItemID(bag, slot)
+                if itemID then
+                    local _, _, itemQuality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+                    if itemQuality and itemQuality == quality and sellPrice and sellPrice > 0 and not DB.whitelist[itemID] then
+                        DB.whitelist[itemID] = true
+                        added = added + 1
+                    end
+                end
+            end
+        end
+        return added
+    end
+
+    local scanLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    scanLabel:SetPoint("TOPLEFT", 16, -190)
+    scanLabel:SetText("Add from bags:")
+
+    local btnWhite = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    btnWhite:SetSize(55, 20)
+    btnWhite:SetPoint("LEFT", scanLabel, "RIGHT", 8, 0)
+    btnWhite:SetText("|cffffffffWhite|r")
+    btnWhite:SetScript("OnClick", function()
+        local added = ScanBagsForQuality(1)
+        PrintNice(string.format("Scanned bags: added |cffffff00%d|r white items to whitelist.", added))
+        if self.listUI then self.listUI:Refresh() end
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+
+    local btnGreen = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    btnGreen:SetSize(55, 20)
+    btnGreen:SetPoint("LEFT", btnWhite, "RIGHT", 4, 0)
+    btnGreen:SetText("|cff1eff00Green|r")
+    btnGreen:SetScript("OnClick", function()
+        local added = ScanBagsForQuality(2)
+        PrintNice(string.format("Scanned bags: added |cffffff00%d|r green items to whitelist.", added))
+        if self.listUI then self.listUI:Refresh() end
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+
+    local btnBlue = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    btnBlue:SetSize(55, 20)
+    btnBlue:SetPoint("LEFT", btnGreen, "RIGHT", 4, 0)
+    btnBlue:SetText("|cff0070ddBlue|r")
+    btnBlue:SetScript("OnClick", function()
+        local added = ScanBagsForQuality(3)
+        PrintNice(string.format("Scanned bags: added |cffffff00%d|r blue items to whitelist.", added))
+        if self.listUI then self.listUI:Refresh() end
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+
+    self.listUI = CreateListUI(self, "Manual Add (Shift-click item or type ID)", "whitelist", 16, -214)
+    self.listUI:SetHeight(180)
     self.listUI:Refresh()
 
     local noteFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -1826,13 +1913,13 @@ WhitelistPanel:SetScript("OnShow", function(self)
     noteFS:SetText("|cffaaaaaa Listed items are always sold regardless of the quality threshold.|r")
 end)
 
-InterfaceOptions_AddCategory(WhitelistPanel)
+
 
 -- ============================================================
 -- Whitelist Profiles Panel
 -- ============================================================
 local ProfilesPanel = CreateFrame("Frame", "EbonClearanceOptionsProfiles", InterfaceOptionsFramePanelContainer)
-ProfilesPanel.name = "Whitelist Profiles"
+ProfilesPanel.name = "Profiles"
 ProfilesPanel.parent = "EbonClearance"
 
 ProfilesPanel:SetScript("OnShow", function(self)
@@ -1844,7 +1931,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    MakeHeader(self, "Whitelist Profiles", -16)
+    MakeHeader(self, "Profiles", -16)
     MakeLabel(self, "Save and load different whitelists as named profiles. Useful for swapping between farming locations. The Default profile is always empty and can't be changed, so give your profile a name before saving.", 16, -44)
 
     -- Active profile indicator
@@ -1986,10 +2073,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
             row:SetPoint("TOPLEFT", 0, rowY)
 
             local isActive = (pName == DB.activeProfileName)
-            local count = EC_CountItems(DB.whitelistProfiles[pName])
+            local wlCount = EC_CountItems(DB.whitelistProfiles[pName])
+            local blCount = DB.blacklistProfiles[pName] and EC_CountItems(DB.blacklistProfiles[pName]) or 0
             local label = isActive
-                and string.format("|cff00ff00%s|r  |cff888888(%d items, active)|r", pName, count)
-                or  string.format("|cffffff00%s|r  |cff888888(%d items)|r", pName, count)
+                and string.format("|cff00ff00%s|r  |cff888888(%d whitelist, %d blacklist, active)|r", pName, wlCount, blCount)
+                or  string.format("|cffffff00%s|r  |cff888888(%d whitelist, %d blacklist)|r", pName, wlCount, blCount)
             row.text:SetText(label)
 
             row.loadBtn:SetScript("OnClick", function()
@@ -2083,13 +2171,13 @@ ProfilesPanel:SetScript("OnShow", function(self)
     self:RefreshProfileList()
 end)
 
-InterfaceOptions_AddCategory(ProfilesPanel)
+
 
 -- ============================================================
 -- Whitelist Import / Export Panel
 -- ============================================================
 local ImportExportPanel = CreateFrame("Frame", "EbonClearanceOptionsImportExport", InterfaceOptionsFramePanelContainer)
-ImportExportPanel.name = "Whitelist Import/Export"
+ImportExportPanel.name = "Import/Export"
 ImportExportPanel.parent = "EbonClearance"
 
 local EC_EXPORT_PREFIX = "EC:"
@@ -2146,7 +2234,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
     if self.inited then return end
     self.inited = true
 
-    MakeHeader(self, "Whitelist Import / Export", -16)
+    MakeHeader(self, "Import / Export", -16)
 
     -- === EXPORT SECTION ===
     MakeLabel(self, "Export your current whitelist to a string. Give it a name so others know what it is.", 16, -44)
@@ -2258,10 +2346,10 @@ ImportExportPanel:SetScript("OnShow", function(self)
         16, -282)
 end)
 
-InterfaceOptions_AddCategory(ImportExportPanel)
+
 
 local DeletePanel = CreateFrame("Frame", "EbonClearanceOptionsDeletion", InterfaceOptionsFramePanelContainer)
-DeletePanel.name = "Deletion Settings"
+DeletePanel.name = "Deletion List"
 DeletePanel.parent = "EbonClearance"
 
 DeletePanel:SetScript("OnShow", function(self)
@@ -2303,7 +2391,7 @@ DeletePanel:SetScript("OnShow", function(self)
 end)
 
 
-InterfaceOptions_AddCategory(DeletePanel)
+
 
 
 local ScavengerPanel = CreateFrame("Frame", "EbonClearanceOptionsScavenger", InterfaceOptionsFramePanelContainer)
@@ -2397,7 +2485,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     threshSlider:SetWidth(200)
 end)
 
-InterfaceOptions_AddCategory(ScavengerPanel)
+
 
 
 local CharPanel = CreateFrame("Frame", "EbonClearanceOptionsCharacter", InterfaceOptionsFramePanelContainer)
@@ -2569,7 +2657,39 @@ CharPanel:SetScript("OnShow", function(self)
     self.listUI:Refresh()
 end)
 
+-- ============================================================
+-- Blacklist (Do Not Sell) Panel
+-- ============================================================
+local BlacklistPanel = CreateFrame("Frame", "EbonClearanceOptionsBlacklist", InterfaceOptionsFramePanelContainer)
+BlacklistPanel.name = "Blacklist - Keep"
+BlacklistPanel.parent = "EbonClearance"
+
+BlacklistPanel:SetScript("OnShow", function(self)
+    EnsureDB()
+    EC_UpdatePanelWidth()
+    if self.inited then
+        if self.listUI then self.listUI:Refresh() end
+        return
+    end
+    self.inited = true
+
+    MakeHeader(self, "Blacklist (Do Not Sell)", -16)
+    local blDesc = MakeLabel(self, "Items on this list will never be sold, even if they match the whitelist or quality threshold. Use this to protect valuable items you want to sell at the auction house.", 16, -44)
+    MakeLabel(self, "Add items by Shift-Clicking, dragging, or typing the Item ID below.", 16, -80)
+
+    self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -100)
+    self.listUI:Refresh()
+end)
+
+-- Register sub-panels in alphabetical order
 InterfaceOptions_AddCategory(CharPanel)
+InterfaceOptions_AddCategory(ScavengerPanel)
+InterfaceOptions_AddCategory(MerchantPanel)
+InterfaceOptions_AddCategory(ProfilesPanel)
+InterfaceOptions_AddCategory(ImportExportPanel)
+InterfaceOptions_AddCategory(DeletePanel)
+InterfaceOptions_AddCategory(BlacklistPanel)
+InterfaceOptions_AddCategory(WhitelistPanel)
 
 -- Bug report diagnostic snapshot
 local function EC_CopperToPlainText(copper)
@@ -2628,6 +2748,7 @@ local function EC_BuildBugReport()
     add("Quality Level: " .. tostring(DB.whitelistMinQuality))
     add("Active Profile: " .. tostring(DB.activeProfileName))
     add("Whitelist Items: " .. tostring(EC_CountItems(DB.whitelist)))
+    add("Blacklist Items: " .. tostring(EC_CountItems(DB.blacklist)))
     add("Delete List Items: " .. tostring(EC_CountItems(DB.deleteList)))
     add("")
 
@@ -2638,9 +2759,10 @@ local function EC_BuildBugReport()
     end
     table.sort(names, function(a, b) return a:lower() < b:lower() end)
     for i = 1, #names do
-        local count = EC_CountItems(DB.whitelistProfiles[names[i]])
+        local wlCount = EC_CountItems(DB.whitelistProfiles[names[i]])
+        local blCount = DB.blacklistProfiles[names[i]] and EC_CountItems(DB.blacklistProfiles[names[i]]) or 0
         local tag = (names[i] == DB.activeProfileName) and " (active)" or ""
-        add(names[i] .. " (" .. count .. " items)" .. tag)
+        add(names[i] .. " (" .. wlCount .. " whitelist, " .. blCount .. " blacklist)" .. tag)
     end
     add("")
 
@@ -2754,9 +2876,10 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             end
             table.sort(names, function(a, b) return a:lower() < b:lower() end)
             for i = 1, #names do
-                local count = EC_CountItems(DB.whitelistProfiles[names[i]])
+                local wlCount = EC_CountItems(DB.whitelistProfiles[names[i]])
+                local blCount = DB.blacklistProfiles[names[i]] and EC_CountItems(DB.blacklistProfiles[names[i]]) or 0
                 local tag = (names[i] == DB.activeProfileName) and " |cff00ff00(active)|r" or ""
-                PrintNice(string.format("  |cffffff00%s|r - %d items%s", names[i], count, tag))
+                PrintNice(string.format("  |cffffff00%s|r - %d whitelist, %d blacklist%s", names[i], wlCount, blCount, tag))
             end
         else
             PrintNice("Usage: /ec profile save|load|delete|list <name>")

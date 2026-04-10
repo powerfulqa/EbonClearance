@@ -8,17 +8,21 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 ## What It Does
 
-**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they'll be automatically sold when you visit a merchant. You can also set a quality threshold to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). Works with the Goblin Merchant, normal vendors, or both. The addon only ever touches loose bag items - your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
+**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also set a quality threshold to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). Works with the Goblin Merchant, normal vendors, or both. Items with no vendor value are automatically skipped. Your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
+
+**Scan bags to whitelist** - Quickly bulk-add items from your bags by quality. Three colour-coded buttons (White, Green, Blue) on the Whitelist panel scan your bags and add all matching items. Only items with a vendor value are added.
+
+**Blacklist (do not sell)** - Protect valuable items from being sold. If an item is on your blacklist, it will never be vendored regardless of the whitelist or quality threshold. Useful for auction house items like Traveler's Bags that you don't want accidentally sold.
 
 **Auto-sell grey junk** - All grey (Poor quality) items are sold automatically at any merchant, regardless of your whitelist or merchant mode settings. No setup needed.
 
-**Whitelist profiles** - Save and load different whitelists as named profiles. Handy for swapping between farming spots or activities without keeping one massive list. Each profile has a Clear button if you want to empty it out, and the Default profile is always locked to empty so new characters start fresh. Manage profiles through the settings panel or with slash commands.
+**Profiles** - Save and load different whitelists and blacklists as named profiles. Handy for swapping between farming spots or activities without keeping one massive list. Each profile stores both your sell list and your protected items. Manage profiles through the settings panel or with slash commands.
 
 **Item deletion** - For items that can't be sold, the addon can automatically destroy them. You manage a separate delete list of item IDs to control exactly what gets removed.
 
-**Greedy Scavenger management** - If you've used Project Ebonhold's Greedy Scavenger pet, you'll know it loves to talk. EbonClearance can mute its chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck.
+**Greedy Scavenger management** - EbonClearance can mute the Scavenger's chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck on terrain. If you manually unsummon the Scavenger, the addon respects that and won't re-summon it. Other companions (bank mule, mailbox) are never replaced.
 
-**Auto-loot cycle** - When enabled, the addon watches your free bag slots while the Greedy Scavenger is looting. When bags are nearly full it dismisses the pet, summons the Goblin Merchant and auto-targets it for you. Just right-click to sell, and the Scavenger is re-summoned to carry on looting. Configurable bag threshold in Scavenger Settings.
+**Auto-loot cycle** - When enabled, the addon watches your free bag slots while the Greedy Scavenger is looting. When bags hit your threshold it dismisses the pet, summons the Goblin Merchant and notifies you. Just right-click to sell, and the Scavenger is re-summoned to carry on looting. If you have more than 80 items to sell, selling continues in batches automatically. Configurable bag threshold in Scavenger Settings.
 
 **Auto-repair** - Your gear gets repaired automatically whenever you visit a vendor, and the cost is tracked over time.
 
@@ -35,6 +39,8 @@ EbonClearance started life as a fork of [EbonholdStuff](https://github.com/Badut
 | **Selling approach** | Blacklist (sells everything, you protect items) | Whitelist (only sells what you list) |
 | **Grey junk auto-sell** | Yes | Yes |
 | **Quality filtering** | Fixed (protects green and above) | Configurable threshold (White, Green or Blue) |
+| **Blacklist (do not sell)** | No | Yes - protect items from being sold |
+| **Scan bags to whitelist** | No | Yes - bulk add by quality (White/Green/Blue) |
 | **Whitelist/Blacklist profiles** | No | Yes - save, load, clear and rename profiles |
 | **Import/Export lists** | No | Yes - shareable text strings |
 | **Default profile safety** | N/A | Default profile locked to empty for new characters |
@@ -70,11 +76,12 @@ The addon is character-aware, so you can restrict it to specific characters if y
 
 All settings live under `/ec`, which opens a scrollable config panel. From there you can:
 
+- Manage your whitelist (items to sell) and blacklist (items to protect)
+- Scan bags to bulk-add items to the whitelist by quality (White, Green, Blue)
+- Save and load profiles with different whitelist and blacklist combinations
+- Set a quality threshold to bulk-sell everything up to a chosen rarity
 - Choose which merchants the addon works with (Goblin Merchant, normal vendors, or both)
 - Toggle auto-vendoring, deletion, repairs and Greedy Scavenger features on or off
-- Manage your whitelist and delete list
-- Save and load whitelist profiles for different situations
-- Set a quality threshold for the whitelist (White, Green or Blue - anything above your chosen rarity is kept)
 - Keep bags open when leaving a merchant
 - Import and export whitelists as shareable strings
 - View lifetime and session statistics
@@ -100,6 +107,19 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - Project Ebonhold server
 
 ## Changelog
+
+### v2.0.10
+
+- **Blacklist (do not sell)** - New panel to protect specific items from ever being sold, overriding the whitelist and quality threshold. Useful for auction house items like Traveler's Bags. Blacklists are saved and loaded with profiles.
+- **Scan bags to whitelist** - Three colour-coded buttons (White, Green, Blue) on the Whitelist panel to bulk-add items from your bags by quality. Items with no vendor value are automatically skipped.
+- **Distance-based stuck detection** - The Scavenger is now re-summoned if it gets stuck more than 5 yards from the player, not just when it fully despawns.
+- **Recursive batch selling** - When selling more than 80 items, the addon now automatically continues in batches until everything is sold, with a single summary at the end.
+- **8-second merchant reminder** - If the Goblin Merchant is summoned but you haven't opened the vendor window within 8 seconds, a reminder is printed.
+- **Unsellable item protection** - Items with no vendor value (quest items, etc.) are now blocked from the sell queue and from the scan-bags buttons. This fixes an infinite loop where unsellable whitelist items caused batch selling to repeat forever.
+- **Batch selling delay** - Re-scan now waits 1 second between batches so the server has time to process sold items.
+- **Code cleanup** - Removed 4 dead functions, renamed all legacy EHS_ prefixes to EC_ for consistency.
+- **Menu reordering** - Settings panels reordered: Character, Scavenger, Merchant, Profiles, Import/Export, Deletion List, Blacklist - Keep, Whitelist - Sell.
+- **Profile counts** - Profiles now show whitelist and blacklist item counts separately.
 
 ### v2.0.9
 

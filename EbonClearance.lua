@@ -2,33 +2,33 @@ local ADDON_NAME = "EbonClearance"
 local TARGET_NAME = "Goblin Merchant"
 local PET_NAME = "Greedy scavenger"
 
-local EHS_GetPlayerName
-local EHS_IsAddonEnabledForChar
+local EC_GetPlayerName
+local EC_IsAddonEnabledForChar
 
-local EHS_greedyMessages = {}
-local EHS_greedyFiltersInstalled = false
+local EC_greedyMessages = {}
+local EC_greedyFiltersInstalled = false
 
-local function EHS_StripCodes(s)
+local function EC_StripCodes(s)
     if type(s) ~= "string" then return nil end
     return s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h", ""):gsub("|h", "")
 end
 
 local PET_NAME_LC = PET_NAME:lower()
-local function EHS_IsGreedyAuthor(author)
+local function EC_IsGreedyAuthor(author)
     if type(author) ~= "string" then return false end
-    author = EHS_StripCodes(author)
+    author = EC_StripCodes(author)
     if not author or author == "" then return false end
     return author:lower() == PET_NAME_LC
 end
 
-local function EHS_TrackGreedySpeech(msg)
-    msg = EHS_StripCodes(msg)
+local function EC_TrackGreedySpeech(msg)
+    msg = EC_StripCodes(msg)
     if not msg or msg == "" then return end
     msg = msg:lower()
-    EHS_greedyMessages[msg] = true
+    EC_greedyMessages[msg] = true
 end
 
-local function EHS_GreedyEventFilter(self, event, msg, author, ...)
+local function EC_GreedyEventFilter(self, event, msg, author, ...)
     local hideChat = true
     local hideBubbles = true
     if DB then
@@ -36,9 +36,9 @@ local function EHS_GreedyEventFilter(self, event, msg, author, ...)
         hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
     end
 
-    if EHS_IsGreedyAuthor(author) then
+    if EC_IsGreedyAuthor(author) then
         if hideBubbles and type(msg) == "string" then
-            EHS_TrackGreedySpeech(msg)
+            EC_TrackGreedySpeech(msg)
         end
         if hideChat then
             return true
@@ -46,11 +46,11 @@ local function EHS_GreedyEventFilter(self, event, msg, author, ...)
     end
 
     if type(msg) == "string" then
-        local clean = EHS_StripCodes(msg):lower()
+        local clean = EC_StripCodes(msg):lower()
         if clean:find("greedy scavenger", 1, true) and (clean:find(" says", 1, true) or clean:find(" yells", 1, true) or clean:find(" whispers", 1, true)) then
             if hideBubbles then
                 local said = clean:match("greedy scavenger%s*says[:%s]*(.*)") or clean:match("greedy scavenger%s*yells[:%s]*(.*)") or clean:match("greedy scavenger%s*whispers[:%s]*(.*)")
-                if said then EHS_TrackGreedySpeech(said) end
+                if said then EC_TrackGreedySpeech(said) end
             end
             if hideChat then
                 return true
@@ -61,29 +61,29 @@ local function EHS_GreedyEventFilter(self, event, msg, author, ...)
     return false
 end
 
-local function EHS_InstallGreedyMuteOnce()
-    if EHS_greedyFiltersInstalled then return end
-    EHS_greedyFiltersInstalled = true
+local function EC_InstallGreedyMuteOnce()
+    if EC_greedyFiltersInstalled then return end
+    EC_greedyFiltersInstalled = true
 
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_SAY", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_YELL", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_WHISPER", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_EMOTE", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_PARTY", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_TEXT_EMOTE", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_EMOTE", EHS_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", EHS_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_SAY", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_YELL", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_WHISPER", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_EMOTE", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_PARTY", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_TEXT_EMOTE", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_EMOTE", EC_GreedyEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", EC_GreedyEventFilter)
 end
 
-local EHS_bubbleFrame = CreateFrame("Frame")
-local EHS_killedBubbles = setmetatable({}, { __mode = "k" })
+local EC_bubbleFrame = CreateFrame("Frame")
+local EC_killedBubbles = setmetatable({}, { __mode = "k" })
 
-local function EHS_KillBubbleFrame(frame)
-    if not frame or frame.__EHS_killed then return end
-    frame.__EHS_killed = true
-    EHS_killedBubbles[frame] = true
+local function EC_KillBubbleFrame(frame)
+    if not frame or frame.__EC_killed then return end
+    frame.__EC_killed = true
+    EC_killedBubbles[frame] = true
 
     frame:SetAlpha(0)
     frame:EnableMouse(false)
@@ -96,22 +96,22 @@ local function EHS_KillBubbleFrame(frame)
         end)
     end
 end
-EHS_bubbleFrame.elapsed = 0
-EHS_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
+EC_bubbleFrame.elapsed = 0
+EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
     local hideBubbles = true
     if DB then
         hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
     end
     if not hideBubbles then return end
 
-    for bubble in pairs(EHS_killedBubbles) do
+    for bubble in pairs(EC_killedBubbles) do
         if bubble and bubble.IsShown and bubble:IsShown() then
             bubble:SetAlpha(0)
             bubble:Hide()
         end
     end
 
-    if not next(EHS_greedyMessages) then return end
+    if not next(EC_greedyMessages) then return end
 
     self.elapsed = (self.elapsed or 0) + elapsed
     if self.elapsed < 0.05 then return end
@@ -127,9 +127,9 @@ EHS_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
                 if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                     local text = region:GetText()
                     if text then
-                        local clean = EHS_StripCodes(text):lower()
-                        if EHS_greedyMessages[clean] then
-                            EHS_KillBubbleFrame(child)
+                        local clean = EC_StripCodes(text):lower()
+                        if EC_greedyMessages[clean] then
+                            EC_KillBubbleFrame(child)
                             break
                         end
                     end
@@ -149,7 +149,7 @@ local CHAT_FILTER_EVENTS = {
 }
 
 local function GreedyScavengerChatFilter(self, event, msg, author, ...)
-    if EHS_IsGreedyAuthor(author) then
+    if EC_IsGreedyAuthor(author) then
         return true
     end
     return false
@@ -170,12 +170,6 @@ end
 
 local DB
 
-local function EHS_NormalizeBool(v, default)
-    if v == true or v == 1 then return true end
-    if v == false or v == 0 then return false end
-    if v == nil then return default end
-    return default
-end
 
 local function EnsureDB()
     -- Migrate data from old addon name if present
@@ -269,23 +263,23 @@ local function EC_OpenAllBags()
     end
 end
 
-EHS_GetPlayerName = function()
+EC_GetPlayerName = function()
     local n = UnitName("player")
     if not n or n == "" then return "" end
     return n
 end
 
-local function EHS_IsCharacterAllowed()
+local function EC_IsCharacterAllowed()
     if not DB or not DB.enableOnlyListedChars then
         return true
     end
-    local name = EHS_GetPlayerName()
+    local name = EC_GetPlayerName()
     return DB.allowedChars and DB.allowedChars[name] == true
 end
 
-EHS_IsAddonEnabledForChar = function()
+EC_IsAddonEnabledForChar = function()
     if DB and DB.enabled == false then return false end
-    return EHS_IsCharacterAllowed()
+    return EC_IsCharacterAllowed()
 end
 
 local function IsInSet(setTable, itemID)
@@ -294,22 +288,6 @@ local function IsInSet(setTable, itemID)
     return (v == true) or (v == 1)
 end
 
-local function AddToSet(setTable, itemID)
-    if itemID then setTable[itemID] = true end
-end
-
-local function RemoveFromSet(setTable, itemID)
-    if itemID then setTable[itemID] = nil end
-end
-
-local function SortedKeys(setTable)
-    local t = {}
-    for k in pairs(setTable) do
-        if type(k) == "number" then t[#t+1] = k end
-    end
-    table.sort(t)
-    return t
-end
 
 -- Whitelist profile functions
 local function EC_ValidateProfileName(name)
@@ -421,7 +399,7 @@ local function PrintNice(msg)
 end
 
 
-local function EHS_CalcInventoryWorthCopper()
+local function EC_CalcInventoryWorthCopper()
     local total = 0
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
@@ -441,18 +419,18 @@ local function EHS_CalcInventoryWorthCopper()
     return total
 end
 
-local function EHS_RecordInventoryWorthSample()
+local function EC_RecordInventoryWorthSample()
     if not DB then return end
-    local worth = EHS_CalcInventoryWorthCopper()
+    local worth = EC_CalcInventoryWorthCopper()
     DB.inventoryWorthTotal = (DB.inventoryWorthTotal or 0) + worth
     DB.inventoryWorthCount = (DB.inventoryWorthCount or 0) + 1
 end
 
 
-local EHS_activeIDBox = nil
-local EHS_Original_ChatEdit_InsertLink = ChatEdit_InsertLink
+local EC_activeIDBox = nil
+local EC_Original_ChatEdit_InsertLink = ChatEdit_InsertLink
 
-local function EHS_ExtractItemID(link)
+local function EC_ExtractItemID(link)
     if type(link) ~= "string" then return nil end
     local id = link:match("item:(%d+)")
     if id then return tonumber(id) end
@@ -460,15 +438,15 @@ local function EHS_ExtractItemID(link)
 end
 
 ChatEdit_InsertLink = function(link)
-    if EHS_activeIDBox and EHS_activeIDBox:IsShown() then
-        local id = EHS_ExtractItemID(link)
+    if EC_activeIDBox and EC_activeIDBox:IsShown() then
+        local id = EC_ExtractItemID(link)
         if id then
-            EHS_activeIDBox:SetText(tostring(id))
-            EHS_activeIDBox:HighlightText()
+            EC_activeIDBox:SetText(tostring(id))
+            EC_activeIDBox:HighlightText()
             return true
         end
     end
-    return EHS_Original_ChatEdit_InsertLink(link)
+    return EC_Original_ChatEdit_InsertLink(link)
 end
 
 local function SummonGreedyScavenger()
@@ -550,34 +528,34 @@ local EC_mountDismissTime = 0
 local EC_lootCycleState = "idle"
 local EC_addonDismissed = false  -- true when our code dismissed the Scavenger (mount, cycle, etc)
 
-local EHS_delayFrame = CreateFrame("Frame")
-local EHS_timers = {}
+local EC_delayFrame = CreateFrame("Frame")
+local EC_timers = {}
 
-local function EHS_Delay(seconds, func)
+local function EC_Delay(seconds, func)
     if type(func) ~= "function" then return end
     seconds = tonumber(seconds) or 0
     if seconds <= 0 then
         func()
         return
     end
-    EHS_timers[#EHS_timers + 1] = { t = seconds, f = func }
+    EC_timers[#EC_timers + 1] = { t = seconds, f = func }
 end
 
-EHS_delayFrame:SetScript("OnUpdate", function(self, elapsed)
-    if #EHS_timers == 0 then return end
-    for i = #EHS_timers, 1, -1 do
-        local item = EHS_timers[i]
+EC_delayFrame:SetScript("OnUpdate", function(self, elapsed)
+    if #EC_timers == 0 then return end
+    for i = #EC_timers, 1, -1 do
+        local item = EC_timers[i]
         item.t = item.t - elapsed
         if item.t <= 0 then
-            table.remove(EHS_timers, i)
+            table.remove(EC_timers, i)
             local ok, err = pcall(item.f)
         end
     end
 end)
 
-local function EHS_SummonGreedyWithDelay()
+local function EC_SummonGreedyWithDelay()
     if not DB or not DB.summonGreedy then return end
-    EHS_Delay((DB and DB.summonDelay) or 1.6, SummonGreedyScavenger)
+    EC_Delay((DB and DB.summonDelay) or 1.6, SummonGreedyScavenger)
 end
 
 local function EC_GetFreeBagSlots()
@@ -589,6 +567,17 @@ local function EC_GetFreeBagSlots()
     return free
 end
 
+local EC_MAX_PET_DISTANCE = 5
+
+local function EC_GetCompanionDistance()
+    if not UnitPosition then return nil end
+    local px, py = UnitPosition("player")
+    local cx, cy = UnitPosition("pet")
+    if not px or not cx then return nil end
+    local dx, dy = px - cx, py - cy
+    return math.sqrt(dx * dx + dy * dy)
+end
+
 -- Pet stuck detection + auto-loot cycle bag monitoring
 local EC_petCheckFrame = CreateFrame("Frame")
 local EC_petCheckElapsed = 0
@@ -596,6 +585,8 @@ local EC_summonGoblinPending = false
 local EC_summonGoblinTimer = 0
 local EC_targetGoblinPending = false
 local EC_targetGoblinTimer = 0
+local EC_merchantReminderPending = false
+local EC_merchantReminderTimer = 0
 
 EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Delayed Goblin Merchant summon (after dismiss completes)
@@ -624,6 +615,8 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             local _, nowSummoned = FindGoblinMerchantIndex()
             if nowSummoned then
                 PrintNice("|cff00ff00Goblin Merchant summoned - right-click it to sell.|r")
+                EC_merchantReminderPending = true
+                EC_merchantReminderTimer = 8.0
             else
                 PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
                 EC_lootCycleState = "looting"
@@ -632,12 +625,23 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         return
     end
 
+    -- 8-second reminder if merchant window hasn't been opened
+    if EC_merchantReminderPending then
+        EC_merchantReminderTimer = EC_merchantReminderTimer - elapsed
+        if EC_merchantReminderTimer <= 0 then
+            EC_merchantReminderPending = false
+            if EC_lootCycleState == "waiting_merchant" then
+                PrintNice("|cffffff00Reminder: right-click the Goblin Merchant to open the vendor window.|r")
+            end
+        end
+    end
+
     EC_petCheckElapsed = EC_petCheckElapsed + elapsed
     if EC_petCheckElapsed < 5 then return end
     EC_petCheckElapsed = 0
 
     if not DB or not DB.summonGreedy then return end
-    if not EHS_IsAddonEnabledForChar() then return end
+    if not EC_IsAddonEnabledForChar() then return end
     if IsMounted() then return end
     if running then return end
 
@@ -671,12 +675,12 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Don't re-summon scavenger while waiting for merchant or selling
     if EC_lootCycleState == "waiting_merchant" or EC_lootCycleState == "selling" then return end
 
-    -- Stuck detection: re-summon Greedy Scavenger if it despawned
-    -- But only if no other companion is currently out (e.g. bank mule, mailbox)
-    -- And only if the addon dismissed it (not the user manually)
+    -- Stuck detection: re-summon Greedy Scavenger if it despawned or is stuck on terrain
+    -- Respects: addon enabled, mounted state, mount cooldown, manual unsummon, other companions
     local num = GetNumCompanions("CRITTER")
     if not num or num <= 0 then return end
     local greedyIndex = nil
+    local scavengerOut = false
     local anyPetOut = false
     for i = 1, num do
         local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
@@ -685,16 +689,28 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         end
         if creatureName == PET_NAME then
             greedyIndex = i
+            if isSummoned then scavengerOut = true end
         end
     end
 
-    -- If any pet is out (Scavenger or otherwise), nothing to do
+    -- Distance check: if Scavenger is out but stuck far away, dismiss and let next tick re-summon
+    if scavengerOut then
+        local dist = EC_GetCompanionDistance()
+        if dist and dist > EC_MAX_PET_DISTANCE then
+            EC_addonDismissed = true
+            DismissGreedyScavenger()
+        end
+        return
+    end
+
+    -- Scavenger is not out - check if we should re-summon
+    -- Don't re-summon if another companion is active (bank mule, mailbox)
     if anyPetOut then return end
 
     -- Don't re-summon if we recently dismissed for mounting
     if (GetTime() - EC_mountDismissTime) <= 10 then return end
 
-    -- Only re-summon if our code dismissed it (mount, cycle, etc)
+    -- Only re-summon if our code dismissed it (mount, cycle, distance-stuck)
     -- If the user manually unsummoned, respect that
     if not EC_addonDismissed then return end
 
@@ -737,10 +753,13 @@ local function HookDeletePopupOnce()
     end)
 end
 
+local EC_IsMerchantAllowed  -- forward declaration for FinishRun
 local running = false
 local queue = {}
 local queueIndex = 1
 local goldThisVendoring = 0
+local EC_batchTotalSold = 0
+local EC_batchTotalGold = 0
 
 local worker = CreateFrame("Frame")
 worker:Hide()
@@ -821,17 +840,35 @@ local function FinishRun()
     worker:Hide()
 
     DB.totalCopper = (DB.totalCopper or 0) + (goldThisVendoring or 0)
+    EC_batchTotalSold = EC_batchTotalSold + #queue
+    EC_batchTotalGold = EC_batchTotalGold + (goldThisVendoring or 0)
 
+    -- Check if merchant is still open and there are more items to sell
+    if MerchantFrame and MerchantFrame:IsShown() then
+        local merchantAllowed = EC_IsMerchantAllowed()
+        BuildQueue(not merchantAllowed)
+        if #queue > 0 then
+            PrintNice(string.format("Batch sold |cffffff00%d|r items. More to sell, continuing...", EC_batchTotalSold))
+            EC_Delay(0.5, function()
+                if MerchantFrame and MerchantFrame:IsShown() then
+                    running = true
+                    worker.t = 0
+                    worker:Show()
+                end
+            end)
+            return
+        end
+    end
+
+    -- All done - print final summary
     PrintNice(string.format("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
-        #queue, CopperToColoredText(goldThisVendoring)))
+        EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold)))
 
     if DB and DB.autoLootCycle then
-        -- Don't dismiss the Goblin here - MERCHANT_CLOSED handles that.
-        -- Just re-summon the Scavenger after a delay to continue the cycle.
         EC_lootCycleState = "idle"
-        EHS_SummonGreedyWithDelay()
+        EC_SummonGreedyWithDelay()
     else
-        EHS_SummonGreedyWithDelay()
+        EC_SummonGreedyWithDelay()
     end
 end
 
@@ -905,7 +942,7 @@ local function ShouldRunNow()
     return true
 end
 
-local function EHS_IsMerchantAllowed()
+EC_IsMerchantAllowed = function()
     local mode = DB and DB.merchantMode or "goblin"
     if mode == "any" then
         -- Only normal merchants (not Goblin Merchant)
@@ -920,18 +957,18 @@ local function EHS_IsMerchantAllowed()
 end
 
 local function StartRun()
-    if not EHS_IsAddonEnabledForChar() then return end
+    if not EC_IsAddonEnabledForChar() then return end
     if running then return end
     if not ShouldRunNow() then return end
 
-    local merchantAllowed = EHS_IsMerchantAllowed()
+    local merchantAllowed = EC_IsMerchantAllowed()
 
     HookDeletePopupOnce()
 
     running = true
 
 
-    EHS_RecordInventoryWorthSample()
+    EC_RecordInventoryWorthSample()
 
 
     if DB and DB.repairGear == true and CanMerchantRepair and CanMerchantRepair() and GetRepairAllCost and RepairAllItems then
@@ -949,7 +986,7 @@ local function StartRun()
         PrintNice("Found nothing to sell.")
         running = false
         if UnitExists("target") and UnitName("target") == TARGET_NAME and MerchantFrame and MerchantFrame:IsShown() then
-            EHS_SummonGreedyWithDelay()
+            EC_SummonGreedyWithDelay()
         end
         return
     end
@@ -1050,8 +1087,8 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     addBtn:SetPoint("LEFT", input, "RIGHT", 8, 0)
     addBtn:SetText("Add")
 
-    input:SetScript("OnEditFocusGained", function(self) EHS_activeIDBox = self end)
-    input:SetScript("OnEditFocusLost", function(self) if EHS_activeIDBox == self then EHS_activeIDBox = nil end end)
+    input:SetScript("OnEditFocusGained", function(self) EC_activeIDBox = self end)
+    input:SetScript("OnEditFocusLost", function(self) if EC_activeIDBox == self then EC_activeIDBox = nil end end)
     input:SetScript("OnReceiveDrag", function(self)
         local ctype, cid = GetCursorInfo()
         if ctype == "item" and cid then
@@ -1210,7 +1247,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         -- If any items were uncached, retry after a delay to pick up server responses
         if hasUncached and not pendingRetry then
             pendingRetry = true
-            EHS_Delay(1.5, function()
+            EC_Delay(1.5, function()
                 pendingRetry = false
                 Refresh()
             end)
@@ -1318,7 +1355,7 @@ local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, 
     return s
 end
 
-local function EHS_UpdateMinimapPos()
+local function EC_UpdateMinimapPos()
     local btn = _G["EbonClearanceMinimapButton"]
     if not btn then return end
     local angle = math.rad(DB and DB.minimapButtonAngle or 220)
@@ -1328,7 +1365,7 @@ local function EHS_UpdateMinimapPos()
     btn:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
-local function EHS_CreateMinimapButton()
+local function EC_CreateMinimapButton()
     if not DB then return end
     if _G["EbonClearanceMinimapButton"] then return end  -- only create once
 
@@ -1358,7 +1395,7 @@ local function EHS_CreateMinimapButton()
     border:SetSize(53, 53)
     border:SetPoint("CENTER", btn, "CENTER", 10, -10)
 
-    EHS_UpdateMinimapPos()
+    EC_UpdateMinimapPos()
 
     local dragging = false
 
@@ -1368,7 +1405,7 @@ local function EHS_CreateMinimapButton()
 
     btn:SetScript("OnDragStop", function(self)
         dragging = false
-        EHS_UpdateMinimapPos()
+        EC_UpdateMinimapPos()
     end)
 
     btn:SetScript("OnUpdate", function(self)
@@ -1384,7 +1421,7 @@ local function EHS_CreateMinimapButton()
         cy = cy / scale
         local angle = math.deg(math.atan2(cy - my, cx - mx))
         if DB then DB.minimapButtonAngle = angle end
-        EHS_UpdateMinimapPos()
+        EC_UpdateMinimapPos()
     end)
 
     btn:SetScript("OnClick", function(self, button)
@@ -1577,7 +1614,7 @@ local MerchantPanel = CreateFrame("Frame", "EbonClearanceOptionsMerchant", Inter
 MerchantPanel.name = "Merchant Settings"
 MerchantPanel.parent = "EbonClearance"
 
-local EHS_MERCHANT_MODES = {
+local EC_MERCHANT_MODES = {
     { text = "|cffb6ffb6Goblin Merchant|r Only",   value = "goblin" },
     { text = "Normal Merchants Only",               value = "any"    },
     { text = "Both (All Merchants)",                value = "both"   },
@@ -1608,14 +1645,14 @@ MerchantPanel:SetScript("OnShow", function(self)
     modeDD:SetPoint("LEFT", modeLabel, "RIGHT", -8, -2)
 
     local function GetModeText(mode)
-        for _, entry in ipairs(EHS_MERCHANT_MODES) do
+        for _, entry in ipairs(EC_MERCHANT_MODES) do
             if entry.value == mode then return entry.text end
         end
-        return EHS_MERCHANT_MODES[1].text
+        return EC_MERCHANT_MODES[1].text
     end
 
     local function MerchantModeInit(frame, level)
-        for _, entry in ipairs(EHS_MERCHANT_MODES) do
+        for _, entry in ipairs(EC_MERCHANT_MODES) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = entry.text
             info.value = entry.value
@@ -1678,7 +1715,7 @@ end)
 
 InterfaceOptions_AddCategory(MerchantPanel)
 
-local EHS_WHITELIST_QUALITIES = {
+local EC_WHITELIST_QUALITIES = {
     { text = ColorTextByQuality(1, "White (Common)"),   value = 1 },
     { text = ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
     { text = ColorTextByQuality(3, "Blue (Rare)"),      value = 3 },
@@ -1743,8 +1780,8 @@ WhitelistPanel:SetScript("OnShow", function(self)
 
     UIDropDownMenu_Initialize(qualityDD, function(frame, level)
         local info = UIDropDownMenu_CreateInfo()
-        for i = 1, #EHS_WHITELIST_QUALITIES do
-            local opt = EHS_WHITELIST_QUALITIES[i]
+        for i = 1, #EC_WHITELIST_QUALITIES do
+            local opt = EC_WHITELIST_QUALITIES[i]
             info.text    = opt.text
             info.value   = opt.value
             info.checked = (DB.whitelistMinQuality == opt.value)
@@ -1761,10 +1798,10 @@ WhitelistPanel:SetScript("OnShow", function(self)
     function self:RefreshQualityDropDown()
         local cur = DB.whitelistMinQuality or 1
         if cur < 1 then cur = 1; DB.whitelistMinQuality = 1 end
-        local label = EHS_WHITELIST_QUALITIES[1].text  -- fallback to White
-        for i = 1, #EHS_WHITELIST_QUALITIES do
-            if EHS_WHITELIST_QUALITIES[i].value == cur then
-                label = EHS_WHITELIST_QUALITIES[i].text
+        local label = EC_WHITELIST_QUALITIES[1].text  -- fallback to White
+        for i = 1, #EC_WHITELIST_QUALITIES do
+            if EC_WHITELIST_QUALITIES[i].value == cur then
+                label = EC_WHITELIST_QUALITIES[i].text
                 break
             end
         end
@@ -2394,7 +2431,7 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     meBtn:SetPoint("LEFT", addBtn, "RIGHT", 8, 0)
     meBtn:SetText("Add Me")
     meBtn:SetScript("OnClick", function()
-        input:SetText(EHS_GetPlayerName())
+        input:SetText(EC_GetPlayerName())
         input:HighlightText()
     end)
 
@@ -2797,7 +2834,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             EnsureDB()
             HookDeletePopupOnce()
             if ApplyGreedyChatFilter then ApplyGreedyChatFilter() end
-            EHS_CreateMinimapButton()
+            EC_CreateMinimapButton()
         end
 
     elseif event == "PLAYER_LOGOUT" then
@@ -2805,29 +2842,32 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         EnsureDB()
-        if EHS_InstallGreedyMuteOnce then EHS_InstallGreedyMuteOnce() end
+        if EC_InstallGreedyMuteOnce then EC_InstallGreedyMuteOnce() end
 
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
+        EC_merchantReminderPending = false
+        EC_batchTotalSold = 0
+        EC_batchTotalGold = 0
         EC_keepBagsFlag = true
         if DB and DB.autoLootCycle then
             EC_lootCycleState = "selling"
         end
-        if not EHS_IsAddonEnabledForChar() then
+        if not EC_IsAddonEnabledForChar() then
             return
         end
-        EHS_InstallGreedyMuteOnce()
+        EC_InstallGreedyMuteOnce()
         StartRun()
 
     elseif event == "UNIT_AURA" then
         local unit = ...
-        if unit == "player" and DB and DB.summonGreedy and EHS_IsAddonEnabledForChar() then
+        if unit == "player" and DB and DB.summonGreedy and EC_IsAddonEnabledForChar() then
             local mounted = IsMounted()
             if mounted and not EC_wasMounted then
                 DismissGreedyScavenger()
                 EC_mountDismissTime = GetTime()
             elseif not mounted and EC_wasMounted then
-                EHS_SummonGreedyWithDelay()
+                EC_SummonGreedyWithDelay()
             end
             EC_wasMounted = mounted
         end
@@ -2842,14 +2882,14 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
         -- Reopen bags after merchant closes
         if DB and DB.keepBagsOpen and EC_keepBagsFlag then
-            EHS_Delay(0.8, EC_OpenAllBags)
+            EC_Delay(0.8, EC_OpenAllBags)
         end
         EC_keepBagsFlag = false
 
     end
 
     if event == "PLAYER_LOGIN" then
-        EHS_Delay(1, function()
+        EC_Delay(1, function()
             DEFAULT_CHAT_FRAME:AddMessage("|cffffd100EbonClearance Enabled|r - Use |cff00ff00/ec|r to configure.")
         end)
     end

@@ -200,7 +200,8 @@ local function EnsureDB()
     if type(DB.summonGreedy) ~= "boolean" then DB.summonGreedy = true end
     if type(DB.summonDelay) ~= "number" then DB.summonDelay = 1.6 end
 
-    if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.015 end
+    if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.1 end
+    if DB.vendorInterval < 0.05 then DB.vendorInterval = 0.1 end
     if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 80 end
     if type(DB.autoLootCycle) ~= "boolean" then DB.autoLootCycle = false end
     if type(DB.bagFullThreshold) ~= "number" then DB.bagFullThreshold = 2 end
@@ -959,8 +960,8 @@ end
 
 worker:SetScript("OnUpdate", function(self, elapsed)
     self.t = (self.t or 0) + elapsed
-    local interval = (DB and DB.vendorInterval) or 0.015
-    if interval < 0.005 then interval = 0.005 end
+    local interval = (DB and DB.vendorInterval) or 0.1
+    if interval < 0.05 then interval = 0.05 end
     if self.t >= interval then
         self.t = 0
         DoNextAction()
@@ -1657,7 +1658,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     if self.inited then
         if self.repairCB then self.repairCB:SetChecked(DB.repairGear) end
         if self.keepBagsCB then self.keepBagsCB:SetChecked(DB.keepBagsOpen) end
-        if self.speedSlider then self.speedSlider:SetValue(DB.vendorInterval or 0.015) end
+        if self.speedSlider then self.speedSlider:SetValue(DB.vendorInterval or 0.1) end
         if self.RefreshMerchantModeDropDown then self:RefreshMerchantModeDropDown() end
         return
     end
@@ -1736,8 +1737,8 @@ MerchantPanel:SetScript("OnShow", function(self)
     self.keepBagsCB = keepBagsCB
 
     local speedSlider = AddSlider(self, "EbonClearanceVendoringSpeedSlider", keepBagsCB,
-        "Vendoring Speed", 0.005, 0.250, 0.005,
-        function() return DB.vendorInterval or 0.015 end,
+        "Vendoring Speed", 0.05, 0.500, 0.01,
+        function() return DB.vendorInterval or 0.1 end,
         function(v) DB.vendorInterval = v end,
         -16)
     self.speedSlider = speedSlider

@@ -108,6 +108,10 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 
 ## Changelog
 
+### v2.0.11
+
+- **Fix: Disconnect when selling many items** - The vendor interval minimum was 0.005s which allowed packet flooding at high speeds. Raised minimum to 0.05s and default to 0.1s. Existing settings below the new floor are auto-corrected on load. Slider range updated to 0.05s-0.50s.
+
 ### v2.0.10
 
 - **Blacklist (do not sell)** - New panel to protect specific items from ever being sold, overriding the whitelist and quality threshold. Useful for auction house items like Traveler's Bags. Blacklists are saved and loaded with profiles.

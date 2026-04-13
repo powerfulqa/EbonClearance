@@ -1,0 +1,14 @@
+# Normalise line endings to LF for text files across platforms.
+# Windows contributors can keep CRLF in their working tree; Git stores LF
+# and checks out CRLF or LF per the platform default. Explicit rules below
+# force LF for the file types we actually track so downstream packaging
+# (release.yml zip) and the in-game client always see consistent endings.
+
+* text=auto eol=lf
+
+*.lua    text eol=lf
+*.toc    text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.toml   text eol=lf
+LICENSE  text eol=lf

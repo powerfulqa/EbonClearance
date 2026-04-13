@@ -1,0 +1,5 @@
+# Claude Code IDE state (per-user, not for version control)
+.claude/
+
+# Superpowers planner tool state (per-user, not for version control)
+docs/superpowers/

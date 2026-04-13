@@ -27,21 +27,29 @@ local EC_greedyMessages = {}
 local EC_greedyFiltersInstalled = false
 
 local function EC_StripCodes(s)
-    if type(s) ~= "string" then return nil end
+    if type(s) ~= "string" then
+        return nil
+    end
     return s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h", ""):gsub("|h", "")
 end
 
 local PET_NAME_LC = PET_NAME:lower()
 local function EC_IsGreedyAuthor(author)
-    if type(author) ~= "string" then return false end
+    if type(author) ~= "string" then
+        return false
+    end
     author = EC_StripCodes(author)
-    if not author or author == "" then return false end
+    if not author or author == "" then
+        return false
+    end
     return author:lower() == PET_NAME_LC
 end
 
 local function EC_TrackGreedySpeech(msg)
     msg = EC_StripCodes(msg)
-    if not msg or msg == "" then return end
+    if not msg or msg == "" then
+        return
+    end
     msg = msg:lower()
     EC_greedyMessages[msg] = true
 end
@@ -65,10 +73,17 @@ local function EC_GreedyEventFilter(self, event, msg, author, ...)
 
     if type(msg) == "string" then
         local clean = EC_StripCodes(msg):lower()
-        if clean:find("greedy scavenger", 1, true) and (clean:find(" says", 1, true) or clean:find(" yells", 1, true) or clean:find(" whispers", 1, true)) then
+        if
+            clean:find("greedy scavenger", 1, true)
+            and (clean:find(" says", 1, true) or clean:find(" yells", 1, true) or clean:find(" whispers", 1, true))
+        then
             if hideBubbles then
-                local said = clean:match("greedy scavenger%s*says[:%s]*(.*)") or clean:match("greedy scavenger%s*yells[:%s]*(.*)") or clean:match("greedy scavenger%s*whispers[:%s]*(.*)")
-                if said then EC_TrackGreedySpeech(said) end
+                local said = clean:match("greedy scavenger%s*says[:%s]*(.*)")
+                    or clean:match("greedy scavenger%s*yells[:%s]*(.*)")
+                    or clean:match("greedy scavenger%s*whispers[:%s]*(.*)")
+                if said then
+                    EC_TrackGreedySpeech(said)
+                end
             end
             if hideChat then
                 return true
@@ -80,7 +95,9 @@ local function EC_GreedyEventFilter(self, event, msg, author, ...)
 end
 
 local function EC_InstallGreedyMuteOnce()
-    if EC_greedyFiltersInstalled then return end
+    if EC_greedyFiltersInstalled then
+        return
+    end
     EC_greedyFiltersInstalled = true
 
     ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_SAY", EC_GreedyEventFilter)
@@ -99,7 +116,9 @@ local EC_bubbleFrame = CreateFrame("Frame")
 local EC_killedBubbles = setmetatable({}, { __mode = "k" })
 
 local function EC_KillBubbleFrame(frame)
-    if not frame or frame.__EC_killed then return end
+    if not frame or frame.__EC_killed then
+        return
+    end
     frame.__EC_killed = true
     EC_killedBubbles[frame] = true
 
@@ -120,7 +139,9 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
     if DB then
         hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
     end
-    if not hideBubbles then return end
+    if not hideBubbles then
+        return
+    end
 
     for bubble in pairs(EC_killedBubbles) do
         if bubble and bubble.IsShown and bubble:IsShown() then
@@ -129,10 +150,14 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 
-    if not next(EC_greedyMessages) then return end
+    if not next(EC_greedyMessages) then
+        return
+    end
 
     self.elapsed = (self.elapsed or 0) + elapsed
-    if self.elapsed < 0.05 then return end
+    if self.elapsed < 0.05 then
+        return
+    end
     self.elapsed = 0
 
     local numChildren = WorldFrame and WorldFrame.GetNumChildren and WorldFrame:GetNumChildren() or 0
@@ -187,59 +212,125 @@ end
 
 local DB
 
-
 local function EnsureDB()
     -- Migrate data from old addon name if present
     if EbonholdStuffDB and not EbonClearanceDB then
         EbonClearanceDB = EbonholdStuffDB
         EbonholdStuffDB = nil
     end
-    if EbonClearanceDB == nil then EbonClearanceDB = {} end
+    if EbonClearanceDB == nil then
+        EbonClearanceDB = {}
+    end
     DB = EbonClearanceDB
 
-    if type(DB.deleteList) ~= "table" then DB.deleteList = {} end
-    if type(DB.allowedChars) ~= "table" then DB.allowedChars = {} end
+    if type(DB.deleteList) ~= "table" then
+        DB.deleteList = {}
+    end
+    if type(DB.allowedChars) ~= "table" then
+        DB.allowedChars = {}
+    end
 
-    if type(DB.totalCopper) ~= "number" then DB.totalCopper = 0 end
+    if type(DB.totalCopper) ~= "number" then
+        DB.totalCopper = 0
+    end
 
+    if type(DB.totalItemsSold) ~= "number" then
+        DB.totalItemsSold = 0
+    end
+    if type(DB.totalItemsDeleted) ~= "number" then
+        DB.totalItemsDeleted = 0
+    end
+    if type(DB.totalRepairs) ~= "number" then
+        DB.totalRepairs = 0
+    end
+    if type(DB.totalRepairCopper) ~= "number" then
+        DB.totalRepairCopper = 0
+    end
 
-    if type(DB.totalItemsSold) ~= "number" then DB.totalItemsSold = 0 end
-    if type(DB.totalItemsDeleted) ~= "number" then DB.totalItemsDeleted = 0 end
-    if type(DB.totalRepairs) ~= "number" then DB.totalRepairs = 0 end
-    if type(DB.totalRepairCopper) ~= "number" then DB.totalRepairCopper = 0 end
+    if type(DB.soldItemCounts) ~= "table" then
+        DB.soldItemCounts = {}
+    end
+    if type(DB.deletedItemCounts) ~= "table" then
+        DB.deletedItemCounts = {}
+    end
 
-    if type(DB.soldItemCounts) ~= "table" then DB.soldItemCounts = {} end
-    if type(DB.deletedItemCounts) ~= "table" then DB.deletedItemCounts = {} end
+    if type(DB.repairGear) ~= "boolean" then
+        DB.repairGear = true
+    end
 
-    if type(DB.repairGear) ~= "boolean" then DB.repairGear = true end
+    if type(DB.enableDeletion) ~= "boolean" then
+        DB.enableDeletion = true
+    end
+    if type(DB.summonGreedy) ~= "boolean" then
+        DB.summonGreedy = true
+    end
+    if type(DB.summonDelay) ~= "number" then
+        DB.summonDelay = 1.6
+    end
 
-    if type(DB.enableDeletion) ~= "boolean" then DB.enableDeletion = true end
-    if type(DB.summonGreedy) ~= "boolean" then DB.summonGreedy = true end
-    if type(DB.summonDelay) ~= "number" then DB.summonDelay = 1.6 end
+    if type(DB.vendorInterval) ~= "number" then
+        DB.vendorInterval = 0.1
+    end
+    if DB.vendorInterval < 0.05 then
+        DB.vendorInterval = 0.1
+    end
+    if type(DB.maxItemsPerRun) ~= "number" then
+        DB.maxItemsPerRun = 80
+    end
+    if type(DB.autoLootCycle) ~= "boolean" then
+        DB.autoLootCycle = false
+    end
+    if type(DB.bagFullThreshold) ~= "number" then
+        DB.bagFullThreshold = 2
+    end
+    if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then
+        DB.merchantMode = "goblin"
+    end
 
-    if type(DB.vendorInterval) ~= "number" then DB.vendorInterval = 0.1 end
-    if DB.vendorInterval < 0.05 then DB.vendorInterval = 0.1 end
-    if type(DB.maxItemsPerRun) ~= "number" then DB.maxItemsPerRun = 80 end
-    if type(DB.autoLootCycle) ~= "boolean" then DB.autoLootCycle = false end
-    if type(DB.bagFullThreshold) ~= "number" then DB.bagFullThreshold = 2 end
-    if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then DB.merchantMode = "goblin" end
+    if type(DB.muteGreedy) ~= "boolean" then
+        DB.muteGreedy = true
+    end
+    if type(DB.hideGreedyChat) ~= "boolean" then
+        DB.hideGreedyChat = DB.muteGreedy
+    end
+    if type(DB.hideGreedyBubbles) ~= "boolean" then
+        DB.hideGreedyBubbles = DB.muteGreedy
+    end
 
-    if type(DB.muteGreedy) ~= "boolean" then DB.muteGreedy = true end
-    if type(DB.hideGreedyChat) ~= "boolean" then DB.hideGreedyChat = DB.muteGreedy end
-    if type(DB.hideGreedyBubbles) ~= "boolean" then DB.hideGreedyBubbles = DB.muteGreedy end
+    if type(DB.enabled) ~= "boolean" then
+        DB.enabled = true
+    end
+    if type(DB.enableOnlyListedChars) ~= "boolean" then
+        DB.enableOnlyListedChars = false
+    end
 
-    if type(DB.enabled) ~= "boolean" then DB.enabled = true end
-    if type(DB.enableOnlyListedChars) ~= "boolean" then DB.enableOnlyListedChars = false end
-
-    if type(DB.inventoryWorthTotal) ~= "number" then DB.inventoryWorthTotal = 0 end
-    if type(DB.inventoryWorthCount) ~= "number" then DB.inventoryWorthCount = 0 end
-    if type(DB.whitelist)               ~= "table"   then DB.whitelist               = {}    end
-    if type(DB.whitelistMinQuality)     ~= "number"  then DB.whitelistMinQuality     = 1     end
-    if DB.whitelistMinQuality > 3 then DB.whitelistMinQuality = 3 end
-    if type(DB.whitelistQualityEnabled) ~= "boolean" then DB.whitelistQualityEnabled = false end
-    if type(DB.minimapButtonAngle)      ~= "number"  then DB.minimapButtonAngle      = 220   end
-    if type(DB.keepBagsOpen)            ~= "boolean" then DB.keepBagsOpen            = true  end
-    if type(DB.blacklist)               ~= "table"   then DB.blacklist               = {}    end
+    if type(DB.inventoryWorthTotal) ~= "number" then
+        DB.inventoryWorthTotal = 0
+    end
+    if type(DB.inventoryWorthCount) ~= "number" then
+        DB.inventoryWorthCount = 0
+    end
+    if type(DB.whitelist) ~= "table" then
+        DB.whitelist = {}
+    end
+    if type(DB.whitelistMinQuality) ~= "number" then
+        DB.whitelistMinQuality = 1
+    end
+    if DB.whitelistMinQuality > 3 then
+        DB.whitelistMinQuality = 3
+    end
+    if type(DB.whitelistQualityEnabled) ~= "boolean" then
+        DB.whitelistQualityEnabled = false
+    end
+    if type(DB.minimapButtonAngle) ~= "number" then
+        DB.minimapButtonAngle = 220
+    end
+    if type(DB.keepBagsOpen) ~= "boolean" then
+        DB.keepBagsOpen = true
+    end
+    if type(DB.blacklist) ~= "table" then
+        DB.blacklist = {}
+    end
 
     -- Whitelist profiles migration
     if type(DB.whitelistProfiles) ~= "table" then
@@ -248,25 +339,30 @@ local function EnsureDB()
         local hasItems = next(DB.whitelist) ~= nil
         if hasItems then
             local snapshot = {}
-            for k, v in pairs(DB.whitelist) do snapshot[k] = v end
+            for k, v in pairs(DB.whitelist) do
+                snapshot[k] = v
+            end
             DB.whitelistProfiles["Imported"] = snapshot
             DB.activeProfileName = "Imported"
         else
             DB.activeProfileName = "Default"
         end
     end
-    if type(DB.activeProfileName) ~= "string" then DB.activeProfileName = "Default" end
-    DB.whitelistProfiles["Default"] = {}
-    if type(DB.blacklistProfiles) ~= "table" then DB.blacklistProfiles = {} end
-
-if not DB._seededLists then
-    if DB.deleteList and not next(DB.deleteList) then
-        DB.deleteList[300581] = true
-        DB.deleteList[300574] = true
+    if type(DB.activeProfileName) ~= "string" then
+        DB.activeProfileName = "Default"
     end
-    DB._seededLists = true
-end
+    DB.whitelistProfiles["Default"] = {}
+    if type(DB.blacklistProfiles) ~= "table" then
+        DB.blacklistProfiles = {}
+    end
 
+    if not DB._seededLists then
+        if DB.deleteList and not next(DB.deleteList) then
+            DB.deleteList[300581] = true
+            DB.deleteList[300574] = true
+        end
+        DB._seededLists = true
+    end
 end
 
 -- Keep bags open when merchant closes
@@ -278,14 +374,18 @@ local function EC_OpenAllBags()
     elseif OpenBackpack then
         OpenBackpack()
         for i = 1, 4 do
-            if OpenBag then OpenBag(i) end
+            if OpenBag then
+                OpenBag(i)
+            end
         end
     end
 end
 
 EC_GetPlayerName = function()
     local n = UnitName("player")
-    if not n or n == "" then return "" end
+    if not n or n == "" then
+        return ""
+    end
     return n
 end
 
@@ -298,56 +398,73 @@ local function EC_IsCharacterAllowed()
 end
 
 EC_IsAddonEnabledForChar = function()
-    if DB and DB.enabled == false then return false end
+    if DB and DB.enabled == false then
+        return false
+    end
     return EC_IsCharacterAllowed()
 end
 
 local function IsInSet(setTable, itemID)
-    if not itemID or not setTable then return false end
+    if not itemID or not setTable then
+        return false
+    end
     local v = setTable[itemID]
     return (v == true) or (v == 1)
 end
 
-
 -- Whitelist profile functions
 local function EC_ValidateProfileName(name)
-    if type(name) ~= "string" then return false, "Invalid name." end
+    if type(name) ~= "string" then
+        return false, "Invalid name."
+    end
     name = name:gsub("^%s+", ""):gsub("%s+$", "")
-    if name == "" then return false, "Profile name cannot be empty." end
-    if name:find("[:|]") then return false, "Profile name cannot contain : or | characters." end
+    if name == "" then
+        return false, "Profile name cannot be empty."
+    end
+    if name:find("[:|]") then
+        return false, "Profile name cannot contain : or | characters."
+    end
     return true, name
 end
 
 local function EC_CountItems(tbl)
     local n = 0
     for k, v in pairs(tbl) do
-        if type(k) == "number" and (v == true or v == 1) then n = n + 1 end
+        if type(k) == "number" and (v == true or v == 1) then
+            n = n + 1
+        end
     end
     return n
 end
 
 local function EC_SaveProfile(name)
     local ok, cleaned = EC_ValidateProfileName(name)
-    if not ok then return false, cleaned end
+    if not ok then
+        return false, cleaned
+    end
     name = cleaned
     if name == "Default" then
         return false, "The Default profile is locked to empty and cannot be overwritten."
     end
     local snapshot = {}
-    for k, v in pairs(DB.whitelist) do snapshot[k] = v end
+    for k, v in pairs(DB.whitelist) do
+        snapshot[k] = v
+    end
     DB.whitelistProfiles[name] = snapshot
     local blSnapshot = {}
-    for k, v in pairs(DB.blacklist) do blSnapshot[k] = v end
+    for k, v in pairs(DB.blacklist) do
+        blSnapshot[k] = v
+    end
     DB.blacklistProfiles[name] = blSnapshot
     DB.activeProfileName = name
     local wlCount = EC_CountItems(snapshot)
     local blCount = EC_CountItems(blSnapshot)
-    return true, string.format("Saved profile \"|cffffff00%s|r\" (%d whitelist, %d blacklist).", name, wlCount, blCount)
+    return true, string.format('Saved profile "|cffffff00%s|r" (%d whitelist, %d blacklist).', name, wlCount, blCount)
 end
 
 local function EC_LoadProfile(name)
     if type(name) ~= "string" or not DB.whitelistProfiles[name] then
-        return false, string.format("Profile \"%s\" not found.", tostring(name))
+        return false, string.format('Profile "%s" not found.', tostring(name))
     end
     wipe(DB.whitelist)
     for k, v in pairs(DB.whitelistProfiles[name]) do
@@ -364,22 +481,28 @@ local function EC_LoadProfile(name)
     local blCount = EC_CountItems(DB.blacklist)
     -- Refresh panels if they exist
     local wp = _G["EbonClearanceOptionsWhitelist"]
-    if wp and wp.listUI then wp.listUI:Refresh() end
+    if wp and wp.listUI then
+        wp.listUI:Refresh()
+    end
     local bp = _G["EbonClearanceOptionsBlacklist"]
-    if bp and bp.listUI then bp.listUI:Refresh() end
-    return true, string.format("Loaded profile \"|cffffff00%s|r\" (%d whitelist, %d blacklist).", name, wlCount, blCount)
+    if bp and bp.listUI then
+        bp.listUI:Refresh()
+    end
+    return true, string.format('Loaded profile "|cffffff00%s|r" (%d whitelist, %d blacklist).', name, wlCount, blCount)
 end
 
 local function EC_DeleteProfile(name)
     if type(name) ~= "string" or not DB.whitelistProfiles[name] then
-        return false, string.format("Profile \"%s\" not found.", tostring(name))
+        return false, string.format('Profile "%s" not found.', tostring(name))
     end
     if name == "Default" then
         return false, "The Default profile cannot be deleted."
     end
     -- Count remaining profiles
     local count = 0
-    for _ in pairs(DB.whitelistProfiles) do count = count + 1 end
+    for _ in pairs(DB.whitelistProfiles) do
+        count = count + 1
+    end
     if count <= 1 then
         return false, "Cannot delete the only remaining profile."
     end
@@ -388,25 +511,29 @@ local function EC_DeleteProfile(name)
     if DB.activeProfileName == name then
         DB.activeProfileName = next(DB.whitelistProfiles) or "Default"
     end
-    return true, string.format("Deleted profile \"|cffffff00%s|r\".", name)
+    return true, string.format('Deleted profile "|cffffff00%s|r".', name)
 end
 
 local function EC_RenameProfile(oldName, newName)
     if type(oldName) ~= "string" or not DB.whitelistProfiles[oldName] then
-        return false, string.format("Profile \"%s\" not found.", tostring(oldName))
+        return false, string.format('Profile "%s" not found.', tostring(oldName))
     end
     if oldName == "Default" then
         return false, "The Default profile cannot be renamed."
     end
     local ok, cleaned = EC_ValidateProfileName(newName)
-    if not ok then return false, cleaned end
+    if not ok then
+        return false, cleaned
+    end
     newName = cleaned
     if newName == "Default" then
-        return false, "Cannot rename a profile to \"Default\"."
+        return false, 'Cannot rename a profile to "Default".'
     end
-    if newName == oldName then return true, "Name unchanged." end
+    if newName == oldName then
+        return true, "Name unchanged."
+    end
     if DB.whitelistProfiles[newName] then
-        return false, string.format("A profile named \"%s\" already exists.", newName)
+        return false, string.format('A profile named "%s" already exists.', newName)
     end
     DB.whitelistProfiles[newName] = DB.whitelistProfiles[oldName]
     DB.whitelistProfiles[oldName] = nil
@@ -417,11 +544,13 @@ local function EC_RenameProfile(oldName, newName)
     if DB.activeProfileName == oldName then
         DB.activeProfileName = newName
     end
-    return true, string.format("Renamed \"|cffffff00%s|r\" to \"|cffffff00%s|r\".", oldName, newName)
+    return true, string.format('Renamed "|cffffff00%s|r" to "|cffffff00%s|r".', oldName, newName)
 end
 
 local function CopperToColoredText(copper)
-    if not copper or copper < 0 then copper = 0 end
+    if not copper or copper < 0 then
+        copper = 0
+    end
     local gold = math.floor(copper / 10000)
     local silver = math.floor((copper % 10000) / 100)
     local cop = copper % 100
@@ -441,7 +570,6 @@ local function PrintNicef(fmt, ...)
     PrintNice(string.format(fmt, ...))
 end
 
-
 local function EC_CalcInventoryWorthCopper()
     local total = 0
     for bag = 0, 4 do
@@ -451,7 +579,8 @@ local function EC_CalcInventoryWorthCopper()
             if itemID then
                 local texture, itemCount, locked = GetContainerItemInfo(bag, slot)
                 if itemCount and itemCount > 0 then
-                    local name, link, quality, level, minLevel, itemType, subType, stackCount, equipLoc, icon, sellPrice = GetItemInfo(itemID)
+                    local name, link, quality, level, minLevel, itemType, subType, stackCount, equipLoc, icon, sellPrice =
+                        GetItemInfo(itemID)
                     if sellPrice and sellPrice > 0 then
                         total = total + (sellPrice * itemCount)
                     end
@@ -463,20 +592,25 @@ local function EC_CalcInventoryWorthCopper()
 end
 
 local function EC_RecordInventoryWorthSample()
-    if not DB then return end
+    if not DB then
+        return
+    end
     local worth = EC_CalcInventoryWorthCopper()
     DB.inventoryWorthTotal = (DB.inventoryWorthTotal or 0) + worth
     DB.inventoryWorthCount = (DB.inventoryWorthCount or 0) + 1
 end
 
-
 local EC_activeIDBox = nil
 local EC_Original_ChatEdit_InsertLink = ChatEdit_InsertLink
 
 local function EC_ExtractItemID(link)
-    if type(link) ~= "string" then return nil end
+    if type(link) ~= "string" then
+        return nil
+    end
     local id = link:match("item:(%d+)")
-    if id then return tonumber(id) end
+    if id then
+        return tonumber(id)
+    end
     return nil
 end
 
@@ -494,17 +628,23 @@ end
 
 local function SummonGreedyScavenger()
     -- Don't summon while mounted (delayed calls from dismount can race with remounting)
-    if IsMounted and IsMounted() then return end
+    if IsMounted and IsMounted() then
+        return
+    end
 
     local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then return end
+    if not num or num <= 0 then
+        return
+    end
 
     for i = 1, num do
         local creatureID, creatureName, spellID, icon, isSummoned = GetCompanionInfo("CRITTER", i)
         if creatureName == PET_NAME then
             if not isSummoned then
                 -- Dismiss any active critter first, then summon Scavenger
-                if DismissCompanion then DismissCompanion("CRITTER") end
+                if DismissCompanion then
+                    DismissCompanion("CRITTER")
+                end
                 CallCompanion("CRITTER", i)
             end
             EC_addonDismissed = false
@@ -522,7 +662,9 @@ local function DismissGreedyScavenger()
         DismissCompanion("CRITTER")
     else
         local num = GetNumCompanions("CRITTER")
-        if not num or num <= 0 then return end
+        if not num or num <= 0 then
+            return
+        end
         for i = 1, num do
             local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
             if creatureName == PET_NAME and isSummoned then
@@ -537,7 +679,9 @@ local GOBLIN_MERCHANT_SPELL_ID = 600126
 
 local function FindGoblinMerchantIndex()
     local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then return nil end
+    if not num or num <= 0 then
+        return nil
+    end
     for i = 1, num do
         local _, creatureName, spellID, _, isSummoned = GetCompanionInfo("CRITTER", i)
         if creatureName == TARGET_NAME or spellID == GOBLIN_MERCHANT_SPELL_ID then
@@ -549,9 +693,13 @@ end
 
 local function SummonGoblinMerchant()
     local idx = FindGoblinMerchantIndex()
-    if not idx then return end
+    if not idx then
+        return
+    end
     -- Dismiss any active critter first
-    if DismissCompanion then DismissCompanion("CRITTER") end
+    if DismissCompanion then
+        DismissCompanion("CRITTER")
+    end
     CallCompanion("CRITTER", idx)
 end
 
@@ -577,13 +725,15 @@ local STATE = {
     SELLING = "selling",
 }
 local EC_lootCycleState = STATE.IDLE
-local EC_addonDismissed = false  -- true when our code dismissed the Scavenger (mount, cycle, etc)
+local EC_addonDismissed = false -- true when our code dismissed the Scavenger (mount, cycle, etc)
 
 local EC_delayFrame = CreateFrame("Frame")
 local EC_timers = {}
 
 local function EC_Delay(seconds, func)
-    if type(func) ~= "function" then return end
+    if type(func) ~= "function" then
+        return
+    end
     seconds = tonumber(seconds) or 0
     if seconds <= 0 then
         func()
@@ -593,7 +743,9 @@ local function EC_Delay(seconds, func)
 end
 
 EC_delayFrame:SetScript("OnUpdate", function(self, elapsed)
-    if #EC_timers == 0 then return end
+    if #EC_timers == 0 then
+        return
+    end
     for i = #EC_timers, 1, -1 do
         local item = EC_timers[i]
         item.t = item.t - elapsed
@@ -605,7 +757,9 @@ EC_delayFrame:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 local function EC_SummonGreedyWithDelay()
-    if not DB or not DB.summonGreedy then return end
+    if not DB or not DB.summonGreedy then
+        return
+    end
     EC_Delay((DB and DB.summonDelay) or 1.6, SummonGreedyScavenger)
 end
 
@@ -613,7 +767,9 @@ local function EC_GetFreeBagSlots()
     local free = 0
     for bag = 0, 4 do
         local numFree = GetContainerNumFreeSlots(bag)
-        if numFree then free = free + numFree end
+        if numFree then
+            free = free + numFree
+        end
     end
     return free
 end
@@ -621,10 +777,14 @@ end
 local EC_MAX_PET_DISTANCE = 5
 
 local function EC_GetCompanionDistance()
-    if not UnitPosition then return nil end
+    if not UnitPosition then
+        return nil
+    end
     local px, py = UnitPosition("player")
     local cx, cy = UnitPosition("pet")
-    if not px or not cx then return nil end
+    if not px or not cx then
+        return nil
+    end
     local dx, dy = px - cx, py - cy
     return math.sqrt(dx * dx + dy * dy)
 end
@@ -688,13 +848,23 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 
     EC_petCheckElapsed = EC_petCheckElapsed + elapsed
-    if EC_petCheckElapsed < 5 then return end
+    if EC_petCheckElapsed < 5 then
+        return
+    end
     EC_petCheckElapsed = 0
 
-    if not DB or not DB.summonGreedy then return end
-    if not EC_IsAddonEnabledForChar() then return end
-    if IsMounted() then return end
-    if running then return end
+    if not DB or not DB.summonGreedy then
+        return
+    end
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    if IsMounted() then
+        return
+    end
+    if running then
+        return
+    end
 
     -- If auto-loot cycle is on and Scavenger is already out, ensure state is "looting"
     if DB.autoLootCycle and EC_lootCycleState == STATE.IDLE then
@@ -715,7 +885,9 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             EC_lootCycleState = STATE.WAITING_MERCHANT
             PrintNicef("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free)
             -- Dismiss active critter
-            if DismissCompanion then DismissCompanion("CRITTER") end
+            if DismissCompanion then
+                DismissCompanion("CRITTER")
+            end
             -- Summon Goblin Merchant after delay to let dismiss complete
             EC_summonGoblinPending = true
             EC_summonGoblinTimer = 1.5
@@ -724,12 +896,16 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 
     -- Don't re-summon scavenger while waiting for merchant or selling
-    if EC_lootCycleState == STATE.WAITING_MERCHANT or EC_lootCycleState == STATE.SELLING then return end
+    if EC_lootCycleState == STATE.WAITING_MERCHANT or EC_lootCycleState == STATE.SELLING then
+        return
+    end
 
     -- Stuck detection: re-summon Greedy Scavenger if it despawned or is stuck on terrain
     -- Respects: addon enabled, mounted state, mount cooldown, manual unsummon, other companions
     local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then return end
+    if not num or num <= 0 then
+        return
+    end
     local greedyIndex = nil
     local scavengerOut = false
     local anyPetOut = false
@@ -740,7 +916,9 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         end
         if creatureName == PET_NAME then
             greedyIndex = i
-            if isSummoned then scavengerOut = true end
+            if isSummoned then
+                scavengerOut = true
+            end
         end
     end
 
@@ -756,14 +934,20 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
 
     -- Scavenger is not out - check if we should re-summon
     -- Don't re-summon if another companion is active (bank mule, mailbox)
-    if anyPetOut then return end
+    if anyPetOut then
+        return
+    end
 
     -- Don't re-summon if we recently dismissed for mounting
-    if (GetTime() - EC_mountDismissTime) <= 10 then return end
+    if (GetTime() - EC_mountDismissTime) <= 10 then
+        return
+    end
 
     -- Only re-summon if our code dismissed it (mount, cycle, distance-stuck)
     -- If the user manually unsummoned, respect that
-    if not EC_addonDismissed then return end
+    if not EC_addonDismissed then
+        return
+    end
 
     if greedyIndex then
         EC_addonDismissed = false
@@ -778,7 +962,9 @@ local pendingDelete = nil
 local deletePopupHooked = false
 
 local function HookDeletePopupOnce()
-    if deletePopupHooked then return end
+    if deletePopupHooked then
+        return
+    end
     deletePopupHooked = true
 
     local f = CreateFrame("Frame")
@@ -804,7 +990,7 @@ local function HookDeletePopupOnce()
     end)
 end
 
-local EC_IsMerchantAllowed  -- forward declaration for FinishRun
+local EC_IsMerchantAllowed -- forward declaration for FinishRun
 local running = false
 local queue = {}
 local queueIndex = 1
@@ -828,8 +1014,8 @@ local function BuildQueue(junkOnly)
             if itemID then
                 local texture, itemCount, locked = GetContainerItemInfo(bag, slot)
                 if itemCount and itemCount > 0 and not locked then
-                    local name, link, quality, level, minLevel, itemType, subType,
-                          stackCount, equipLoc, icon, sellPrice = GetItemInfo(itemID)
+                    local name, link, quality, level, minLevel, itemType, subType, stackCount, equipLoc, icon, sellPrice =
+                        GetItemInfo(itemID)
                     local hasSellPrice = sellPrice and sellPrice > 0
                     local isJunk = (quality ~= nil) and (quality == 0) and hasSellPrice
                     local whitelistPass = not junkOnly and hasSellPrice and IsInSet(DB.whitelist, itemID)
@@ -840,13 +1026,13 @@ local function BuildQueue(junkOnly)
                     -- Safety: never touch equipped or blacklisted items.
                     local blacklisted = IsInSet(DB.blacklist, itemID)
                     if (isJunk or qualityPass or whitelistPass) and not IsEquippedItem(itemID) and not blacklisted then
-                        queue[#queue+1] = {
-                            type   = "sell",
-                            bag    = bag,
-                            slot   = slot,
+                        queue[#queue + 1] = {
+                            type = "sell",
+                            bag = bag,
+                            slot = slot,
                             itemID = itemID,
-                            count  = itemCount,
-                            price  = sellPrice or 0
+                            count = itemCount,
+                            price = sellPrice or 0,
                         }
                         if sellPrice and sellPrice > 0 then
                             goldThisVendoring = goldThisVendoring + (sellPrice * itemCount)
@@ -865,12 +1051,12 @@ local function BuildQueue(junkOnly)
                 if itemID and IsInSet(DB.deleteList, itemID) and not IsEquippedItem(itemID) then
                     local texture, itemCount, locked = GetContainerItemInfo(bag, slot)
                     if itemCount and itemCount > 0 and not locked then
-                        queue[#queue+1] = {
+                        queue[#queue + 1] = {
                             type = "delete",
                             bag = bag,
                             slot = slot,
                             itemID = itemID,
-                            count = itemCount
+                            count = itemCount,
                         }
                     end
                 end
@@ -900,7 +1086,9 @@ local function FinishRun()
     if MerchantFrame and MerchantFrame:IsShown() then
         PrintNicef("Batch sold |cffffff00%d|r items. Checking for more...", EC_batchTotalSold)
         EC_Delay(1.0, function()
-            if not MerchantFrame or not MerchantFrame:IsShown() then return end
+            if not MerchantFrame or not MerchantFrame:IsShown() then
+                return
+            end
             local merchantAllowed = EC_IsMerchantAllowed()
             BuildQueue(not merchantAllowed)
             if #queue > 0 then
@@ -909,8 +1097,11 @@ local function FinishRun()
                 worker:Show()
             else
                 -- Nothing left - print final summary
-                PrintNicef("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
-                    EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold))
+                PrintNicef(
+                    "Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
+                    EC_batchTotalSold,
+                    CopperToColoredText(EC_batchTotalGold)
+                )
                 if DB and DB.autoLootCycle then
                     EC_lootCycleState = STATE.IDLE
                     EC_SummonGreedyWithDelay()
@@ -923,8 +1114,11 @@ local function FinishRun()
     end
 
     -- All done - print final summary
-    PrintNicef("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
-        EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold))
+    PrintNicef(
+        "Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
+        EC_batchTotalSold,
+        CopperToColoredText(EC_batchTotalGold)
+    )
 
     if DB and DB.autoLootCycle then
         EC_lootCycleState = STATE.IDLE
@@ -956,16 +1150,13 @@ local function DoNextAction()
     end
 
     if action.type == "sell" then
-
         UseContainerItem(action.bag, action.slot)
         DB.totalItemsSold = (DB.totalItemsSold or 0) + (action.count or 1)
         DB.soldItemCounts = DB.soldItemCounts or {}
         if action.itemID then
             DB.soldItemCounts[action.itemID] = (DB.soldItemCounts[action.itemID] or 0) + (action.count or 1)
         end
-
     elseif action.type == "delete" then
-
         ClearCursor()
         PickupContainerItem(action.bag, action.slot)
         local cursorType, cursorID = GetCursorInfo()
@@ -991,7 +1182,9 @@ end
 worker:SetScript("OnUpdate", function(self, elapsed)
     self.t = (self.t or 0) + elapsed
     local interval = (DB and DB.vendorInterval) or 0.1
-    if interval < 0.05 then interval = 0.05 end
+    if interval < 0.05 then
+        interval = 0.05
+    end
     if self.t >= interval then
         self.t = 0
         DoNextAction()
@@ -1019,9 +1212,15 @@ EC_IsMerchantAllowed = function()
 end
 
 local function StartRun()
-    if not EC_IsAddonEnabledForChar() then return end
-    if running then return end
-    if not ShouldRunNow() then return end
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    if running then
+        return
+    end
+    if not ShouldRunNow() then
+        return
+    end
 
     local merchantAllowed = EC_IsMerchantAllowed()
 
@@ -1029,11 +1228,16 @@ local function StartRun()
 
     running = true
 
-
     EC_RecordInventoryWorthSample()
 
-
-    if DB and DB.repairGear == true and CanMerchantRepair and CanMerchantRepair() and GetRepairAllCost and RepairAllItems then
+    if
+        DB
+        and DB.repairGear == true
+        and CanMerchantRepair
+        and CanMerchantRepair()
+        and GetRepairAllCost
+        and RepairAllItems
+    then
         local repairCost, canRepair = GetRepairAllCost()
         if canRepair and repairCost and repairCost > 0 and GetMoney and GetMoney() >= repairCost then
             RepairAllItems()
@@ -1067,7 +1271,7 @@ local function MakeHeader(parent, text, y)
     return fs
 end
 
-local EC_PANEL_WIDTH = 440  -- default fallback; updated dynamically in OnShow
+local EC_PANEL_WIDTH = 440 -- default fallback; updated dynamically in OnShow
 
 local function EC_UpdatePanelWidth()
     local container = InterfaceOptionsFramePanelContainer
@@ -1085,17 +1289,21 @@ local function MakeLabel(parent, text, x, y)
     fs:SetWidth(EC_PANEL_WIDTH - x)
     fs:SetJustifyH("LEFT")
     fs:SetJustifyV("TOP")
-    if fs.SetWordWrap then fs:SetWordWrap(true) end
+    if fs.SetWordWrap then
+        fs:SetWordWrap(true)
+    end
     fs:SetText(text)
     return fs
 end
 
 local function StyleInputBox(editBox)
-    if not editBox then return end
+    if not editBox then
+        return
+    end
     if editBox.SetTextInsets then
         editBox:SetTextInsets(6, 6, 0, 0)
     end
-    
+
     local fs = editBox.GetFontString and editBox:GetFontString()
     if fs and fs.SetDrawLayer then
         fs:SetDrawLayer("OVERLAY")
@@ -1103,27 +1311,32 @@ local function StyleInputBox(editBox)
     if fs and fs.SetAlpha then
         fs:SetAlpha(1)
     end
-    
+
     local n = editBox.GetName and editBox:GetName()
     if n then
         local left = _G[n .. "Left"]
-        local mid  = _G[n .. "Middle"]
-        local right= _G[n .. "Right"]
-        if left and left.SetDrawLayer then left:SetDrawLayer("BACKGROUND") end
-        if mid and mid.SetDrawLayer then mid:SetDrawLayer("BACKGROUND") end
-        if right and right.SetDrawLayer then right:SetDrawLayer("BACKGROUND") end
+        local mid = _G[n .. "Middle"]
+        local right = _G[n .. "Right"]
+        if left and left.SetDrawLayer then
+            left:SetDrawLayer("BACKGROUND")
+        end
+        if mid and mid.SetDrawLayer then
+            mid:SetDrawLayer("BACKGROUND")
+        end
+        if right and right.SetDrawLayer then
+            right:SetDrawLayer("BACKGROUND")
+        end
     end
     editBox:SetFrameLevel((editBox:GetParent() and editBox:GetParent():GetFrameLevel() or editBox:GetFrameLevel()) + 2)
 
-    
     if editBox.GetText and editBox.SetText then
         local t = editBox:GetText() or ""
         editBox:SetText(t)
-        if editBox.SetCursorPosition then editBox:SetCursorPosition(0) end
+        if editBox.SetCursorPosition then
+            editBox:SetCursorPosition(0)
+        end
     end
 end
-
-
 
 local function CreateListUI(parent, titleText, setTableName, x, y)
     local w = EC_PANEL_WIDTH - x
@@ -1135,7 +1348,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     title:SetPoint("TOPLEFT", 0, 0)
     title:SetText(titleText)
 
-    local input = CreateFrame("EditBox", "EbonClearanceIDInput_"..setTableName, box, "InputBoxTemplate")
+    local input = CreateFrame("EditBox", "EbonClearanceIDInput_" .. setTableName, box, "InputBoxTemplate")
     input:SetAutoFocus(false)
     input:SetSize(140, 20)
     input:SetPoint("TOPLEFT", 0, -24)
@@ -1149,8 +1362,14 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     addBtn:SetPoint("LEFT", input, "RIGHT", 8, 0)
     addBtn:SetText("Add")
 
-    input:SetScript("OnEditFocusGained", function(self) EC_activeIDBox = self end)
-    input:SetScript("OnEditFocusLost", function(self) if EC_activeIDBox == self then EC_activeIDBox = nil end end)
+    input:SetScript("OnEditFocusGained", function(self)
+        EC_activeIDBox = self
+    end)
+    input:SetScript("OnEditFocusLost", function(self)
+        if EC_activeIDBox == self then
+            EC_activeIDBox = nil
+        end
+    end)
     input:SetScript("OnReceiveDrag", function(self)
         local ctype, cid = GetCursorInfo()
         if ctype == "item" and cid then
@@ -1160,7 +1379,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         end
     end)
 
-    local sortMode = "id_asc"  -- default: sort by ID ascending
+    local sortMode = "id_asc" -- default: sort by ID ascending
 
     -- Search row: Search box then ID, Name sort buttons all on one line
     local searchLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -1177,7 +1396,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     sortIDBtn:SetPoint("RIGHT", sortNameBtn, "LEFT", -4, 0)
     sortIDBtn:SetText("ID \226\150\178")
 
-    local search = CreateFrame("EditBox", "EbonClearanceSearchInput_"..setTableName, box, "InputBoxTemplate")
+    local search = CreateFrame("EditBox", "EbonClearanceSearchInput_" .. setTableName, box, "InputBoxTemplate")
     search:SetAutoFocus(false)
     search:SetHeight(20)
     search:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
@@ -1186,7 +1405,8 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     search:SetText("")
     StyleInputBox(search)
 
-    local scroll = CreateFrame("ScrollFrame", "EbonClearanceListScroll_"..setTableName, box, "UIPanelScrollFrameTemplate")
+    local scroll =
+        CreateFrame("ScrollFrame", "EbonClearanceListScroll_" .. setTableName, box, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, -78)
     scroll:SetPoint("BOTTOMRIGHT", -26, 8)
 
@@ -1198,11 +1418,18 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     local activeRows = 0
 
     local function GetRow(index)
-        if rowPool[index] then return rowPool[index] end
+        if rowPool[index] then
+            return rowPool[index]
+        end
         local row = CreateFrame("Frame", nil, content)
         row:SetSize(w - 26, 22)
 
-        local rm = CreateFrame("Button", "EbonClearanceListRM_"..setTableName.."_"..index, content, "UIPanelButtonTemplate")
+        local rm = CreateFrame(
+            "Button",
+            "EbonClearanceListRM_" .. setTableName .. "_" .. index,
+            content,
+            "UIPanelButtonTemplate"
+        )
         rm:SetSize(72, 18)
         rm:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         rm:SetText("Remove")
@@ -1229,11 +1456,17 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     end
 
     local function MatchesSearch(id, name, searchText)
-        if not searchText or searchText == "" then return true end
+        if not searchText or searchText == "" then
+            return true
+        end
         local idStr = tostring(id or "")
-        if idStr:find(searchText, 1, true) then return true end
+        if idStr:find(searchText, 1, true) then
+            return true
+        end
         local nameStr = tostring(name or ""):lower()
-        if nameStr:find(searchText, 1, true) then return true end
+        if nameStr:find(searchText, 1, true) then
+            return true
+        end
         return false
     end
 
@@ -1250,10 +1483,14 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         local setTable = DB[setTableName]
         local keys = {}
         for k in pairs(setTable) do
-            if type(k) == "number" then keys[#keys+1] = k end
+            if type(k) == "number" then
+                keys[#keys + 1] = k
+            end
         end
         if sortMode == "id_desc" then
-            table.sort(keys, function(a, b) return a > b end)
+            table.sort(keys, function(a, b)
+                return a > b
+            end)
         elseif sortMode == "name_asc" then
             table.sort(keys, function(a, b)
                 local na = GetItemInfo(a) or ""
@@ -1267,7 +1504,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 return na:lower() > nb:lower()
             end)
         else
-            table.sort(keys)  -- id_asc (default)
+            table.sort(keys) -- id_asc (default)
         end
 
         local shown = 0
@@ -1281,7 +1518,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 -- Request item data from server via tooltip query
                 if GameTooltip and GameTooltip.SetHyperlink then
                     GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
-                    GameTooltip:SetHyperlink("item:"..id..":0:0:0:0:0:0:0")
+                    GameTooltip:SetHyperlink("item:" .. id .. ":0:0:0:0:0:0:0")
                     GameTooltip:Hide()
                 end
                 name = "ItemID: " .. id
@@ -1338,13 +1575,21 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     end)
 
     sortIDBtn:SetScript("OnClick", function()
-        if sortMode == "id_asc" then sortMode = "id_desc" else sortMode = "id_asc" end
+        if sortMode == "id_asc" then
+            sortMode = "id_desc"
+        else
+            sortMode = "id_asc"
+        end
         sortIDBtn:SetText(sortMode == "id_asc" and "ID \226\150\178" or "ID \226\150\188")
         sortNameBtn:SetText("Name \226\150\178")
         Refresh()
     end)
     sortNameBtn:SetScript("OnClick", function()
-        if sortMode == "name_asc" then sortMode = "name_desc" else sortMode = "name_asc" end
+        if sortMode == "name_asc" then
+            sortMode = "name_desc"
+        else
+            sortMode = "name_asc"
+        end
         sortNameBtn:SetText(sortMode == "name_asc" and "Name \226\150\178" or "Name \226\150\188")
         sortIDBtn:SetText("ID \226\150\178")
         Refresh()
@@ -1353,7 +1598,6 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     box.Refresh = Refresh
     return box
 end
-
 
 local function AddCheckbox(parent, name, anchor, labelText, getter, setter, yOff)
     local cb = CreateFrame("CheckButton", name, parent, "InterfaceOptionsCheckButtonTemplate")
@@ -1385,16 +1629,24 @@ local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, 
     local s = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
     s:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOff or -16)
     s:SetMinMaxValues(minVal, maxVal)
-    if s.SetValueStep then s:SetValueStep(step) end
-    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    if s.SetValueStep then
+        s:SetValueStep(step)
+    end
+    if s.SetObeyStepOnDrag then
+        s:SetObeyStepOnDrag(true)
+    end
     s:SetValue(getter())
 
     local low = _G[name .. "Low"]
     local high = _G[name .. "High"]
     local text = _G[name .. "Text"]
 
-    if low then low:SetText(string.format(fmt, minVal)) end
-    if high then high:SetText(string.format(fmt, maxVal)) end
+    if low then
+        low:SetText(string.format(fmt, minVal))
+    end
+    if high then
+        high:SetText(string.format(fmt, maxVal))
+    end
 
     local function RefreshText(v)
         if text then
@@ -1408,8 +1660,12 @@ local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, 
         if step and step > 0 then
             value = math.floor((value / step) + 0.5) * step
         end
-        if value < minVal then value = minVal end
-        if value > maxVal then value = maxVal end
+        if value < minVal then
+            value = minVal
+        end
+        if value > maxVal then
+            value = maxVal
+        end
         setter(value)
         RefreshText(value)
     end)
@@ -1419,7 +1675,9 @@ end
 
 local function EC_UpdateMinimapPos()
     local btn = _G["EbonClearanceMinimapButton"]
-    if not btn then return end
+    if not btn then
+        return
+    end
     local angle = math.rad(DB and DB.minimapButtonAngle or 220)
     local x = math.cos(angle) * 80
     local y = math.sin(angle) * 80
@@ -1428,8 +1686,12 @@ local function EC_UpdateMinimapPos()
 end
 
 local function EC_CreateMinimapButton()
-    if not DB then return end
-    if _G["EbonClearanceMinimapButton"] then return end  -- only create once
+    if not DB then
+        return
+    end
+    if _G["EbonClearanceMinimapButton"] then
+        return
+    end -- only create once
 
     local btn = CreateFrame("Button", "EbonClearanceMinimapButton", Minimap)
     btn:SetSize(31, 31)
@@ -1471,7 +1733,9 @@ local function EC_CreateMinimapButton()
     end)
 
     btn:SetScript("OnUpdate", function(self)
-        if not dragging then return end
+        if not dragging then
+            return
+        end
         if not IsMouseButtonDown("LeftButton") then
             dragging = false
             return
@@ -1482,7 +1746,9 @@ local function EC_CreateMinimapButton()
         cx = cx / scale
         cy = cy / scale
         local angle = math.deg(math.atan2(cy - my, cx - mx))
-        if DB then DB.minimapButtonAngle = angle end
+        if DB then
+            DB.minimapButtonAngle = angle
+        end
         EC_UpdateMinimapPos()
     end)
 
@@ -1491,11 +1757,11 @@ local function EC_CreateMinimapButton()
             InterfaceOptionsFrame_OpenToCategory(MainOptions)
             InterfaceOptionsFrame_OpenToCategory(MainOptions)
         elseif button == "RightButton" then
-            if not DB then return end
+            if not DB then
+                return
+            end
             DB.enabled = not DB.enabled
-            local state = DB.enabled
-                and "|cff00ff00Enabled|r"
-                or  "|cffff4444Disabled|r"
+            local state = DB.enabled and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
             PrintNice("Addon " .. state)
             if self.icon then
                 self.icon:SetDesaturated(not DB.enabled)
@@ -1512,9 +1778,7 @@ local function EC_CreateMinimapButton()
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("EbonClearance")
         GameTooltip:AddLine("Left-click: Options  |  Right-click: Toggle Addon", 1, 1, 1)
-        local stateStr = (DB and DB.enabled ~= false)
-            and "|cff00ff00Enabled|r"
-            or  "|cffff4444Disabled|r"
+        local stateStr = (DB and DB.enabled ~= false) and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
         GameTooltip:AddLine("Status: " .. stateStr)
         local freeSlots = EC_GetFreeBagSlots()
         local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
@@ -1534,14 +1798,23 @@ local function BuildMainPanel(panel, refreshStats)
     local addonVersion = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
     MakeHeader(panel, "EbonClearance " .. addonVersion, -16)
 
-    local welcomeLabel = MakeLabel(panel, "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.", 16, -44)
+    local welcomeLabel = MakeLabel(
+        panel,
+        "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.",
+        16,
+        -44
+    )
     local descLabel2 = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
     descLabel2:SetWidth(EC_PANEL_WIDTH - 16)
     descLabel2:SetJustifyH("LEFT")
     descLabel2:SetJustifyV("TOP")
-    if descLabel2.SetWordWrap then descLabel2:SetWordWrap(true) end
-    descLabel2:SetText("Grey junk is sold automatically. Add items to your whitelist to sell them too, or enable the quality threshold to sell everything up to a chosen rarity. Configure which merchants to use under Merchant Settings.")
+    if descLabel2.SetWordWrap then
+        descLabel2:SetWordWrap(true)
+    end
+    descLabel2:SetText(
+        "Grey junk is sold automatically. Add items to your whitelist to sell them too, or enable the quality threshold to sell everything up to a chosen rarity. Configure which merchants to use under Merchant Settings."
+    )
 
     -- Stats fontstrings. Stacked vertically; each attaches its ref to `panel`
     -- so RefreshStats can find them across subsequent OnShow calls.
@@ -1608,15 +1881,18 @@ local function BuildMainPanel(panel, refreshStats)
     cmdText:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 0, -6)
     cmdText:SetWidth(EC_PANEL_WIDTH - 16)
     cmdText:SetJustifyH("LEFT")
-    if cmdText.SetWordWrap then cmdText:SetWordWrap(true) end
+    if cmdText.SetWordWrap then
+        cmdText:SetWordWrap(true)
+    end
     cmdText:SetText(
-        "|cffffff00/ec|r  Open settings\n" ..
-        "|cffffff00/ec profile list|r  Show all saved profiles\n" ..
-        "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n" ..
-        "|cffffff00/ec profile load <name>|r  Load a saved profile\n" ..
-        "|cffffff00/ec profile delete <name>|r  Delete a profile\n" ..
-        "|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports\n" ..
-        "|cffffff00/ecdebug|r  Show debug info and bag scan")
+        "|cffffff00/ec|r  Open settings\n"
+            .. "|cffffff00/ec profile list|r  Show all saved profiles\n"
+            .. "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n"
+            .. "|cffffff00/ec profile load <name>|r  Load a saved profile\n"
+            .. "|cffffff00/ec profile delete <name>|r  Delete a profile\n"
+            .. "|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports\n"
+            .. "|cffffff00/ecdebug|r  Show debug info and bag scan"
+    )
 end
 
 MainOptions:SetScript("OnShow", function(self)
@@ -1625,7 +1901,9 @@ MainOptions:SetScript("OnShow", function(self)
 
     local function GetMostItem(countTable)
         local bestID, bestCount = nil, 0
-        if type(countTable) ~= "table" then return nil, 0 end
+        if type(countTable) ~= "table" then
+            return nil, 0
+        end
         for id, cnt in pairs(countTable) do
             if type(id) == "number" and type(cnt) == "number" and cnt > bestCount then
                 bestID, bestCount = id, cnt
@@ -1635,7 +1913,9 @@ MainOptions:SetScript("OnShow", function(self)
     end
 
     local function ItemLabel(id)
-        if not id then return "None" end
+        if not id then
+            return "None"
+        end
         local name = GetItemInfo(id)
         if name then
             return string.format("|cff24ffb6%s|r", name)
@@ -1644,7 +1924,9 @@ MainOptions:SetScript("OnShow", function(self)
     end
 
     local function RefreshStats()
-        if not self.statsMoney then return end
+        if not self.statsMoney then
+            return
+        end
         self.statsMoney:SetText("Total Money Made: " .. CopperToColoredText(DB.totalCopper or 0))
         self.statsSold:SetText("Total Items Sold: " .. tostring(DB.totalItemsSold or 0))
         self.statsDeleted:SetText("Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0))
@@ -1654,7 +1936,9 @@ MainOptions:SetScript("OnShow", function(self)
             local cnt = DB.inventoryWorthCount or 0
             local total = DB.inventoryWorthTotal or 0
             local avg = 0
-            if cnt > 0 then avg = math.floor((total / cnt) + 0.5) end
+            if cnt > 0 then
+                avg = math.floor((total / cnt) + 0.5)
+            end
             self.statsAvgWorth:SetText("Average Inventory Worth: " .. CopperToColoredText(avg))
         end
 
@@ -1678,25 +1962,32 @@ end)
 
 InterfaceOptions_AddCategory(MainOptions)
 
-
 local MerchantPanel = CreateFrame("Frame", "EbonClearanceOptionsMerchant", InterfaceOptionsFramePanelContainer)
 MerchantPanel.name = "Merchant Settings"
 MerchantPanel.parent = "EbonClearance"
 
 local EC_MERCHANT_MODES = {
-    { text = "|cffb6ffb6Goblin Merchant|r Only",   value = "goblin" },
-    { text = "Normal Merchants Only",               value = "any"    },
-    { text = "Both (All Merchants)",                value = "both"   },
+    { text = "|cffb6ffb6Goblin Merchant|r Only", value = "goblin" },
+    { text = "Normal Merchants Only", value = "any" },
+    { text = "Both (All Merchants)", value = "both" },
 }
 
 MerchantPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.repairCB then self.repairCB:SetChecked(DB.repairGear) end
-        if self.keepBagsCB then self.keepBagsCB:SetChecked(DB.keepBagsOpen) end
-        if self.speedSlider then self.speedSlider:SetValue(DB.vendorInterval or 0.1) end
-        if self.RefreshMerchantModeDropDown then self:RefreshMerchantModeDropDown() end
+        if self.repairCB then
+            self.repairCB:SetChecked(DB.repairGear)
+        end
+        if self.keepBagsCB then
+            self.keepBagsCB:SetChecked(DB.keepBagsOpen)
+        end
+        if self.speedSlider then
+            self.speedSlider:SetValue(DB.vendorInterval or 0.1)
+        end
+        if self.RefreshMerchantModeDropDown then
+            self:RefreshMerchantModeDropDown()
+        end
         return
     end
     self.inited = true
@@ -1715,7 +2006,9 @@ MerchantPanel:SetScript("OnShow", function(self)
 
     local function GetModeText(mode)
         for _, entry in ipairs(EC_MERCHANT_MODES) do
-            if entry.value == mode then return entry.text end
+            if entry.value == mode then
+                return entry.text
+            end
         end
         return EC_MERCHANT_MODES[1].text
     end
@@ -1743,7 +2036,8 @@ MerchantPanel:SetScript("OnShow", function(self)
         UIDropDownMenu_SetText(modeDD, GetModeText(DB.merchantMode))
     end
 
-    local repairCB = CreateFrame("CheckButton", "EbonClearanceRepairGearCB", self, "InterfaceOptionsCheckButtonTemplate")
+    local repairCB =
+        CreateFrame("CheckButton", "EbonClearanceRepairGearCB", self, "InterfaceOptionsCheckButtonTemplate")
     repairCB:SetPoint("TOPLEFT", 16, -110)
     repairCB:SetChecked(DB.repairGear)
     local rt = _G[repairCB:GetName() .. "Text"]
@@ -1758,7 +2052,8 @@ MerchantPanel:SetScript("OnShow", function(self)
     end)
     self.repairCB = repairCB
 
-    local keepBagsCB = CreateFrame("CheckButton", "EbonClearanceKeepBagsOpenCB", self, "InterfaceOptionsCheckButtonTemplate")
+    local keepBagsCB =
+        CreateFrame("CheckButton", "EbonClearanceKeepBagsOpenCB", self, "InterfaceOptionsCheckButtonTemplate")
     keepBagsCB:SetPoint("TOPLEFT", repairCB, "BOTTOMLEFT", 0, -6)
     keepBagsCB:SetChecked(DB.keepBagsOpen)
     local kbt = _G[keepBagsCB:GetName() .. "Text"]
@@ -1773,21 +2068,30 @@ MerchantPanel:SetScript("OnShow", function(self)
     end)
     self.keepBagsCB = keepBagsCB
 
-    local speedSlider = AddSlider(self, "EbonClearanceVendoringSpeedSlider", keepBagsCB,
-        "Vendoring Speed", 0.05, 0.500, 0.01,
-        function() return DB.vendorInterval or 0.1 end,
-        function(v) DB.vendorInterval = v end,
-        -16)
+    local speedSlider = AddSlider(
+        self,
+        "EbonClearanceVendoringSpeedSlider",
+        keepBagsCB,
+        "Vendoring Speed",
+        0.05,
+        0.500,
+        0.01,
+        function()
+            return DB.vendorInterval or 0.1
+        end,
+        function(v)
+            DB.vendorInterval = v
+        end,
+        -16
+    )
     self.speedSlider = speedSlider
-	speedSlider:SetWidth(200)
+    speedSlider:SetWidth(200)
 end)
 
-
-
 local EC_WHITELIST_QUALITIES = {
-    { text = ColorTextByQuality(1, "White (Common)"),   value = 1 },
+    { text = ColorTextByQuality(1, "White (Common)"), value = 1 },
     { text = ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
-    { text = ColorTextByQuality(3, "Blue (Rare)"),      value = 3 },
+    { text = ColorTextByQuality(3, "Blue (Rare)"), value = 3 },
 }
 
 local WhitelistPanel = CreateFrame("Frame", "EbonClearanceOptionsWhitelist", InterfaceOptionsFramePanelContainer)
@@ -1798,31 +2102,43 @@ WhitelistPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.whitelistQualityCB then self.whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled) end
-        if self.RefreshQualityDropDown then self:RefreshQualityDropDown() end
-        if self.listUI then self.listUI:Refresh() end
+        if self.whitelistQualityCB then
+            self.whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
+        end
+        if self.RefreshQualityDropDown then
+            self:RefreshQualityDropDown()
+        end
+        if self.listUI then
+            self.listUI:Refresh()
+        end
         return
     end
     self.inited = true
 
     MakeHeader(self, "Whitelist Settings", -16)
 
-    local descLabel = MakeLabel(self,
+    local descLabel = MakeLabel(
+        self,
         "Grey items are always sold as junk automatically. Items on the whitelist below are also sold by Item ID.",
-        16, -44)
+        16,
+        -44
+    )
 
     local warnLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     warnLabel:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
     warnLabel:SetWidth(EC_PANEL_WIDTH - 16)
     warnLabel:SetJustifyH("LEFT")
     warnLabel:SetJustifyV("TOP")
-    if warnLabel.SetWordWrap then warnLabel:SetWordWrap(true) end
+    if warnLabel.SetWordWrap then
+        warnLabel:SetWordWrap(true)
+    end
     warnLabel:SetText(
-        "|cffff4444WARNING:|r The quality threshold and the whitelist work together. When the threshold is enabled, " ..
-        "everything at or below the chosen quality with a vendor price will be sold, on top of any items in your whitelist.")
+        "|cffff4444WARNING:|r The quality threshold and the whitelist work together. When the threshold is enabled, "
+            .. "everything at or below the chosen quality with a vendor price will be sold, on top of any items in your whitelist."
+    )
 
-    local whitelistQualityCB = CreateFrame("CheckButton", "EbonClearanceWhitelistQualityCB",
-        self, "InterfaceOptionsCheckButtonTemplate")
+    local whitelistQualityCB =
+        CreateFrame("CheckButton", "EbonClearanceWhitelistQualityCB", self, "InterfaceOptionsCheckButtonTemplate")
     whitelistQualityCB:SetPoint("TOPLEFT", warnLabel, "BOTTOMLEFT", 0, -8)
     whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
     local wqt = _G["EbonClearanceWhitelistQualityCBText"]
@@ -1834,7 +2150,9 @@ WhitelistPanel:SetScript("OnShow", function(self)
     whitelistQualityCB:SetScript("OnClick", function()
         DB.whitelistQualityEnabled = whitelistQualityCB:GetChecked() and true or false
         PlaySound("igMainMenuOptionCheckBoxOn")
-        if self.RefreshQualityDropDown then self:RefreshQualityDropDown() end
+        if self.RefreshQualityDropDown then
+            self:RefreshQualityDropDown()
+        end
     end)
     self.whitelistQualityCB = whitelistQualityCB
 
@@ -1842,8 +2160,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
     ddLabel:SetPoint("TOPLEFT", whitelistQualityCB, "BOTTOMLEFT", 0, -4)
     ddLabel:SetText("Sell items up to quality:")
 
-    local qualityDD = CreateFrame("Frame", "EbonClearanceWhitelistQualityDropDown",
-        self, "UIDropDownMenuTemplate")
+    local qualityDD = CreateFrame("Frame", "EbonClearanceWhitelistQualityDropDown", self, "UIDropDownMenuTemplate")
     qualityDD:SetPoint("LEFT", ddLabel, "RIGHT", -8, -2)
     UIDropDownMenu_SetWidth(qualityDD, 160)
 
@@ -1851,10 +2168,10 @@ WhitelistPanel:SetScript("OnShow", function(self)
         local info = UIDropDownMenu_CreateInfo()
         for i = 1, #EC_WHITELIST_QUALITIES do
             local opt = EC_WHITELIST_QUALITIES[i]
-            info.text    = opt.text
-            info.value   = opt.value
+            info.text = opt.text
+            info.value = opt.value
             info.checked = (DB.whitelistMinQuality == opt.value)
-            info.func    = function()
+            info.func = function()
                 DB.whitelistMinQuality = opt.value
                 UIDropDownMenu_SetSelectedValue(qualityDD, opt.value)
                 UIDropDownMenu_SetText(qualityDD, opt.text)
@@ -1866,8 +2183,11 @@ WhitelistPanel:SetScript("OnShow", function(self)
 
     function self:RefreshQualityDropDown()
         local cur = DB.whitelistMinQuality or 1
-        if cur < 1 then cur = 1; DB.whitelistMinQuality = 1 end
-        local label = EC_WHITELIST_QUALITIES[1].text  -- fallback to White
+        if cur < 1 then
+            cur = 1
+            DB.whitelistMinQuality = 1
+        end
+        local label = EC_WHITELIST_QUALITIES[1].text -- fallback to White
         for i = 1, #EC_WHITELIST_QUALITIES do
             if EC_WHITELIST_QUALITIES[i].value == cur then
                 label = EC_WHITELIST_QUALITIES[i].text
@@ -1877,9 +2197,13 @@ WhitelistPanel:SetScript("OnShow", function(self)
         UIDropDownMenu_SetSelectedValue(qualityDD, cur)
         UIDropDownMenu_SetText(qualityDD, label)
         if DB.whitelistQualityEnabled then
-            if UIDropDownMenu_EnableDropDown  then UIDropDownMenu_EnableDropDown(qualityDD)  end
+            if UIDropDownMenu_EnableDropDown then
+                UIDropDownMenu_EnableDropDown(qualityDD)
+            end
         else
-            if UIDropDownMenu_DisableDropDown then UIDropDownMenu_DisableDropDown(qualityDD) end
+            if UIDropDownMenu_DisableDropDown then
+                UIDropDownMenu_DisableDropDown(qualityDD)
+            end
         end
     end
     self:RefreshQualityDropDown()
@@ -1893,7 +2217,13 @@ WhitelistPanel:SetScript("OnShow", function(self)
                 local itemID = GetContainerItemID(bag, slot)
                 if itemID then
                     local _, _, itemQuality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
-                    if itemQuality and itemQuality == quality and sellPrice and sellPrice > 0 and not DB.whitelist[itemID] then
+                    if
+                        itemQuality
+                        and itemQuality == quality
+                        and sellPrice
+                        and sellPrice > 0
+                        and not DB.whitelist[itemID]
+                    then
                         DB.whitelist[itemID] = true
                         added = added + 1
                     end
@@ -1914,7 +2244,9 @@ WhitelistPanel:SetScript("OnShow", function(self)
     btnWhite:SetScript("OnClick", function()
         local added = ScanBagsForQuality(1)
         PrintNicef("Scanned bags: added |cffffff00%d|r white items to whitelist.", added)
-        if self.listUI then self.listUI:Refresh() end
+        if self.listUI then
+            self.listUI:Refresh()
+        end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
 
@@ -1925,7 +2257,9 @@ WhitelistPanel:SetScript("OnShow", function(self)
     btnGreen:SetScript("OnClick", function()
         local added = ScanBagsForQuality(2)
         PrintNicef("Scanned bags: added |cffffff00%d|r green items to whitelist.", added)
-        if self.listUI then self.listUI:Refresh() end
+        if self.listUI then
+            self.listUI:Refresh()
+        end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
 
@@ -1936,7 +2270,9 @@ WhitelistPanel:SetScript("OnShow", function(self)
     btnBlue:SetScript("OnClick", function()
         local added = ScanBagsForQuality(3)
         PrintNicef("Scanned bags: added |cffffff00%d|r blue items to whitelist.", added)
-        if self.listUI then self.listUI:Refresh() end
+        if self.listUI then
+            self.listUI:Refresh()
+        end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
 
@@ -1951,8 +2287,6 @@ WhitelistPanel:SetScript("OnShow", function(self)
     noteFS:SetText("|cffaaaaaa Listed items are always sold regardless of the quality threshold.|r")
 end)
 
-
-
 -- ============================================================
 -- Whitelist Profiles Panel
 -- ============================================================
@@ -1964,13 +2298,20 @@ ProfilesPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.RefreshProfileList then self:RefreshProfileList() end
+        if self.RefreshProfileList then
+            self:RefreshProfileList()
+        end
         return
     end
     self.inited = true
 
     MakeHeader(self, "Profiles", -16)
-    MakeLabel(self, "Save and load different whitelists as named profiles. Useful for swapping between farming locations. The Default profile is always empty and can't be changed, so give your profile a name before saving.", 16, -44)
+    MakeLabel(
+        self,
+        "Save and load different whitelists as named profiles. Useful for swapping between farming locations. The Default profile is always empty and can't be changed, so give your profile a name before saving.",
+        16,
+        -44
+    )
 
     -- Active profile indicator
     local activeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -2023,21 +2364,23 @@ ProfilesPanel:SetScript("OnShow", function(self)
     local listW = EC_PANEL_WIDTH - 42
 
     local function GetRow(index)
-        if rowPool[index] then return rowPool[index] end
+        if rowPool[index] then
+            return rowPool[index]
+        end
         local row = CreateFrame("Frame", nil, content)
         row:SetSize(listW, 22)
 
-        local delBtn = CreateFrame("Button", "EbonClearanceProfileDel_"..index, content, "UIPanelButtonTemplate")
+        local delBtn = CreateFrame("Button", "EbonClearanceProfileDel_" .. index, content, "UIPanelButtonTemplate")
         delBtn:SetSize(58, 18)
         delBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         delBtn:SetText("Delete")
 
-        local clearBtn = CreateFrame("Button", "EbonClearanceProfileClear_"..index, content, "UIPanelButtonTemplate")
+        local clearBtn = CreateFrame("Button", "EbonClearanceProfileClear_" .. index, content, "UIPanelButtonTemplate")
         clearBtn:SetSize(52, 18)
         clearBtn:SetPoint("RIGHT", delBtn, "LEFT", -4, 0)
         clearBtn:SetText("Clear")
 
-        local loadBtn = CreateFrame("Button", "EbonClearanceProfileLoad_"..index, content, "UIPanelButtonTemplate")
+        local loadBtn = CreateFrame("Button", "EbonClearanceProfileLoad_" .. index, content, "UIPanelButtonTemplate")
         loadBtn:SetSize(52, 18)
         loadBtn:SetPoint("RIGHT", clearBtn, "LEFT", -4, 0)
         loadBtn:SetText("Load")
@@ -2097,9 +2440,13 @@ ProfilesPanel:SetScript("OnShow", function(self)
         -- Collect and sort profile names
         local names = {}
         for name in pairs(DB.whitelistProfiles) do
-            if type(name) == "string" then names[#names + 1] = name end
+            if type(name) == "string" then
+                names[#names + 1] = name
+            end
         end
-        table.sort(names, function(a, b) return a:lower() < b:lower() end)
+        table.sort(names, function(a, b)
+            return a:lower() < b:lower()
+        end)
 
         local shown = 0
         local rowY = -4
@@ -2114,8 +2461,13 @@ ProfilesPanel:SetScript("OnShow", function(self)
             local wlCount = EC_CountItems(DB.whitelistProfiles[pName])
             local blCount = DB.blacklistProfiles[pName] and EC_CountItems(DB.blacklistProfiles[pName]) or 0
             local label = isActive
-                and string.format("|cff00ff00%s|r  |cff888888(%d whitelist, %d blacklist, active)|r", pName, wlCount, blCount)
-                or  string.format("|cffffff00%s|r  |cff888888(%d whitelist, %d blacklist)|r", pName, wlCount, blCount)
+                    and string.format(
+                        "|cff00ff00%s|r  |cff888888(%d whitelist, %d blacklist, active)|r",
+                        pName,
+                        wlCount,
+                        blCount
+                    )
+                or string.format("|cffffff00%s|r  |cff888888(%d whitelist, %d blacklist)|r", pName, wlCount, blCount)
             row.text:SetText(label)
 
             row.loadBtn:SetScript("OnClick", function()
@@ -2144,10 +2496,12 @@ ProfilesPanel:SetScript("OnShow", function(self)
                     if pName == DB.activeProfileName then
                         wipe(DB.whitelist)
                         local wp = _G["EbonClearanceOptionsWhitelist"]
-                        if wp and wp.listUI then wp.listUI:Refresh() end
+                        if wp and wp.listUI then
+                            wp.listUI:Refresh()
+                        end
                     end
-                    statusFS:SetText("|cff00ff00Cleared profile \"|cffffff00" .. pName .. "|r|cff00ff00\".|r")
-                    PrintNicef("Cleared profile \"|cffffff00%s|r\".", pName)
+                    statusFS:SetText('|cff00ff00Cleared profile "|cffffff00' .. pName .. '|r|cff00ff00".|r')
+                    PrintNicef('Cleared profile "|cffffff00%s|r".', pName)
                     PlaySound("igMainMenuOptionCheckBoxOn")
                 end
                 self:RefreshProfileList()
@@ -2209,8 +2563,6 @@ ProfilesPanel:SetScript("OnShow", function(self)
     self:RefreshProfileList()
 end)
 
-
-
 -- ============================================================
 -- Whitelist Import / Export Panel
 -- ============================================================
@@ -2221,7 +2573,9 @@ ImportExportPanel.parent = "EbonClearance"
 local EC_EXPORT_PREFIX = "EC:"
 
 local function EC_ExportWhitelist(listName)
-    if not DB or not DB.whitelist then return "" end
+    if not DB or not DB.whitelist then
+        return ""
+    end
     local ids = {}
     for k, v in pairs(DB.whitelist) do
         if type(k) == "number" and (v == true or v == 1) then
@@ -2235,7 +2589,9 @@ local function EC_ExportWhitelist(listName)
 end
 
 local function EC_ImportWhitelist(str, mode)
-    if type(str) ~= "string" or str == "" then return false, "Empty string." end
+    if type(str) ~= "string" or str == "" then
+        return false, "Empty string."
+    end
     str = str:gsub("^%s+", ""):gsub("%s+$", "")
     if str:sub(1, #EC_EXPORT_PREFIX) ~= EC_EXPORT_PREFIX then
         return false, "Invalid format. String must start with EC:"
@@ -2248,7 +2604,9 @@ local function EC_ImportWhitelist(str, mode)
     local ids = {}
     for token in idStr:gmatch("([^,]+)") do
         local n = tonumber(token:match("^%s*(%d+)%s*$"))
-        if n and n > 0 then ids[#ids + 1] = n end
+        if n and n > 0 then
+            ids[#ids + 1] = n
+        end
     end
     if #ids == 0 then
         return false, "No valid item IDs found."
@@ -2263,13 +2621,15 @@ local function EC_ImportWhitelist(str, mode)
         end
         DB.whitelist[ids[i]] = true
     end
-    return true, string.format("Imported |cffffff00%d|r items from \"%s\" (%d new).", #ids, name or "Unnamed", added)
+    return true, string.format('Imported |cffffff00%d|r items from "%s" (%d new).', #ids, name or "Unnamed", added)
 end
 
 ImportExportPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
-    if self.inited then return end
+    if self.inited then
+        return
+    end
     self.inited = true
 
     MakeHeader(self, "Import / Export", -16)
@@ -2306,7 +2666,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
     -- EditBox has zero clickable area, so users can't focus it to paste.
     exportBox:SetSize(560, 50)
     exportBox:SetText("")
-    exportBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    exportBox:SetScript("OnEscapePressed", function(s)
+        s:ClearFocus()
+    end)
     exportScroll:SetScrollChild(exportBox)
 
     exportBtn:SetScript("OnClick", function()
@@ -2317,7 +2679,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
         PlaySound("igMainMenuOptionCheckBoxOn")
         local count = 0
         for k, v in pairs(DB.whitelist) do
-            if (v == true or v == 1) then count = count + 1 end
+            if v == true or v == 1 then
+                count = count + 1
+            end
         end
         PrintNicef("Exported |cffffff00%d|r whitelist items. Copy the text above.", count)
     end)
@@ -2337,7 +2701,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
     -- for paste. Without SetHeight, multiline EditBoxes collapse to zero.
     importBox:SetSize(560, 50)
     importBox:SetText("")
-    importBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    importBox:SetScript("OnEscapePressed", function(s)
+        s:ClearFocus()
+    end)
     importScroll:SetScrollChild(importBox)
 
     local importMergeBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
@@ -2363,13 +2729,19 @@ ImportExportPanel:SetScript("OnShow", function(self)
             PlaySound("igMainMenuOptionCheckBoxOn")
             PrintNice(msg)
             local wp = _G["EbonClearanceOptionsWhitelist"]
-            if wp and wp.listUI then wp.listUI:Refresh() end
+            if wp and wp.listUI then
+                wp.listUI:Refresh()
+            end
         else
             PlaySound("igMainMenuOptionCheckBoxOff")
         end
     end
-    importMergeBtn:SetScript("OnClick", function() runImport("merge") end)
-    importReplaceBtn:SetScript("OnClick", function() runImport("replace") end)
+    importMergeBtn:SetScript("OnClick", function()
+        runImport("merge")
+    end)
+    importReplaceBtn:SetScript("OnClick", function()
+        runImport("replace")
+    end)
 
     -- Grey explanation is anchored to the status line so it naturally flows
     -- below, even when the status wraps to two lines (e.g. long error).
@@ -2378,13 +2750,14 @@ ImportExportPanel:SetScript("OnShow", function(self)
     importNote:SetWidth(EC_PANEL_WIDTH - 16)
     importNote:SetJustifyH("LEFT")
     importNote:SetJustifyV("TOP")
-    if importNote.SetWordWrap then importNote:SetWordWrap(true) end
+    if importNote.SetWordWrap then
+        importNote:SetWordWrap(true)
+    end
     importNote:SetText(
-        "|cffaaaaaa'Merge' adds imported items to your existing whitelist. " ..
-        "'Replace' clears your whitelist first, then adds the imported items.|r")
+        "|cffaaaaaa'Merge' adds imported items to your existing whitelist. "
+            .. "'Replace' clears your whitelist first, then adds the imported items.|r"
+    )
 end)
-
-
 
 local DeletePanel = CreateFrame("Frame", "EbonClearanceOptionsDeletion", InterfaceOptionsFramePanelContainer)
 DeletePanel.name = "Deletion List"
@@ -2394,7 +2767,9 @@ DeletePanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.listUI then self.listUI:Refresh() end
+        if self.listUI then
+            self.listUI:Refresh()
+        end
         return
     end
     self.inited = true
@@ -2406,8 +2781,12 @@ DeletePanel:SetScript("OnShow", function(self)
     delHint:SetWidth(EC_PANEL_WIDTH - 16)
     delHint:SetJustifyH("LEFT")
     delHint:SetJustifyV("TOP")
-    if delHint.SetWordWrap then delHint:SetWordWrap(true) end
-    delHint:SetText("Add Items by Shift-Clicking an item, drag & drop into the text field below, or type the ItemID and press Add.")
+    if delHint.SetWordWrap then
+        delHint:SetWordWrap(true)
+    end
+    delHint:SetText(
+        "Add Items by Shift-Clicking an item, drag & drop into the text field below, or type the ItemID and press Add."
+    )
 
     local delCB = CreateFrame("CheckButton", "EbonClearanceEnableDeleteCB", self, "InterfaceOptionsCheckButtonTemplate")
     delCB:SetPoint("TOPLEFT", delHint, "BOTTOMLEFT", 0, -6)
@@ -2423,14 +2802,9 @@ DeletePanel:SetScript("OnShow", function(self)
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
 
-
     self.listUI = CreateListUI(self, "Deletion List", "deleteList", 16, -130)
     self.listUI:Refresh()
 end)
-
-
-
-
 
 local ScavengerPanel = CreateFrame("Frame", "EbonClearanceOptionsScavenger", InterfaceOptionsFramePanelContainer)
 
@@ -2441,19 +2815,38 @@ ScavengerPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.sumCB then self.sumCB:SetChecked(DB.summonGreedy) end
-        if self.delaySlider then self.delaySlider:SetValue(DB.summonDelay or 1.6) end
-        if self.muteCB then self.muteCB:SetChecked(DB.muteGreedy) end
-        if self.chatCB then self.chatCB:SetChecked(DB.hideGreedyChat) end
-        if self.bubCB then self.bubCB:SetChecked(DB.hideGreedyBubbles) end
-        if self.cycleCB then self.cycleCB:SetChecked(DB.autoLootCycle) end
-        if self.threshSlider then self.threshSlider:SetValue(DB.bagFullThreshold or 2) end
+        if self.sumCB then
+            self.sumCB:SetChecked(DB.summonGreedy)
+        end
+        if self.delaySlider then
+            self.delaySlider:SetValue(DB.summonDelay or 1.6)
+        end
+        if self.muteCB then
+            self.muteCB:SetChecked(DB.muteGreedy)
+        end
+        if self.chatCB then
+            self.chatCB:SetChecked(DB.hideGreedyChat)
+        end
+        if self.bubCB then
+            self.bubCB:SetChecked(DB.hideGreedyBubbles)
+        end
+        if self.cycleCB then
+            self.cycleCB:SetChecked(DB.autoLootCycle)
+        end
+        if self.threshSlider then
+            self.threshSlider:SetValue(DB.bagFullThreshold or 2)
+        end
         return
     end
     self.inited = true
 
     MakeHeader(self, "Scavenger Settings", -16)
-    MakeLabel(self, "Controls summoning and muting of |cffff7f7fGreedy Scavenger|r. The auto-loot cycle will continuously loot and sell while your bags fill up.", 16, -44)
+    MakeLabel(
+        self,
+        "Controls summoning and muting of |cffff7f7fGreedy Scavenger|r. The auto-loot cycle will continuously loot and sell while your bags fill up.",
+        16,
+        -44
+    )
 
     local sumCB = CreateFrame("CheckButton", "EbonClearanceSummonGreedyCB", self, "InterfaceOptionsCheckButtonTemplate")
     sumCB:SetPoint("TOPLEFT", 16, -96)
@@ -2468,63 +2861,113 @@ ScavengerPanel:SetScript("OnShow", function(self)
         DB.summonGreedy = sumCB:GetChecked() and true or false
         if not DB.summonGreedy and DB.autoLootCycle then
             DB.autoLootCycle = false
-            if self.cycleCB then self.cycleCB:SetChecked(false) end
+            if self.cycleCB then
+                self.cycleCB:SetChecked(false)
+            end
         end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
     self.sumCB = sumCB
-    
 
-
-    local chatCB = AddCheckbox(self, "EbonClearanceHideGreedyChatCB", sumCB, "Hide |cffff7f7fGreedy Scavenger|r's chat messages",
-        function() return DB.hideGreedyChat end,
-        function(v) DB.hideGreedyChat = v; ApplyGreedyChatFilter() end,
-        -8)
+    local chatCB = AddCheckbox(
+        self,
+        "EbonClearanceHideGreedyChatCB",
+        sumCB,
+        "Hide |cffff7f7fGreedy Scavenger|r's chat messages",
+        function()
+            return DB.hideGreedyChat
+        end,
+        function(v)
+            DB.hideGreedyChat = v
+            ApplyGreedyChatFilter()
+        end,
+        -8
+    )
     self.chatCB = chatCB
 
-    local bubCB = AddCheckbox(self, "EbonClearanceHideGreedyBubblesCB", chatCB, "Hide |cffff7f7fGreedy Scavenger|r's chat bubbles",
-        function() return DB.hideGreedyBubbles end,
-        function(v) DB.hideGreedyBubbles = v end,
-        -8)
+    local bubCB = AddCheckbox(
+        self,
+        "EbonClearanceHideGreedyBubblesCB",
+        chatCB,
+        "Hide |cffff7f7fGreedy Scavenger|r's chat bubbles",
+        function()
+            return DB.hideGreedyBubbles
+        end,
+        function(v)
+            DB.hideGreedyBubbles = v
+        end,
+        -8
+    )
     self.bubCB = bubCB
 
-    local delaySlider = AddSlider(self, "EbonClearanceSummonDelaySlider", bubCB, "Summon delay", 0.0, 3.0, 0.1,
-        function() return DB.summonDelay or 1.6 end,
-        function(v) DB.summonDelay = v end,
-        -16)
+    local delaySlider = AddSlider(
+        self,
+        "EbonClearanceSummonDelaySlider",
+        bubCB,
+        "Summon delay",
+        0.0,
+        3.0,
+        0.1,
+        function()
+            return DB.summonDelay or 1.6
+        end,
+        function(v)
+            DB.summonDelay = v
+        end,
+        -16
+    )
     self.delaySlider = delaySlider
-	delaySlider:SetWidth(200)
+    delaySlider:SetWidth(200)
 
-    local cycleCB = AddCheckbox(self, "EbonClearanceAutoLootCycleCB", delaySlider,
+    local cycleCB = AddCheckbox(
+        self,
+        "EbonClearanceAutoLootCycleCB",
+        delaySlider,
         "Enable auto-loot cycle (loot, sell, repeat)",
-        function() return DB.autoLootCycle end,
+        function()
+            return DB.autoLootCycle
+        end,
         function(v)
             DB.autoLootCycle = v
             if v then
                 DB.summonGreedy = true
-                if self.sumCB then self.sumCB:SetChecked(true) end
+                if self.sumCB then
+                    self.sumCB:SetChecked(true)
+                end
             end
         end,
-        -16)
+        -16
+    )
     self.cycleCB = cycleCB
 
     local cycleNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     cycleNote:SetPoint("TOPLEFT", cycleCB, "BOTTOMLEFT", 26, -2)
     cycleNote:SetWidth(EC_PANEL_WIDTH - 60)
     cycleNote:SetJustifyH("LEFT")
-    cycleNote:SetText("|cff888888When bags hit the threshold, Greedy is dismissed and the Goblin Merchant is summoned for you. Right-click the Goblin Merchant to open the vendor window - selling and re-summoning Greedy happens automatically from there.|r")
+    cycleNote:SetText(
+        "|cff888888When bags hit the threshold, Greedy is dismissed and the Goblin Merchant is summoned for you. Right-click the Goblin Merchant to open the vendor window - selling and re-summoning Greedy happens automatically from there.|r"
+    )
 
-    local threshSlider = AddSlider(self, "EbonClearanceBagThresholdSlider", cycleNote,
-        "Bag slots remaining before selling", 0, 10, 1,
-        function() return DB.bagFullThreshold or 2 end,
-        function(v) DB.bagFullThreshold = v end,
-        -16, "%d")
+    local threshSlider = AddSlider(
+        self,
+        "EbonClearanceBagThresholdSlider",
+        cycleNote,
+        "Bag slots remaining before selling",
+        0,
+        10,
+        1,
+        function()
+            return DB.bagFullThreshold or 2
+        end,
+        function(v)
+            DB.bagFullThreshold = v
+        end,
+        -16,
+        "%d"
+    )
     self.threshSlider = threshSlider
     threshSlider:SetWidth(200)
 end)
-
-
-
 
 local CharPanel = CreateFrame("Frame", "EbonClearanceOptionsCharacter", InterfaceOptionsFramePanelContainer)
 CharPanel.name = "Character Settings"
@@ -2540,7 +2983,7 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     title:SetPoint("TOPLEFT", 0, 0)
     title:SetText(titleText)
 
-    local input = CreateFrame("EditBox", "EbonClearanceIDInput_"..setTableName, box, "InputBoxTemplate")
+    local input = CreateFrame("EditBox", "EbonClearanceIDInput_" .. setTableName, box, "InputBoxTemplate")
     input:SetAutoFocus(false)
     input:SetSize(180, 20)
     input:SetPoint("TOPLEFT", 0, -24)
@@ -2561,7 +3004,8 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
         input:HighlightText()
     end)
 
-    local scroll = CreateFrame("ScrollFrame", "EbonClearanceNameListScroll_"..setTableName, box, "UIPanelScrollFrameTemplate")
+    local scroll =
+        CreateFrame("ScrollFrame", "EbonClearanceNameListScroll_" .. setTableName, box, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, -54)
     scroll:SetPoint("BOTTOMRIGHT", -26, 8)
 
@@ -2573,11 +3017,18 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     local activeRows = 0
 
     local function GetRow(index)
-        if rowPool[index] then return rowPool[index] end
+        if rowPool[index] then
+            return rowPool[index]
+        end
         local row = CreateFrame("Frame", nil, content)
         row:SetSize(w - 26, 22)
 
-        local rm = CreateFrame("Button", "EbonClearanceNameRM_"..setTableName.."_"..index, content, "UIPanelButtonTemplate")
+        local rm = CreateFrame(
+            "Button",
+            "EbonClearanceNameRM_" .. setTableName .. "_" .. index,
+            content,
+            "UIPanelButtonTemplate"
+        )
         rm:SetSize(72, 18)
         rm:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         rm:SetText("Remove")
@@ -2606,7 +3057,9 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     local function SortedNames(t)
         local names = {}
         for k in pairs(t) do
-            if type(k) == "string" and k ~= "" then names[#names+1] = k end
+            if type(k) == "string" and k ~= "" then
+                names[#names + 1] = k
+            end
         end
         table.sort(names)
         return names
@@ -2626,7 +3079,7 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
             local row = GetRow(shown)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", 0, rowY)
-            row.text:SetText("|cffb6ffb6"..name.."|r")
+            row.text:SetText("|cffb6ffb6" .. name .. "|r")
             row.rm:SetScript("OnClick", function()
                 DB[setTableName][name] = nil
                 Refresh()
@@ -2665,16 +3118,26 @@ CharPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.onlyCB then self.onlyCB:SetChecked(DB.enableOnlyListedChars) end
-        if self.listUI then self.listUI:Refresh() end
+        if self.onlyCB then
+            self.onlyCB:SetChecked(DB.enableOnlyListedChars)
+        end
+        if self.listUI then
+            self.listUI:Refresh()
+        end
         return
     end
     self.inited = true
 
     MakeHeader(self, "Character Settings", -16)
-    local charDesc = MakeLabel(self, "Prevents this addon from running on characters you didn't intend. If enabled, EbonClearance runs only on characters listed below.", 16, -44)
+    local charDesc = MakeLabel(
+        self,
+        "Prevents this addon from running on characters you didn't intend. If enabled, EbonClearance runs only on characters listed below.",
+        16,
+        -44
+    )
 
-    local cb = CreateFrame("CheckButton", "EbonClearanceEnableOnlyListedCharsCB", self, "InterfaceOptionsCheckButtonTemplate")
+    local cb =
+        CreateFrame("CheckButton", "EbonClearanceEnableOnlyListedCharsCB", self, "InterfaceOptionsCheckButtonTemplate")
     cb:SetPoint("TOPLEFT", charDesc, "BOTTOMLEFT", 0, -8)
     cb:SetChecked(DB.enableOnlyListedChars)
 
@@ -2706,13 +3169,20 @@ BlacklistPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.listUI then self.listUI:Refresh() end
+        if self.listUI then
+            self.listUI:Refresh()
+        end
         return
     end
     self.inited = true
 
     MakeHeader(self, "Blacklist (Do Not Sell)", -16)
-    local blDesc = MakeLabel(self, "Items on this list will never be sold, even if they match the whitelist or quality threshold. Use this to protect valuable items you want to sell at the auction house.", 16, -44)
+    local blDesc = MakeLabel(
+        self,
+        "Items on this list will never be sold, even if they match the whitelist or quality threshold. Use this to protect valuable items you want to sell at the auction house.",
+        16,
+        -44
+    )
 
     -- Anchored to blDesc so the hint stays below even when the description
     -- wraps to multiple lines (previous absolute y=-80 overlapped the wrap).
@@ -2721,7 +3191,9 @@ BlacklistPanel:SetScript("OnShow", function(self)
     blHint:SetWidth(EC_PANEL_WIDTH - 16)
     blHint:SetJustifyH("LEFT")
     blHint:SetJustifyV("TOP")
-    if blHint.SetWordWrap then blHint:SetWordWrap(true) end
+    if blHint.SetWordWrap then
+        blHint:SetWordWrap(true)
+    end
     blHint:SetText("Add items by Shift-Clicking, dragging, or typing the Item ID below.")
 
     self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -130)
@@ -2740,7 +3212,9 @@ InterfaceOptions_AddCategory(WhitelistPanel)
 
 -- Bug report diagnostic snapshot
 local function EC_CopperToPlainText(copper)
-    if not copper or copper <= 0 then return "0" end
+    if not copper or copper <= 0 then
+        return "0"
+    end
     local gold = math.floor(copper / 10000)
     local silver = math.floor((copper % 10000) / 100)
     local cop = copper % 100
@@ -2756,7 +3230,9 @@ end
 local function EC_BuildBugReport()
     EnsureDB()
     local lines = {}
-    local function add(s) lines[#lines + 1] = s end
+    local function add(s)
+        lines[#lines + 1] = s
+    end
 
     local version = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
     local player = UnitName("player") or "Unknown"
@@ -2802,9 +3278,13 @@ local function EC_BuildBugReport()
     add("--- Profiles ---")
     local names = {}
     for name in pairs(DB.whitelistProfiles) do
-        if type(name) == "string" then names[#names + 1] = name end
+        if type(name) == "string" then
+            names[#names + 1] = name
+        end
     end
-    table.sort(names, function(a, b) return a:lower() < b:lower() end)
+    table.sort(names, function(a, b)
+        return a:lower() < b:lower()
+    end)
     for i = 1, #names do
         local wlCount = EC_CountItems(DB.whitelistProfiles[names[i]])
         local blCount = DB.blacklistProfiles[names[i]] and EC_CountItems(DB.blacklistProfiles[names[i]]) or 0
@@ -2837,8 +3317,10 @@ local function EC_ShowBugReport()
         f:SetBackdrop({
             bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true, tileSize = 32, edgeSize = 32,
-            insets = { left = 8, right = 8, top = 8, bottom = 8 }
+            tile = true,
+            tileSize = 32,
+            edgeSize = 32,
+            insets = { left = 8, right = 8, top = 8, bottom = 8 },
         })
         f:SetMovable(true)
         f:EnableMouse(true)
@@ -2869,7 +3351,9 @@ local function EC_ShowBugReport()
         editBox:SetFontObject("GameFontHighlightSmall")
         editBox:SetWidth(400)
         editBox:SetText("")
-        editBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+        editBox:SetScript("OnEscapePressed", function(s)
+            s:ClearFocus()
+        end)
         scroll:SetScrollChild(editBox)
 
         f.editBox = editBox
@@ -2919,9 +3403,13 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             PrintNice("Whitelist Profiles:")
             local names = {}
             for name in pairs(DB.whitelistProfiles) do
-                if type(name) == "string" then names[#names + 1] = name end
+                if type(name) == "string" then
+                    names[#names + 1] = name
+                end
             end
-            table.sort(names, function(a, b) return a:lower() < b:lower() end)
+            table.sort(names, function(a, b)
+                return a:lower() < b:lower()
+            end)
             for i = 1, #names do
                 local wlCount = EC_CountItems(DB.whitelistProfiles[names[i]])
                 local blCount = DB.blacklistProfiles[names[i]] and EC_CountItems(DB.blacklistProfiles[names[i]]) or 0
@@ -2946,19 +3434,24 @@ end
 
 SLASH_ECDEBUG1 = "/ecdebug"
 SlashCmdList["ECDEBUG"] = function()
-    if not DB then PrintNice("|cffff4444DB not loaded.|r"); return end
+    if not DB then
+        PrintNice("|cffff4444DB not loaded.|r")
+        return
+    end
     PrintNice("|cffffff00=== EbonClearance Debug ===|r")
     PrintNice("whitelistQualityEnabled: " .. tostring(DB.whitelistQualityEnabled))
-    PrintNice("whitelistMinQuality: "     .. tostring(DB.whitelistMinQuality))
+    PrintNice("whitelistMinQuality: " .. tostring(DB.whitelistMinQuality))
 
     -- Print whitelist contents
     local wlCount = 0
     for k, v in pairs(DB.whitelist or {}) do
-        local n = GetItemInfo(k) or ("ItemID:"..tostring(k))
+        local n = GetItemInfo(k) or ("ItemID:" .. tostring(k))
         PrintNicef("  Whitelist[%s] = %s  (%s)", tostring(k), tostring(v), n)
         wlCount = wlCount + 1
     end
-    if wlCount == 0 then PrintNice("  (whitelist is empty)") end
+    if wlCount == 0 then
+        PrintNice("  (whitelist is empty)")
+    end
 
     -- Scan bags and check which items would be sold
     PrintNice("|cffffff00--- Bag scan ---|r")
@@ -2977,8 +3470,18 @@ SlashCmdList["ECDEBUG"] = function()
                         qp = (quality ~= nil) and (quality <= (DB.whitelistMinQuality or 1))
                     end
                     if junk or wp or qp then
-                        PrintNicef("|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s junk=%s wp=%s qp=%s sp=%s name=%s",
-                            bag, slot, itemID, tostring(quality), tostring(junk), tostring(wp), tostring(qp), tostring(sellPrice), tostring(name))
+                        PrintNicef(
+                            "|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s junk=%s wp=%s qp=%s sp=%s name=%s",
+                            bag,
+                            slot,
+                            itemID,
+                            tostring(quality),
+                            tostring(junk),
+                            tostring(wp),
+                            tostring(qp),
+                            tostring(sellPrice),
+                            tostring(name)
+                        )
                     end
                 end
             end
@@ -2996,24 +3499,26 @@ f:RegisterEvent("MERCHANT_SHOW")
 f:RegisterEvent("MERCHANT_CLOSED")
 f:RegisterEvent("UNIT_AURA")
 
-
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addonName = ...
         if addonName == ADDON_NAME then
             EnsureDB()
             HookDeletePopupOnce()
-            if ApplyGreedyChatFilter then ApplyGreedyChatFilter() end
+            if ApplyGreedyChatFilter then
+                ApplyGreedyChatFilter()
+            end
             EC_CreateMinimapButton()
         end
-
     elseif event == "PLAYER_LOGOUT" then
-        if DB then EbonClearanceDB = DB end
-
+        if DB then
+            EbonClearanceDB = DB
+        end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         EnsureDB()
-        if EC_InstallGreedyMuteOnce then EC_InstallGreedyMuteOnce() end
-
+        if EC_InstallGreedyMuteOnce then
+            EC_InstallGreedyMuteOnce()
+        end
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
         EC_merchantReminderPending = false
@@ -3028,7 +3533,6 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
         EC_InstallGreedyMuteOnce()
         StartRun()
-
     elseif event == "UNIT_AURA" then
         local unit = ...
         if unit == "player" and DB and DB.summonGreedy and EC_IsAddonEnabledForChar() then
@@ -3041,7 +3545,6 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
             EC_wasMounted = mounted
         end
-
     elseif event == "MERCHANT_CLOSED" then
         running = false
         worker:Hide()
@@ -3055,7 +3558,6 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_Delay(0.8, EC_OpenAllBags)
         end
         EC_keepBagsFlag = false
-
     end
 
     if event == "PLAYER_LOGIN" then

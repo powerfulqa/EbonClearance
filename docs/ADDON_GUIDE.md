@@ -29,6 +29,10 @@ internet tutorial disagree, follow the guide.
    panel's OnShow does the "if inited then refresh-only; return" dance.
 10. **No external libraries.** No Ace3, no LibStub, no LDB. See the
     Ace3 decision record below for the reasoning and escape hatch.
+11. **Doc links never use `#L<n>` line anchors.** Link to the file by
+    name (e.g. `[CreateListUI](../EbonClearance.lua)`) and let readers
+    `grep` for the symbol. Line numbers shift on every refactor; symbol
+    names don't.
 
 ## Client target: 3.3.5a
 

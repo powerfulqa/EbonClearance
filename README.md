@@ -47,7 +47,7 @@ EbonClearance started life as a fork of [EbonholdStuff](https://github.com/Badut
 | **Equipped item protection** | No | Yes - gear is never touched, bag slots verified |
 | **Item deletion** | Yes | Yes |
 | **Greedy Scavenger management** | Yes | Yes |
-| **Auto-loot cycle** | Yes - full summon/dismiss/sell loop | Yes - bag monitoring, merchant summon and auto-target |
+| **Auto-loot cycle** | Yes - full summon/dismiss/sell loop | Yes - bag monitoring and Goblin Merchant summon (right-click to sell) |
 | **Mount detection** | No | Yes - auto-dismiss on mount, re-summon on dismount |
 | **Pet stuck detection** | No | Yes - re-summons if it despawns or wanders |
 | **Sell cap (disconnect protection)** | Yes (80/pulse) | Yes (80/run) |
@@ -106,7 +106,24 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - World of Warcraft (WotLK client, Interface 30300)
 - Project Ebonhold server
 
+## For Contributors
+
+Working on the addon? There's developer documentation under [docs/](docs/):
+
+- [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md) is the prescriptive guide for coding in this addon. Read it first: it covers 3.3.5a client gotchas, the file's architecture, naming conventions, the state machine, UI patterns and the decision not to embed Ace3.
+- [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) is a short list of known follow-up cleanups that weren't part of the last pass.
+
+A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
+
 ## Changelog
+
+### v2.0.12
+
+- **Fix: Can't paste into the Import field** - The Import/Export panel's paste box had no clickable area when empty, so pasting an exported string was impossible unless you typed a character first. Both the export and import boxes now have an explicit height.
+- **Fix: Import error text overlapping the grey explanation** - Clicking Import with an empty box showed a red "empty string" warning that overlapped the grey help text below it. The help text is now anchored beneath the status line and flows correctly even when the error wraps to two lines.
+- **Fix: Misleading Scavenger Settings description** - The auto-loot cycle note claimed the Goblin Merchant was "targeted for you" when the bag threshold triggers. The addon does not target anything; it only dismisses the Scavenger and summons the Goblin Merchant. The text now describes what actually happens.
+- **Fix: Blacklist "Protected Items" label overlap** - On the Blacklist (Do Not Sell) panel, the "Protected Items" title was sitting too close to the line above it, causing a slight overlap when the description wrapped. Hints are now anchored relative to the description so the layout stays clean regardless of text wrapping.
+- **Internal cleanup** - State transitions now use named constants instead of string literals so typos fail loudly rather than silently. Hot WoW API calls are cached as local upvalues. The main options panel's build step is factored out of its OnShow. The two Import button handlers were deduplicated into a single helper. A new `PrintNicef` helper replaces most `PrintNice(string.format(...))` call sites. No behavioural changes.
 
 ### v2.0.11
 

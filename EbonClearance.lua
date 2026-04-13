@@ -5,6 +5,24 @@ local PET_NAME = "Greedy scavenger"
 local EC_GetPlayerName
 local EC_IsAddonEnabledForChar
 
+-- Cached WoW 3.3.5a API upvalues. Local lookups beat _G hash on hot paths
+-- (bag scans, vendor loop, pet-check OnUpdate). See docs/ADDON_GUIDE.md.
+local GetItemInfo = GetItemInfo
+local GetContainerItemID = GetContainerItemID
+local GetContainerItemInfo = GetContainerItemInfo
+local GetContainerNumSlots = GetContainerNumSlots
+local UseContainerItem = UseContainerItem
+local PickupContainerItem = PickupContainerItem
+local DeleteCursorItem = DeleteCursorItem
+local GetMerchantNumItems = GetMerchantNumItems
+local GetMerchantItemInfo = GetMerchantItemInfo
+local GetMerchantItemLink = GetMerchantItemLink
+local GetNumCompanions = GetNumCompanions
+local GetCompanionInfo = GetCompanionInfo
+local CallCompanion = CallCompanion
+local IsMounted = IsMounted
+local IsEquippedItem = IsEquippedItem
+
 local EC_greedyMessages = {}
 local EC_greedyFiltersInstalled = false
 
@@ -162,8 +180,7 @@ local function ApplyGreedyChatFilter()
             ChatFrame_RemoveMessageEventFilter(ev, GreedyScavengerChatFilter)
         end
         if DB and ((DB.muteGreedy == true) or (DB.hideGreedyChat == true)) and ChatFrame_AddMessageEventFilter then
-            
-ChatFrame_AddMessageEventFilter(ev, GreedyScavengerChatFilter)
+            ChatFrame_AddMessageEventFilter(ev, GreedyScavengerChatFilter)
         end
     end
 end
@@ -419,6 +436,11 @@ local function PrintNice(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff7fbfff[EbonClearance]|r " .. msg)
 end
 
+-- Format + print convenience. Use instead of PrintNice(string.format(fmt, ...)).
+local function PrintNicef(fmt, ...)
+    PrintNice(string.format(fmt, ...))
+end
+
 
 local function EC_CalcInventoryWorthCopper()
     local total = 0
@@ -487,7 +509,7 @@ local function SummonGreedyScavenger()
             end
             EC_addonDismissed = false
             if DB and DB.autoLootCycle then
-                EC_lootCycleState = "looting"
+                EC_lootCycleState = STATE.LOOTING
             end
             return
         end
@@ -546,7 +568,15 @@ end
 
 local EC_wasMounted = false
 local EC_mountDismissTime = 0
-local EC_lootCycleState = "idle"
+-- Auto-loot cycle state machine. Use STATE.X constants at all assignment
+-- and comparison sites so typos fail as nil-compare rather than silent bugs.
+local STATE = {
+    IDLE = "idle",
+    LOOTING = "looting",
+    WAITING_MERCHANT = "waiting_merchant",
+    SELLING = "selling",
+}
+local EC_lootCycleState = STATE.IDLE
 local EC_addonDismissed = false  -- true when our code dismissed the Scavenger (mount, cycle, etc)
 
 local EC_delayFrame = CreateFrame("Frame")
@@ -622,7 +652,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
                 EC_targetGoblinTimer = 2.0
             else
                 PrintNice("|cffff4444Goblin Merchant not found in companion list!|r")
-                EC_lootCycleState = "looting"
+                EC_lootCycleState = STATE.LOOTING
             end
         end
         return
@@ -640,7 +670,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
                 EC_merchantReminderTimer = 8.0
             else
                 PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
-                EC_lootCycleState = "looting"
+                EC_lootCycleState = STATE.LOOTING
             end
         end
         return
@@ -651,7 +681,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         EC_merchantReminderTimer = EC_merchantReminderTimer - elapsed
         if EC_merchantReminderTimer <= 0 then
             EC_merchantReminderPending = false
-            if EC_lootCycleState == "waiting_merchant" then
+            if EC_lootCycleState == STATE.WAITING_MERCHANT then
                 PrintNice("|cffffff00Reminder: right-click the Goblin Merchant to open the vendor window.|r")
             end
         end
@@ -667,23 +697,23 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     if running then return end
 
     -- If auto-loot cycle is on and Scavenger is already out, ensure state is "looting"
-    if DB.autoLootCycle and EC_lootCycleState == "idle" then
+    if DB.autoLootCycle and EC_lootCycleState == STATE.IDLE then
         local num = GetNumCompanions("CRITTER")
         for i = 1, (num or 0) do
             local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
             if creatureName == PET_NAME and isSummoned then
-                EC_lootCycleState = "looting"
+                EC_lootCycleState = STATE.LOOTING
                 break
             end
         end
     end
 
     -- Auto-loot cycle: check bag space while looting
-    if DB.autoLootCycle and EC_lootCycleState == "looting" then
+    if DB.autoLootCycle and EC_lootCycleState == STATE.LOOTING then
         local free = EC_GetFreeBagSlots()
         if free <= (DB.bagFullThreshold or 2) then
-            EC_lootCycleState = "waiting_merchant"
-            PrintNice(string.format("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free))
+            EC_lootCycleState = STATE.WAITING_MERCHANT
+            PrintNicef("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free)
             -- Dismiss active critter
             if DismissCompanion then DismissCompanion("CRITTER") end
             -- Summon Goblin Merchant after delay to let dismiss complete
@@ -694,7 +724,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 
     -- Don't re-summon scavenger while waiting for merchant or selling
-    if EC_lootCycleState == "waiting_merchant" or EC_lootCycleState == "selling" then return end
+    if EC_lootCycleState == STATE.WAITING_MERCHANT or EC_lootCycleState == STATE.SELLING then return end
 
     -- Stuck detection: re-summon Greedy Scavenger if it despawned or is stuck on terrain
     -- Respects: addon enabled, mounted state, mount cooldown, manual unsummon, other companions
@@ -739,7 +769,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         EC_addonDismissed = false
         CallCompanion("CRITTER", greedyIndex)
         if DB and DB.autoLootCycle then
-            EC_lootCycleState = "looting"
+            EC_lootCycleState = STATE.LOOTING
         end
     end
 end)
@@ -854,7 +884,7 @@ local function BuildQueue(junkOnly)
         for i = #queue, cap + 1, -1 do
             queue[i] = nil
         end
-        PrintNice(string.format("|cffffff00Capped at %d items this run (%d skipped). Visit again to sell the rest.|r", cap, removed))
+        PrintNicef("|cffffff00Capped at %d items this run (%d skipped). Visit again to sell the rest.|r", cap, removed)
     end
 end
 
@@ -868,7 +898,7 @@ local function FinishRun()
 
     -- Check if merchant is still open - delay re-scan so server can process sold items
     if MerchantFrame and MerchantFrame:IsShown() then
-        PrintNice(string.format("Batch sold |cffffff00%d|r items. Checking for more...", EC_batchTotalSold))
+        PrintNicef("Batch sold |cffffff00%d|r items. Checking for more...", EC_batchTotalSold)
         EC_Delay(1.0, function()
             if not MerchantFrame or not MerchantFrame:IsShown() then return end
             local merchantAllowed = EC_IsMerchantAllowed()
@@ -879,10 +909,10 @@ local function FinishRun()
                 worker:Show()
             else
                 -- Nothing left - print final summary
-                PrintNice(string.format("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
-                    EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold)))
+                PrintNicef("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
+                    EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold))
                 if DB and DB.autoLootCycle then
-                    EC_lootCycleState = "idle"
+                    EC_lootCycleState = STATE.IDLE
                     EC_SummonGreedyWithDelay()
                 else
                     EC_SummonGreedyWithDelay()
@@ -893,11 +923,11 @@ local function FinishRun()
     end
 
     -- All done - print final summary
-    PrintNice(string.format("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
-        EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold)))
+    PrintNicef("Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
+        EC_batchTotalSold, CopperToColoredText(EC_batchTotalGold))
 
     if DB and DB.autoLootCycle then
-        EC_lootCycleState = "idle"
+        EC_lootCycleState = STATE.IDLE
         EC_SummonGreedyWithDelay()
     else
         EC_SummonGreedyWithDelay()
@@ -1497,6 +1527,98 @@ local function EC_CreateMinimapButton()
     end)
 end
 
+-- Build the static widgets for the main options panel. Called once per panel
+-- (guarded by `panel.inited` in OnShow). `refreshStats` is the dynamic refresh
+-- callback captured by the Reset button.
+local function BuildMainPanel(panel, refreshStats)
+    local addonVersion = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
+    MakeHeader(panel, "EbonClearance " .. addonVersion, -16)
+
+    local welcomeLabel = MakeLabel(panel, "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.", 16, -44)
+    local descLabel2 = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
+    descLabel2:SetWidth(EC_PANEL_WIDTH - 16)
+    descLabel2:SetJustifyH("LEFT")
+    descLabel2:SetJustifyV("TOP")
+    if descLabel2.SetWordWrap then descLabel2:SetWordWrap(true) end
+    descLabel2:SetText("Grey junk is sold automatically. Add items to your whitelist to sell them too, or enable the quality threshold to sell everything up to a chosen rarity. Configure which merchants to use under Merchant Settings.")
+
+    -- Stats fontstrings. Stacked vertically; each attaches its ref to `panel`
+    -- so RefreshStats can find them across subsequent OnShow calls.
+    local money = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    money:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)
+    panel.statsMoney = money
+
+    local sold = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    sold:SetPoint("TOPLEFT", money, "BOTTOMLEFT", 0, -6)
+    panel.statsSold = sold
+
+    local deleted = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    deleted:SetPoint("TOPLEFT", sold, "BOTTOMLEFT", 0, -6)
+    panel.statsDeleted = deleted
+
+    local repairs = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    repairs:SetPoint("TOPLEFT", deleted, "BOTTOMLEFT", 0, -6)
+    panel.statsRepairs = repairs
+
+    local repairCost = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    repairCost:SetPoint("TOPLEFT", repairs, "BOTTOMLEFT", 0, -6)
+    panel.statsRepairCost = repairCost
+
+    local avgWorth = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    avgWorth:SetPoint("TOPLEFT", repairCost, "BOTTOMLEFT", 0, -6)
+    panel.statsAvgWorth = avgWorth
+
+    local mostSold = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    mostSold:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -6)
+    mostSold:SetWidth(EC_PANEL_WIDTH - 16)
+    mostSold:SetJustifyH("LEFT")
+    panel.statsMostSold = mostSold
+
+    local statsNote = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    statsNote:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -4)
+    statsNote:SetWidth(EC_PANEL_WIDTH - 16)
+    statsNote:SetJustifyH("LEFT")
+    statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
+
+    local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", panel, "UIPanelButtonTemplate")
+    resetBtn:SetSize(170, 22)
+    resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -8)
+    resetBtn:SetText("Reset All Stats")
+    resetBtn:SetScript("OnClick", function()
+        DB.totalCopper = 0
+        DB.totalItemsSold = 0
+        DB.totalItemsDeleted = 0
+        DB.totalRepairs = 0
+        DB.totalRepairCopper = 0
+        DB.inventoryWorthTotal = 0
+        DB.inventoryWorthCount = 0
+        wipe(DB.soldItemCounts)
+        wipe(DB.deletedItemCounts)
+        refreshStats()
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+
+    -- Slash commands reference.
+    local cmdHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    cmdHeader:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -16)
+    cmdHeader:SetText("Slash Commands")
+
+    local cmdText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    cmdText:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 0, -6)
+    cmdText:SetWidth(EC_PANEL_WIDTH - 16)
+    cmdText:SetJustifyH("LEFT")
+    if cmdText.SetWordWrap then cmdText:SetWordWrap(true) end
+    cmdText:SetText(
+        "|cffffff00/ec|r  Open settings\n" ..
+        "|cffffff00/ec profile list|r  Show all saved profiles\n" ..
+        "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n" ..
+        "|cffffff00/ec profile load <name>|r  Load a saved profile\n" ..
+        "|cffffff00/ec profile delete <name>|r  Delete a profile\n" ..
+        "|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports\n" ..
+        "|cffffff00/ecdebug|r  Show debug info and bag scan")
+end
+
 MainOptions:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
@@ -1550,92 +1672,7 @@ MainOptions:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    local addonVersion = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
-    MakeHeader(self, "EbonClearance " .. addonVersion, -16)
-
-    local welcomeLabel = MakeLabel(self, "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.", 16, -44)
-    local descLabel2 = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
-    descLabel2:SetWidth(EC_PANEL_WIDTH - 16)
-    descLabel2:SetJustifyH("LEFT")
-    descLabel2:SetJustifyV("TOP")
-    if descLabel2.SetWordWrap then descLabel2:SetWordWrap(true) end
-    descLabel2:SetText("Grey junk is sold automatically. Add items to your whitelist to sell them too, or enable the quality threshold to sell everything up to a chosen rarity. Configure which merchants to use under Merchant Settings.")
-
-    local money = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    money:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)
-    self.statsMoney = money
-
-    local sold = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    sold:SetPoint("TOPLEFT", money, "BOTTOMLEFT", 0, -6)
-    self.statsSold = sold
-
-    local deleted = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    deleted:SetPoint("TOPLEFT", sold, "BOTTOMLEFT", 0, -6)
-    self.statsDeleted = deleted
-
-    local repairs = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    repairs:SetPoint("TOPLEFT", deleted, "BOTTOMLEFT", 0, -6)
-    self.statsRepairs = repairs
-
-    local repairCost = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    repairCost:SetPoint("TOPLEFT", repairs, "BOTTOMLEFT", 0, -6)
-    self.statsRepairCost = repairCost
-
-    local avgWorth = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    avgWorth:SetPoint("TOPLEFT", repairCost, "BOTTOMLEFT", 0, -6)
-    self.statsAvgWorth = avgWorth
-
-
-    local mostSold = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    mostSold:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -6)
-    mostSold:SetWidth(EC_PANEL_WIDTH - 16)
-    mostSold:SetJustifyH("LEFT")
-    self.statsMostSold = mostSold
-
-    local statsNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statsNote:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -4)
-    statsNote:SetWidth(EC_PANEL_WIDTH - 16)
-    statsNote:SetJustifyH("LEFT")
-    statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
-
-    local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", self, "UIPanelButtonTemplate")
-    resetBtn:SetSize(170, 22)
-    resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -8)
-    resetBtn:SetText("Reset All Stats")
-    resetBtn:SetScript("OnClick", function()
-        DB.totalCopper = 0
-        DB.totalItemsSold = 0
-        DB.totalItemsDeleted = 0
-        DB.totalRepairs = 0
-        DB.totalRepairCopper = 0
-        DB.inventoryWorthTotal = 0
-        DB.inventoryWorthCount = 0
-        wipe(DB.soldItemCounts)
-        wipe(DB.deletedItemCounts)
-        RefreshStats()
-        PlaySound("igMainMenuOptionCheckBoxOn")
-    end)
-
-    -- Slash commands reference
-    local cmdHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cmdHeader:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -16)
-    cmdHeader:SetText("Slash Commands")
-
-    local cmdText = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    cmdText:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 0, -6)
-    cmdText:SetWidth(EC_PANEL_WIDTH - 16)
-    cmdText:SetJustifyH("LEFT")
-    if cmdText.SetWordWrap then cmdText:SetWordWrap(true) end
-    cmdText:SetText(
-        "|cffffff00/ec|r  Open settings\n" ..
-        "|cffffff00/ec profile list|r  Show all saved profiles\n" ..
-        "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n" ..
-        "|cffffff00/ec profile load <name>|r  Load a saved profile\n" ..
-        "|cffffff00/ec profile delete <name>|r  Delete a profile\n" ..
-        "|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports\n" ..
-        "|cffffff00/ecdebug|r  Show debug info and bag scan")
-
+    BuildMainPanel(self, RefreshStats)
     RefreshStats()
 end)
 
@@ -1876,7 +1913,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
     btnWhite:SetText("|cffffffffWhite|r")
     btnWhite:SetScript("OnClick", function()
         local added = ScanBagsForQuality(1)
-        PrintNice(string.format("Scanned bags: added |cffffff00%d|r white items to whitelist.", added))
+        PrintNicef("Scanned bags: added |cffffff00%d|r white items to whitelist.", added)
         if self.listUI then self.listUI:Refresh() end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
@@ -1887,7 +1924,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
     btnGreen:SetText("|cff1eff00Green|r")
     btnGreen:SetScript("OnClick", function()
         local added = ScanBagsForQuality(2)
-        PrintNice(string.format("Scanned bags: added |cffffff00%d|r green items to whitelist.", added))
+        PrintNicef("Scanned bags: added |cffffff00%d|r green items to whitelist.", added)
         if self.listUI then self.listUI:Refresh() end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
@@ -1898,7 +1935,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
     btnBlue:SetText("|cff0070ddBlue|r")
     btnBlue:SetScript("OnClick", function()
         local added = ScanBagsForQuality(3)
-        PrintNice(string.format("Scanned bags: added |cffffff00%d|r blue items to whitelist.", added))
+        PrintNicef("Scanned bags: added |cffffff00%d|r blue items to whitelist.", added)
         if self.listUI then self.listUI:Refresh() end
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
@@ -2110,7 +2147,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
                         if wp and wp.listUI then wp.listUI:Refresh() end
                     end
                     statusFS:SetText("|cff00ff00Cleared profile \"|cffffff00" .. pName .. "|r|cff00ff00\".|r")
-                    PrintNice(string.format("Cleared profile \"|cffffff00%s|r\".", pName))
+                    PrintNicef("Cleared profile \"|cffffff00%s|r\".", pName)
                     PlaySound("igMainMenuOptionCheckBoxOn")
                 end
                 self:RefreshProfileList()
@@ -2265,7 +2302,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
     exportBox:SetAutoFocus(false)
     exportBox:SetMultiLine(true)
     exportBox:SetFontObject("GameFontHighlightSmall")
-    exportBox:SetWidth(560)
+    -- Size the EditBox explicitly. Without SetHeight, an empty multiline
+    -- EditBox has zero clickable area, so users can't focus it to paste.
+    exportBox:SetSize(560, 50)
     exportBox:SetText("")
     exportBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
     exportScroll:SetScrollChild(exportBox)
@@ -2280,7 +2319,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         for k, v in pairs(DB.whitelist) do
             if (v == true or v == 1) then count = count + 1 end
         end
-        PrintNice(string.format("Exported |cffffff00%d|r whitelist items. Copy the text above.", count))
+        PrintNicef("Exported |cffffff00%d|r whitelist items. Copy the text above.", count)
     end)
 
     -- === IMPORT SECTION ===
@@ -2294,7 +2333,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
     importBox:SetAutoFocus(false)
     importBox:SetMultiLine(true)
     importBox:SetFontObject("GameFontHighlightSmall")
-    importBox:SetWidth(560)
+    -- Explicit size required so an empty EditBox still has a clickable area
+    -- for paste. Without SetHeight, multiline EditBoxes collapse to zero.
+    importBox:SetSize(560, 50)
     importBox:SetText("")
     importBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
     importScroll:SetScrollChild(importBox)
@@ -2315,8 +2356,8 @@ ImportExportPanel:SetScript("OnShow", function(self)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")
 
-    importMergeBtn:SetScript("OnClick", function()
-        local ok, msg = EC_ImportWhitelist(importBox:GetText(), "merge")
+    local function runImport(mode)
+        local ok, msg = EC_ImportWhitelist(importBox:GetText(), mode)
         statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
         if ok then
             PlaySound("igMainMenuOptionCheckBoxOn")
@@ -2326,25 +2367,21 @@ ImportExportPanel:SetScript("OnShow", function(self)
         else
             PlaySound("igMainMenuOptionCheckBoxOff")
         end
-    end)
+    end
+    importMergeBtn:SetScript("OnClick", function() runImport("merge") end)
+    importReplaceBtn:SetScript("OnClick", function() runImport("replace") end)
 
-    importReplaceBtn:SetScript("OnClick", function()
-        local ok, msg = EC_ImportWhitelist(importBox:GetText(), "replace")
-        statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
-        if ok then
-            PlaySound("igMainMenuOptionCheckBoxOn")
-            PrintNice(msg)
-            local wp = _G["EbonClearanceOptionsWhitelist"]
-            if wp and wp.listUI then wp.listUI:Refresh() end
-        else
-            PlaySound("igMainMenuOptionCheckBoxOff")
-        end
-    end)
-
-    MakeLabel(self,
+    -- Grey explanation is anchored to the status line so it naturally flows
+    -- below, even when the status wraps to two lines (e.g. long error).
+    local importNote = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    importNote:SetPoint("TOPLEFT", statusFS, "BOTTOMLEFT", 0, -8)
+    importNote:SetWidth(EC_PANEL_WIDTH - 16)
+    importNote:SetJustifyH("LEFT")
+    importNote:SetJustifyV("TOP")
+    if importNote.SetWordWrap then importNote:SetWordWrap(true) end
+    importNote:SetText(
         "|cffaaaaaa'Merge' adds imported items to your existing whitelist. " ..
-        "'Replace' clears your whitelist first, then adds the imported items.|r",
-        16, -282)
+        "'Replace' clears your whitelist first, then adds the imported items.|r")
 end)
 
 
@@ -2475,7 +2512,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     cycleNote:SetPoint("TOPLEFT", cycleCB, "BOTTOMLEFT", 26, -2)
     cycleNote:SetWidth(EC_PANEL_WIDTH - 60)
     cycleNote:SetJustifyH("LEFT")
-    cycleNote:SetText("|cff888888The Goblin Merchant is targeted for you when bags hit the threshold. Just right-click to sell - that's the only input needed.|r")
+    cycleNote:SetText("|cff888888When bags hit the threshold, Greedy is dismissed and the Goblin Merchant is summoned for you. Right-click the Goblin Merchant to open the vendor window - selling and re-summoning Greedy happens automatically from there.|r")
 
     local threshSlider = AddSlider(self, "EbonClearanceBagThresholdSlider", cycleNote,
         "Bag slots remaining before selling", 0, 10, 1,
@@ -2676,9 +2713,18 @@ BlacklistPanel:SetScript("OnShow", function(self)
 
     MakeHeader(self, "Blacklist (Do Not Sell)", -16)
     local blDesc = MakeLabel(self, "Items on this list will never be sold, even if they match the whitelist or quality threshold. Use this to protect valuable items you want to sell at the auction house.", 16, -44)
-    MakeLabel(self, "Add items by Shift-Clicking, dragging, or typing the Item ID below.", 16, -80)
 
-    self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -100)
+    -- Anchored to blDesc so the hint stays below even when the description
+    -- wraps to multiple lines (previous absolute y=-80 overlapped the wrap).
+    local blHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    blHint:SetPoint("TOPLEFT", blDesc, "BOTTOMLEFT", 0, -8)
+    blHint:SetWidth(EC_PANEL_WIDTH - 16)
+    blHint:SetJustifyH("LEFT")
+    blHint:SetJustifyV("TOP")
+    if blHint.SetWordWrap then blHint:SetWordWrap(true) end
+    blHint:SetText("Add items by Shift-Clicking, dragging, or typing the Item ID below.")
+
+    self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -130)
     self.listUI:Refresh()
 end)
 
@@ -2880,7 +2926,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                 local wlCount = EC_CountItems(DB.whitelistProfiles[names[i]])
                 local blCount = DB.blacklistProfiles[names[i]] and EC_CountItems(DB.blacklistProfiles[names[i]]) or 0
                 local tag = (names[i] == DB.activeProfileName) and " |cff00ff00(active)|r" or ""
-                PrintNice(string.format("  |cffffff00%s|r - %d whitelist, %d blacklist%s", names[i], wlCount, blCount, tag))
+                PrintNicef("  |cffffff00%s|r - %d whitelist, %d blacklist%s", names[i], wlCount, blCount, tag)
             end
         else
             PrintNice("Usage: /ec profile save|load|delete|list <name>")
@@ -2909,7 +2955,7 @@ SlashCmdList["ECDEBUG"] = function()
     local wlCount = 0
     for k, v in pairs(DB.whitelist or {}) do
         local n = GetItemInfo(k) or ("ItemID:"..tostring(k))
-        PrintNice(string.format("  Whitelist[%s] = %s  (%s)", tostring(k), tostring(v), n))
+        PrintNicef("  Whitelist[%s] = %s  (%s)", tostring(k), tostring(v), n)
         wlCount = wlCount + 1
     end
     if wlCount == 0 then PrintNice("  (whitelist is empty)") end
@@ -2931,8 +2977,8 @@ SlashCmdList["ECDEBUG"] = function()
                         qp = (quality ~= nil) and (quality <= (DB.whitelistMinQuality or 1))
                     end
                     if junk or wp or qp then
-                        PrintNice(string.format("|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s junk=%s wp=%s qp=%s sp=%s name=%s",
-                            bag, slot, itemID, tostring(quality), tostring(junk), tostring(wp), tostring(qp), tostring(sellPrice), tostring(name)))
+                        PrintNicef("|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s junk=%s wp=%s qp=%s sp=%s name=%s",
+                            bag, slot, itemID, tostring(quality), tostring(junk), tostring(wp), tostring(qp), tostring(sellPrice), tostring(name))
                     end
                 end
             end
@@ -2975,7 +3021,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         EC_batchTotalGold = 0
         EC_keepBagsFlag = true
         if DB and DB.autoLootCycle then
-            EC_lootCycleState = "selling"
+            EC_lootCycleState = STATE.SELLING
         end
         if not EC_IsAddonEnabledForChar() then
             return
@@ -3001,8 +3047,8 @@ f:SetScript("OnEvent", function(self, event, ...)
         worker:Hide()
         pendingDelete = nil
         -- Reset cycle state so the stuck detection can re-summon the Scavenger
-        if EC_lootCycleState == "selling" then
-            EC_lootCycleState = "idle"
+        if EC_lootCycleState == STATE.SELLING then
+            EC_lootCycleState = STATE.IDLE
         end
         -- Reopen bags after merchant closes
         if DB and DB.keepBagsOpen and EC_keepBagsFlag then

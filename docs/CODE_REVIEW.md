@@ -10,11 +10,11 @@ unless noted.
 
 Two independent filter installations coexist:
 
-- [`EC_InstallGreedyMuteOnce`](../EbonClearance.lua#L82) installs
+- [`EC_InstallGreedyMuteOnce`](../EbonClearance.lua#L97) installs
   `EC_GreedyEventFilter` across 10 chat events.
-- [`ApplyGreedyChatFilter`](../EbonClearance.lua#L176) installs
+- [`ApplyGreedyChatFilter`](../EbonClearance.lua#L201) installs
   `GreedyScavengerChatFilter` across the events listed in
-  [`CHAT_FILTER_EVENTS`](../EbonClearance.lua#L162).
+  [`CHAT_FILTER_EVENTS`](../EbonClearance.lua#L187).
 
 Both currently run; the mute behaviour is layered (each filter early-
 returns when its condition isn't met). Consolidating to one system
@@ -32,7 +32,7 @@ do side-by-side testing in a stable zone before deleting.
 
 ## 2. Split `CreateListUI` - high impact, low risk
 
-[`CreateListUI`](../EbonClearance.lua#L1128) is 227 lines of UI builder
+[`CreateListUI`](../EbonClearance.lua#L1341) is 227 lines of UI builder
 handling: title, EditBox, search box, sort buttons, scroll frame, row
 pool, per-row Remove button, drag-drop handling, and a nested
 `Refresh` closure with five-level sort comparators.
@@ -54,7 +54,7 @@ delete-list, any future list).
 
 ## 3. Split `EC_petCheckFrame` OnUpdate - medium impact, low risk
 
-[`EC_petCheckFrame:SetScript("OnUpdate", …)`](../EbonClearance.lua#L642)
+[`EC_petCheckFrame:SetScript("OnUpdate", …)`](../EbonClearance.lua#L802)
 is ~130 lines combining:
 
 - 5-second tick gate.

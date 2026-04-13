@@ -10,11 +10,11 @@ unless noted.
 
 Two independent filter installations coexist:
 
-- [`EC_InstallGreedyMuteOnce`](../EbonClearance.lua#L97) installs
+- [`EC_InstallGreedyMuteOnce`](../EbonClearance.lua) installs
   `EC_GreedyEventFilter` across 10 chat events.
-- [`ApplyGreedyChatFilter`](../EbonClearance.lua#L201) installs
+- [`ApplyGreedyChatFilter`](../EbonClearance.lua) installs
   `GreedyScavengerChatFilter` across the events listed in
-  [`CHAT_FILTER_EVENTS`](../EbonClearance.lua#L187).
+  [`CHAT_FILTER_EVENTS`](../EbonClearance.lua).
 
 Both currently run; the mute behaviour is layered (each filter early-
 returns when its condition isn't met). Consolidating to one system
@@ -32,7 +32,7 @@ do side-by-side testing in a stable zone before deleting.
 
 ## 2. Split `CreateListUI` - high impact, low risk
 
-[`CreateListUI`](../EbonClearance.lua#L1341) is 227 lines of UI builder
+[`CreateListUI`](../EbonClearance.lua) is 227 lines of UI builder
 handling: title, EditBox, search box, sort buttons, scroll frame, row
 pool, per-row Remove button, drag-drop handling, and a nested
 `Refresh` closure with five-level sort comparators.
@@ -54,7 +54,7 @@ delete-list, any future list).
 
 ## 3. Split `EC_petCheckFrame` OnUpdate - medium impact, low risk
 
-[`EC_petCheckFrame:SetScript("OnUpdate", …)`](../EbonClearance.lua#L802)
+[`EC_petCheckFrame:SetScript("OnUpdate", …)`](../EbonClearance.lua)
 is ~130 lines combining:
 
 - 5-second tick gate.
@@ -112,7 +112,7 @@ then sweep existing ones.
 
 Run `stylua EbonClearance.lua` once to normalise whitespace (mixed
 blank-line runs, trailing spaces, the occasional unindented line
-we fixed at [line 184](../EbonClearance.lua#L184) in the 04-13 pass).
+we fixed in the 04-13 pass).
 Review the diff before committing; commit separately from any
 behaviour change so `git log -p` stays legible.
 

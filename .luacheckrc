@@ -20,6 +20,10 @@ globals = {
     "SLASH_ECDEBUG1",
     "SlashCmdList",
     "EC_IsMerchantAllowed",     -- assigned by module, read by vendor loop
+    "BINDING_HEADER_EBONCLEARANCE", -- Blizzard keybinding registration
+    "_G",                       -- we write one binding via _G[name] because the
+                                --   binding name contains a space (standard Blizzard
+                                --   pattern for SecureActionButton-based keybinds)
 }
 
 -- WoW 3.3.5a API surface this addon touches. Grouped loosely by subsystem.
@@ -27,12 +31,15 @@ globals = {
 -- the whole check.
 read_globals = {
     -- Frame/UI
-    "CreateFrame", "UIParent", "GameTooltip", "Minimap",
+    "CreateFrame", "UIParent", "GameTooltip", "ItemRefTooltip", "Minimap",
     "MerchantFrame", "OpenAllBags", "ContainerFrame1",
     "InterfaceOptionsFramePanelContainer",
     "InterfaceOptions_AddCategory", "InterfaceOptionsFrame_OpenToCategory",
     "InterfaceOptionsFrame",
     "PlaySound", "StaticPopup_Show", "StaticPopupDialogs",
+
+    -- Error handler
+    "geterrorhandler",
 
     -- Chat
     "DEFAULT_CHAT_FRAME",
@@ -58,6 +65,9 @@ read_globals = {
     "UnitName", "UnitExists", "UnitAura", "UnitClass",
     "IsMounted", "Dismount",
 
+    -- Keybinding
+    "GetBindingKey",
+
     -- Companions (WotLK critter API)
     "GetNumCompanions", "GetCompanionInfo",
     "CallCompanion", "DismissCompanion",
@@ -70,5 +80,6 @@ read_globals = {
     "NORMAL_FONT_COLOR", "HIGHLIGHT_FONT_COLOR",
     "GetTime", "date", "time",
     "GetRealmName", "GetCurrentRegion",
-    "_G",
+    -- _G moved to the writable globals block above; we write to _G[...]
+    -- for one keybinding name that contains a space.
 }

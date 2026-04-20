@@ -23,6 +23,19 @@ local CallCompanion = CallCompanion
 local IsMounted = IsMounted
 local IsEquippedItem = IsEquippedItem
 
+-- Forward declarations. These must exist as upvalues before any function
+-- that references them is compiled, or references inside those closures
+-- resolve to _G.<name> instead of the intended local. See docs/CODE_REVIEW.md.
+local STATE = {
+    IDLE = "idle",
+    LOOTING = "looting",
+    WAITING_MERCHANT = "waiting_merchant",
+    SELLING = "selling",
+}
+local EC_lootCycleState = STATE.IDLE
+local EC_addonDismissed = false
+local running = false
+
 local EC_greedyMessages = {}
 local EC_greedyFiltersInstalled = false
 
@@ -570,6 +583,22 @@ local function PrintNicef(fmt, ...)
     PrintNice(string.format(fmt, ...))
 end
 
+-- Price provider seam. Vendor price is the only source today; probes for
+-- Auctionator-WotLK / Auctioneer can be dropped in here without touching
+-- callers. The _-prefixed args are reserved for those probes -- rename them
+-- when activating a probe.
+local function EC_GetItemPrice(_itemLink, _itemID, sellPrice, count)
+    -- if _G.Auctionator_GetPrice then
+    --     local v = _G.Auctionator_GetPrice(_itemLink)
+    --     if v and v > 0 then return v * (count or 1) end
+    -- end
+    -- if _G.AucAdvanced and _G.AucAdvanced.API and _G.AucAdvanced.API.GetMarketValue then
+    --     local v = _G.AucAdvanced.API.GetMarketValue(_itemLink)
+    --     if v and v > 0 then return v * (count or 1) end
+    -- end
+    return (sellPrice or 0) * (count or 1)
+end
+
 local function EC_CalcInventoryWorthCopper()
     local total = 0
     for bag = 0, 4 do
@@ -714,18 +743,24 @@ local function DismissGoblinMerchant()
     end
 end
 
+-- Returns a coloured string describing the user's current binding for the
+-- "Target Goblin Merchant" action, or a prompt if none is bound. Used in
+-- the summon-confirmation chat line so users can discover the keybind.
+local function EC_FormatTargetMerchantBinding()
+    if not GetBindingKey then
+        return "your bound key"
+    end
+    local key = GetBindingKey("CLICK EbonClearanceTargetMerchantButton:LeftButton")
+    if key and key ~= "" then
+        return "|cffffff00" .. key .. "|r"
+    end
+    return "|cffaaaaaaa key|r (bind one in ESC > Key Bindings > EbonClearance)"
+end
+
 local EC_wasMounted = false
 local EC_mountDismissTime = 0
--- Auto-loot cycle state machine. Use STATE.X constants at all assignment
--- and comparison sites so typos fail as nil-compare rather than silent bugs.
-local STATE = {
-    IDLE = "idle",
-    LOOTING = "looting",
-    WAITING_MERCHANT = "waiting_merchant",
-    SELLING = "selling",
-}
-local EC_lootCycleState = STATE.IDLE
-local EC_addonDismissed = false -- true when our code dismissed the Scavenger (mount, cycle, etc)
+-- STATE, EC_lootCycleState, EC_addonDismissed are forward-declared at the
+-- top of the file so functions compiled earlier capture them as upvalues.
 
 local EC_delayFrame = CreateFrame("Frame")
 local EC_timers = {}
@@ -752,6 +787,9 @@ EC_delayFrame:SetScript("OnUpdate", function(self, elapsed)
         if item.t <= 0 then
             table.remove(EC_timers, i)
             local ok, err = pcall(item.f)
+            if not ok and geterrorhandler then
+                geterrorhandler()(err)
+            end
         end
     end
 end)
@@ -825,7 +863,10 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             EC_targetGoblinPending = false
             local _, nowSummoned = FindGoblinMerchantIndex()
             if nowSummoned then
-                PrintNice("|cff00ff00Goblin Merchant summoned - right-click it to sell.|r")
+                PrintNicef(
+                    "|cff00ff00Goblin Merchant summoned|r - press %s or right-click to sell.",
+                    EC_FormatTargetMerchantBinding()
+                )
                 EC_merchantReminderPending = true
                 EC_merchantReminderTimer = 8.0
             else
@@ -968,9 +1009,22 @@ local function HookDeletePopupOnce()
     deletePopupHooked = true
 
     local f = CreateFrame("Frame")
-    f:SetScript("OnUpdate", function()
+    local popupElapsed = 0
+    f:SetScript("OnUpdate", function(self, elapsed)
+        -- Skip entirely unless a deletion is queued. Without this gate the
+        -- handler would tick ~60 times/s for the life of the session.
+        if not pendingDelete then
+            popupElapsed = 0
+            return
+        end
+        popupElapsed = popupElapsed + (elapsed or 0)
+        if popupElapsed < 0.1 then
+            return
+        end
+        popupElapsed = 0
+
         local popup = StaticPopup1
-        if popup and popup:IsShown() and popup.which == "DELETE_ITEM" and pendingDelete then
+        if popup and popup:IsShown() and popup.which == "DELETE_ITEM" then
             local id = pendingDelete.itemID
             if id and IsInSet(DB.deleteList, id) then
                 local editBox = StaticPopup1EditBox
@@ -991,7 +1045,7 @@ local function HookDeletePopupOnce()
 end
 
 local EC_IsMerchantAllowed -- forward declaration for FinishRun
-local running = false
+-- `running` is forward-declared at the top of the file.
 local queue = {}
 local queueIndex = 1
 local goldThisVendoring = 0
@@ -1000,6 +1054,38 @@ local EC_batchTotalGold = 0
 
 local worker = CreateFrame("Frame")
 worker:Hide()
+
+-- Shared sell predicate. Used by BuildQueue to build the vendor queue and by
+-- EC_PreviewSellable to drive the minimap mouse-over preview. Returns:
+--   sellable (bool), link, sellPrice, itemCount.
+-- `junkOnly` restricts matches to quality-0 items (used when the current
+-- merchant mode disallows the whitelist/quality threshold).
+local function EC_IsSellable(bag, slot, junkOnly)
+    local itemID = GetContainerItemID(bag, slot)
+    if not itemID then
+        return false
+    end
+    local _, itemCount, locked = GetContainerItemInfo(bag, slot)
+    if not itemCount or itemCount <= 0 or locked then
+        return false
+    end
+    local _, link, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+    local hasSellPrice = sellPrice and sellPrice > 0
+    local isJunk = (quality ~= nil) and (quality == 0) and hasSellPrice
+    local whitelistPass = not junkOnly and hasSellPrice and IsInSet(DB.whitelist, itemID)
+    local qualityPass = false
+    if not junkOnly and DB.whitelistQualityEnabled == true and hasSellPrice then
+        qualityPass = (quality ~= nil) and (quality <= DB.whitelistMinQuality)
+    end
+    local blacklisted = IsInSet(DB.blacklist, itemID)
+    if not (isJunk or qualityPass or whitelistPass) then
+        return false
+    end
+    if IsEquippedItem(itemID) or blacklisted then
+        return false
+    end
+    return true, link, itemID, sellPrice, itemCount
+end
 
 local function BuildQueue(junkOnly)
     wipe(queue)
@@ -1010,34 +1096,18 @@ local function BuildQueue(junkOnly)
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
-            local itemID = GetContainerItemID(bag, slot)
-            if itemID then
-                local texture, itemCount, locked = GetContainerItemInfo(bag, slot)
-                if itemCount and itemCount > 0 and not locked then
-                    local name, link, quality, level, minLevel, itemType, subType, stackCount, equipLoc, icon, sellPrice =
-                        GetItemInfo(itemID)
-                    local hasSellPrice = sellPrice and sellPrice > 0
-                    local isJunk = (quality ~= nil) and (quality == 0) and hasSellPrice
-                    local whitelistPass = not junkOnly and hasSellPrice and IsInSet(DB.whitelist, itemID)
-                    local qualityPass = false
-                    if not junkOnly and DB.whitelistQualityEnabled == true and hasSellPrice then
-                        qualityPass = (quality ~= nil) and (quality <= DB.whitelistMinQuality)
-                    end
-                    -- Safety: never touch equipped or blacklisted items.
-                    local blacklisted = IsInSet(DB.blacklist, itemID)
-                    if (isJunk or qualityPass or whitelistPass) and not IsEquippedItem(itemID) and not blacklisted then
-                        queue[#queue + 1] = {
-                            type = "sell",
-                            bag = bag,
-                            slot = slot,
-                            itemID = itemID,
-                            count = itemCount,
-                            price = sellPrice or 0,
-                        }
-                        if sellPrice and sellPrice > 0 then
-                            goldThisVendoring = goldThisVendoring + (sellPrice * itemCount)
-                        end
-                    end
+            local sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
+            if sellable then
+                queue[#queue + 1] = {
+                    type = "sell",
+                    bag = bag,
+                    slot = slot,
+                    itemID = itemID,
+                    count = itemCount,
+                    price = sellPrice or 0,
+                }
+                if sellPrice and sellPrice > 0 then
+                    goldThisVendoring = goldThisVendoring + EC_GetItemPrice(link, itemID, sellPrice, itemCount)
                 end
             end
         end
@@ -1211,6 +1281,34 @@ EC_IsMerchantAllowed = function()
     end
 end
 
+-- Mouse-over preview: counts what BuildQueue would sell right now. When no
+-- merchant is targeted, fall back to the broadest case (merchantAllowed=true)
+-- so the preview reflects the whitelist/quality threshold, not only greys.
+local function EC_PreviewSellable()
+    if not DB then
+        return 0, 0
+    end
+    local merchantAllowed = true
+    if UnitExists("target") then
+        merchantAllowed = EC_IsMerchantAllowed()
+    end
+    local junkOnly = not merchantAllowed
+    local count, copper = 0, 0
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag) or 0
+        for slot = 1, slots do
+            local sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
+            if sellable then
+                count = count + (itemCount or 1)
+                if sellPrice and sellPrice > 0 then
+                    copper = copper + EC_GetItemPrice(link, itemID, sellPrice, itemCount)
+                end
+            end
+        end
+    end
+    return count, copper
+end
+
 local function StartRun()
     if not EC_IsAddonEnabledForChar() then
         return
@@ -1259,6 +1357,78 @@ local function StartRun()
 
     worker.t = 0
     worker:Show()
+end
+
+-- Tooltip annotation. Adds a coloured line indicating whether EbonClearance
+-- will sell, protect, or delete the hovered item. Hooked once on addon load
+-- against GameTooltip and ItemRefTooltip (chat-linked items use the latter).
+--
+-- Dedupe: recipe tooltips fire OnTooltipSetItem twice (once for the recipe,
+-- once for the embedded result), so we flag the tooltip after adding a line
+-- and clear the flag when the tooltip is reset.
+local EC_tooltipHooked = false
+
+local function EC_AnnotateTooltip(tooltip)
+    if not DB or not tooltip or not tooltip.GetItem then
+        return
+    end
+    -- Honour the addon-enabled toggle and per-character allowlist. If the
+    -- addon won't act on the item, don't mislead the user by annotating it.
+    if EC_IsAddonEnabledForChar and not EC_IsAddonEnabledForChar() then
+        return
+    end
+    if tooltip.__EC_annotated then
+        return
+    end
+    local _, link = tooltip:GetItem()
+    if not link then
+        return
+    end
+    local id = tonumber(link:match("|Hitem:(%d+)"))
+    if not id then
+        return
+    end
+
+    local line
+    if IsInSet(DB.blacklist, id) then
+        line = "|cff4db8ff[EC]|r |cffffb84dProtected - Blacklisted|r"
+    elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
+        line = "|cff4db8ff[EC]|r |cffff4444Will Delete - Deletion List|r"
+    elseif IsInSet(DB.whitelist, id) then
+        line = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
+    elseif DB.whitelistQualityEnabled then
+        local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
+        if quality and quality > 0 and quality <= (DB.whitelistMinQuality or 1) and sellPrice and sellPrice > 0 then
+            line = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Quality Threshold|r"
+        end
+    end
+
+    if line then
+        tooltip:AddLine(line)
+        tooltip.__EC_annotated = true
+        tooltip:Show()
+    end
+end
+
+local function EC_ClearTooltipFlag(tooltip)
+    if tooltip then
+        tooltip.__EC_annotated = nil
+    end
+end
+
+local function EC_InstallTooltipHookOnce()
+    if EC_tooltipHooked then
+        return
+    end
+    EC_tooltipHooked = true
+    if GameTooltip and GameTooltip.HookScript then
+        GameTooltip:HookScript("OnTooltipSetItem", EC_AnnotateTooltip)
+        GameTooltip:HookScript("OnTooltipCleared", EC_ClearTooltipFlag)
+    end
+    if ItemRefTooltip and ItemRefTooltip.HookScript then
+        ItemRefTooltip:HookScript("OnTooltipSetItem", EC_AnnotateTooltip)
+        ItemRefTooltip:HookScript("OnTooltipCleared", EC_ClearTooltipFlag)
+    end
 end
 
 local MainOptions = CreateFrame("Frame", "EbonClearanceOptionsMain", InterfaceOptionsFramePanelContainer)
@@ -1783,12 +1953,82 @@ local function EC_CreateMinimapButton()
         local freeSlots = EC_GetFreeBagSlots()
         local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
         GameTooltip:AddLine("Free bag slots: " .. slotColor .. freeSlots .. "|r")
+
+        local sellCount, sellCopper = EC_PreviewSellable()
+        GameTooltip:AddLine(string.format("Sellable now: |cffffff00%d|r items", sellCount))
+        if sellCopper > 0 then
+            GameTooltip:AddLine("Est. value: " .. CopperToColoredText(sellCopper))
+        end
         GameTooltip:Show()
     end)
 
     btn:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
     end)
+end
+
+-- Hidden SecureActionButton that registers a keybinding to /target the Goblin
+-- Merchant. The button is never shown; its only job is to sink the keybind
+-- registered via BINDING_HEADER_EBONCLEARANCE near the slash commands. The
+-- macrotext attribute is set at creation so it remains functional inside
+-- InCombatLockdown() (secure click from a player hardware event).
+local function EC_CreateTargetMerchantButton()
+    if _G.EbonClearanceTargetMerchantButton then
+        return
+    end
+    local btn = CreateFrame("Button", "EbonClearanceTargetMerchantButton", UIParent, "SecureActionButtonTemplate")
+    btn:RegisterForClicks("AnyUp")
+    btn:SetAttribute("type", "macro")
+    btn:SetAttribute("macrotext", "/target " .. TARGET_NAME)
+    btn:Hide()
+end
+
+-- Optional LibDataBroker-1.0 launcher. No-op if LibStub or LDB is not present,
+-- so users on Titan Panel / Bazooka / ChocolateBar / etc. get an entry in
+-- their display addon without us taking a hard dependency on anything.
+local function EC_CreateLDBLauncher()
+    if not _G.LibStub then
+        return
+    end
+    local LDB = _G.LibStub("LibDataBroker-1.0", true)
+    if not LDB then
+        return
+    end
+    if LDB.GetDataObjectByName and LDB:GetDataObjectByName("EbonClearance") then
+        return
+    end
+
+    LDB:NewDataObject("EbonClearance", {
+        type = "launcher",
+        label = "EbonClearance",
+        icon = "Interface\\Icons\\INV_Misc_Coin_01",
+        OnClick = function(_, button)
+            if button == "RightButton" then
+                if not DB then
+                    return
+                end
+                DB.enabled = not DB.enabled
+                PrintNice("Addon " .. (DB.enabled and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"))
+            else
+                InterfaceOptionsFrame_OpenToCategory(MainOptions)
+                InterfaceOptionsFrame_OpenToCategory(MainOptions)
+            end
+        end,
+        OnTooltipShow = function(tt)
+            tt:AddLine("EbonClearance")
+            tt:AddLine("Left-click: Options  |  Right-click: Toggle", 1, 1, 1)
+            local stateStr = (DB and DB.enabled ~= false) and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
+            tt:AddLine("Status: " .. stateStr)
+            local freeSlots = EC_GetFreeBagSlots()
+            local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
+            tt:AddLine("Free bag slots: " .. slotColor .. freeSlots .. "|r")
+            local count, copper = EC_PreviewSellable()
+            tt:AddLine(string.format("Sellable now: |cffffff00%d|r items", count))
+            if copper > 0 then
+                tt:AddLine("Est. value: " .. CopperToColoredText(copper))
+            end
+        end,
+    })
 end
 
 -- Build the static widgets for the main options panel. Called once per panel
@@ -3368,6 +3608,13 @@ local function EC_ShowBugReport()
     PrintNice("Bug report generated. Copy the text from the window.")
 end
 
+-- Keybinding registration. Populates the "EbonClearance" section of
+-- ESC -> Key Bindings so the user can map a key to target the Goblin Merchant.
+-- The target action is dispatched through EbonClearanceTargetMerchantButton
+-- (a hidden SecureActionButton) so it works in combat lockdown.
+BINDING_HEADER_EBONCLEARANCE = "EbonClearance"
+_G["BINDING_NAME_CLICK EbonClearanceTargetMerchantButton:LeftButton"] = "Target Goblin Merchant"
+
 SLASH_EBONCLEARANCE1 = "/ec"
 SlashCmdList["EBONCLEARANCE"] = function(msg)
     msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -3497,7 +3744,13 @@ f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("MERCHANT_SHOW")
 f:RegisterEvent("MERCHANT_CLOSED")
-f:RegisterEvent("UNIT_AURA")
+-- UNIT_AURA fires per-unit. The player-only form is much cheaper in raids
+-- than an unfiltered registration; fall back on clients that lack it.
+if f.RegisterUnitEvent then
+    f:RegisterUnitEvent("UNIT_AURA", "player")
+else
+    f:RegisterEvent("UNIT_AURA")
+end
 
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -3509,6 +3762,9 @@ f:SetScript("OnEvent", function(self, event, ...)
                 ApplyGreedyChatFilter()
             end
             EC_CreateMinimapButton()
+            EC_InstallTooltipHookOnce()
+            EC_CreateLDBLauncher()
+            EC_CreateTargetMerchantButton()
         end
     elseif event == "PLAYER_LOGOUT" then
         if DB then

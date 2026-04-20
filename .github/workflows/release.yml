@@ -30,7 +30,7 @@ jobs:
       - name: Package addon
         run: |
           mkdir -p EbonClearance
-          cp EbonClearance.lua EbonClearance.toc LICENSE EbonClearance/
+          cp EbonClearance.lua EbonClearance.toc Bindings.xml LICENSE EbonClearance/
           zip -r EbonClearance.zip EbonClearance/
 
       - name: Commit version update back to repo

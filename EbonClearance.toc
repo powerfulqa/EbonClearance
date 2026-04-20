@@ -5,4 +5,5 @@
 ## Version: v2.0.12
 ## SavedVariables: EbonClearanceDB
 
+Bindings.xml
 EbonClearance.lua

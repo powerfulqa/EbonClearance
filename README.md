@@ -117,6 +117,17 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Changelog
 
+### v2.0.13
+
+- **Fix: Auto-loot cycle and pet handling were silently broken** - Four `local` variables (`STATE`, `EC_lootCycleState`, `EC_addonDismissed`, `running`) were declared after the functions that captured them, so Lua 5.1 resolved the captures to globals instead of locals. State-machine writes in `SummonGreedyScavenger` and `DismissGreedyScavenger` leaked to `_G` and never reached the OnUpdate loop; the "skip pet checks while vendoring" guard also never fired. Auto-loot cycle transitions, mount handling, and pet stuck-detection now work as documented. The errors were hidden because `EC_Delay` wrapped its callbacks in `pcall` and discarded the error; delayed-callback errors now surface through `geterrorhandler()` so real bugs don't disappear.
+- **Fix: Delete-popup watcher ran every frame** - The hook that auto-confirms the delete-item dialog was ticking ~60 times per second for the entire session even when no deletion was pending. Gated on `pendingDelete` being set, plus a 0.1s accumulator.
+- **Fix: `UNIT_AURA` registered unfiltered** - Now uses `RegisterUnitEvent("UNIT_AURA", "player")` where supported, so the handler doesn't wake for every aura change on every unit in a raid.
+- **Feature: Tooltip annotations** - Hover any item in your bags (or a chat-linked item) and a `[EC]` line shows whether it's on your whitelist, blacklist, delete list, or matches the quality threshold. The line respects the addon-enabled state, so turning EbonClearance off via the minimap hides the annotations. Recipe tooltips that fire `OnTooltipSetItem` twice no longer show duplicate lines.
+- **Feature: Mouse-over sell preview on the minimap button** - Hovering the minimap button now shows `Sellable now: N items` and an estimated value, honouring your current merchant-mode and whitelist/quality-threshold/blacklist settings. Extracted `EC_IsSellable` so the preview and the vendor loop share one predicate.
+- **Feature: Optional LibDataBroker-1.0 launcher** - Users running Titan Panel, Bazooka, ChocolateBar, or similar data-broker displays get an EbonClearance entry with the same click and tooltip behaviour as the minimap button. No-op if LibStub or LDB isn't loaded — zero hard dependency.
+- **Feature: Target Goblin Merchant keybinding** - A new binding appears in ESC → Key Bindings → EbonClearance. Assign any key and press it to target the Goblin Merchant — works in and out of combat. When the auto-loot cycle summons the merchant, the chat line now reads "Goblin Merchant summoned - press `<your key>` or right-click to sell" so the binding is self-discovering.
+- **Internal: price-provider seam** - A new `EC_GetItemPrice` indirection sits between the vendor loop / preview and the raw `sellPrice * count` calculation. Future Auctionator-WotLK or Auctioneer probes can drop in here without touching callers.
+
 ### v2.0.12
 
 - **Fix: Can't paste into the Import field** - The Import/Export panel's paste box had no clickable area when empty, so pasting an exported string was impossible unless you typed a character first. Both the export and import boxes now have an explicit height.

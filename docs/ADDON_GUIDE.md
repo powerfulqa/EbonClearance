@@ -340,6 +340,114 @@ Slash commands are registered at the very bottom of `EbonClearance.lua`.
   richness you'd find in retail. If a tutorial assumes those, it's not
   for 3.3.5a.
 
+## Gotchas and refactoring traps
+
+Read this section before touching any of the subsystems below. Each item is
+a non-obvious design choice that has silently broken in the past (or would
+if you "simplified" it).
+
+### Saved-variable migration order is load-bearing
+
+`EnsureDB()` does two migrations in a specific order that must not be reshuffled:
+
+1. **Legacy rename**: if `EbonholdStuffDB` exists and `EbonClearanceDB` does
+   not, rename the former into the latter. This has to happen first because
+2. **Profile migration**: when the profile-aware schema first runs, it
+   snapshots any existing `DB.whitelist` into an `"Imported"` profile and
+   auto-activates it. If the legacy rename hasn't happened yet, `DB.whitelist`
+   is empty and the user's pre-profile data is lost.
+
+If you add a new migration, put it with the others at the top of
+`EnsureDB()` and write the order dependency into the comment.
+
+### Grey items are always sold, independent of every other setting
+
+In `EC_IsSellable`, three independent predicates (`isJunk`, `qualityPass`,
+`whitelistPass`) are ORed together. `isJunk` fires on `quality == 0 and
+hasSellPrice`. This means grey items with a positive sell price are *always*
+matched -- the quality-threshold toggle and the whitelist have no say.
+
+Do not combine the three passes into "one cleaner check." You will silently
+break the grey-always-sold invariant that users and the README rely on. The
+only things that can veto a match are `IsEquippedItem(itemID)` and the
+blacklist, both of which are safety gates.
+
+### Localisation: `TARGET_NAME` / `PET_NAME` are enUS strings
+
+`TARGET_NAME = "Goblin Merchant"` and `PET_NAME = "Greedy scavenger"` are
+compared directly against `creatureName` returned by `GetCompanionInfo`. A
+non-enUS realm with localised NPC names would silently fail both lookups.
+
+`FindGoblinMerchantIndex` already has a `spellID == 600126` fallback which
+is the localisation escape hatch. If a future user reports "summoning
+doesn't work on Ebonhold-EU," add a matching spellID fallback to
+`SummonGreedyScavenger` rather than trying to translate the names.
+
+### The `"CRITTER"` companion type covers both pet and merchant
+
+On 3.3.5a, the Goblin Merchant and the Greedy Scavenger both occupy the
+`"CRITTER"` companion slot despite one being a vanity pet and the other a
+functional merchant. They **cannot coexist**. That's why summoning the
+merchant dismisses the Scavenger and vice versa, and why the auto-loot
+cycle's `WAITING_MERCHANT` / `SELLING` states explicitly dismiss before
+re-summoning.
+
+If you want to add a third `CRITTER` feature, know that it will mutually
+exclude with the existing two.
+
+### The auto-loot cycle resets on `MERCHANT_CLOSED`, not before
+
+`EC_lootCycleState` transitions to `IDLE` only when `MERCHANT_CLOSED` fires
+(plus the `FinishRun` happy path). If a user dismisses the Goblin Merchant
+manually without ever opening the vendor window, the state stays at
+`WAITING_MERCHANT` indefinitely, and the 5-second pet-check tick won't
+re-summon the Scavenger until either the 8-second reminder timer lapses or
+another event resets state.
+
+If you ever add a new "we've given up on this sell" path, also clear
+`EC_lootCycleState` to `IDLE` or `LOOTING` explicitly -- don't assume the
+normal `MERCHANT_CLOSED` flow will rescue it.
+
+### `EC_Delay` callbacks must surface errors via `geterrorhandler`
+
+The custom `EC_Delay` timer wraps each callback in `pcall`. Without a
+follow-up call to `geterrorhandler()(err)`, errors inside delayed callbacks
+disappear silently -- which is exactly what hid the v2.0.13 scoping bugs
+for several releases.
+
+If you add a new delayed-callback helper (or a new timer frame), route
+errors the same way `EC_Delay` does. Do not add new bare `pcall` swallows.
+
+### Delete-list seeding is deliberately empty
+
+`EnsureDB()` still has a `_seededLists` one-shot flag, but the list it used
+to seed (item IDs 300581 and 300574) was removed as stale cruft. Empty
+delete list on first install is intentional. If a future scenario needs to
+pre-populate specific IDs, use the `_seededLists` guard to avoid re-seeding
+existing users.
+
+### `UnitPosition` does not exist on stock 3.3.5a
+
+`EC_GetCompanionDistance` gates on `if not UnitPosition then return nil end`.
+On unmodified 3.3.5a clients the check no-ops the entire distance-stuck
+detection feature. Project Ebonhold's build apparently exposes it (the
+feature works in-game), but do not assume it on other private servers.
+
+### Index of magic numbers
+
+| Value | Location | Meaning |
+|---|---|---|
+| 0.05s | vendor worker OnUpdate | Per-item pacing floor. Below this, the server boots you for packet spam. |
+| 5 yards | `EC_MAX_PET_DISTANCE` | Scavenger-drift threshold before dismiss-and-resummon. |
+| 80 items | `maxItemsPerRun` | Sell-queue cap per run. Prevents the same disconnect risk as the vendor-interval floor. Recursive batching kicks in for larger inventories. |
+| 1.5s | `EC_summonGoblinTimer` | Wait between dismiss and Goblin Merchant summon so the client has time to process the companion switch. |
+| 2.0s | `EC_targetGoblinTimer` | Wait after summon before checking `isSummoned` via `GetCompanionInfo`. |
+| 8.0s | `EC_merchantReminderTimer` | Gap before we remind the user to right-click the merchant (or use their keybind). |
+| 10s | `EC_mountDismissTime` cooldown | Suppress pet re-summon within 10s of a mount-dismount to avoid cancelling the mount cast. |
+| 600126 | `GOBLIN_MERCHANT_SPELL_ID` | Companion spell ID for the Goblin Merchant, used as the localisation escape hatch. |
+
+If you change any of these, update this table and the nearest comment.
+
 ## When to split the file
 
 Keep the single-file layout until one of these is true:

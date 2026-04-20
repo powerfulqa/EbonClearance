@@ -1,4 +1,11 @@
 local ADDON_NAME = "EbonClearance"
+-- TARGET_NAME / PET_NAME are the enUS display names of the two Project Ebonhold
+-- companion NPCs the addon drives. These strings are compared directly against
+-- creatureName in FindGoblinMerchantIndex / SummonGreedyScavenger, so a realm
+-- with localised names would break those lookups. FindGoblinMerchantIndex
+-- already has a spellID == 600126 fallback for the Goblin Merchant; adding a
+-- matching fallback for the Scavenger is the L10n escape hatch if we ever need
+-- one. See docs/ADDON_GUIDE.md "Gotchas" for the full localisation notes.
 local TARGET_NAME = "Goblin Merchant"
 local PET_NAME = "Greedy scavenger"
 
@@ -226,7 +233,11 @@ end
 local DB
 
 local function EnsureDB()
-    -- Migrate data from old addon name if present
+    -- Legacy-rename migration. MUST run before field defaults below, because
+    -- the profile-migration block (further down) reads existing DB.whitelist
+    -- to decide whether to snapshot it into an "Imported" profile. If field
+    -- defaults ran first, DB.whitelist would be {}, and any data the user
+    -- had under the old EbonholdStuffDB name would be lost. Order-dependent.
     if EbonholdStuffDB and not EbonClearanceDB then
         EbonClearanceDB = EbonholdStuffDB
         EbonholdStuffDB = nil
@@ -345,7 +356,12 @@ local function EnsureDB()
         DB.blacklist = {}
     end
 
-    -- Whitelist profiles migration
+    -- Whitelist profiles migration. First-run of the profile-aware schema:
+    -- if the user already has items in the flat DB.whitelist (from pre-profile
+    -- builds, or from the EbonholdStuffDB rename above), snapshot them into
+    -- an "Imported" profile and auto-activate it so nothing is lost. Fresh
+    -- installs get an empty Default profile as the active one. Depends on
+    -- DB.whitelist having been initialised upstream -- do not reorder.
     if type(DB.whitelistProfiles) ~= "table" then
         DB.whitelistProfiles = {}
         DB.whitelistProfiles["Default"] = {}
@@ -369,11 +385,12 @@ local function EnsureDB()
         DB.blacklistProfiles = {}
     end
 
+    -- _seededLists is kept as a one-shot guard so future first-install seeds
+    -- can be added without re-seeding existing users. Earlier builds seeded
+    -- two legacy item IDs (300581, 300574) that returned nil from GetItemInfo
+    -- and were removed in the v2.0.13 quality pass. New installs now start
+    -- with an empty delete list; users add IDs via the Deletion panel.
     if not DB._seededLists then
-        if DB.deleteList and not next(DB.deleteList) then
-            DB.deleteList[300581] = true
-            DB.deleteList[300574] = true
-        end
         DB._seededLists = true
     end
 end
@@ -704,8 +721,16 @@ local function DismissGreedyScavenger()
     end
 end
 
+-- The spellID branch is the localisation escape hatch. If a future Ebonhold
+-- realm ships with a non-enUS name for the Goblin Merchant companion, the
+-- name match fails but the spellID match still finds it. See TARGET_NAME
+-- note at the top of the file.
 local GOBLIN_MERCHANT_SPELL_ID = 600126
 
+-- The "CRITTER" companion type in the 3.3.5a API covers both cosmetic vanity
+-- pets AND functional companions like the Goblin Merchant on Project Ebonhold
+-- -- they share one companion slot. That's why summoning the Merchant
+-- dismisses the Scavenger and vice versa: they can't coexist.
 local function FindGoblinMerchantIndex()
     local num = GetNumCompanions("CRITTER")
     if not num or num <= 0 then
@@ -812,6 +837,13 @@ local function EC_GetFreeBagSlots()
     return free
 end
 
+-- Yards. If the Scavenger drifts further than this from the player during a
+-- loot cycle we dismiss it so the next tick can re-summon at the player's
+-- position. Too low = false positives on normal follow-lag (pet briefly out
+-- of range while the player runs); too high = stuck pet sits for minutes
+-- before recovery. 5 yards matches in-game follow-leash behaviour reasonably.
+-- Note: EC_GetCompanionDistance depends on UnitPosition, which is Legion-era
+-- and does not exist on stock 3.3.5a -- the whole check no-ops there.
 local EC_MAX_PET_DISTANCE = 5
 
 local function EC_GetCompanionDistance()
@@ -1060,6 +1092,14 @@ worker:Hide()
 --   sellable (bool), link, sellPrice, itemCount.
 -- `junkOnly` restricts matches to quality-0 items (used when the current
 -- merchant mode disallows the whitelist/quality threshold).
+--
+-- INVARIANT: Grey items (quality == 0) with a positive sell price ALWAYS
+-- match via isJunk, independent of DB.whitelist, DB.whitelistQualityEnabled,
+-- or DB.whitelistMinQuality. The quality threshold only gates non-grey
+-- items. Do not "simplify" the three independent passes (isJunk /
+-- qualityPass / whitelistPass) into one combined check -- you will silently
+-- break the grey-always-sold guarantee that users and docs rely on.
+-- Blacklist and IsEquippedItem are the only things that can veto a sale.
 local function EC_IsSellable(bag, slot, junkOnly)
     local itemID = GetContainerItemID(bag, slot)
     if not itemID then
@@ -1249,6 +1289,10 @@ local function DoNextAction()
     queueIndex = queueIndex + 1
 end
 
+-- The 0.05s interval floor is an anti-disconnect guarantee, not a performance
+-- tuning choice. Faster per-item pacing floods the server with UseContainerItem
+-- packets and trips a server-side rate limit that boots the client. See
+-- docs/ADDON_GUIDE.md "Performance rules" and v2.0.11 in the README changelog.
 worker:SetScript("OnUpdate", function(self, elapsed)
     self.t = (self.t or 0) + elapsed
     local interval = (DB and DB.vendorInterval) or 0.1

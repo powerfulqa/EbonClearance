@@ -26,7 +26,7 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 **Auto-open lootable containers** - Optional toggle on the Scavenger Settings panel. When enabled, EbonClearance opens any "Right Click to Open" container in your bags as soon as it lands - gift bags, treasure pouches, freebie pouches, etc. Lockboxes that need a key or lockpick are skipped. Combat-paused.
 
-**Right-click bag-item menu** - Alt+Right-Click any item in your bags to add it to a whitelist (character or account), blacklist, or deletion list, or to sell it immediately. Saves a trip to the settings panel for one-off list edits.
+**Right-click bag-item menu** - Alt+Right-Click any item in your bags to add it to a whitelist (character or account), blacklist, or deletion list, or to sell it immediately. Saves a trip to the settings panel for one-off list edits. A small grey "Alt+Right-Click for EbonClearance menu" hint on bag-item tooltips makes the shortcut discoverable.
 
 **Greedy Scavenger management** - EbonClearance can mute the Scavenger's chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck on terrain. If you manually unsummon the Scavenger, the addon respects that and won't re-summon it. Other companions (bank mule, mailbox) are never replaced.
 
@@ -92,14 +92,16 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - Save and load profiles with different whitelist and blacklist combinations
 - Set a quality threshold (on Merchant Settings) to bulk-sell everything up to a chosen rarity
 - Choose which merchants the addon works with (Goblin Merchant, normal vendors, or both)
-- Toggle auto-vendoring, deletion, repairs and Greedy Scavenger features on or off
+- Toggle auto-vendoring, deletion, repairs, Greedy Scavenger, and auto-opening of lootable containers on or off
 - Keep bags open when leaving a merchant
-- Import and export whitelists as shareable strings
+- Enable Fast Mode for higher vendoring throughput at slightly higher disconnect risk
+- Import and export whitelists as shareable strings (per-section Source / Target list selectors)
 - View lifetime and session statistics side-by-side, reset either independently
 - Control which characters the addon is active on
 - Adjust the vendor sell speed and summon delay
 - Right-click the minimap button to quickly enable or disable the addon
 - Bind keys for Open/close settings, Toggle enabled, and Force sell at current merchant under the WoW Key Bindings menu
+- Alt+Right-Click any bag item for a quick-action menu (whitelist, blacklist, delete, sell now)
 
 ## Slash Commands
 
@@ -134,7 +136,9 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 ### v2.3.0
 
 - **Auto-open lootable containers** - New opt-in toggle on the Scavenger Settings panel. When enabled, EbonClearance reacts to bag changes and automatically opens any container in your bags that shows the standard "Right Click to Open" tooltip line - the gift bags, treasure pouches, and freebie pouches that drop from quests, mailbox, or as world-drop loot. Lockboxes that need a key or lockpick are skipped. Combat-paused. Containers are opened in sequence with a small inter-item delay so the previous open isn't interrupted. New saved variable `DB.autoOpenContainers` defaults to `false`; turn it on under Scavenger Settings → "Auto-open lootable containers from your bags". `/ec bugreport` now includes the toggle state.
-- **Right-click bag-item context menu** - Alt+Right-Click any item in your bags to open an EbonClearance dropdown: Add to Whitelist (Character / Account), Add to Blacklist, Add to Deletion List, or Sell Now (only enabled when a merchant window is open). No more trip to the settings panel for one-off list edits. The default right-click-to-use behaviour is unchanged - only Alt+Right-Click triggers the menu.
+- **Right-click bag-item context menu** - Alt+Right-Click any item in your bags to open an EbonClearance popup: Add to Whitelist (Character / Account), Add to Blacklist, Add to Deletion List, or Sell Now (only enabled when a merchant window is open). No more trip to the settings panel for one-off list edits. The default right-click-to-use behaviour is unchanged - only Alt+Right-Click triggers the menu. Closes on Escape or Cancel.
+- **Discoverability hints** - A subtle grey "Alt+Right-Click for EbonClearance menu" line is appended to every bag-item tooltip, and a yellow "Tip:" line at the bottom of Scavenger Settings clusters both v2.3.0 bag features for users browsing the panel.
+- **Tooltip annotation now recognises the account whitelist** - The existing `[EC] Will Sell - Whitelisted` line previously only checked the per-character whitelist; account-whitelist items got no annotation. Both scopes are now consulted. Carryover gap from v2.1.0; folded in here while we were touching the tooltip code.
 
 ### v2.2.1
 

@@ -133,9 +133,12 @@ handler. Do **not** add a second event frame for "your feature."
 Currently registered: `ADDON_LOADED`, `PLAYER_LOGOUT`, `PLAYER_LOGIN`,
 `PLAYER_ENTERING_WORLD`, `MERCHANT_SHOW`, `MERCHANT_CLOSED`,
 `UNIT_AURA` (player-filtered when `RegisterUnitEvent` is available),
-and `BAG_UPDATE` (drives the auto-loot-cycle bag-full detection via
-`EC_HandleBagFullForCycle`; see "Performance rules" for why this is
-preferred over polling).
+and `BAG_UPDATE`. The `BAG_UPDATE` branch dispatches to two helpers
+in priority order: `EC_HandleBagFullForCycle` (auto-loot cycle's
+threshold trigger; v2.2.0) and then `EC_HandleAutoOpenContainers`
+(opens "Right Click to Open" containers; v2.3.0). The auto-open
+helper yields to the vendor cycle via the `running` guard, so they
+never collide.
 
 ### Saved variables shape
 
@@ -146,9 +149,10 @@ four groups:
 - **Profiles**: `whitelistProfiles`, `blacklistProfiles`, `activeProfileName`.
 - **Settings**: `enabled`, `summonGreedy`, `summonDelay`,
   `vendorInterval`, `maxItemsPerRun`, `fastMode`, `merchantMode`,
-  `autoLootCycle`, `bagFullThreshold`, `repairGear`, `keepBagsOpen`,
-  `muteGreedy`, `hideGreedyChat`, `hideGreedyBubbles`, `enableDeletion`,
-  `whitelistMinQuality`, `whitelistQualityEnabled`, `vendorBtnShown`
+  `autoLootCycle`, `bagFullThreshold`, `autoOpenContainers`,
+  `repairGear`, `keepBagsOpen`, `muteGreedy`, `hideGreedyChat`,
+  `hideGreedyBubbles`, `enableDeletion`, `whitelistMinQuality`,
+  `whitelistQualityEnabled`, `vendorBtnShown`
   (and `vendorBtnX`, `vendorBtnY`, `vendorBtnPoint`, `vendorBtnRelPoint`
   - dormant; see the `EC_CreateVendorButton` block).
   `fastMode` (v2.2.0+) pins the per-item interval to the 0.05 s floor

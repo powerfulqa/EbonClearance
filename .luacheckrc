@@ -22,6 +22,7 @@ globals = {
     "SlashCmdList",
     "EC_IsMerchantAllowed",     -- assigned by module, read by vendor loop
     "ChatEdit_InsertLink",      -- replaced by module to capture shift-click links
+    "ContainerFrameItemButton_OnModifiedClick", -- wrapped to add Alt+Right-Click context menu
     -- Keybinding headers / names (read by Blizzard, set by addon)
     "BINDING_HEADER_EBONCLEARANCE",
     "BINDING_NAME_EBONCLEARANCE_TOGGLE_SETTINGS",
@@ -85,6 +86,17 @@ read_globals = {
 
     -- Blizzard constants / static popup buttons
     "YES", "NO",
+    -- Locale strings used by the auto-open container tooltip scan
+    "ITEM_OPENABLE", "LOCKED",
+    -- Cursor positioning for the bag right-click popup
+    "GetCursorPosition",
+    -- Escape-key auto-hide for the bag right-click popup
+    "UISpecialFrames",
+    -- Dropdown menu API (used by Merchant settings dropdowns)
+    "UIDropDownMenu_Initialize", "UIDropDownMenu_CreateInfo",
+    "UIDropDownMenu_AddButton", "UIDropDownMenu_SetWidth",
+    "UIDropDownMenu_SetText", "UIDropDownMenu_SetSelectedValue",
+    "UIDropDownMenu_EnableDropDown", "UIDropDownMenu_DisableDropDown",
 
     -- Keybinding
     "GetBindingKey",

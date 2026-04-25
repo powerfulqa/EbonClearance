@@ -24,6 +24,10 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 **Item deletion** - For items that can't be sold, the addon can automatically destroy them. You manage a separate delete list of item IDs to control exactly what gets removed.
 
+**Auto-open lootable containers** - Optional toggle on the Scavenger Settings panel. When enabled, EbonClearance opens any "Right Click to Open" container in your bags as soon as it lands - gift bags, treasure pouches, freebie pouches, etc. Lockboxes that need a key or lockpick are skipped. Combat-paused.
+
+**Right-click bag-item menu** - Alt+Right-Click any item in your bags to add it to a whitelist (character or account), blacklist, or deletion list, or to sell it immediately. Saves a trip to the settings panel for one-off list edits.
+
 **Greedy Scavenger management** - EbonClearance can mute the Scavenger's chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck on terrain. If you manually unsummon the Scavenger, the addon respects that and won't re-summon it. Other companions (bank mule, mailbox) are never replaced.
 
 **Auto-loot cycle** - When enabled, the addon watches your free bag slots while the Greedy Scavenger is looting. When bags hit your threshold it dismisses the pet, summons the Goblin Merchant and notifies you. Just right-click to sell, and the Scavenger is re-summoned to carry on looting. If you have more than 80 items to sell, selling continues in batches automatically. Configurable bag threshold in Scavenger Settings.
@@ -126,6 +130,11 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
 
 ## Changelog
+
+### v2.3.0
+
+- **Auto-open lootable containers** - New opt-in toggle on the Scavenger Settings panel. When enabled, EbonClearance reacts to bag changes and automatically opens any container in your bags that shows the standard "Right Click to Open" tooltip line - the gift bags, treasure pouches, and freebie pouches that drop from quests, mailbox, or as world-drop loot. Lockboxes that need a key or lockpick are skipped. Combat-paused. Containers are opened in sequence with a small inter-item delay so the previous open isn't interrupted. New saved variable `DB.autoOpenContainers` defaults to `false`; turn it on under Scavenger Settings → "Auto-open lootable containers from your bags". `/ec bugreport` now includes the toggle state.
+- **Right-click bag-item context menu** - Alt+Right-Click any item in your bags to open an EbonClearance dropdown: Add to Whitelist (Character / Account), Add to Blacklist, Add to Deletion List, or Sell Now (only enabled when a merchant window is open). No more trip to the settings panel for one-off list edits. The default right-click-to-use behaviour is unchanged - only Alt+Right-Click triggers the menu.
 
 ### v2.2.1
 

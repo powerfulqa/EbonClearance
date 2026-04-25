@@ -355,6 +355,9 @@ local function EnsureDB()
     if type(DB.bagFullThreshold) ~= "number" then
         DB.bagFullThreshold = 2
     end
+    if type(DB.autoOpenContainers) ~= "boolean" then
+        DB.autoOpenContainers = false
+    end
     if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then
         DB.merchantMode = "goblin"
     end
@@ -962,6 +965,10 @@ local EC_targetGoblinPending = false
 local EC_targetGoblinTimer = 0
 local EC_merchantReminderPending = false
 local EC_merchantReminderTimer = 0
+-- Auto-open container in-flight flag. Same forward-declaration discipline as
+-- the timers above: EC_HandleAutoOpenContainers writes this, and we don't want
+-- the write to leak into _G if the function is parsed before the local exists.
+local EC_autoOpenInFlight = false
 
 -- Auto-loot cycle: react to bag-full as soon as the game tells us a bag
 -- changed. Same body as the old 5-second poll; called from BAG_UPDATE so the
@@ -995,6 +1002,344 @@ local function EC_HandleBagFullForCycle()
     EC_summonGoblinPending = true
     EC_summonGoblinTimer = 1.5
 end
+
+-- ===========================================================================
+-- Auto-open lootable containers
+-- ---------------------------------------------------------------------------
+-- Hidden tooltip used to scan bag items for the "Right Click to Open" line.
+-- Anchored offscreen via SetOwner(UIParent, "ANCHOR_NONE") so it never flashes
+-- on the user's screen during scans.
+local EC_scanTooltip = CreateFrame("GameTooltip", "EbonClearanceScanTooltip", UIParent, "GameTooltipTemplate")
+EC_scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+
+-- True iff the slotted item shows ITEM_OPENABLE in its tooltip and is not
+-- locked. ITEM_OPENABLE is the standard Blizzard locale string ("<Right
+-- Click to Open>" in enUS) used by every container, gift bag, and
+-- treasure pouch in 3.3.5a. LOCKED is the same string that gets shown on
+-- junkboxes / lockpickable containers; we exclude those because the user
+-- needs a key or lockpicking skill to open them.
+local function EC_IsOpenable(bag, slot)
+    local _, itemCount, locked = GetContainerItemInfo(bag, slot)
+    if not itemCount or itemCount <= 0 or locked then
+        return false
+    end
+    EC_scanTooltip:ClearLines()
+    EC_scanTooltip:SetBagItem(bag, slot)
+    -- Cap iterations: tooltips can technically grow long; 30 lines is more
+    -- than any container we care about will produce.
+    for i = 1, 30 do
+        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        if not line then
+            break
+        end
+        local txt = line:GetText()
+        if txt == ITEM_OPENABLE then
+            return true
+        end
+        if txt == LOCKED then
+            return false
+        end
+    end
+    return false
+end
+
+-- Driver. Walks bags, opens the first openable item, and recurses via
+-- EC_Delay if more remain. EC_autoOpenInFlight coalesces BAG_UPDATE bursts
+-- so we never stack `UseContainerItem` calls within the inter-item delay.
+local function EC_HandleAutoOpenContainers()
+    if not DB or not DB.autoOpenContainers then
+        return
+    end
+    if running then
+        return
+    end
+    if InCombatLockdown() then
+        return
+    end
+    if EC_autoOpenInFlight then
+        return
+    end
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            if EC_IsOpenable(bag, slot) then
+                EC_autoOpenInFlight = true
+                UseContainerItem(bag, slot)
+                -- 0.4 s gives the prior open's cast room to finish before we
+                -- trigger the next one. Tunable; lower would feel snappier
+                -- but risks interrupting the previous use.
+                EC_Delay(0.4, function()
+                    EC_autoOpenInFlight = false
+                    EC_HandleAutoOpenContainers()
+                end)
+                return
+            end
+        end
+    end
+end
+
+-- ===========================================================================
+
+-- ===========================================================================
+-- Right-click bag-item context menu (Alt+Right-Click)
+-- ---------------------------------------------------------------------------
+-- Adds an EbonClearance popup to bag items: Whitelist (Character/Account),
+-- Blacklist, Deletion List, Sell Now. Triggered by Alt+Right-Click so it
+-- doesn't override the default right-click-to-use behaviour. We replace
+-- (rather than hooksecurefunc) ContainerFrameItemButton_OnClick because we
+-- need to *suppress* the default action on our modifier combo, not just
+-- append.
+--
+-- Implementation: a hand-built popup frame with regular Buttons. We avoid
+-- UIDropDownMenu in "MENU" mode because 3.3.5a's implementation has a known
+-- issue where the click handlers on menu items silently no-op when parented
+-- to a custom frame.
+
+local EC_CTX_PANEL_FOR = {
+    whitelist = "EbonClearanceOptionsWhitelist",
+    accountWhitelist = "EbonClearanceOptionsAccountWhitelist",
+    blacklist = "EbonClearanceOptionsBlacklist",
+    deleteList = "EbonClearanceOptionsDeletion",
+}
+
+local function EC_AddItemToList(setName, itemID, label)
+    if not itemID then
+        return
+    end
+    local t = EC_GetListTable(setName)
+    if not t then
+        PrintNicef("|cffff4444Could not resolve list: %s|r", tostring(setName))
+        return
+    end
+    local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
+    if t[itemID] then
+        PrintNicef("|cffaaaaaa%s already on %s.|r", itemName, label)
+        return
+    end
+    t[itemID] = true
+    PrintNicef("Added |cffb6ffb6%s|r to %s.", itemName, label)
+    -- Refresh the corresponding settings panel if it's been opened.
+    local panelName = EC_CTX_PANEL_FOR[setName]
+    if panelName then
+        local p = _G[panelName]
+        if p and p.listUI then
+            p.listUI:Refresh()
+        end
+    end
+end
+
+local function EC_SellNowAt(bag, slot)
+    if not (MerchantFrame and MerchantFrame:IsShown()) then
+        PrintNice("|cffff4444Open a merchant first to sell.|r")
+        return
+    end
+    if not bag or not slot then
+        return
+    end
+    local itemID = GetContainerItemID(bag, slot)
+    if not itemID then
+        return
+    end
+    if IsEquippedItem(itemID) then
+        PrintNice("|cffff4444Cannot sell equipped items.|r")
+        return
+    end
+    UseContainerItem(bag, slot)
+    local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
+    PrintNicef("Sold |cffb6ffb6%s|r.", itemName)
+end
+
+-- Action list. `requireMerchant = true` greys the row when no merchant is
+-- open. Cancel just closes the popup.
+local EC_CTX_ACTIONS = {
+    {
+        label = "Add to Whitelist (Character)",
+        run = function(bag, slot, id)
+            EC_AddItemToList("whitelist", id, "Whitelist - Character")
+        end,
+    },
+    {
+        label = "Add to Whitelist (Account)",
+        run = function(bag, slot, id)
+            EC_AddItemToList("accountWhitelist", id, "Whitelist - Account")
+        end,
+    },
+    {
+        label = "Add to Blacklist (Do Not Sell)",
+        run = function(bag, slot, id)
+            EC_AddItemToList("blacklist", id, "Blacklist")
+        end,
+    },
+    {
+        label = "Add to Deletion List",
+        run = function(bag, slot, id)
+            EC_AddItemToList("deleteList", id, "Deletion List")
+        end,
+    },
+    {
+        label = "Sell Now",
+        run = function(bag, slot, id)
+            EC_SellNowAt(bag, slot)
+        end,
+        requireMerchant = true,
+    },
+    {
+        label = "Cancel",
+        run = function() end,
+    },
+}
+
+local EC_ctxFrame
+
+local function EC_BuildCtxFrame()
+    if EC_ctxFrame then
+        return EC_ctxFrame
+    end
+    local rowCount = #EC_CTX_ACTIONS
+    -- Layout: 8 top pad + 22 title + 6 gap + rows*22 + 8 bottom pad
+    local frameHeight = 8 + 22 + 6 + (rowCount * 22) + 8
+    local frame = CreateFrame("Frame", "EbonClearanceCtxFrame", UIParent)
+    frame:SetFrameStrata("DIALOG")
+    frame:SetSize(240, frameHeight)
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    frame:EnableMouse(true)
+    frame:Hide()
+
+    local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    title:SetPoint("TOPLEFT", 10, -8)
+    title:SetPoint("TOPRIGHT", -10, -8)
+    title:SetJustifyH("LEFT")
+    if title.SetWordWrap then
+        title:SetWordWrap(false)
+    end
+    frame.title = title
+
+    frame.buttons = {}
+    for i, action in ipairs(EC_CTX_ACTIONS) do
+        local btn = CreateFrame("Button", nil, frame)
+        btn:SetSize(220, 20)
+        btn:SetPoint("TOPLEFT", 10, -(8 + 22 + 6) - (i - 1) * 22)
+        btn:SetNormalFontObject("GameFontHighlightSmall")
+        btn:SetHighlightFontObject("GameFontGreenSmall")
+        btn:SetDisabledFontObject("GameFontDisableSmall")
+        btn:SetText(action.label)
+        local fs = btn:GetFontString()
+        if fs then
+            fs:ClearAllPoints()
+            fs:SetPoint("LEFT", btn, "LEFT", 4, 0)
+            fs:SetJustifyH("LEFT")
+        end
+        -- Highlight texture so hover gives feedback.
+        local hl = btn:CreateTexture(nil, "BACKGROUND")
+        hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        hl:SetBlendMode("ADD")
+        hl:SetAllPoints(btn)
+        hl:SetAlpha(0)
+        btn:SetScript("OnEnter", function()
+            hl:SetAlpha(0.4)
+        end)
+        btn:SetScript("OnLeave", function()
+            hl:SetAlpha(0)
+        end)
+        btn:SetScript("OnClick", function()
+            local id = GetContainerItemID(frame.bag, frame.slot)
+            action.run(frame.bag, frame.slot, id)
+            frame:Hide()
+        end)
+        frame.buttons[i] = btn
+    end
+
+    -- Escape closes the popup. Standard Blizzard pattern: anything in the
+    -- UISpecialFrames table is auto-hidden on Escape. Avoids the previous
+    -- fullscreen-overlay approach which could intercept bag clicks if it ever
+    -- got stuck shown after a disable/enable cycle.
+    if type(UISpecialFrames) == "table" then
+        table.insert(UISpecialFrames, "EbonClearanceCtxFrame")
+    end
+    frame:SetScript("OnHide", function()
+        frame.bag = nil
+        frame.slot = nil
+    end)
+
+    EC_ctxFrame = frame
+    return frame
+end
+
+local function EC_ShowItemContextMenu(button)
+    local frame = EC_BuildCtxFrame()
+    local bag = button:GetParent():GetID()
+    local slot = button:GetID()
+    local itemID = GetContainerItemID(bag, slot)
+    if not itemID then
+        return
+    end
+    frame.bag = bag
+    frame.slot = slot
+
+    local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
+    frame.title:SetText("|cff4db8ffEbonClearance|r: " .. itemName)
+
+    local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
+    for i, action in ipairs(EC_CTX_ACTIONS) do
+        local btn = frame.buttons[i]
+        if action.requireMerchant and not merchantOpen then
+            btn:Disable()
+        else
+            btn:Enable()
+        end
+    end
+
+    -- Position at the cursor. WoW's GetCursorPosition returns screen pixels;
+    -- divide by UIParent's effective scale to get UIParent-local coords.
+    local x, y = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    frame:Show()
+end
+
+local EC_bagContextHookInstalled = false
+
+-- 3.3.5a routes any modifier+click on a bag item through
+-- ContainerFrameItemButton_OnModifiedClick (NOT _OnClick). _OnModifiedClick
+-- has Shift/Ctrl handlers, then falls through to _OnClick for the unhandled
+-- modifiers. We intercept pure Alt+RightClick (no Shift, no Ctrl) before that
+-- fall-through. Replace rather than hooksecurefunc because we need to suppress
+-- the fall-through, not just append.
+local function EC_InstallBagContextHookOnce()
+    if EC_bagContextHookInstalled then
+        return
+    end
+    if type(ContainerFrameItemButton_OnModifiedClick) ~= "function" then
+        return
+    end
+    EC_bagContextHookInstalled = true
+    local orig = ContainerFrameItemButton_OnModifiedClick
+    ContainerFrameItemButton_OnModifiedClick = function(self, button)
+        if
+            button == "RightButton"
+            and IsAltKeyDown()
+            and not IsShiftKeyDown()
+            and not IsControlKeyDown()
+        then
+            EC_ShowItemContextMenu(self)
+            return
+        end
+        return orig(self, button)
+    end
+end
+
+-- ===========================================================================
 
 -- Pet stuck detection + auto-loot cycle bag monitoring
 local EC_petCheckFrame = CreateFrame("Frame")
@@ -1552,25 +1897,28 @@ local function EC_AnnotateTooltip(tooltip)
         return
     end
 
-    local line
+    local statusLine
     if IsInSet(DB.blacklist, id) then
-        line = "|cff4db8ff[EC]|r |cffffb84dProtected - Blacklisted|r"
+        statusLine = "|cff4db8ff[EC]|r |cffffb84dProtected - Blacklisted|r"
     elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
-        line = "|cff4db8ff[EC]|r |cffff4444Will Delete - Deletion List|r"
-    elseif IsInSet(DB.whitelist, id) then
-        line = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
+        statusLine = "|cff4db8ff[EC]|r |cffff4444Will Delete - Deletion List|r"
+    elseif IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id)) then
+        statusLine = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
     elseif DB.whitelistQualityEnabled then
         local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
         if quality and quality > 0 and quality <= (DB.whitelistMinQuality or 1) and sellPrice and sellPrice > 0 then
-            line = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Quality Threshold|r"
+            statusLine = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Quality Threshold|r"
         end
     end
 
-    if line then
-        tooltip:AddLine(line)
-        tooltip.__EC_annotated = true
-        tooltip:Show()
+    if statusLine then
+        tooltip:AddLine(statusLine)
     end
+    -- Discoverability hint for the v2.3.0 right-click context menu. Shown on
+    -- every bag/item-link tooltip so users know the action is available.
+    tooltip:AddLine("|cff666666Alt+Right-Click for EbonClearance menu|r")
+    tooltip.__EC_annotated = true
+    tooltip:Show()
 end
 
 local function EC_ClearTooltipFlag(tooltip)
@@ -3721,6 +4069,9 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if self.threshSlider then
             self.threshSlider:SetValue(DB.bagFullThreshold or 2)
         end
+        if self.autoOpenCB then
+            self.autoOpenCB:SetChecked(DB.autoOpenContainers)
+        end
         return
     end
     self.inited = true
@@ -3852,6 +4203,45 @@ ScavengerPanel:SetScript("OnShow", function(self)
     )
     self.threshSlider = threshSlider
     threshSlider:SetWidth(200)
+
+    local autoOpenCB = AddCheckbox(
+        self,
+        "EbonClearanceAutoOpenCB",
+        threshSlider,
+        "Auto-open lootable containers from your bags",
+        function()
+            return DB.autoOpenContainers
+        end,
+        function(v)
+            DB.autoOpenContainers = v
+        end,
+        -16
+    )
+    self.autoOpenCB = autoOpenCB
+
+    local autoOpenNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    autoOpenNote:SetPoint("TOPLEFT", autoOpenCB, "BOTTOMLEFT", 26, -2)
+    autoOpenNote:SetWidth(EC_PANEL_WIDTH - 60)
+    autoOpenNote:SetJustifyH("LEFT")
+    if autoOpenNote.SetWordWrap then
+        autoOpenNote:SetWordWrap(true)
+    end
+    autoOpenNote:SetText(
+        "|cff888888Lockboxes that need a key or lockpick are skipped. Combat-paused.|r"
+    )
+
+    -- Discoverability hint for the right-click context menu. Lives on this
+    -- panel because both v2.3.0 bag-action features cluster here.
+    local rightClickHint = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    rightClickHint:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", 0, -16)
+    rightClickHint:SetWidth(EC_PANEL_WIDTH - 60)
+    rightClickHint:SetJustifyH("LEFT")
+    if rightClickHint.SetWordWrap then
+        rightClickHint:SetWordWrap(true)
+    end
+    rightClickHint:SetText(
+        "|cffffb84dTip:|r |cff888888Alt+Right-Click any item in your bags for a quick-action menu (whitelist, blacklist, delete, sell now).|r"
+    )
 end)
 
 local CharPanel = CreateFrame("Frame", "EbonClearanceOptionsCharacter", InterfaceOptionsFramePanelContainer)
@@ -4188,6 +4578,7 @@ local function EC_BuildBugReport()
     add("Hide Bubbles: " .. tostring(DB.hideGreedyBubbles))
     add("Auto-Loot Cycle: " .. tostring(DB.autoLootCycle))
     add("Bag Full Threshold: " .. tostring(DB.bagFullThreshold))
+    add("Auto-Open Containers: " .. tostring(DB.autoOpenContainers))
     add("")
 
     add("--- Whitelist ---")
@@ -4594,6 +4985,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_InstallTooltipHookOnce()
             EC_CreateLDBLauncher()
             EC_CreateTargetMerchantButton()
+            EC_InstallBagContextHookOnce()
         end
     elseif event == "PLAYER_LOGOUT" then
         if DB then
@@ -4605,7 +4997,10 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_InstallGreedyMuteOnce()
         end
     elseif event == "BAG_UPDATE" then
+        -- Bag-full handler runs first; the open driver yields via the `running`
+        -- guard if the vendor cycle is already active.
         EC_HandleBagFullForCycle()
+        EC_HandleAutoOpenContainers()
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
         EC_merchantReminderPending = false

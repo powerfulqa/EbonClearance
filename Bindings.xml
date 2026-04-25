@@ -1,3 +1,12 @@
 <Bindings>
     <Binding name="CLICK EbonClearanceTargetMerchantButton:LeftButton" header="EBONCLEARANCE"/>
+    <Binding name="EBONCLEARANCE_TOGGLE_SETTINGS" category="EbonClearance">
+        EbonClearance_ToggleSettings()
+    </Binding>
+    <Binding name="EBONCLEARANCE_TOGGLE_ENABLED" category="EbonClearance">
+        EbonClearance_ToggleEnabled()
+    </Binding>
+    <Binding name="EBONCLEARANCE_FORCE_SELL" category="EbonClearance">
+        EbonClearance_ForceSell()
+    </Binding>
 </Bindings>

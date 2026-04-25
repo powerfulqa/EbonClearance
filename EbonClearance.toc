@@ -1,9 +1,10 @@
 ## Interface: 30300
-## Title: |cff4db8ffEbonClearance|r |cff9aff4d[v2.0.13]|r
+## Title: |cff4db8ffEbonClearance|r |cff9aff4d[v2.1.0]|r
 ## Notes: |cffffb84dProject Ebonhold Selling addon|r. Whitelist-based auto-vendoring, item deletion control and Greedy Scavenger management.
 ## Author: Serv
-## Version: v2.0.13
-## SavedVariables: EbonClearanceDB
+## X-Website: https://github.com/powerfulqa/EbonClearance
+## Version: v2.1.0
+## SavedVariables: EbonClearanceDB, EbonClearanceAccountDB
 
 Bindings.xml
 EbonClearance.lua

@@ -1,21 +1,84 @@
-MIT License
+EbonClearance — Source-Available Attribution License
+Copyright (c) 2026 Serv (https://github.com/powerfulqa/EbonClearance)
 
-Copyright (c) 2026 Serv
+Plain-English summary (non-binding, the formal clauses below govern):
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+  You may use EbonClearance freely, including on private servers and in
+  addon-pack bundles. You may modify it and share your modifications. You
+  may not quietly rebrand it as your own work: the credits, the in-game
+  byline, the provenance globals, the LICENSE file, and the SavedVariable
+  / slash-command / import-export identifiers must stay intact. Forking
+  under a new name with full attribution preserved is fine; copying it,
+  renaming it, and presenting it as an original work is not. There is no
+  warranty.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Formal terms:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. Grant of Rights
+   Subject to the conditions in sections 2-3, the copyright holder grants
+   every recipient a worldwide, royalty-free, non-exclusive, irrevocable
+   (except as provided in section 6) licence to use, reproduce, modify,
+   distribute, and redistribute this Software, in source or compiled form,
+   for any lawful purpose.
+
+2. Attribution Preservation
+   Any redistribution of the Software, whether modified or unmodified,
+   whether source or compiled, must preserve each of the following without
+   alteration:
+
+   (a) the "## Author:" line in the addon's .toc manifest;
+   (b) the comment block at the top of the primary Lua source file naming
+       the author and the canonical source URL;
+   (c) the "by <author>  ·  <url>" byline rendered on the main options
+       panel of the in-game settings UI;
+   (d) the global variables EBONCLEARANCE_IDENT, EBONCLEARANCE_AUTHOR,
+       EBONCLEARANCE_ORIGIN, __EbonClearance_origin, and
+       __EbonClearance_author, along with the values they carry;
+   (e) this LICENSE file, in full, in every distributed copy.
+
+   Attribution must be genuine. Replacing the author name, URL, or
+   provenance values with placeholder, empty, or misleading content
+   constitutes a breach of this section.
+
+3. No Silent Rebrand
+   The following identifiers may not be renamed in any derivative work
+   without the prior written permission of the copyright holder:
+
+   (a) the visible addon name "EbonClearance";
+   (b) the slash command "/ec";
+   (c) the SavedVariable table names "EbonClearanceDB" and
+       "EbonClearanceAccountDB";
+   (d) the import/export string prefix "EC:".
+
+   You may fork the Software under a different name provided that
+   sections 2 and 3(a)-(d) are honoured in full, the fork makes its
+   derivative nature explicit, and a link back to the canonical source
+   is preserved alongside the attribution required by section 2. Covertly
+   renaming any of the identifiers in (a)-(d) to obscure the origin of
+   the Software is a breach of this section.
+
+4. Addon-Pack Bundling
+   Unmodified copies of the Software may be included in private-server
+   addon-pack distributions without seeking individual permission,
+   provided section 2 is honoured in full. Modifications or partial
+   inclusion (e.g. extracting a single file) require the same attribution
+   preservation as any other redistribution.
+
+5. No Warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+   TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+6. Termination
+   The rights granted in section 1 terminate automatically upon any
+   breach of section 2 or section 3. Compliance with those sections must
+   be restored within thirty (30) days of notice for the rights to be
+   reinstated.
+
+7. Severability
+   If any provision of this licence is found unenforceable, the remaining
+   provisions remain in force.

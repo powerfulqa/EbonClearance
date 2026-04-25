@@ -130,6 +130,13 @@ event and dispatches via a switch on `event`. Adding a new event is a
 two-liner: `f:RegisterEvent("NEW_EVENT")` and a branch in the OnEvent
 handler. Do **not** add a second event frame for "your feature."
 
+Currently registered: `ADDON_LOADED`, `PLAYER_LOGOUT`, `PLAYER_LOGIN`,
+`PLAYER_ENTERING_WORLD`, `MERCHANT_SHOW`, `MERCHANT_CLOSED`,
+`UNIT_AURA` (player-filtered when `RegisterUnitEvent` is available),
+and `BAG_UPDATE` (drives the auto-loot-cycle bag-full detection via
+`EC_HandleBagFullForCycle`; see "Performance rules" for why this is
+preferred over polling).
+
 ### Saved variables shape
 
 `EbonClearanceDB` is one flat table per character. Fields fall into
@@ -138,12 +145,15 @@ four groups:
 - **Lists**: `whitelist`, `blacklist`, `deleteList`, `enableOnlyListedChars`.
 - **Profiles**: `whitelistProfiles`, `blacklistProfiles`, `activeProfileName`.
 - **Settings**: `enabled`, `summonGreedy`, `summonDelay`,
-  `vendorInterval`, `merchantMode`, `autoLootCycle`, `bagFullThreshold`,
-  `repairGear`, `keepBagsOpen`, `muteGreedy`, `hideGreedyChat`,
-  `hideGreedyBubbles`, `enableDeletion`, `whitelistMinQuality`,
-  `whitelistQualityEnabled`, `vendorBtnShown` (and `vendorBtnX`,
-  `vendorBtnY`, `vendorBtnPoint`, `vendorBtnRelPoint` - dormant; see the
-  `EC_CreateVendorButton` block).
+  `vendorInterval`, `maxItemsPerRun`, `fastMode`, `merchantMode`,
+  `autoLootCycle`, `bagFullThreshold`, `repairGear`, `keepBagsOpen`,
+  `muteGreedy`, `hideGreedyChat`, `hideGreedyBubbles`, `enableDeletion`,
+  `whitelistMinQuality`, `whitelistQualityEnabled`, `vendorBtnShown`
+  (and `vendorBtnX`, `vendorBtnY`, `vendorBtnPoint`, `vendorBtnRelPoint`
+  - dormant; see the `EC_CreateVendorButton` block).
+  `fastMode` (v2.2.0+) pins the per-item interval to the 0.05 s floor
+  and doubles the per-run cap; consume via `EC_EffectiveVendorInterval`
+  / `EC_EffectiveMaxItemsPerRun`, never read it directly on hot paths.
 - **Stats**: `totalCopper`, `totalItemsSold`, `totalItemsDeleted`,
   `totalRepairs`, `totalRepairCopper`, `soldItemCounts`,
   `deletedItemCounts`, `inventoryWorthTotal`, `inventoryWorthCount`.

@@ -15,15 +15,32 @@ ignore = { "212/self", "213", "631" }
 -- global scope. Everything else in the addon should stay local.
 globals = {
     "EbonClearanceDB",
+    "EbonClearanceAccountDB",   -- account-wide whitelist store
     "EbonholdStuffDB",          -- legacy, migrated-from
-    "SLASH_EC1", "SLASH_EC2",
+    "SLASH_EBONCLEARANCE1",
     "SLASH_ECDEBUG1",
     "SlashCmdList",
     "EC_IsMerchantAllowed",     -- assigned by module, read by vendor loop
-    "BINDING_HEADER_EBONCLEARANCE", -- Blizzard keybinding registration
-    "_G",                       -- we write one binding via _G[name] because the
-                                --   binding name contains a space (standard Blizzard
-                                --   pattern for SecureActionButton-based keybinds)
+    "ChatEdit_InsertLink",      -- replaced by module to capture shift-click links
+    -- Keybinding headers / names (read by Blizzard, set by addon)
+    "BINDING_HEADER_EBONCLEARANCE",
+    "BINDING_NAME_EBONCLEARANCE_TOGGLE_SETTINGS",
+    "BINDING_NAME_EBONCLEARANCE_TOGGLE_ENABLED",
+    "BINDING_NAME_EBONCLEARANCE_FORCE_SELL",
+    -- Globally-exposed handlers called from Bindings.xml
+    "EbonClearance_ToggleSettings",
+    "EbonClearance_ToggleEnabled",
+    "EbonClearance_ForceSell",
+    -- Provenance / attribution globals (see LICENSE §2; do not remove).
+    "EBONCLEARANCE_IDENT",
+    "EBONCLEARANCE_AUTHOR",
+    "EBONCLEARANCE_ORIGIN",
+    "__EbonClearance_origin",
+    "__EbonClearance_author",
+    -- _G is writable because one binding name contains a space (standard
+    -- Blizzard pattern for SecureActionButton-based keybinds, see
+    -- EbonClearanceTargetMerchantButton wiring).
+    "_G",
 }
 
 -- WoW 3.3.5a API surface this addon touches. Grouped loosely by subsystem.
@@ -64,6 +81,10 @@ read_globals = {
     -- Unit / player
     "UnitName", "UnitExists", "UnitAura", "UnitClass",
     "IsMounted", "Dismount",
+    "IsAltKeyDown", "InCombatLockdown",
+
+    -- Blizzard constants / static popup buttons
+    "YES", "NO",
 
     -- Keybinding
     "GetBindingKey",

@@ -8,15 +8,19 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 ## What It Does
 
-**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also set a quality threshold to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). Works with the Goblin Merchant, normal vendors, or both. Items with no vendor value are automatically skipped. Your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
+**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also set a quality threshold (under Merchant Settings) to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). Works with the Goblin Merchant, normal vendors, or both. Items with no vendor value are automatically skipped. Your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
 
-**Scan bags to whitelist** - Quickly bulk-add items from your bags by quality. Three colour-coded buttons (White, Green, Blue) on the Whitelist panel scan your bags and add all matching items. Only items with a vendor value are added.
+**Character and account whitelists** - Keep a per-character whitelist for things only that character sells, plus an account-wide whitelist for shared trash (reagents, seasonal items) that gets sold on every alt. Both lists are consulted when vendoring; either one listing an item is enough.
+
+**Scan bags to whitelist** - Quickly bulk-add items from your bags by quality. Three colour-coded buttons (White, Green, Blue) on each whitelist panel scan your bags and add all matching items. Only items with a vendor value are added. A separate "Add matching in bags" field lets you add every bag item whose name contains a typed substring (handy for seasonal prefixes).
 
 **Blacklist (do not sell)** - Protect valuable items from being sold. If an item is on your blacklist, it will never be vendored regardless of the whitelist or quality threshold. Useful for auction house items like Traveler's Bags that you don't want accidentally sold.
 
 **Auto-sell grey junk** - All grey (Poor quality) items are sold automatically at any merchant, regardless of your whitelist or merchant mode settings. No setup needed.
 
-**Profiles** - Save and load different whitelists and blacklists as named profiles. Handy for swapping between farming spots or activities without keeping one massive list. Each profile stores both your sell list and your protected items. Manage profiles through the settings panel or with slash commands.
+**Profiles** - Save and load different whitelists and blacklists as named profiles. Handy for swapping between farming spots or activities without keeping one massive list. Each profile stores both your sell list and your protected items. Manage profiles through the settings panel or with slash commands. Destructive actions (clear, delete, reset stats) prompt for confirmation.
+
+**List conflict clean-up** - The `/ec clean` command reports any item IDs present in more than one list (whitelist, blacklist, delete-list). Run `/ec clean apply` to auto-resolve them using a fixed precedence of blacklist > delete-list > whitelist.
 
 **Item deletion** - For items that can't be sold, the addon can automatically destroy them. You manage a separate delete list of item IDs to control exactly what gets removed.
 
@@ -28,7 +32,9 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 **Keep bags open** - Optionally prevents the game from closing your bag windows when you leave a merchant or the Goblin Merchant despawns.
 
-**Session and lifetime statistics** - Keeps a running tally of gold earned, items sold, items deleted, repair costs and average inventory value. All viewable through the config panel.
+**Session and lifetime statistics** - Keeps a running tally of gold earned, items sold, items deleted, repair costs and average inventory value. Session deltas are shown inline next to each lifetime figure so you can see at a glance what the current play session added. Lifetime and session counters reset independently.
+
+**Key bindings** - Bind keys for Open/close settings, Toggle enabled, and Force sell at current merchant under the WoW Key Bindings menu.
 
 ## Coming from EbonholdStuff?
 
@@ -76,18 +82,20 @@ The addon is character-aware, so you can restrict it to specific characters if y
 
 All settings live under `/ec`, which opens a scrollable config panel. From there you can:
 
-- Manage your whitelist (items to sell) and blacklist (items to protect)
-- Scan bags to bulk-add items to the whitelist by quality (White, Green, Blue)
+- Manage your character whitelist, account-wide whitelist, blacklist, and deletion list
+- Scan bags to bulk-add items by quality (White, Green, Blue) on either whitelist panel
+- Add items matching a name substring in one go via the "Add matching in bags" field on any list panel
 - Save and load profiles with different whitelist and blacklist combinations
-- Set a quality threshold to bulk-sell everything up to a chosen rarity
+- Set a quality threshold (on Merchant Settings) to bulk-sell everything up to a chosen rarity
 - Choose which merchants the addon works with (Goblin Merchant, normal vendors, or both)
 - Toggle auto-vendoring, deletion, repairs and Greedy Scavenger features on or off
 - Keep bags open when leaving a merchant
 - Import and export whitelists as shareable strings
-- View lifetime and session statistics
+- View lifetime and session statistics side-by-side, reset either independently
 - Control which characters the addon is active on
 - Adjust the vendor sell speed and summon delay
 - Right-click the minimap button to quickly enable or disable the addon
+- Bind keys for Open/close settings, Toggle enabled, and Force sell at current merchant under the WoW Key Bindings menu
 
 ## Slash Commands
 
@@ -98,6 +106,8 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 | `/ec profile save <name>` | Save the current whitelist as a named profile |
 | `/ec profile load <name>` | Load a saved profile into the active whitelist |
 | `/ec profile delete <name>` | Delete a saved profile |
+| `/ec clean` | Report any item IDs present in more than one list |
+| `/ec clean apply` | Auto-resolve list conflicts using precedence blacklist > delete-list > whitelist |
 | `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report |
 | `/ecdebug` | Show debug info and run a bag scan |
 
@@ -116,6 +126,18 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
 
 ## Changelog
+
+### v2.1.0
+
+- **Account-wide whitelist** - New panel `Whitelist - Account` storing items in a separate `EbonClearanceAccountDB` saved variable. Both whitelists are unioned at sell time so an item listed in either fires. The character panel was renamed `Whitelist - Character` for symmetry, with the same scan-by-quality buttons on both.
+- **Quality threshold moved to Merchant Settings** - The "Sell items by quality threshold" checkbox and the rarity dropdown now live alongside the other vendoring settings, freeing the Whitelist panel from clutter. Existing settings carry across automatically.
+- **`/ec clean` and `/ec clean apply`** - Report and (optionally) auto-resolve item IDs present in more than one of the whitelist / blacklist / delete-list. Precedence is blacklist > delete-list > whitelist.
+- **Add matching in bags** - Every list panel gets a text input that scans your bags for items whose name contains the typed substring and bulk-adds them. Useful for seasonal prefixes (e.g. `Tome of`).
+- **Key bindings** - Three bindable actions under the WoW Key Bindings menu: open/close settings, toggle enabled, force sell at current merchant. These sit alongside the existing target-Goblin-Merchant binding from v2.0.13.
+- **Confirmation popups on destructive actions** - Reset Lifetime Stats, Reset Session Stats, Delete Profile, and Clear Profile now ask before going through.
+- **Session stats inline with lifetime** - Each lifetime stat line shows its session delta in grey alongside it, with a separate Reset Session button next to Reset Lifetime. No extra vertical space; the main page no longer overflows.
+- **Panel-overflow fixes** - Reduced the default list-panel height so the bottom rows of large blacklist / delete-list / account-whitelist no longer fall outside the menu.
+- **Attribution and licence change** - Replaced the MIT licence with the EbonClearance Source-Available Attribution Licence (see [LICENSE](LICENSE)). Added the in-game byline on the main panel, an SPDX-style header at the top of the Lua source, and the `EBONCLEARANCE_IDENT` / `EBONCLEARANCE_AUTHOR` / `EBONCLEARANCE_ORIGIN` globals (plus two underscore-prefixed aliases). Use, modification and redistribution still permitted - rebranding without preserved attribution is not.
 
 ### v2.0.13
 
@@ -217,4 +239,4 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Licence
 
-This project is licensed under the MIT Licence. See the [LICENSE](LICENSE) file for details.
+This project is distributed under the EbonClearance Source-Available Attribution Licence. You may use, modify, and redistribute the addon (including in private-server addon-pack bundles) provided you preserve the author credit, the in-game byline, the provenance globals, and the LICENSE file itself, and you do not silently rebrand the addon name, the `/ec` slash command, the SavedVariable names, or the `EC:` import/export prefix. Forks under a new name are welcome as long as attribution to the original author and source URL is preserved. See the [LICENSE](LICENSE) file for the full terms.

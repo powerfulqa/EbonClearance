@@ -12,8 +12,15 @@ internet tutorial disagree, follow the guide.
 2. **Single file.** All code lives in `EbonClearance.lua`. Do not split
    into modules unless explicitly asked - see "When to split" below.
 3. **Namespace via `EC_` prefixed locals.** There is no addon table.
-   Nearly everything is `local`; the only globals are `EbonClearanceDB`
-   and the slash-command handles.
+   Nearly everything is `local`; the only intentional globals are the
+   saved-variable tables (`EbonClearanceDB`, `EbonClearanceAccountDB`),
+   the slash-command handles, the keybinding header / name strings
+   (`BINDING_HEADER_EBONCLEARANCE`, `BINDING_NAME_EBONCLEARANCE_*`), the
+   handlers wired from `Bindings.xml` (`EbonClearance_ToggleSettings`,
+   `EbonClearance_ToggleEnabled`, `EbonClearance_ForceSell`), and the
+   provenance globals required by `LICENSE` §2 (`EBONCLEARANCE_IDENT`,
+   `EBONCLEARANCE_AUTHOR`, `EBONCLEARANCE_ORIGIN`,
+   `__EbonClearance_origin`, `__EbonClearance_author`).
 4. **State machine uses `STATE.*` constants**, never raw strings. See
    `STATE = { IDLE, LOOTING, WAITING_MERCHANT, SELLING }` in the file.
 5. **Cache hot WoW API globals at file top**, then use the locals on
@@ -33,23 +40,42 @@ internet tutorial disagree, follow the guide.
     name (e.g. `[CreateListUI](../EbonClearance.lua)`) and let readers
     `grep` for the symbol. Line numbers shift on every refactor; symbol
     names don't.
+12. **Do not remove attribution markers.** `LICENSE` §2 lists five
+    things every redistribution must preserve: the `## Author:` TOC
+    line, the file-header comment block at the top of
+    `EbonClearance.lua`, the GUI byline rendered on the main options
+    panel, the `EBONCLEARANCE_*` / `__EbonClearance_*` provenance
+    globals, and the `LICENSE` file in full. If a refactor would touch
+    any of those, leave them alone or update them with care - never
+    delete.
 
 ## Client target: 3.3.5a
 
 ### `.toc` fields we use
 
 ```
-## Interface: 30300            # WotLK 3.3.5a; do not bump
-## Title: ...                  # colour codes allowed
+## Interface: 30300                                # WotLK 3.3.5a; do not bump
+## Title: ...                                      # colour codes allowed
 ## Notes: ...
-## Author: ...
+## Author: ...                                     # required by LICENSE §2(a)
+## X-Website: https://github.com/.../EbonClearance # canonical source
 ## Version: ...
-## SavedVariables: EbonClearanceDB
+## SavedVariables: EbonClearanceDB, EbonClearanceAccountDB
+
+EbonClearance.lua
+Bindings.xml
 ```
 
-If you ever add a character-scoped var, use `## SavedVariablesPerCharacter`.
-We do not use `Dependencies`, `OptionalDeps`, `LoadOnDemand`, or
-`LoadManagers`.
+`EbonClearanceDB` is per-character (default for `## SavedVariables`);
+`EbonClearanceAccountDB` is account-wide and stores the shared
+whitelist that gets unioned at sell time. If you ever add a
+character-scoped var that should *not* persist across characters in
+this account, use `## SavedVariablesPerCharacter`. We do not use
+`Dependencies`, `OptionalDeps`, `LoadOnDemand`, or `LoadManagers`.
+
+`Bindings.xml` declares the three bindable actions and is loaded
+straight after the Lua. Do not move bindings into Lua - WoW expects
+them in XML at addon-load time.
 
 ### Lua 5.1 constraints
 
@@ -64,19 +90,36 @@ We do not use `Dependencies`, `OptionalDeps`, `LoadOnDemand`, or
 ### File layout
 
 One file, roughly in this order:
+- File header comment block (required by LICENSE §2(b); do not remove).
 - Constants and cached API upvalues (top).
+- Provenance globals (`EBONCLEARANCE_IDENT/AUTHOR/ORIGIN`, plus two
+  `__EbonClearance_*` aliases - required by LICENSE §2(d)).
 - Greedy Scavenger chat filters (`EC_GreedyEventFilter`,
   `EC_InstallGreedyMuteOnce`, `ApplyGreedyChatFilter`).
 - Speech-bubble killer (`EC_bubbleFrame`).
-- SavedVariable bootstrap (`EnsureDB`).
+- SavedVariable bootstrap (`EnsureDB`, `EnsureAccountDB`,
+  `EC_GetListTable` list-name resolver, `EC_ExtraListTables`).
 - Profile / bag / pet / merchant helpers.
 - State machine constants (`STATE`).
 - Timers (`EC_Delay`, `EC_delayFrame`).
+- Session-stats table (`EC_session`) and `EC_ResetSession`.
 - Pet check OnUpdate and auto-loot cycle (`EC_petCheckFrame`).
 - Vendor loop (`BuildQueue`, `DoNextAction`, `worker`).
-- UI: `CreateListUI`, minimap button, Interface Options panels.
+- UI: `CreateListUI` (search / sort / "Add matching in bags" row baked
+  in), minimap button, dormant `EC_CreateVendorButton`,
+  `StaticPopupDialogs` for confirmation, Interface Options panels
+  (Main, Merchant Settings - includes the quality threshold,
+  Whitelist - Character, Whitelist - Account, Profiles, Import/Export,
+  Deletion List, Blacklist - Keep, Scavenger Settings, Character
+  Settings).
+- `EC_AddScanByQualityRow` helper used by both whitelist panels.
 - Export / import / bug report.
-- Event dispatch (bottom) and slash commands.
+- List-conflict helpers (`EC_ScanListConflicts`,
+  `EC_PrintConflictReport`, `EC_ApplyCleanResolution`).
+- Keybinding header / name strings and the three
+  `EbonClearance_*` global handlers (called from `Bindings.xml`).
+- Event dispatch (bottom) and slash commands (`/ec`, `/ec profile ...`,
+  `/ec clean [apply]`, `/ec bugreport`, `/ecdebug`).
 
 Approximate ordering - do not reshuffle unless splitting the file.
 
@@ -89,7 +132,8 @@ handler. Do **not** add a second event frame for "your feature."
 
 ### Saved variables shape
 
-`EbonClearanceDB` is one flat table. Fields fall into four groups:
+`EbonClearanceDB` is one flat table per character. Fields fall into
+four groups:
 
 - **Lists**: `whitelist`, `blacklist`, `deleteList`, `enableOnlyListedChars`.
 - **Profiles**: `whitelistProfiles`, `blacklistProfiles`, `activeProfileName`.
@@ -97,11 +141,24 @@ handler. Do **not** add a second event frame for "your feature."
   `vendorInterval`, `merchantMode`, `autoLootCycle`, `bagFullThreshold`,
   `repairGear`, `keepBagsOpen`, `muteGreedy`, `hideGreedyChat`,
   `hideGreedyBubbles`, `enableDeletion`, `whitelistMinQuality`,
-  `whitelistQualityEnabled`.
+  `whitelistQualityEnabled`, `vendorBtnShown` (and `vendorBtnX`,
+  `vendorBtnY`, `vendorBtnPoint`, `vendorBtnRelPoint` - dormant; see the
+  `EC_CreateVendorButton` block).
 - **Stats**: `totalCopper`, `totalItemsSold`, `totalItemsDeleted`,
   `totalRepairs`, `totalRepairCopper`, `soldItemCounts`,
   `deletedItemCounts`, `inventoryWorthTotal`, `inventoryWorthCount`.
 - **UI**: `minimapButtonAngle`, `allowedChars`.
+
+`EbonClearanceAccountDB` is a separate, account-wide table holding only
+`{ whitelist = { [itemID] = true, ... } }`. It is bootstrapped by
+`EnsureAccountDB()` (called from `EnsureDB()`) and exposed to
+`CreateListUI` via the `EC_GetListTable` resolver under the name
+`accountWhitelist`. Sell-time consultation is a union of the per-char
+and account whitelists.
+
+In-memory only (not saved): `EC_session = { copper, sold, deleted,
+repairs, repairCopper }`. Reset by the Reset Session button on the main
+page or on `/reload`.
 
 `EnsureDB()` is the **only** place defaults are written. Adding a new
 setting means: pick the group, add a default line inside `EnsureDB()`,
@@ -315,10 +372,21 @@ Not wired into CI, but enforce in review:
 
 - `/ec` - open the Interface Options panel.
 - `/ec profile list|save|load|delete <name>` - profile management.
+- `/ec clean` - report items present on more than one list.
+- `/ec clean apply` - auto-resolve list conflicts (precedence:
+  blacklist > deleteList > whitelist).
 - `/ec bugreport` - diagnostic dump for issue reports.
 - `/ecdebug` - debug info plus bag scan.
 
-Slash commands are registered at the very bottom of `EbonClearance.lua`.
+Key bindings (declared in `Bindings.xml`, handlers near the slash
+commands):
+
+- `EBONCLEARANCE_TOGGLE_SETTINGS` → `EbonClearance_ToggleSettings()`.
+- `EBONCLEARANCE_TOGGLE_ENABLED` → `EbonClearance_ToggleEnabled()`.
+- `EBONCLEARANCE_FORCE_SELL` → `EbonClearance_ForceSell()`.
+
+Slash commands and binding handlers are registered at the very bottom
+of `EbonClearance.lua`.
 
 ## 3.3.5a gotchas
 

@@ -1,3 +1,8 @@
+-- EbonClearance - auto-vendoring + clearance addon for Project Ebonhold (3.3.5a)
+-- Author:  Serv
+-- Source:  https://github.com/powerfulqa/EbonClearance
+-- License: see LICENSE; attribution preservation is required.
+
 local ADDON_NAME = "EbonClearance"
 -- TARGET_NAME / PET_NAME are the enUS display names of the two Project Ebonhold
 -- companion NPCs the addon drives. These strings are compared directly against
@@ -8,6 +13,18 @@ local ADDON_NAME = "EbonClearance"
 -- one. See docs/ADDON_GUIDE.md "Gotchas" for the full localisation notes.
 local TARGET_NAME = "Goblin Merchant"
 local PET_NAME = "Greedy scavenger"
+
+-- Provenance. Mirrored into globals so the origin/author are visible to any
+-- /run introspection, addon-management tool, or crash trace. LICENSE requires
+-- these to be preserved in derivatives.
+local ADDON_DISPLAY = "EbonClearance"
+local ADDON_AUTHOR = "Serv"
+local ADDON_URL = "https://github.com/powerfulqa/EbonClearance"
+_G["EBONCLEARANCE_IDENT"] = ADDON_DISPLAY
+_G["EBONCLEARANCE_AUTHOR"] = ADDON_AUTHOR
+_G["EBONCLEARANCE_ORIGIN"] = ADDON_URL
+_G["__EbonClearance_origin"] = ADDON_URL
+_G["__EbonClearance_author"] = ADDON_AUTHOR
 
 local EC_GetPlayerName
 local EC_IsAddonEnabledForChar
@@ -231,6 +248,33 @@ local function ApplyGreedyChatFilter()
 end
 
 local DB
+-- Account-wide SavedVariable. Holds a single `whitelist` table that unions with
+-- the per-character whitelist at sell time. Bootstrapped by EnsureAccountDB().
+local ADB
+
+-- Resolves list names (used by CreateListUI) to the underlying table. Extra
+-- scopes (e.g. account whitelist) register themselves here so CreateListUI can
+-- render them without knowing about the scope.
+local EC_ExtraListTables = {}
+
+local function EC_GetListTable(name)
+    local extra = EC_ExtraListTables[name]
+    if extra ~= nil then
+        return extra
+    end
+    return DB and DB[name]
+end
+
+local function EnsureAccountDB()
+    if EbonClearanceAccountDB == nil then
+        EbonClearanceAccountDB = {}
+    end
+    ADB = EbonClearanceAccountDB
+    if type(ADB.whitelist) ~= "table" then
+        ADB.whitelist = {}
+    end
+    EC_ExtraListTables["accountWhitelist"] = ADB.whitelist
+end
 
 local function EnsureDB()
     -- Legacy-rename migration. MUST run before field defaults below, because
@@ -246,6 +290,7 @@ local function EnsureDB()
         EbonClearanceDB = {}
     end
     DB = EbonClearanceDB
+    EnsureAccountDB()
 
     if type(DB.deleteList) ~= "table" then
         DB.deleteList = {}
@@ -352,6 +397,9 @@ local function EnsureDB()
     if type(DB.keepBagsOpen) ~= "boolean" then
         DB.keepBagsOpen = true
     end
+    if type(DB.vendorBtnShown) ~= "boolean" then
+        DB.vendorBtnShown = false
+    end
     if type(DB.blacklist) ~= "table" then
         DB.blacklist = {}
     end
@@ -393,6 +441,23 @@ local function EnsureDB()
     if not DB._seededLists then
         DB._seededLists = true
     end
+end
+
+-- Session stats (in-memory only; reset on /reload or by user button).
+local EC_session = {
+    copper = 0,
+    sold = 0,
+    deleted = 0,
+    repairs = 0,
+    repairCopper = 0,
+}
+
+local function EC_ResetSession()
+    EC_session.copper = 0
+    EC_session.sold = 0
+    EC_session.deleted = 0
+    EC_session.repairs = 0
+    EC_session.repairCopper = 0
 end
 
 -- Keep bags open when merchant closes
@@ -1112,7 +1177,9 @@ local function EC_IsSellable(bag, slot, junkOnly)
     local _, link, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
     local hasSellPrice = sellPrice and sellPrice > 0
     local isJunk = (quality ~= nil) and (quality == 0) and hasSellPrice
-    local whitelistPass = not junkOnly and hasSellPrice and IsInSet(DB.whitelist, itemID)
+    local whitelistPass = not junkOnly
+        and hasSellPrice
+        and (IsInSet(DB.whitelist, itemID) or (ADB and IsInSet(ADB.whitelist, itemID)))
     local qualityPass = false
     if not junkOnly and DB.whitelistQualityEnabled == true and hasSellPrice then
         qualityPass = (quality ~= nil) and (quality <= DB.whitelistMinQuality)
@@ -1189,6 +1256,7 @@ local function FinishRun()
     worker:Hide()
 
     DB.totalCopper = (DB.totalCopper or 0) + (goldThisVendoring or 0)
+    EC_session.copper = EC_session.copper + (goldThisVendoring or 0)
     EC_batchTotalSold = EC_batchTotalSold + #queue
     EC_batchTotalGold = EC_batchTotalGold + (goldThisVendoring or 0)
 
@@ -1262,6 +1330,7 @@ local function DoNextAction()
     if action.type == "sell" then
         UseContainerItem(action.bag, action.slot)
         DB.totalItemsSold = (DB.totalItemsSold or 0) + (action.count or 1)
+        EC_session.sold = EC_session.sold + (action.count or 1)
         DB.soldItemCounts = DB.soldItemCounts or {}
         if action.itemID then
             DB.soldItemCounts[action.itemID] = (DB.soldItemCounts[action.itemID] or 0) + (action.count or 1)
@@ -1276,6 +1345,7 @@ local function DoNextAction()
             DeleteCursorItem()
             ClearCursor()
             DB.totalItemsDeleted = (DB.totalItemsDeleted or 0) + (action.count or 1)
+            EC_session.deleted = EC_session.deleted + (action.count or 1)
             DB.deletedItemCounts = DB.deletedItemCounts or {}
             if action.itemID then
                 DB.deletedItemCounts[action.itemID] = (DB.deletedItemCounts[action.itemID] or 0) + (action.count or 1)
@@ -1385,6 +1455,8 @@ local function StartRun()
             RepairAllItems()
             DB.totalRepairs = (DB.totalRepairs or 0) + 1
             DB.totalRepairCopper = (DB.totalRepairCopper or 0) + repairCost
+            EC_session.repairs = EC_session.repairs + 1
+            EC_session.repairCopper = EC_session.repairCopper + repairCost
         end
     end
 
@@ -1556,7 +1628,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     local w = EC_PANEL_WIDTH - x
     local box = CreateFrame("Frame", nil, parent)
     box:SetPoint("TOPLEFT", x, y)
-    box:SetSize(w, 320)
+    -- Height chosen to keep the whole box inside a standard InterfaceOptions
+    -- sub-panel. Callers may override via listUI:SetHeight(n) if they need more
+    -- or less room (e.g. WhitelistPanel has extra controls above it).
+    box:SetSize(w, 280)
 
     local title = box:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     title:SetPoint("TOPLEFT", 0, 0)
@@ -1619,9 +1694,30 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     search:SetText("")
     StyleInputBox(search)
 
+    -- Bag-scan "Add matching" row: scan bags for items whose name contains the
+    -- typed substring and add each match to this list.
+    local matchLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    matchLabel:SetPoint("TOPLEFT", 0, -76)
+    matchLabel:SetText("Add matching in bags:")
+
+    local matchBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
+    matchBtn:SetSize(80, 20)
+    matchBtn:SetPoint("TOPRIGHT", box, "TOPRIGHT", 0, -76)
+    matchBtn:SetText("Add Match")
+
+    local matchInput =
+        CreateFrame("EditBox", "EbonClearanceMatchInput_" .. setTableName, box, "InputBoxTemplate")
+    matchInput:SetAutoFocus(false)
+    matchInput:SetHeight(20)
+    matchInput:SetPoint("LEFT", matchLabel, "RIGHT", 8, 0)
+    matchInput:SetPoint("RIGHT", matchBtn, "LEFT", -8, 0)
+    matchInput:SetMaxLetters(40)
+    matchInput:SetText("")
+    StyleInputBox(matchInput)
+
     local scroll =
         CreateFrame("ScrollFrame", "EbonClearanceListScroll_" .. setTableName, box, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 0, -78)
+    scroll:SetPoint("TOPLEFT", 0, -102)
     scroll:SetPoint("BOTTOMRIGHT", -26, 8)
 
     local content = CreateFrame("Frame", nil, scroll)
@@ -1694,7 +1790,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             searchText = (search:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", ""):lower()
         end
 
-        local setTable = DB[setTableName]
+        local setTable = EC_GetListTable(setTableName)
+        if type(setTable) ~= "table" then
+            return
+        end
         local keys = {}
         for k in pairs(setTable) do
             if type(k) == "number" then
@@ -1745,7 +1844,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 row:SetPoint("TOPLEFT", 0, rowY)
                 row.text:SetText(string.format("|cffb6ffb6%d|r  %s", id, name))
                 row.rm:SetScript("OnClick", function()
-                    DB[setTableName][id] = nil
+                    local t = EC_GetListTable(setTableName)
+                    if t then
+                        t[id] = nil
+                    end
                     Refresh()
                 end)
                 row:Show()
@@ -1773,7 +1875,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             PlaySound("igMainMenuOptionCheckBoxOff")
             return
         end
-        DB[setTableName][v] = true
+        local t = EC_GetListTable(setTableName)
+        if t then
+            t[v] = true
+        end
         input:SetText("")
         Refresh()
         PlaySound("igMainMenuOptionCheckBoxOn")
@@ -1782,6 +1887,51 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     input:SetScript("OnEnterPressed", function()
         addBtn:Click()
         input:ClearFocus()
+    end)
+
+    local function AddMatchingFromBags(substr)
+        local t = EC_GetListTable(setTableName)
+        if not t or not substr or substr == "" then
+            return 0
+        end
+        local needle = substr:lower()
+        local added = 0
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag)
+            for slot = 1, slots do
+                local itemID = GetContainerItemID(bag, slot)
+                if itemID and not t[itemID] then
+                    local name = GetItemInfo(itemID)
+                    if name and name:lower():find(needle, 1, true) then
+                        t[itemID] = true
+                        added = added + 1
+                    end
+                end
+            end
+        end
+        return added
+    end
+
+    matchBtn:SetScript("OnClick", function()
+        local txt = (matchInput:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if txt == "" then
+            PlaySound("igMainMenuOptionCheckBoxOff")
+            return
+        end
+        local added = AddMatchingFromBags(txt)
+        PrintNicef(
+            "Scanned bags: added |cffffff00%d|r matching item(s) (substring: |cffffff00%s|r).",
+            added,
+            txt
+        )
+        matchInput:SetText("")
+        Refresh()
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+
+    matchInput:SetScript("OnEnterPressed", function()
+        matchBtn:Click()
+        matchInput:ClearFocus()
     end)
 
     search:SetScript("OnTextChanged", function()
@@ -2075,6 +2225,169 @@ local function EC_CreateLDBLauncher()
     })
 end
 
+-- DORMANT: on-screen vendor button. The user-facing toggle is intentionally
+-- not wired up right now (held as a future opt-in); the helpers below are
+-- kept intact so the option can be re-introduced later by adding a checkbox
+-- that calls EC_UpdateVendorButtonVisibility(). The DB.vendorBtnShown saved
+-- variable is preserved for the same reason.
+-- SecureActionButtonTemplate that runs `/target`, so it only sets a target;
+-- the player still presses their Interact-With-Target keybind to open the
+-- vendor. This keeps the flow combat-safe.
+local EC_vendorButton
+
+local function EC_SaveVendorButtonPos(btn)
+    if not DB then
+        return
+    end
+    local point, _, relPoint, x, y = btn:GetPoint(1)
+    DB.vendorBtnPoint = point or "CENTER"
+    DB.vendorBtnRelPoint = relPoint or "CENTER"
+    DB.vendorBtnX = x or 0
+    DB.vendorBtnY = y or -200
+end
+
+local function EC_CreateVendorButton()
+    if EC_vendorButton then
+        return EC_vendorButton
+    end
+    local btn = CreateFrame("Button", "EbonClearanceVendorButton", UIParent, "SecureActionButtonTemplate")
+    btn:SetSize(48, 48)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetAttribute("type", "macro")
+    btn:SetAttribute("macrotext", "/target " .. TARGET_NAME)
+
+    local point = (DB and DB.vendorBtnPoint) or "CENTER"
+    local relPoint = (DB and DB.vendorBtnRelPoint) or "CENTER"
+    local px = (DB and DB.vendorBtnX) or 0
+    local py = (DB and DB.vendorBtnY) or -200
+    btn:ClearAllPoints()
+    btn:SetPoint(point, UIParent, relPoint, px, py)
+
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_02")
+    icon:SetAllPoints(btn)
+    btn.icon = icon
+
+    btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square")
+    local hl = btn:GetHighlightTexture()
+    if hl then
+        hl:SetBlendMode("ADD")
+    end
+
+    local border = btn:CreateTexture(nil, "OVERLAY")
+    border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    border:SetBlendMode("ADD")
+    border:SetVertexColor(1, 0.85, 0.3, 1)
+    border:SetPoint("TOPLEFT", btn, "TOPLEFT", -6, 6)
+    border:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 6, -6)
+
+    btn:SetMovable(true)
+    btn:EnableMouse(true)
+    btn:RegisterForDrag("LeftButton")
+    btn:SetScript("OnDragStart", function(self)
+        if IsAltKeyDown() then
+            self:StartMoving()
+        end
+    end)
+    btn:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        EC_SaveVendorButtonPos(self)
+    end)
+
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("EbonClearance Vendor")
+        GameTooltip:AddLine("Click: target " .. TARGET_NAME .. ".", 1, 1, 1, true)
+        GameTooltip:AddLine("Alt+Drag to reposition.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine(
+            "In combat: click, then press your Interact-With-Target keybind to open the vendor.",
+            1,
+            0.82,
+            0.4,
+            true
+        )
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    EC_vendorButton = btn
+    return btn
+end
+
+-- luacheck: ignore EC_UpdateVendorButtonVisibility
+local function EC_UpdateVendorButtonVisibility()
+    if DB and DB.vendorBtnShown then
+        local btn = EC_CreateVendorButton()
+        if not InCombatLockdown() then
+            btn:Show()
+        end
+    elseif EC_vendorButton and not InCombatLockdown() then
+        EC_vendorButton:Hide()
+    end
+end
+
+StaticPopupDialogs["EC_CONFIRM_RESET_LIFETIME"] = {
+    text = "Reset |cffb6ffb6EbonClearance|r lifetime stats?\n|cffaaaaaaThis clears money earned, items sold, items deleted, repair totals, and per-item counters. Session stats are not affected.|r",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["EC_CONFIRM_RESET_SESSION"] = {
+    text = "Reset session stats?",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["EC_CONFIRM_DELETE_PROFILE"] = {
+    text = 'Delete profile "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r',
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["EC_CONFIRM_CLEAR_PROFILE"] = {
+    text = 'Clear all items from profile "|cffffff00%s|r"?\n|cffaaaaaaThe profile itself will remain.|r',
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -- Build the static widgets for the main options panel. Called once per panel
 -- (guarded by `panel.inited` in OnShow). `refreshStats` is the dynamic refresh
 -- callback captured by the Reset button.
@@ -2082,11 +2395,16 @@ local function BuildMainPanel(panel, refreshStats)
     local addonVersion = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
     MakeHeader(panel, "EbonClearance " .. addonVersion, -16)
 
+    -- Byline (required by LICENSE; do not remove in derivatives).
+    local byline = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    byline:SetPoint("TOPLEFT", 16, -32)
+    byline:SetText("|cff888866by " .. ADDON_AUTHOR .. "  \194\183  " .. ADDON_URL .. "|r")
+
     local welcomeLabel = MakeLabel(
         panel,
         "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.",
         16,
-        -44
+        -52
     )
     local descLabel2 = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
@@ -2141,19 +2459,42 @@ local function BuildMainPanel(panel, refreshStats)
     local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(170, 22)
     resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -8)
-    resetBtn:SetText("Reset All Stats")
+    resetBtn:SetText("Reset Lifetime Stats")
     resetBtn:SetScript("OnClick", function()
-        DB.totalCopper = 0
-        DB.totalItemsSold = 0
-        DB.totalItemsDeleted = 0
-        DB.totalRepairs = 0
-        DB.totalRepairCopper = 0
-        DB.inventoryWorthTotal = 0
-        DB.inventoryWorthCount = 0
-        wipe(DB.soldItemCounts)
-        wipe(DB.deletedItemCounts)
-        refreshStats()
-        PlaySound("igMainMenuOptionCheckBoxOn")
+        local dialog = StaticPopup_Show("EC_CONFIRM_RESET_LIFETIME")
+        if dialog then
+            dialog.data = function()
+                DB.totalCopper = 0
+                DB.totalItemsSold = 0
+                DB.totalItemsDeleted = 0
+                DB.totalRepairs = 0
+                DB.totalRepairCopper = 0
+                DB.inventoryWorthTotal = 0
+                DB.inventoryWorthCount = 0
+                wipe(DB.soldItemCounts)
+                wipe(DB.deletedItemCounts)
+                refreshStats()
+                PlaySound("igMainMenuOptionCheckBoxOn")
+            end
+        end
+    end)
+
+    -- Session delta is inlined into each lifetime stat line by RefreshStats (EC_session).
+    -- The Reset Session button sits side-by-side with Reset Lifetime to avoid adding vertical space.
+    local resetSessionBtn =
+        CreateFrame("Button", "EbonClearanceResetSessionBtn", panel, "UIPanelButtonTemplate")
+    resetSessionBtn:SetSize(170, 22)
+    resetSessionBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
+    resetSessionBtn:SetText("Reset Session Stats")
+    resetSessionBtn:SetScript("OnClick", function()
+        local dialog = StaticPopup_Show("EC_CONFIRM_RESET_SESSION")
+        if dialog then
+            dialog.data = function()
+                EC_ResetSession()
+                refreshStats()
+                PlaySound("igMainMenuOptionCheckBoxOn")
+            end
+        end
     end)
 
     -- Slash commands reference.
@@ -2174,6 +2515,8 @@ local function BuildMainPanel(panel, refreshStats)
             .. "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n"
             .. "|cffffff00/ec profile load <name>|r  Load a saved profile\n"
             .. "|cffffff00/ec profile delete <name>|r  Delete a profile\n"
+            .. "|cffffff00/ec clean|r  Report items present in more than one list\n"
+            .. "|cffffff00/ec clean apply|r  Auto-resolve conflicts (blacklist > deleteList > whitelist)\n"
             .. "|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports\n"
             .. "|cffffff00/ecdebug|r  Show debug info and bag scan"
     )
@@ -2211,11 +2554,27 @@ MainOptions:SetScript("OnShow", function(self)
         if not self.statsMoney then
             return
         end
-        self.statsMoney:SetText("Total Money Made: " .. CopperToColoredText(DB.totalCopper or 0))
-        self.statsSold:SetText("Total Items Sold: " .. tostring(DB.totalItemsSold or 0))
-        self.statsDeleted:SetText("Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0))
-        self.statsRepairs:SetText("Total Repairs: " .. tostring(DB.totalRepairs or 0))
-        self.statsRepairCost:SetText("Total Repair Cost: " .. CopperToColoredText(DB.totalRepairCopper or 0))
+        local function sessionSuffix(n)
+            return string.format("  |cff888888(session +%s)|r", tostring(n or 0))
+        end
+        local function sessionMoneySuffix(c)
+            return "  |cff888888(session +" .. CopperToColoredText(c or 0) .. "|cff888888)|r"
+        end
+        self.statsMoney:SetText(
+            "Total Money Made: " .. CopperToColoredText(DB.totalCopper or 0) .. sessionMoneySuffix(EC_session.copper)
+        )
+        self.statsSold:SetText("Total Items Sold: " .. tostring(DB.totalItemsSold or 0) .. sessionSuffix(EC_session.sold))
+        self.statsDeleted:SetText(
+            "Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0) .. sessionSuffix(EC_session.deleted)
+        )
+        self.statsRepairs:SetText(
+            "Total Repairs: " .. tostring(DB.totalRepairs or 0) .. sessionSuffix(EC_session.repairs)
+        )
+        self.statsRepairCost:SetText(
+            "Total Repair Cost: "
+                .. CopperToColoredText(DB.totalRepairCopper or 0)
+                .. sessionMoneySuffix(EC_session.repairCopper)
+        )
         if self.statsAvgWorth then
             local cnt = DB.inventoryWorthCount or 0
             local total = DB.inventoryWorthTotal or 0
@@ -2232,6 +2591,7 @@ MainOptions:SetScript("OnShow", function(self)
         else
             self.statsMostSold:SetText("Most Sold Item: None")
         end
+
     end
 
     if self.inited then
@@ -2245,6 +2605,14 @@ MainOptions:SetScript("OnShow", function(self)
 end)
 
 InterfaceOptions_AddCategory(MainOptions)
+
+-- Quality-threshold options shared by the Merchant Settings panel. Declared
+-- here so the panel's OnShow closure resolves it as an upvalue.
+local EC_WHITELIST_QUALITIES = {
+    { text = ColorTextByQuality(1, "White (Common)"), value = 1 },
+    { text = ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
+    { text = ColorTextByQuality(3, "Blue (Rare)"), value = 3 },
+}
 
 local MerchantPanel = CreateFrame("Frame", "EbonClearanceOptionsMerchant", InterfaceOptionsFramePanelContainer)
 MerchantPanel.name = "Merchant Settings"
@@ -2271,6 +2639,12 @@ MerchantPanel:SetScript("OnShow", function(self)
         end
         if self.RefreshMerchantModeDropDown then
             self:RefreshMerchantModeDropDown()
+        end
+        if self.whitelistQualityCB then
+            self.whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
+        end
+        if self.RefreshQualityDropDown then
+            self:RefreshQualityDropDown()
         end
         return
     end
@@ -2370,60 +2744,28 @@ MerchantPanel:SetScript("OnShow", function(self)
     )
     self.speedSlider = speedSlider
     speedSlider:SetWidth(200)
-end)
 
-local EC_WHITELIST_QUALITIES = {
-    { text = ColorTextByQuality(1, "White (Common)"), value = 1 },
-    { text = ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
-    { text = ColorTextByQuality(3, "Blue (Rare)"), value = 3 },
-}
+    -- Quality threshold: when enabled, every item at or below the chosen
+    -- quality with a vendor price is sold in addition to the whitelist. Lives
+    -- here (rather than on the Whitelist panel) because it's a sell behaviour.
+    local thresholdHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    thresholdHeader:SetPoint("TOPLEFT", speedSlider, "BOTTOMLEFT", 0, -24)
+    thresholdHeader:SetText("Quality Threshold")
 
-local WhitelistPanel = CreateFrame("Frame", "EbonClearanceOptionsWhitelist", InterfaceOptionsFramePanelContainer)
-WhitelistPanel.name = "Whitelist - Sell"
-WhitelistPanel.parent = "EbonClearance"
-
-WhitelistPanel:SetScript("OnShow", function(self)
-    EnsureDB()
-    EC_UpdatePanelWidth()
-    if self.inited then
-        if self.whitelistQualityCB then
-            self.whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
-        end
-        if self.RefreshQualityDropDown then
-            self:RefreshQualityDropDown()
-        end
-        if self.listUI then
-            self.listUI:Refresh()
-        end
-        return
+    local thresholdDesc = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    thresholdDesc:SetPoint("TOPLEFT", thresholdHeader, "BOTTOMLEFT", 0, -4)
+    thresholdDesc:SetWidth(EC_PANEL_WIDTH - 16)
+    thresholdDesc:SetJustifyH("LEFT")
+    if thresholdDesc.SetWordWrap then
+        thresholdDesc:SetWordWrap(true)
     end
-    self.inited = true
-
-    MakeHeader(self, "Whitelist Settings", -16)
-
-    local descLabel = MakeLabel(
-        self,
-        "Grey items are always sold as junk automatically. Items on the whitelist below are also sold by Item ID.",
-        16,
-        -44
-    )
-
-    local warnLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    warnLabel:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
-    warnLabel:SetWidth(EC_PANEL_WIDTH - 16)
-    warnLabel:SetJustifyH("LEFT")
-    warnLabel:SetJustifyV("TOP")
-    if warnLabel.SetWordWrap then
-        warnLabel:SetWordWrap(true)
-    end
-    warnLabel:SetText(
-        "|cffff4444WARNING:|r The quality threshold and the whitelist work together. When the threshold is enabled, "
-            .. "everything at or below the chosen quality with a vendor price will be sold, on top of any items in your whitelist."
+    thresholdDesc:SetText(
+        "When enabled, every item at or below the chosen quality with a vendor price is sold, in addition to your whitelist. Blacklisted items are still protected."
     )
 
     local whitelistQualityCB =
         CreateFrame("CheckButton", "EbonClearanceWhitelistQualityCB", self, "InterfaceOptionsCheckButtonTemplate")
-    whitelistQualityCB:SetPoint("TOPLEFT", warnLabel, "BOTTOMLEFT", 0, -8)
+    whitelistQualityCB:SetPoint("TOPLEFT", thresholdDesc, "BOTTOMLEFT", 0, -8)
     whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
     local wqt = _G["EbonClearanceWhitelistQualityCBText"]
     if wqt then
@@ -2471,7 +2813,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
             cur = 1
             DB.whitelistMinQuality = 1
         end
-        local label = EC_WHITELIST_QUALITIES[1].text -- fallback to White
+        local label = EC_WHITELIST_QUALITIES[1].text
         for i = 1, #EC_WHITELIST_QUALITIES do
             if EC_WHITELIST_QUALITIES[i].value == cur then
                 label = EC_WHITELIST_QUALITIES[i].text
@@ -2491,24 +2833,26 @@ WhitelistPanel:SetScript("OnShow", function(self)
         end
     end
     self:RefreshQualityDropDown()
+end)
 
-    -- Scan bags buttons
+-- Shared "Add from bags" scan row used by both whitelist panels.
+-- setTableName resolves to the underlying list via EC_GetListTable, so the same
+-- helper drives the per-character whitelist and the account whitelist.
+local function EC_AddScanByQualityRow(parent, setTableName, listLabel, refreshFn, x, y)
     local function ScanBagsForQuality(quality)
+        local t = EC_GetListTable(setTableName)
+        if not t then
+            return 0
+        end
         local added = 0
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             for slot = 1, slots do
                 local itemID = GetContainerItemID(bag, slot)
                 if itemID then
-                    local _, _, itemQuality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
-                    if
-                        itemQuality
-                        and itemQuality == quality
-                        and sellPrice
-                        and sellPrice > 0
-                        and not DB.whitelist[itemID]
-                    then
-                        DB.whitelist[itemID] = true
+                    local _, _, q, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+                    if q == quality and sellPrice and sellPrice > 0 and not t[itemID] then
+                        t[itemID] = true
                         added = added + 1
                     end
                 end
@@ -2517,58 +2861,64 @@ WhitelistPanel:SetScript("OnShow", function(self)
         return added
     end
 
-    local scanLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    scanLabel:SetPoint("TOPLEFT", 16, -190)
+    local scanLabel = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    scanLabel:SetPoint("TOPLEFT", x, y)
     scanLabel:SetText("Add from bags:")
 
-    local btnWhite = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
-    btnWhite:SetSize(55, 20)
-    btnWhite:SetPoint("LEFT", scanLabel, "RIGHT", 8, 0)
-    btnWhite:SetText("|cffffffffWhite|r")
-    btnWhite:SetScript("OnClick", function()
-        local added = ScanBagsForQuality(1)
-        PrintNicef("Scanned bags: added |cffffff00%d|r white items to whitelist.", added)
+    local function MakeBtn(prevAnchor, leftPad, label, qualityNum, colorWord)
+        local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        b:SetSize(55, 20)
+        b:SetPoint("LEFT", prevAnchor, "RIGHT", leftPad, 0)
+        b:SetText(label)
+        b:SetScript("OnClick", function()
+            local added = ScanBagsForQuality(qualityNum)
+            PrintNicef("Scanned bags: added |cffffff00%d|r %s items to %s.", added, colorWord, listLabel)
+            if refreshFn then
+                refreshFn()
+            end
+            PlaySound("igMainMenuOptionCheckBoxOn")
+        end)
+        return b
+    end
+
+    local btnWhite = MakeBtn(scanLabel, 8, "|cffffffffWhite|r", 1, "white")
+    local btnGreen = MakeBtn(btnWhite, 4, "|cff1eff00Green|r", 2, "green")
+    MakeBtn(btnGreen, 4, "|cff0070ddBlue|r", 3, "blue")
+end
+
+local WhitelistPanel = CreateFrame("Frame", "EbonClearanceOptionsWhitelist", InterfaceOptionsFramePanelContainer)
+WhitelistPanel.name = "Whitelist - Character"
+WhitelistPanel.parent = "EbonClearance"
+
+WhitelistPanel:SetScript("OnShow", function(self)
+    EnsureDB()
+    EC_UpdatePanelWidth()
+    if self.inited then
         if self.listUI then
             self.listUI:Refresh()
         end
-        PlaySound("igMainMenuOptionCheckBoxOn")
-    end)
+        return
+    end
+    self.inited = true
 
-    local btnGreen = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
-    btnGreen:SetSize(55, 20)
-    btnGreen:SetPoint("LEFT", btnWhite, "RIGHT", 4, 0)
-    btnGreen:SetText("|cff1eff00Green|r")
-    btnGreen:SetScript("OnClick", function()
-        local added = ScanBagsForQuality(2)
-        PrintNicef("Scanned bags: added |cffffff00%d|r green items to whitelist.", added)
+    MakeHeader(self, "Whitelist Settings", -16)
+
+    MakeLabel(
+        self,
+        "Grey items are always sold as junk automatically. Items on the whitelist below are also sold by Item ID. The quality threshold lives on the Merchant Settings panel.",
+        16,
+        -44
+    )
+
+    EC_AddScanByQualityRow(self, "whitelist", "your character whitelist", function()
         if self.listUI then
             self.listUI:Refresh()
         end
-        PlaySound("igMainMenuOptionCheckBoxOn")
-    end)
+    end, 16, -94)
 
-    local btnBlue = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
-    btnBlue:SetSize(55, 20)
-    btnBlue:SetPoint("LEFT", btnGreen, "RIGHT", 4, 0)
-    btnBlue:SetText("|cff0070ddBlue|r")
-    btnBlue:SetScript("OnClick", function()
-        local added = ScanBagsForQuality(3)
-        PrintNicef("Scanned bags: added |cffffff00%d|r blue items to whitelist.", added)
-        if self.listUI then
-            self.listUI:Refresh()
-        end
-        PlaySound("igMainMenuOptionCheckBoxOn")
-    end)
-
-    self.listUI = CreateListUI(self, "Manual Add (Shift-click item or type ID)", "whitelist", 16, -214)
-    self.listUI:SetHeight(180)
+    self.listUI = CreateListUI(self, "Manual Add (Shift-click item or type ID)", "whitelist", 16, -118)
+    self.listUI:SetHeight(290)
     self.listUI:Refresh()
-
-    local noteFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    noteFS:SetPoint("BOTTOMLEFT", 16, 8)
-    noteFS:SetWidth(EC_PANEL_WIDTH - 16)
-    noteFS:SetJustifyH("LEFT")
-    noteFS:SetText("|cffaaaaaa Listed items are always sold regardless of the quality threshold.|r")
 end)
 
 -- ============================================================
@@ -2765,30 +3115,44 @@ ProfilesPanel:SetScript("OnShow", function(self)
             end)
 
             row.delBtn:SetScript("OnClick", function()
-                local ok, msg = EC_DeleteProfile(pName)
-                statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
-                if ok then
-                    PrintNice(msg)
-                    PlaySound("igMainMenuOptionCheckBoxOn")
+                local dialog = StaticPopup_Show("EC_CONFIRM_DELETE_PROFILE", pName)
+                if dialog then
+                    dialog.data = function()
+                        local ok, msg = EC_DeleteProfile(pName)
+                        statusFS:SetText(
+                            ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r")
+                        )
+                        if ok then
+                            PrintNice(msg)
+                            PlaySound("igMainMenuOptionCheckBoxOn")
+                        end
+                        self:RefreshProfileList()
+                    end
                 end
-                self:RefreshProfileList()
             end)
 
             row.clearBtn:SetScript("OnClick", function()
-                if DB.whitelistProfiles[pName] then
-                    wipe(DB.whitelistProfiles[pName])
-                    if pName == DB.activeProfileName then
-                        wipe(DB.whitelist)
-                        local wp = _G["EbonClearanceOptionsWhitelist"]
-                        if wp and wp.listUI then
-                            wp.listUI:Refresh()
+                local dialog = StaticPopup_Show("EC_CONFIRM_CLEAR_PROFILE", pName)
+                if dialog then
+                    dialog.data = function()
+                        if DB.whitelistProfiles[pName] then
+                            wipe(DB.whitelistProfiles[pName])
+                            if pName == DB.activeProfileName then
+                                wipe(DB.whitelist)
+                                local wp = _G["EbonClearanceOptionsWhitelist"]
+                                if wp and wp.listUI then
+                                    wp.listUI:Refresh()
+                                end
+                            end
+                            statusFS:SetText(
+                                '|cff00ff00Cleared profile "|cffffff00' .. pName .. '|r|cff00ff00".|r'
+                            )
+                            PrintNicef('Cleared profile "|cffffff00%s|r".', pName)
+                            PlaySound("igMainMenuOptionCheckBoxOn")
                         end
+                        self:RefreshProfileList()
                     end
-                    statusFS:SetText('|cff00ff00Cleared profile "|cffffff00' .. pName .. '|r|cff00ff00".|r')
-                    PrintNicef('Cleared profile "|cffffff00%s|r".', pName)
-                    PlaySound("igMainMenuOptionCheckBoxOn")
                 end
-                self:RefreshProfileList()
             end)
 
             local isDefault = (pName == "Default")
@@ -3484,6 +3848,41 @@ BlacklistPanel:SetScript("OnShow", function(self)
     self.listUI:Refresh()
 end)
 
+local AccountWhitelistPanel =
+    CreateFrame("Frame", "EbonClearanceOptionsAccountWhitelist", InterfaceOptionsFramePanelContainer)
+AccountWhitelistPanel.name = "Whitelist - Account"
+AccountWhitelistPanel.parent = "EbonClearance"
+
+AccountWhitelistPanel:SetScript("OnShow", function(self)
+    EnsureDB()
+    EC_UpdatePanelWidth()
+    if self.inited then
+        if self.listUI then
+            self.listUI:Refresh()
+        end
+        return
+    end
+    self.inited = true
+
+    MakeHeader(self, "Account Whitelist", -16)
+    MakeLabel(
+        self,
+        "Items here are sold on every character on this account, in addition to each character's personal whitelist. Useful for shared trash like reagents or seasonal items.",
+        16,
+        -44
+    )
+
+    EC_AddScanByQualityRow(self, "accountWhitelist", "the account whitelist", function()
+        if self.listUI then
+            self.listUI:Refresh()
+        end
+    end, 16, -94)
+
+    self.listUI = CreateListUI(self, "Account-Wide Items", "accountWhitelist", 16, -118)
+    self.listUI:SetHeight(290)
+    self.listUI:Refresh()
+end)
+
 -- Register sub-panels in alphabetical order
 InterfaceOptions_AddCategory(CharPanel)
 InterfaceOptions_AddCategory(ScavengerPanel)
@@ -3493,6 +3892,7 @@ InterfaceOptions_AddCategory(ImportExportPanel)
 InterfaceOptions_AddCategory(DeletePanel)
 InterfaceOptions_AddCategory(BlacklistPanel)
 InterfaceOptions_AddCategory(WhitelistPanel)
+InterfaceOptions_AddCategory(AccountWhitelistPanel)
 
 -- Bug report diagnostic snapshot
 local function EC_CopperToPlainText(copper)
@@ -3555,6 +3955,7 @@ local function EC_BuildBugReport()
     add("Quality Level: " .. tostring(DB.whitelistMinQuality))
     add("Active Profile: " .. tostring(DB.activeProfileName))
     add("Whitelist Items: " .. tostring(EC_CountItems(DB.whitelist)))
+    add("Account Whitelist Items: " .. tostring(ADB and EC_CountItems(ADB.whitelist) or 0))
     add("Blacklist Items: " .. tostring(EC_CountItems(DB.blacklist)))
     add("Delete List Items: " .. tostring(EC_CountItems(DB.deleteList)))
     add("")
@@ -3653,11 +4054,123 @@ local function EC_ShowBugReport()
 end
 
 -- Keybinding registration. Populates the "EbonClearance" section of
--- ESC -> Key Bindings so the user can map a key to target the Goblin Merchant.
--- The target action is dispatched through EbonClearanceTargetMerchantButton
--- (a hidden SecureActionButton) so it works in combat lockdown.
+-- ESC -> Key Bindings. Four bindings:
+--   - "Target Goblin Merchant" - dispatched through the hidden
+--     EbonClearanceTargetMerchantButton SecureActionButton so it works in
+--     combat lockdown.
+--   - Three operational bindings (open/close settings, toggle enabled,
+--     force sell at current merchant) declared in Bindings.xml and wired
+--     to the EbonClearance_* global handlers further down this file.
 BINDING_HEADER_EBONCLEARANCE = "EbonClearance"
 _G["BINDING_NAME_CLICK EbonClearanceTargetMerchantButton:LeftButton"] = "Target Goblin Merchant"
+BINDING_NAME_EBONCLEARANCE_TOGGLE_SETTINGS = "Open/close settings"
+BINDING_NAME_EBONCLEARANCE_TOGGLE_ENABLED = "Toggle enabled"
+BINDING_NAME_EBONCLEARANCE_FORCE_SELL = "Force sell at current merchant"
+-- Conflict detection + resolution across whitelist/blacklist/deleteList.
+-- Precedence when auto-resolving: blacklist > deleteList > whitelist.
+local function EC_ScanListConflicts()
+    local lists = {
+        { name = "whitelist", data = DB.whitelist },
+        { name = "blacklist", data = DB.blacklist },
+        { name = "deleteList", data = DB.deleteList },
+    }
+    local where = {}
+    for i = 1, #lists do
+        local e = lists[i]
+        if type(e.data) == "table" then
+            for id in pairs(e.data) do
+                if type(id) == "number" then
+                    where[id] = where[id] or {}
+                    where[id][#where[id] + 1] = e.name
+                end
+            end
+        end
+    end
+    local conflicts = {}
+    for id, names in pairs(where) do
+        if #names >= 2 then
+            conflicts[#conflicts + 1] = { id = id, lists = names }
+        end
+    end
+    table.sort(conflicts, function(a, b)
+        return a.id < b.id
+    end)
+    return conflicts
+end
+
+local function EC_PrintConflictReport(conflicts)
+    if #conflicts == 0 then
+        PrintNice("|cff00ff00No list conflicts found.|r")
+        return
+    end
+    PrintNicef("Found |cffffff00%d|r item(s) present in multiple lists:", #conflicts)
+    for i = 1, #conflicts do
+        local c = conflicts[i]
+        local name = GetItemInfo(c.id) or ("ItemID:" .. c.id)
+        PrintNicef("  |cffb6ffb6%d|r  %s  [%s]", c.id, name, table.concat(c.lists, ", "))
+    end
+end
+
+local function EC_ApplyCleanResolution(conflicts)
+    local removed = 0
+    for i = 1, #conflicts do
+        local c = conflicts[i]
+        local inBL, inDel, inWL = false, false, false
+        for j = 1, #c.lists do
+            local n = c.lists[j]
+            if n == "blacklist" then
+                inBL = true
+            elseif n == "deleteList" then
+                inDel = true
+            elseif n == "whitelist" then
+                inWL = true
+            end
+        end
+        if inBL and inWL then
+            DB.whitelist[c.id] = nil
+            removed = removed + 1
+        end
+        if inBL and inDel then
+            DB.deleteList[c.id] = nil
+            removed = removed + 1
+        end
+        if inDel and inWL then
+            DB.whitelist[c.id] = nil
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+-- Handlers for the three operational keybindings (declared in Bindings.xml,
+-- labels above with the binding registration block).
+function EbonClearance_ToggleSettings()
+    if InterfaceOptionsFrame and InterfaceOptionsFrame:IsShown() then
+        InterfaceOptionsFrame:Hide()
+    else
+        InterfaceOptionsFrame_OpenToCategory(MainOptions)
+        InterfaceOptionsFrame_OpenToCategory(MainOptions)
+    end
+end
+
+function EbonClearance_ToggleEnabled()
+    EnsureDB()
+    DB.enabled = not DB.enabled
+    PrintNicef(
+        "EbonClearance is now %s.",
+        DB.enabled and "|cff00ff00enabled|r" or "|cffff4444disabled|r"
+    )
+    PlaySound(DB.enabled and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+end
+
+function EbonClearance_ForceSell()
+    EnsureDB()
+    if not MerchantFrame or not MerchantFrame:IsShown() then
+        PrintNice("|cffff4444Force sell|r: open a merchant first.")
+        return
+    end
+    StartRun()
+end
 
 SLASH_EBONCLEARANCE1 = "/ec"
 SlashCmdList["EBONCLEARANCE"] = function(msg)
@@ -3715,6 +4228,31 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
 
     if cmd == "bugreport" then
         EC_ShowBugReport()
+        return
+    end
+
+    if cmd == "clean" then
+        EnsureDB()
+        local conflicts = EC_ScanListConflicts()
+        EC_PrintConflictReport(conflicts)
+        if rest == "apply" and #conflicts > 0 then
+            local removed = EC_ApplyCleanResolution(conflicts)
+            PrintNicef(
+                "Removed |cffffff00%d|r duplicate entr%s (precedence: blacklist > deleteList > whitelist).",
+                removed,
+                removed == 1 and "y" or "ies"
+            )
+            local wp = _G["EbonClearanceOptionsWhitelist"]
+            if wp and wp.listUI then
+                wp.listUI:Refresh()
+            end
+            local bp = _G["EbonClearanceOptionsBlacklist"]
+            if bp and bp.listUI then
+                bp.listUI:Refresh()
+            end
+        elseif #conflicts > 0 then
+            PrintNice("Run |cffffff00/ec clean apply|r to auto-resolve (blacklist > deleteList > whitelist).")
+        end
         return
     end
 

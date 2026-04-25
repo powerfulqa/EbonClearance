@@ -346,6 +346,9 @@ local function EnsureDB()
     if type(DB.maxItemsPerRun) ~= "number" then
         DB.maxItemsPerRun = 80
     end
+    if type(DB.fastMode) ~= "boolean" then
+        DB.fastMode = false
+    end
     if type(DB.autoLootCycle) ~= "boolean" then
         DB.autoLootCycle = false
     end
@@ -924,8 +927,34 @@ local function EC_GetCompanionDistance()
     return math.sqrt(dx * dx + dy * dy)
 end
 
--- Pet stuck detection + auto-loot cycle bag monitoring
-local EC_petCheckFrame = CreateFrame("Frame")
+-- Fast Mode: when enabled, pin the per-item vendor interval to the 0.05 s
+-- floor and double the per-run cap. Opt-in via DB.fastMode.
+local function EC_EffectiveVendorInterval()
+    if DB and DB.fastMode then
+        return 0.05
+    end
+    local i = (DB and DB.vendorInterval) or 0.1
+    if i < 0.05 then
+        i = 0.05
+    end
+    return i
+end
+
+local function EC_EffectiveMaxItemsPerRun()
+    if DB and DB.fastMode then
+        return 160
+    end
+    return (DB and DB.maxItemsPerRun) or 80
+end
+
+-- Pet-cycle timer/flag locals. MUST be declared before EC_HandleBagFullForCycle:
+-- that function (BAG_UPDATE handler) writes EC_summonGoblinPending /
+-- EC_summonGoblinTimer, and Lua resolves writes to whatever is in scope at the
+-- function's parse site. If these aren't locals yet, the writes leak to _G and
+-- the OnUpdate consumer at the bottom (which captures them as locals) never
+-- sees them - the cycle hangs in WAITING_MERCHANT forever. This is the same
+-- trap v2.0.13 fixed for STATE / running / EC_lootCycleState; see CLAUDE.md
+-- convention #4.
 local EC_petCheckElapsed = 0
 local EC_summonGoblinPending = false
 local EC_summonGoblinTimer = 0
@@ -933,6 +962,42 @@ local EC_targetGoblinPending = false
 local EC_targetGoblinTimer = 0
 local EC_merchantReminderPending = false
 local EC_merchantReminderTimer = 0
+
+-- Auto-loot cycle: react to bag-full as soon as the game tells us a bag
+-- changed. Same body as the old 5-second poll; called from BAG_UPDATE so the
+-- Goblin Merchant is summoned within a tick of the threshold being crossed.
+-- Idempotent: the STATE.LOOTING guard prevents double-summon under burst events.
+local function EC_HandleBagFullForCycle()
+    if not DB or not DB.autoLootCycle then
+        return
+    end
+    if EC_lootCycleState ~= STATE.LOOTING then
+        return
+    end
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    if running then
+        return
+    end
+    if IsMounted() then
+        return
+    end
+    local free = EC_GetFreeBagSlots()
+    if free > (DB.bagFullThreshold or 2) then
+        return
+    end
+    EC_lootCycleState = STATE.WAITING_MERCHANT
+    PrintNicef("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free)
+    if DismissCompanion then
+        DismissCompanion("CRITTER")
+    end
+    EC_summonGoblinPending = true
+    EC_summonGoblinTimer = 1.5
+end
+
+-- Pet stuck detection + auto-loot cycle bag monitoring
+local EC_petCheckFrame = CreateFrame("Frame")
 
 EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Delayed Goblin Merchant summon (after dismiss completes)
@@ -1016,22 +1081,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 
-    -- Auto-loot cycle: check bag space while looting
-    if DB.autoLootCycle and EC_lootCycleState == STATE.LOOTING then
-        local free = EC_GetFreeBagSlots()
-        if free <= (DB.bagFullThreshold or 2) then
-            EC_lootCycleState = STATE.WAITING_MERCHANT
-            PrintNicef("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free)
-            -- Dismiss active critter
-            if DismissCompanion then
-                DismissCompanion("CRITTER")
-            end
-            -- Summon Goblin Merchant after delay to let dismiss complete
-            EC_summonGoblinPending = true
-            EC_summonGoblinTimer = 1.5
-            return
-        end
-    end
+    -- Bag-full detection moved to BAG_UPDATE event handler (EC_HandleBagFullForCycle).
 
     -- Don't re-summon scavenger while waiting for merchant or selling
     if EC_lootCycleState == STATE.WAITING_MERCHANT or EC_lootCycleState == STATE.SELLING then
@@ -1241,7 +1291,7 @@ local function BuildQueue(junkOnly)
         end
     end
 
-    local cap = DB.maxItemsPerRun or 80
+    local cap = EC_EffectiveMaxItemsPerRun()
     if #queue > cap then
         local removed = #queue - cap
         for i = #queue, cap + 1, -1 do
@@ -1365,10 +1415,7 @@ end
 -- docs/ADDON_GUIDE.md "Performance rules" and v2.0.11 in the README changelog.
 worker:SetScript("OnUpdate", function(self, elapsed)
     self.t = (self.t or 0) + elapsed
-    local interval = (DB and DB.vendorInterval) or 0.1
-    if interval < 0.05 then
-        interval = 0.05
-    end
+    local interval = EC_EffectiveVendorInterval()
     if self.t >= interval then
         self.t = 0
         DoNextAction()
@@ -1651,6 +1698,14 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     addBtn:SetPoint("LEFT", input, "RIGHT", 8, 0)
     addBtn:SetText("Add")
 
+    -- "Clear All" button on the input row, anchored hard-right and visually
+    -- separated from the Add flow. Wipes every entry in the list with a
+    -- confirmation popup. Wired below.
+    local clearAllBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
+    clearAllBtn:SetSize(80, 20)
+    clearAllBtn:SetPoint("TOPRIGHT", box, "TOPRIGHT", 0, -24)
+    clearAllBtn:SetText("Clear All")
+
     input:SetScript("OnEditFocusGained", function(self)
         EC_activeIDBox = self
     end)
@@ -1887,6 +1942,27 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     input:SetScript("OnEnterPressed", function()
         addBtn:Click()
         input:ClearFocus()
+    end)
+
+    clearAllBtn:SetScript("OnClick", function()
+        local t = EC_GetListTable(setTableName)
+        if not t or not next(t) then
+            PrintNicef("|cff888888%s is already empty.|r", titleText)
+            PlaySound("igMainMenuOptionCheckBoxOff")
+            return
+        end
+        local dialog = StaticPopup_Show("EC_CONFIRM_CLEAR_LIST", titleText)
+        if dialog then
+            dialog.data = function()
+                local target = EC_GetListTable(setTableName)
+                if target then
+                    wipe(target)
+                end
+                Refresh()
+                PrintNicef('Cleared every item from "|cffffff00%s|r".', titleText)
+                PlaySound("igMainMenuOptionCheckBoxOn")
+            end
+        end
     end)
 
     local function AddMatchingFromBags(substr)
@@ -2388,6 +2464,24 @@ StaticPopupDialogs["EC_CONFIRM_CLEAR_PROFILE"] = {
     preferredIndex = 3,
 }
 
+-- Generic confirmation for the per-list "Clear All" button on every list panel
+-- (Whitelist - Character / Whitelist - Account / Blacklist / Deletion List).
+-- The %s slot is filled with the list's user-facing title.
+StaticPopupDialogs["EC_CONFIRM_CLEAR_LIST"] = {
+    text = 'Remove every item from "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r',
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -- Build the static widgets for the main options panel. Called once per panel
 -- (guarded by `panel.inited` in OnShow). `refreshStats` is the dynamic refresh
 -- callback captured by the Reset button.
@@ -2637,6 +2731,9 @@ MerchantPanel:SetScript("OnShow", function(self)
         if self.speedSlider then
             self.speedSlider:SetValue(DB.vendorInterval or 0.1)
         end
+        if self.fastModeCB then
+            self.fastModeCB:SetChecked(DB.fastMode)
+        end
         if self.RefreshMerchantModeDropDown then
             self:RefreshMerchantModeDropDown()
         end
@@ -2745,11 +2842,37 @@ MerchantPanel:SetScript("OnShow", function(self)
     self.speedSlider = speedSlider
     speedSlider:SetWidth(200)
 
+    local fastModeCB = AddCheckbox(
+        self,
+        "EbonClearanceFastModeCB",
+        speedSlider,
+        "Fast Mode (0.05 s interval, 160-item cap)",
+        function()
+            return DB.fastMode
+        end,
+        function(v)
+            DB.fastMode = v
+        end,
+        -16
+    )
+    self.fastModeCB = fastModeCB
+
+    local fastModeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    fastModeNote:SetPoint("TOPLEFT", fastModeCB, "BOTTOMLEFT", 26, -2)
+    fastModeNote:SetWidth(EC_PANEL_WIDTH - 60)
+    fastModeNote:SetJustifyH("LEFT")
+    if fastModeNote.SetWordWrap then
+        fastModeNote:SetWordWrap(true)
+    end
+    fastModeNote:SetText(
+        "|cff888888Higher throughput. Increases disconnect risk on unstable connections - disable if you DC mid-vendor.|r"
+    )
+
     -- Quality threshold: when enabled, every item at or below the chosen
     -- quality with a vendor price is sold in addition to the whitelist. Lives
     -- here (rather than on the Whitelist panel) because it's a sell behaviour.
     local thresholdHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    thresholdHeader:SetPoint("TOPLEFT", speedSlider, "BOTTOMLEFT", 0, -24)
+    thresholdHeader:SetPoint("TOPLEFT", fastModeNote, "BOTTOMLEFT", -26, -24)
     thresholdHeader:SetText("Quality Threshold")
 
     local thresholdDesc = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -2905,7 +3028,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
 
     MakeLabel(
         self,
-        "Grey items are always sold as junk automatically. Items on the whitelist below are also sold by Item ID. The quality threshold lives on the Merchant Settings panel.",
+        "Items below are sold on this character. They're saved and restored by profiles. For items you want sold on every alt, use |cffb6ffb6Whitelist - Account|r instead. Grey junk is always sold automatically; the quality threshold lives on Merchant Settings.",
         16,
         -44
     )
@@ -2940,23 +3063,37 @@ ProfilesPanel:SetScript("OnShow", function(self)
     self.inited = true
 
     MakeHeader(self, "Profiles", -16)
-    MakeLabel(
+    local descLabel = MakeLabel(
         self,
-        "Save and load different whitelists as named profiles. Useful for swapping between farming locations. The Default profile is always empty and can't be changed, so give your profile a name before saving.",
+        "Profiles save and restore your |cffb6ffb6Whitelist - Character|r and |cffb6ffb6Blacklist - Keep|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots.",
         16,
         -44
+    )
+    -- Cascade-anchored to descLabel so the layout adapts to whatever number of
+    -- lines the description wraps to (fixed-y caused overlap on narrower panels).
+    local clarifyLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    clarifyLabel:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -8)
+    clarifyLabel:SetWidth(EC_PANEL_WIDTH - 32)
+    clarifyLabel:SetJustifyH("LEFT")
+    clarifyLabel:SetJustifyV("TOP")
+    if clarifyLabel.SetWordWrap then
+        clarifyLabel:SetWordWrap(true)
+    end
+    clarifyLabel:SetText(
+        "|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Whitelist - Account|r|cffaaaaaa list (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"
     )
 
     -- Active profile indicator
     local activeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    activeLabel:SetPoint("TOPLEFT", 16, -96)
+    activeLabel:SetPoint("TOPLEFT", clarifyLabel, "BOTTOMLEFT", 0, -16)
     activeLabel:SetWidth(EC_PANEL_WIDTH - 16)
     activeLabel:SetJustifyH("LEFT")
     self.activeLabel = activeLabel
 
-    -- Save row: input + Save button
+    -- Save row: input + Save button (relative to activeLabel so it follows
+    -- whatever the wrap above ends up at).
     local saveLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    saveLabel:SetPoint("TOPLEFT", 16, -118)
+    saveLabel:SetPoint("TOPLEFT", activeLabel, "BOTTOMLEFT", 0, -10)
     saveLabel:SetText("Profile name:")
 
     local saveInput = CreateFrame("EditBox", "EbonClearanceProfileSaveInput", self, "InputBoxTemplate")
@@ -2972,9 +3109,9 @@ ProfilesPanel:SetScript("OnShow", function(self)
     saveBtn:SetPoint("LEFT", saveInput, "RIGHT", 8, 0)
     saveBtn:SetText("Save")
 
-    -- Status text
+    -- Status text (relative to the save row above it).
     local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statusFS:SetPoint("TOPLEFT", 16, -140)
+    statusFS:SetPoint("TOPLEFT", saveLabel, "BOTTOMLEFT", 0, -10)
     statusFS:SetWidth(EC_PANEL_WIDTH - 16)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")
@@ -2982,11 +3119,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
     -- Profile list scroll area
     local listLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    listLabel:SetPoint("TOPLEFT", 16, -160)
+    listLabel:SetPoint("TOPLEFT", statusFS, "BOTTOMLEFT", 0, -8)
     listLabel:SetText("Saved Profiles")
 
     local scroll = CreateFrame("ScrollFrame", "EbonClearanceProfileListScroll", self, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 16, -178)
+    scroll:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -4)
     scroll:SetSize(EC_PANEL_WIDTH - 42, 160)
 
     local content = CreateFrame("Frame", nil, scroll)
@@ -3046,7 +3183,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
     -- Rename row
     local renameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    renameLabel:SetPoint("TOPLEFT", 16, -348)
+    renameLabel:SetPoint("TOPLEFT", scroll, "BOTTOMLEFT", 0, -12)
     renameLabel:SetText("Rename active profile:")
 
     local renameInput = CreateFrame("EditBox", "EbonClearanceProfileRenameInput", self, "InputBoxTemplate")
@@ -3220,12 +3357,22 @@ ImportExportPanel.parent = "EbonClearance"
 
 local EC_EXPORT_PREFIX = "EC:"
 
-local function EC_ExportWhitelist(listName)
-    if not DB or not DB.whitelist then
+-- Resolve the export/import target table. scope is "character" (default) or
+-- "account"; the latter touches the account-wide whitelist (ADB).
+local function EC_GetWhitelistForScope(scope)
+    if scope == "account" then
+        return ADB and ADB.whitelist
+    end
+    return DB and DB.whitelist
+end
+
+local function EC_ExportWhitelist(listName, scope)
+    local source = EC_GetWhitelistForScope(scope)
+    if not source then
         return ""
     end
     local ids = {}
-    for k, v in pairs(DB.whitelist) do
+    for k, v in pairs(source) do
         if type(k) == "number" and (v == true or v == 1) then
             ids[#ids + 1] = k
         end
@@ -3236,7 +3383,7 @@ local function EC_ExportWhitelist(listName)
     return EC_EXPORT_PREFIX .. name .. ":" .. table.concat(ids, ",")
 end
 
-local function EC_ImportWhitelist(str, mode)
+local function EC_ImportWhitelist(str, mode, scope)
     if type(str) ~= "string" or str == "" then
         return false, "Empty string."
     end
@@ -3259,17 +3406,29 @@ local function EC_ImportWhitelist(str, mode)
     if #ids == 0 then
         return false, "No valid item IDs found."
     end
+    local target = EC_GetWhitelistForScope(scope)
+    if not target then
+        return false, "Target list unavailable."
+    end
     if mode == "replace" then
-        wipe(DB.whitelist)
+        wipe(target)
     end
     local added = 0
     for i = 1, #ids do
-        if not DB.whitelist[ids[i]] then
+        if not target[ids[i]] then
             added = added + 1
         end
-        DB.whitelist[ids[i]] = true
+        target[ids[i]] = true
     end
-    return true, string.format('Imported |cffffff00%d|r items from "%s" (%d new).', #ids, name or "Unnamed", added)
+    local scopeLabel = (scope == "account") and "account whitelist" or "character whitelist"
+    return true,
+        string.format(
+            'Imported |cffffff00%d|r items from "%s" into the %s (%d new).',
+            #ids,
+            name or "Unnamed",
+            scopeLabel,
+            added
+        )
 end
 
 ImportExportPanel:SetScript("OnShow", function(self)
@@ -3283,10 +3442,50 @@ ImportExportPanel:SetScript("OnShow", function(self)
     MakeHeader(self, "Import / Export", -16)
 
     -- === EXPORT SECTION ===
-    MakeLabel(self, "Export your current whitelist to a string. Give it a name so others know what it is.", 16, -44)
+    -- Each section owns its own scope radio so it's obvious which list a
+    -- click reads from (Source list) versus writes to (Target list).
+    MakeLabel(
+        self,
+        "Export a whitelist to a string you can share. Pick which list to read from, then give the export a name.",
+        16,
+        -44
+    )
+
+    local exportScope = "character"
+
+    local exportScopeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    exportScopeLabel:SetPoint("TOPLEFT", 16, -72)
+    exportScopeLabel:SetText("Source list:")
+
+    local exportCharCB = CreateFrame("CheckButton", "EbonClearanceExportSourceCharCB", self, "UIRadioButtonTemplate")
+    exportCharCB:SetPoint("LEFT", exportScopeLabel, "RIGHT", 8, 0)
+    exportCharCB:SetChecked(true)
+    local exportCharLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    exportCharLbl:SetPoint("LEFT", exportCharCB, "RIGHT", 2, 1)
+    exportCharLbl:SetText("Character")
+
+    local exportAcctCB = CreateFrame("CheckButton", "EbonClearanceExportSourceAcctCB", self, "UIRadioButtonTemplate")
+    exportAcctCB:SetPoint("LEFT", exportCharLbl, "RIGHT", 12, -1)
+    exportAcctCB:SetChecked(false)
+    local exportAcctLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    exportAcctLbl:SetPoint("LEFT", exportAcctCB, "RIGHT", 2, 1)
+    exportAcctLbl:SetText("Account")
+
+    exportCharCB:SetScript("OnClick", function()
+        exportScope = "character"
+        exportCharCB:SetChecked(true)
+        exportAcctCB:SetChecked(false)
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    exportAcctCB:SetScript("OnClick", function()
+        exportScope = "account"
+        exportAcctCB:SetChecked(true)
+        exportCharCB:SetChecked(false)
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
 
     local exportNameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    exportNameLabel:SetPoint("TOPLEFT", 16, -80)
+    exportNameLabel:SetPoint("TOPLEFT", 16, -100)
     exportNameLabel:SetText("List name:")
 
     local exportNameBox = CreateFrame("EditBox", "EbonClearanceExportNameBox", self, "InputBoxTemplate")
@@ -3303,7 +3502,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
     exportBtn:SetText("Export")
 
     local exportScroll = CreateFrame("ScrollFrame", "EbonClearanceExportScroll", self, "UIPanelScrollFrameTemplate")
-    exportScroll:SetPoint("TOPLEFT", 16, -108)
+    exportScroll:SetPoint("TOPLEFT", 16, -128)
     exportScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
 
     local exportBox = CreateFrame("EditBox", "EbonClearanceExportBox", exportScroll)
@@ -3320,25 +3519,60 @@ ImportExportPanel:SetScript("OnShow", function(self)
     exportScroll:SetScrollChild(exportBox)
 
     exportBtn:SetScript("OnClick", function()
-        local str = EC_ExportWhitelist(exportNameBox:GetText())
+        local str = EC_ExportWhitelist(exportNameBox:GetText(), exportScope)
         exportBox:SetText(str)
         exportBox:HighlightText()
         exportBox:SetFocus()
         PlaySound("igMainMenuOptionCheckBoxOn")
+        local source = EC_GetWhitelistForScope(exportScope) or {}
         local count = 0
-        for k, v in pairs(DB.whitelist) do
+        for _, v in pairs(source) do
             if v == true or v == 1 then
                 count = count + 1
             end
         end
-        PrintNicef("Exported |cffffff00%d|r whitelist items. Copy the text above.", count)
+        local scopeName = (exportScope == "account") and "account" or "character"
+        PrintNicef("Exported |cffffff00%d|r %s whitelist items. Copy the text above.", count, scopeName)
     end)
 
     -- === IMPORT SECTION ===
-    MakeLabel(self, "Paste an exported whitelist string below and click Import.", 16, -170)
+    MakeLabel(self, "Paste a whitelist string and pick which list it imports into.", 16, -198)
+
+    local importScope = "character"
+
+    local importScopeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    importScopeLabel:SetPoint("TOPLEFT", 16, -226)
+    importScopeLabel:SetText("Target list:")
+
+    local importCharCB = CreateFrame("CheckButton", "EbonClearanceImportTargetCharCB", self, "UIRadioButtonTemplate")
+    importCharCB:SetPoint("LEFT", importScopeLabel, "RIGHT", 8, 0)
+    importCharCB:SetChecked(true)
+    local importCharLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    importCharLbl:SetPoint("LEFT", importCharCB, "RIGHT", 2, 1)
+    importCharLbl:SetText("Character")
+
+    local importAcctCB = CreateFrame("CheckButton", "EbonClearanceImportTargetAcctCB", self, "UIRadioButtonTemplate")
+    importAcctCB:SetPoint("LEFT", importCharLbl, "RIGHT", 12, -1)
+    importAcctCB:SetChecked(false)
+    local importAcctLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    importAcctLbl:SetPoint("LEFT", importAcctCB, "RIGHT", 2, 1)
+    importAcctLbl:SetText("Account")
+
+    importCharCB:SetScript("OnClick", function()
+        importScope = "character"
+        importCharCB:SetChecked(true)
+        importAcctCB:SetChecked(false)
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    importAcctCB:SetScript("OnClick", function()
+        importScope = "account"
+        importAcctCB:SetChecked(true)
+        importCharCB:SetChecked(false)
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
 
     local importScroll = CreateFrame("ScrollFrame", "EbonClearanceImportScroll", self, "UIPanelScrollFrameTemplate")
-    importScroll:SetPoint("TOPLEFT", 16, -190)
+    importScroll:SetPoint("TOPLEFT", 16, -254)
     importScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
 
     local importBox = CreateFrame("EditBox", "EbonClearanceImportBox", importScroll)
@@ -3356,7 +3590,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
     local importMergeBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
     importMergeBtn:SetSize(120, 22)
-    importMergeBtn:SetPoint("TOPLEFT", 16, -248)
+    importMergeBtn:SetPoint("TOPLEFT", 16, -312)
     importMergeBtn:SetText("Import (Merge)")
 
     local importReplaceBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
@@ -3365,18 +3599,21 @@ ImportExportPanel:SetScript("OnShow", function(self)
     importReplaceBtn:SetText("Import (Replace)")
 
     local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statusFS:SetPoint("TOPLEFT", 16, -276)
+    statusFS:SetPoint("TOPLEFT", 16, -340)
     statusFS:SetWidth(EC_PANEL_WIDTH - 16)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")
 
     local function runImport(mode)
-        local ok, msg = EC_ImportWhitelist(importBox:GetText(), mode)
+        local ok, msg = EC_ImportWhitelist(importBox:GetText(), mode, importScope)
         statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
         if ok then
             PlaySound("igMainMenuOptionCheckBoxOn")
             PrintNice(msg)
-            local wp = _G["EbonClearanceOptionsWhitelist"]
+            local panelName = (importScope == "account")
+                and "EbonClearanceOptionsAccountWhitelist"
+                or "EbonClearanceOptionsWhitelist"
+            local wp = _G[panelName]
             if wp and wp.listUI then
                 wp.listUI:Refresh()
             end
@@ -3402,8 +3639,8 @@ ImportExportPanel:SetScript("OnShow", function(self)
         importNote:SetWordWrap(true)
     end
     importNote:SetText(
-        "|cffaaaaaa'Merge' adds imported items to your existing whitelist. "
-            .. "'Replace' clears your whitelist first, then adds the imported items.|r"
+        "|cffaaaaaa'Merge' adds imported items to the target list. "
+            .. "'Replace' clears the target list first, then adds the imported items.|r"
     )
 end)
 
@@ -3625,7 +3862,9 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     local w = EC_PANEL_WIDTH - x
     local box = CreateFrame("Frame", nil, parent)
     box:SetPoint("TOPLEFT", x, y)
-    box:SetSize(w, 320)
+    -- 280 matches CreateListUI's default; keeps the scroll arrows inside the
+    -- InterfaceOptions sub-panel's visible area instead of clipping below it.
+    box:SetSize(w, 280)
 
     local title = box:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     title:SetPoint("TOPLEFT", 0, 0)
@@ -3867,7 +4106,7 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
     MakeHeader(self, "Account Whitelist", -16)
     MakeLabel(
         self,
-        "Items here are sold on every character on this account, in addition to each character's personal whitelist. Useful for shared trash like reagents or seasonal items.",
+        "Items here are sold on every character on this account, in addition to each character's personal whitelist. Useful for shared trash like reagents or seasonal items. |cffaaaaaaThis list is not part of profiles - it stays the same when you switch profiles.|r",
         16,
         -44
     )
@@ -3937,6 +4176,7 @@ local function EC_BuildBugReport()
     add("Enable Deletion: " .. tostring(DB.enableDeletion))
     add("Vendor Interval: " .. tostring(DB.vendorInterval))
     add("Max Items Per Run: " .. tostring(DB.maxItemsPerRun))
+    add("Fast Mode: " .. tostring(DB.fastMode))
     add("Enable Only Listed Chars: " .. tostring(DB.enableOnlyListedChars))
     add("")
 
@@ -4326,6 +4566,9 @@ f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("MERCHANT_SHOW")
 f:RegisterEvent("MERCHANT_CLOSED")
+-- BAG_UPDATE drives auto-loot-cycle bag-full detection. Cheap handler;
+-- early-returns unless STATE.LOOTING + cycle enabled. See EC_HandleBagFullForCycle.
+f:RegisterEvent("BAG_UPDATE")
 -- UNIT_AURA fires per-unit. The player-only form is much cheaper in raids
 -- than an unfiltered registration; fall back on clients that lack it.
 if f.RegisterUnitEvent then
@@ -4339,6 +4582,10 @@ f:SetScript("OnEvent", function(self, event, ...)
         local addonName = ...
         if addonName == ADDON_NAME then
             EnsureDB()
+            -- Scrub orphans from the v2.2.0 scoping bug where these names
+            -- briefly leaked into _G. Harmless if absent. See v2.2.1 fix.
+            _G.EC_summonGoblinPending = nil
+            _G.EC_summonGoblinTimer = nil
             HookDeletePopupOnce()
             if ApplyGreedyChatFilter then
                 ApplyGreedyChatFilter()
@@ -4357,6 +4604,8 @@ f:SetScript("OnEvent", function(self, event, ...)
         if EC_InstallGreedyMuteOnce then
             EC_InstallGreedyMuteOnce()
         end
+    elseif event == "BAG_UPDATE" then
+        EC_HandleBagFullForCycle()
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
         EC_merchantReminderPending = false

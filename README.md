@@ -127,6 +127,17 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Changelog
 
+### v2.2.1
+
+- **Fix: Goblin Merchant never summons after the BAG_UPDATE auto-cycle** - In v2.2.0 the new `EC_HandleBagFullForCycle` helper was placed above the `local` declarations of its `EC_summonGoblinPending` / `EC_summonGoblinTimer` flags. Lua compiled the writes inside the function as globals, so the OnUpdate consumer (which captured them as locals) never saw the trigger and the cycle hung in `WAITING_MERCHANT` with the Scavenger dismissed and no merchant summoned. The flags are now hoisted into a forward-declaration block above the helper. Same scoping trap that v2.0.13 fixed for `STATE` / `running`; same fix shape. Bonus: `_G.EC_summonGoblinPending` / `EC_summonGoblinTimer` are scrubbed at addon load so any orphan globals from a v2.2.0 session don't linger.
+
+### v2.2.0
+
+- **Event-driven bag detection** - The auto-loot cycle now reacts to `BAG_UPDATE` instead of a 5-second poll, so the Goblin Merchant is summoned within a tick of crossing the bag-full threshold rather than up to five seconds later. New helper `EC_HandleBagFullForCycle` is the only consumer; the pet stuck-detection and mount cooldown stay on the existing OnUpdate.
+- **Fast Mode toggle** - Optional checkbox on Merchant Settings. When enabled, pins the per-item vendor interval to the 0.05 s floor and doubles the per-run cap to 160 items. Roughly halves vendoring time on large inventories. Increases disconnect risk on unstable connections; opt-in only and reversible.
+- **Import / Export now supports the account whitelist** - New "Target list" radio at the top of the Import/Export panel. Pick **Character** or **Account**, then Export, Import (Merge) or Import (Replace) operates on that scope. The export string format is unchanged (`EC:<name>:<id1>,...`), so strings carry between scopes; the radio at import time decides where they land.
+- **Internal: `EC_EffectiveVendorInterval` / `EC_EffectiveMaxItemsPerRun`** - Tiny accessors so Fast Mode doesn't need to mutate the user's saved `vendorInterval` / `maxItemsPerRun` values.
+
 ### v2.1.0
 
 - **Account-wide whitelist** - New panel `Whitelist - Account` storing items in a separate `EbonClearanceAccountDB` saved variable. Both whitelists are unioned at sell time so an item listed in either fires. The character panel was renamed `Whitelist - Character` for symmetry, with the same scan-by-quality buttons on both.

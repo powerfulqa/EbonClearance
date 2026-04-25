@@ -7,3 +7,4 @@ docs/superpowers/
 # Third-party source drops kept locally for analysis. Never tracked.
 /_research/
 /_external/
+/otheraddons/

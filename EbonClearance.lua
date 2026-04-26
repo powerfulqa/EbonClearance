@@ -26,6 +26,19 @@ _G["EBONCLEARANCE_ORIGIN"] = ADDON_URL
 _G["__EbonClearance_origin"] = ADDON_URL
 _G["__EbonClearance_author"] = ADDON_AUTHOR
 
+-- Build-time version. The release workflow rewrites the @VERSION@ placeholder
+-- with the pushed git tag (`vX.Y.Z`); dev checkouts keep the literal and fall
+-- back to the .toc value via EC_GetVersion below. Carrying the version here
+-- means a stale .toc cache (WoW only re-reads .toc files on full client
+-- restart, not /reload) can't make the in-game display lie.
+local ADDON_VERSION = "@VERSION@"
+local function EC_GetVersion()
+    if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then
+        return ADDON_VERSION
+    end
+    return GetAddOnMetadata("EbonClearance", "Version") or "unknown"
+end
+
 local EC_GetPlayerName
 local EC_IsAddonEnabledForChar
 
@@ -2965,7 +2978,7 @@ StaticPopupDialogs["EC_CONFIRM_CLEAR_LIST"] = {
 -- (guarded by `panel.inited` in OnShow). `refreshStats` is the dynamic refresh
 -- callback captured by the Reset button.
 local function BuildMainPanel(panel, refreshStats)
-    local addonVersion = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
+    local addonVersion = EC_GetVersion()
     MakeHeader(panel, "EbonClearance " .. addonVersion, -16)
 
     -- Byline (required by LICENSE; do not remove in derivatives).
@@ -4678,7 +4691,7 @@ local function EC_BuildBugReport()
         lines[#lines + 1] = s
     end
 
-    local version = GetAddOnMetadata("EbonClearance", "Version") or "unknown"
+    local version = EC_GetVersion()
     local player = UnitName("player") or "Unknown"
     local realm = GetRealmName() or "Unknown"
     local dateStr = date("%Y-%m-%d %H:%M")

@@ -52,34 +52,12 @@ delete-list, any future list).
 
 ---
 
-## 3. Split `EC_petCheckFrame` OnUpdate - medium impact, low risk
+## 3. ~~Split `EC_petCheckFrame` OnUpdate~~ - DONE
 
-[`EC_petCheckFrame:SetScript("OnUpdate", …)`](../EbonClearance.lua)
-is ~130 lines combining:
-
-- 5-second tick gate.
-- Stuck-companion detection.
-- Auto-loot cycle dispatch (`STATE.LOOTING` → `STATE.WAITING_MERCHANT`).
-- Bag-threshold triggered merchant summon.
-
-Each sub-step could be a named local function called from the tick
-body:
-
-```lua
-local function onStuckDetection(now) ... end
-local function onAutoLootTick(now) ... end
-local function onBagThresholdTick(now) ... end
-
-petCheckFrame:SetScript("OnUpdate", function(_, elapsed)
-    accumulated = accumulated + elapsed
-    if accumulated < 5 then return end
-    accumulated = 0
-    local now = GetTime()
-    onStuckDetection(now)
-    onAutoLootTick(now)
-    onBagThresholdTick(now)
-end)
-```
+Done in `refactor/perf-and-quality-pass`. Helpers extracted:
+`EC_TickGoblinSummon`, `EC_TickGoblinTarget`, `EC_TickMerchantReminder`,
+`EC_AutoLootStateSync`, `EC_HandleScavengerOut`, `EC_TryResummonScavenger`,
+`EC_PetCheckTick`. The OnUpdate body is now a 9-line dispatch.
 
 ---
 

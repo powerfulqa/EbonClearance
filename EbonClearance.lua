@@ -46,6 +46,11 @@ local GetCompanionInfo = GetCompanionInfo
 local CallCompanion = CallCompanion
 local IsMounted = IsMounted
 local IsEquippedItem = IsEquippedItem
+local UnitExists = UnitExists
+local UnitName = UnitName
+local GetCursorInfo = GetCursorInfo
+local GetTime = GetTime
+local GetUnitSpeed = GetUnitSpeed
 
 -- Forward declarations. These must exist as upvalues before any function
 -- that references them is compiled, or references inside those closures
@@ -58,6 +63,24 @@ local STATE = {
 }
 local EC_lootCycleState = STATE.IDLE
 local EC_addonDismissed = false
+-- True when the user has manually dismissed the Scavenger (right-click
+-- portrait while stationary). Suppresses tick-based re-summon and the mount
+-- restore path. Cleared whenever the Scavenger is back out (SummonGreedyScavenger
+-- on the addon side, or an out->in transition detected at tick time).
+local EC_userDismissed = false
+-- Last-tick value of "is the Scavenger summoned?". Used by EC_PetCheckTick to
+-- detect transitions and classify them (leash vs manual dismiss vs explicit
+-- summon). Forward-declared here so the closures further down capture it.
+local EC_lastScavengerOut = false
+-- Player time-spent-moving (seconds) accumulated while the Scavenger is out.
+-- Drives the stuck-detection heuristic in EC_HandleScavengerOut. Resets on
+-- every Scavenger out<->in transition and after a stuck-dismiss fires.
+local EC_scavMovementAccum = 0
+-- One-shot guard: at PLAYER_ENTERING_WORLD (post-/reload, post-zone) we scan
+-- the companion list once to bootstrap EC_lastScavengerOut. Without this the
+-- gate above stays false until the first 5 s tick observes the state, which
+-- eats ~5 s of accumulation if the Scavenger was already out at /reload.
+local EC_scavStateBootstrapped = false
 local running = false
 
 local EC_greedyMessages = {}
@@ -97,6 +120,11 @@ local function EC_GreedyEventFilter(self, event, msg, author, ...)
     if DB then
         hideChat = (DB.muteGreedy == true) or (DB.hideGreedyChat == true)
         hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
+    end
+    -- Both feature flags off -> filter has no effect; skip the string-op tail.
+    -- Fires on 10 chat events for every line of chat received.
+    if not hideChat and not hideBubbles then
+        return false
     end
 
     if EC_IsGreedyAuthor(author) then
@@ -177,6 +205,11 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
         hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
     end
     if not hideBubbles then
+        return
+    end
+    -- Nothing tracked: no killed frames to re-hide and no Greedy speech to
+    -- match against. Becomes a constant-time no-op until either set fills.
+    if not next(EC_killedBubbles) and not next(EC_greedyMessages) then
         return
     end
 
@@ -765,6 +798,14 @@ local function SummonGreedyScavenger()
                 CallCompanion("CRITTER", i)
             end
             EC_addonDismissed = false
+            -- Scavenger is now out (or already was) -- a manual-dismiss
+            -- preference is moot at this point.
+            EC_userDismissed = false
+            -- Sync the stuck-detection gate immediately so the OnUpdate
+            -- accumulator starts counting from this summon, not from the
+            -- next 5 s tick observation.
+            EC_lastScavengerOut = true
+            EC_scavMovementAccum = 0
             if DB and DB.autoLootCycle then
                 EC_lootCycleState = STATE.LOOTING
             end
@@ -775,6 +816,8 @@ end
 
 local function DismissGreedyScavenger()
     EC_addonDismissed = true
+    EC_lastScavengerOut = false
+    EC_scavMovementAccum = 0
     if DismissCompanion then
         DismissCompanion("CRITTER")
     else
@@ -814,6 +857,24 @@ local function FindGoblinMerchantIndex()
         end
     end
     return nil
+end
+
+-- Locate the Greedy Scavenger by name in the player's companion list.
+-- Returns (index, isSummoned). index is nil if it isn't in the list at all
+-- (e.g. user hasn't learned the pet). The mount handler uses this to skip
+-- the dismiss/restore cycle when the Scavenger isn't actually out.
+local function EC_FindGreedyScavenger()
+    local num = GetNumCompanions("CRITTER")
+    if not num or num <= 0 then
+        return nil, false
+    end
+    for i = 1, num do
+        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if creatureName == PET_NAME then
+            return i, isSummoned
+        end
+    end
+    return nil, false
 end
 
 local function SummonGoblinMerchant()
@@ -908,27 +969,16 @@ local function EC_GetFreeBagSlots()
     return free
 end
 
--- Yards. If the Scavenger drifts further than this from the player during a
--- loot cycle we dismiss it so the next tick can re-summon at the player's
--- position. Too low = false positives on normal follow-lag (pet briefly out
--- of range while the player runs); too high = stuck pet sits for minutes
--- before recovery. 5 yards matches in-game follow-leash behaviour reasonably.
--- Note: EC_GetCompanionDistance depends on UnitPosition, which is Legion-era
--- and does not exist on stock 3.3.5a -- the whole check no-ops there.
-local EC_MAX_PET_DISTANCE = 5
-
-local function EC_GetCompanionDistance()
-    if not UnitPosition then
-        return nil
-    end
-    local px, py = UnitPosition("player")
-    local cx, cy = UnitPosition("pet")
-    if not px or not cx then
-        return nil
-    end
-    local dx, dy = px - cx, py - cy
-    return math.sqrt(dx * dx + dy * dy)
-end
+-- Stuck-detection threshold (seconds of player movement) above which we
+-- assume the Scavenger has been left behind and dismiss-then-re-summon at
+-- the player's current position. The CRITTER companion tries to follow but
+-- stops on rough terrain or once the player outruns it.
+--
+-- We use a movement-time accumulator instead of measuring distance because
+-- UnitPosition("pet") doesn't return data for CRITTER-type companions on
+-- 3.3.5a (the unit ID "pet" refers to combat pets only). GetUnitSpeed works
+-- universally and is what we accumulate against in the OnUpdate.
+local EC_STUCK_MOVEMENT_THRESHOLD = 20
 
 -- Fast Mode: when enabled, pin the per-item vendor interval to the 0.05 s
 -- floor and double the per-run cap. Opt-in via DB.fastMode.
@@ -958,6 +1008,11 @@ end
 -- sees them - the cycle hangs in WAITING_MERCHANT forever. This is the same
 -- trap v2.0.13 fixed for STATE / running / EC_lootCycleState; see CLAUDE.md
 -- convention #4.
+-- Pet-check tick interval. Below this, the OnUpdate body returns early.
+-- 5 s is the cadence used for state reconciliation, stuck detection, and
+-- re-summon - low enough to react to a despawn within a reasonable window
+-- but high enough to avoid scanning companion state every frame.
+local EC_PET_CHECK_INTERVAL = 5
 local EC_petCheckElapsed = 0
 local EC_summonGoblinPending = false
 local EC_summonGoblinTimer = 0
@@ -1344,63 +1399,162 @@ end
 -- Pet stuck detection + auto-loot cycle bag monitoring
 local EC_petCheckFrame = CreateFrame("Frame")
 
-EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
-    -- Delayed Goblin Merchant summon (after dismiss completes)
-    if EC_summonGoblinPending then
-        EC_summonGoblinTimer = EC_summonGoblinTimer - elapsed
-        if EC_summonGoblinTimer <= 0 then
-            EC_summonGoblinPending = false
-            local idx = FindGoblinMerchantIndex()
-            if idx then
-                CallCompanion("CRITTER", idx)
-                EC_targetGoblinPending = true
-                EC_targetGoblinTimer = 2.0
-            else
-                PrintNice("|cffff4444Goblin Merchant not found in companion list!|r")
-                EC_lootCycleState = STATE.LOOTING
-            end
-        end
-        return
-    end
+-- Pet-check OnUpdate is split into named helpers below. The dispatch itself
+-- (at the bottom) handles three per-frame timer countdowns and one 5 s-gated
+-- tick body. See docs/CODE_REVIEW.md item 3.
+--
+-- The three timer-countdown helpers return true if they consumed the tick
+-- (caller should return early), or false to fall through.
 
-    -- Delayed target after Goblin Merchant summon
-    if EC_targetGoblinPending then
-        EC_targetGoblinTimer = EC_targetGoblinTimer - elapsed
-        if EC_targetGoblinTimer <= 0 then
-            EC_targetGoblinPending = false
-            local _, nowSummoned = FindGoblinMerchantIndex()
-            if nowSummoned then
-                PrintNicef(
-                    "|cff00ff00Goblin Merchant summoned|r - press %s or right-click to sell.",
-                    EC_FormatTargetMerchantBinding()
-                )
-                EC_merchantReminderPending = true
-                EC_merchantReminderTimer = 8.0
-            else
-                PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
-                EC_lootCycleState = STATE.LOOTING
-            end
-        end
-        return
+-- 1.5 s post-dismiss delay before summoning the Goblin Merchant. The dismiss
+-- has to land server-side before CallCompanion, otherwise the slot is still
+-- occupied by the Scavenger and the call no-ops.
+local function EC_TickGoblinSummon(elapsed)
+    if not EC_summonGoblinPending then
+        return false
     end
-
-    -- 8-second reminder if merchant window hasn't been opened
-    if EC_merchantReminderPending then
-        EC_merchantReminderTimer = EC_merchantReminderTimer - elapsed
-        if EC_merchantReminderTimer <= 0 then
-            EC_merchantReminderPending = false
-            if EC_lootCycleState == STATE.WAITING_MERCHANT then
-                PrintNice("|cffffff00Reminder: right-click the Goblin Merchant to open the vendor window.|r")
-            end
+    EC_summonGoblinTimer = EC_summonGoblinTimer - elapsed
+    if EC_summonGoblinTimer <= 0 then
+        EC_summonGoblinPending = false
+        local idx = FindGoblinMerchantIndex()
+        if idx then
+            CallCompanion("CRITTER", idx)
+            EC_targetGoblinPending = true
+            EC_targetGoblinTimer = 2.0
+        else
+            PrintNice("|cffff4444Goblin Merchant not found in companion list!|r")
+            EC_lootCycleState = STATE.LOOTING
         end
     end
+    return true
+end
 
-    EC_petCheckElapsed = EC_petCheckElapsed + elapsed
-    if EC_petCheckElapsed < 5 then
+-- 2.0 s post-summon verify: GetCompanionInfo lags the actual summon, so we
+-- wait before checking whether the merchant came out, then arm the 8 s
+-- "right-click me" reminder if it did.
+local function EC_TickGoblinTarget(elapsed)
+    if not EC_targetGoblinPending then
+        return false
+    end
+    EC_targetGoblinTimer = EC_targetGoblinTimer - elapsed
+    if EC_targetGoblinTimer <= 0 then
+        EC_targetGoblinPending = false
+        local _, nowSummoned = FindGoblinMerchantIndex()
+        if nowSummoned then
+            PrintNicef(
+                "|cff00ff00Goblin Merchant summoned|r - press %s or right-click to sell.",
+                EC_FormatTargetMerchantBinding()
+            )
+            EC_merchantReminderPending = true
+            EC_merchantReminderTimer = 8.0
+        else
+            PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
+            EC_lootCycleState = STATE.LOOTING
+        end
+    end
+    return true
+end
+
+-- 8 s nudge for users who summoned the merchant but then got distracted.
+-- Falls through (returns false) so the 5 s-gated body still runs this frame.
+local function EC_TickMerchantReminder(elapsed)
+    if not EC_merchantReminderPending then
+        return false
+    end
+    EC_merchantReminderTimer = EC_merchantReminderTimer - elapsed
+    if EC_merchantReminderTimer <= 0 then
+        EC_merchantReminderPending = false
+        if EC_lootCycleState == STATE.WAITING_MERCHANT then
+            PrintNice("|cffffff00Reminder: right-click the Goblin Merchant to open the vendor window.|r")
+        end
+    end
+    return false
+end
+
+-- Reconcile cycle state with companion-out reality: if the Scavenger is
+-- already out at IDLE, advance to LOOTING so the auto-loot cycle picks up.
+local function EC_AutoLootStateSync()
+    if not (DB.autoLootCycle and EC_lootCycleState == STATE.IDLE) then
         return
     end
-    EC_petCheckElapsed = 0
+    local num = GetNumCompanions("CRITTER")
+    for i = 1, (num or 0) do
+        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if creatureName == PET_NAME and isSummoned then
+            EC_lootCycleState = STATE.LOOTING
+            break
+        end
+    end
+end
 
+-- Stuck-Scavenger handling. If the player has spent more than
+-- EC_STUCK_MOVEMENT_THRESHOLD seconds moving since the Scavenger was last
+-- summoned, assume it's stuck on terrain or got left behind, dismiss it,
+-- and let the next tick re-summon at the player's current position.
+-- Returns true if the Scavenger is out (caller bails out of re-summon path).
+local function EC_HandleScavengerOut(scavengerOut)
+    if not scavengerOut then
+        return false
+    end
+    if EC_scavMovementAccum >= EC_STUCK_MOVEMENT_THRESHOLD then
+        EC_addonDismissed = true
+        EC_scavMovementAccum = 0
+        DismissGreedyScavenger()
+    end
+    return true
+end
+
+-- Re-summon the Scavenger if and only if we (this addon) dismissed it.
+-- Manual user dismisses (EC_userDismissed) are respected; concurrent companions
+-- (bank mule, mailbox) suppress; the 10 s mount-dismiss cooldown suppresses.
+local function EC_TryResummonScavenger(greedyIndex, anyPetOut)
+    if EC_userDismissed then
+        return
+    end
+    if anyPetOut then
+        return
+    end
+    if (GetTime() - EC_mountDismissTime) <= 10 then
+        return
+    end
+    if not EC_addonDismissed then
+        return
+    end
+    if not greedyIndex then
+        return
+    end
+    EC_addonDismissed = false
+    CallCompanion("CRITTER", greedyIndex)
+    if DB and DB.autoLootCycle then
+        EC_lootCycleState = STATE.LOOTING
+    end
+end
+
+-- Classify a Scavenger out-state transition. We can't ask the game *why* the
+-- Scavenger went away; the heuristic uses player movement at tick time as a
+-- proxy. Moving = leash (auto-restore via EC_addonDismissed). Stationary =
+-- manual right-click on the portrait (suppress restore via EC_userDismissed).
+-- Out->in transitions (player or addon summoned via portrait/keybind) clear
+-- the manual-dismiss flag because the Scavenger is back regardless.
+local function EC_ClassifyScavengerTransition(scavengerOut)
+    if not EC_lastScavengerOut and scavengerOut then
+        EC_userDismissed = false
+        EC_scavMovementAccum = 0  -- fresh count from this summon
+    end
+    if EC_lastScavengerOut and not scavengerOut and not EC_addonDismissed then
+        local speed = GetUnitSpeed and GetUnitSpeed("player") or 0
+        if speed > 0 then
+            EC_addonDismissed = true
+        else
+            EC_userDismissed = true
+        end
+        EC_scavMovementAccum = 0  -- transitioning out, reset
+    end
+    EC_lastScavengerOut = scavengerOut
+end
+
+-- 5 s-gated body. Pre-flight guards, state sync, stuck check, re-summon.
+local function EC_PetCheckTick()
     if not DB or not DB.summonGreedy then
         return
     end
@@ -1414,34 +1568,18 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         return
     end
 
-    -- If auto-loot cycle is on and Scavenger is already out, ensure state is "looting"
-    if DB.autoLootCycle and EC_lootCycleState == STATE.IDLE then
-        local num = GetNumCompanions("CRITTER")
-        for i = 1, (num or 0) do
-            local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
-            if creatureName == PET_NAME and isSummoned then
-                EC_lootCycleState = STATE.LOOTING
-                break
-            end
-        end
-    end
+    EC_AutoLootStateSync()
+    -- Bag-full detection lives in BAG_UPDATE (EC_HandleBagFullForCycle).
 
-    -- Bag-full detection moved to BAG_UPDATE event handler (EC_HandleBagFullForCycle).
-
-    -- Don't re-summon scavenger while waiting for merchant or selling
     if EC_lootCycleState == STATE.WAITING_MERCHANT or EC_lootCycleState == STATE.SELLING then
         return
     end
 
-    -- Stuck detection: re-summon Greedy Scavenger if it despawned or is stuck on terrain
-    -- Respects: addon enabled, mounted state, mount cooldown, manual unsummon, other companions
     local num = GetNumCompanions("CRITTER")
     if not num or num <= 0 then
         return
     end
-    local greedyIndex = nil
-    local scavengerOut = false
-    local anyPetOut = false
+    local greedyIndex, scavengerOut, anyPetOut = nil, false, false
     for i = 1, num do
         local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
         if isSummoned then
@@ -1455,40 +1593,35 @@ EC_petCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 
-    -- Distance check: if Scavenger is out but stuck far away, dismiss and let next tick re-summon
-    if scavengerOut then
-        local dist = EC_GetCompanionDistance()
-        if dist and dist > EC_MAX_PET_DISTANCE then
-            EC_addonDismissed = true
-            DismissGreedyScavenger()
-        end
+    EC_ClassifyScavengerTransition(scavengerOut)
+
+    if EC_HandleScavengerOut(scavengerOut) then
         return
     end
+    EC_TryResummonScavenger(greedyIndex, anyPetOut)
+end
 
-    -- Scavenger is not out - check if we should re-summon
-    -- Don't re-summon if another companion is active (bank mule, mailbox)
-    if anyPetOut then
+EC_petCheckFrame:SetScript("OnUpdate", function(_, elapsed)
+    -- Accumulate player movement time while the Scavenger is flagged as out.
+    -- EC_HandleScavengerOut reads this on the 5 s tick to detect "stuck" cases.
+    if EC_lastScavengerOut and GetUnitSpeed and GetUnitSpeed("player") > 0 then
+        EC_scavMovementAccum = EC_scavMovementAccum + elapsed
+    end
+
+    if EC_TickGoblinSummon(elapsed) then
         return
     end
-
-    -- Don't re-summon if we recently dismissed for mounting
-    if (GetTime() - EC_mountDismissTime) <= 10 then
+    if EC_TickGoblinTarget(elapsed) then
         return
     end
+    EC_TickMerchantReminder(elapsed)
 
-    -- Only re-summon if our code dismissed it (mount, cycle, distance-stuck)
-    -- If the user manually unsummoned, respect that
-    if not EC_addonDismissed then
+    EC_petCheckElapsed = EC_petCheckElapsed + elapsed
+    if EC_petCheckElapsed < EC_PET_CHECK_INTERVAL then
         return
     end
-
-    if greedyIndex then
-        EC_addonDismissed = false
-        CallCompanion("CRITTER", greedyIndex)
-        if DB and DB.autoLootCycle then
-            EC_lootCycleState = STATE.LOOTING
-        end
-    end
+    EC_petCheckElapsed = 0
+    EC_PetCheckTick()
 end)
 
 local pendingDelete = nil
@@ -1593,8 +1726,13 @@ local function BuildQueue(junkOnly)
     wipe(queue)
     queueIndex = 1
     goldThisVendoring = 0
-    -- Grey items (quality 0) are always sold as junk at any merchant.
-    -- Whitelist/quality threshold selling only runs when the merchant mode allows it.
+    -- Single bag walk that produces both the sell and delete queue entries.
+    -- Sell pass first: grey items (quality 0) always match via isJunk;
+    -- whitelist / quality threshold only fire when the merchant allows them.
+    -- If the sell pass rejects a slot AND deletion is enabled, fall through
+    -- to the delete-list check using its own slot fetch (EC_IsSellable returns
+    -- a bare `false` on negative predicate, so we don't have its itemID here).
+    local deletionOn = DB.enableDeletion == true
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
@@ -1611,24 +1749,17 @@ local function BuildQueue(junkOnly)
                 if sellPrice and sellPrice > 0 then
                     goldThisVendoring = goldThisVendoring + EC_GetItemPrice(link, itemID, sellPrice, itemCount)
                 end
-            end
-        end
-    end
-
-    if DB.enableDeletion == true then
-        for bag = 0, 4 do
-            local slots = GetContainerNumSlots(bag)
-            for slot = 1, slots do
-                local itemID = GetContainerItemID(bag, slot)
-                if itemID and IsInSet(DB.deleteList, itemID) and not IsEquippedItem(itemID) then
-                    local texture, itemCount, locked = GetContainerItemInfo(bag, slot)
-                    if itemCount and itemCount > 0 and not locked then
+            elseif deletionOn then
+                local id = GetContainerItemID(bag, slot)
+                if id and IsInSet(DB.deleteList, id) and not IsEquippedItem(id) then
+                    local _, count, locked = GetContainerItemInfo(bag, slot)
+                    if count and count > 0 and not locked then
                         queue[#queue + 1] = {
                             type = "delete",
                             bag = bag,
                             slot = slot,
-                            itemID = itemID,
-                            count = itemCount,
+                            itemID = id,
+                            count = count,
                         }
                     end
                 end
@@ -4996,6 +5127,17 @@ f:SetScript("OnEvent", function(self, event, ...)
         if EC_InstallGreedyMuteOnce then
             EC_InstallGreedyMuteOnce()
         end
+        -- One-time companion-state bootstrap so the OnUpdate movement
+        -- accumulator can start counting immediately if the Scavenger was
+        -- already out at /reload (otherwise we wait for the first 5 s tick
+        -- to observe the state and lose that much accumulation).
+        if not EC_scavStateBootstrapped then
+            local _, scavOut = EC_FindGreedyScavenger()
+            if scavOut then
+                EC_lastScavengerOut = true
+            end
+            EC_scavStateBootstrapped = true
+        end
     elseif event == "BAG_UPDATE" then
         -- Bag-full handler runs first; the open driver yields via the `running`
         -- guard if the vendor cycle is already active.
@@ -5020,10 +5162,21 @@ f:SetScript("OnEvent", function(self, event, ...)
         if unit == "player" and DB and DB.summonGreedy and EC_IsAddonEnabledForChar() then
             local mounted = IsMounted()
             if mounted and not EC_wasMounted then
-                DismissGreedyScavenger()
-                EC_mountDismissTime = GetTime()
+                -- Only dismiss if the Scavenger is actually out. A bare
+                -- DismissGreedyScavenger() on a non-event would set
+                -- EC_addonDismissed=true and trick the unmount branch into
+                -- "restoring" something the user actively dismissed.
+                local _, scavOut = EC_FindGreedyScavenger()
+                if scavOut then
+                    DismissGreedyScavenger()
+                    EC_mountDismissTime = GetTime()
+                end
             elseif not mounted and EC_wasMounted then
-                EC_SummonGreedyWithDelay()
+                -- Restore only if (a) the addon dismissed for the mount AND
+                -- (b) the user hasn't manually dismissed since.
+                if EC_addonDismissed and not EC_userDismissed then
+                    EC_SummonGreedyWithDelay()
+                end
             end
             EC_wasMounted = mounted
         end

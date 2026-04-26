@@ -8,7 +8,7 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 ## What It Does
 
-**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also set a quality threshold (under Merchant Settings) to bulk-sell everything at or below a chosen rarity (up to Blue/Rare). Works with the Goblin Merchant, normal vendors, or both. Items with no vendor value are automatically skipped. Your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
+**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also set per-rarity quality thresholds (under Merchant Settings) with an optional max item level for each rarity, so you can say "sell all whites and greens below iLvl 150 but never sell blues" or "sell every item under iLvl 170". Works with the Goblin Merchant, normal vendors, or both. Items with no vendor value are automatically skipped. Your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
 
 **Character and account whitelists** - Keep a per-character whitelist for things only that character sells, plus an account-wide whitelist for shared trash (reagents, seasonal items) that gets sold on every alt. Both lists are consulted when vendoring; either one listing an item is enough.
 
@@ -90,7 +90,7 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - Scan bags to bulk-add items by quality (White, Green, Blue) on either whitelist panel
 - Add items matching a name substring in one go via the "Add matching in bags" field on any list panel
 - Save and load profiles with different whitelist and blacklist combinations
-- Set a quality threshold (on Merchant Settings) to bulk-sell everything up to a chosen rarity
+- Set per-rarity quality thresholds with optional max item levels (e.g. "sell all whites under iLvl 150, all greens under iLvl 170, no blues") on Merchant Settings
 - Choose which merchants the addon works with (Goblin Merchant, normal vendors, or both)
 - Toggle auto-vendoring, deletion, repairs, Greedy Scavenger, and auto-opening of lootable containers on or off
 - Keep bags open when leaving a merchant
@@ -132,6 +132,18 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
 
 ## Changelog
+
+### v2.5.0
+
+- **Per-rarity quality threshold with optional max item level** - The single "Sell items up to quality" dropdown is replaced with three independent per-rarity rows (White, Green, Blue) on the Merchant Settings panel. Each rarity has its own checkbox and an optional max iLvl input. Setting iLvl to `0` means no cap (sells every item of that rarity, including cloth and trade goods); setting it above `0` is a strict filter that only sells **equippable items** at or below the cap - trade goods, reagents, consumables, and anything without "Item Level" on its tooltip are protected. This means setting White cap = 100 won't accidentally vendor Runecloth, even though `GetItemInfo` reports an internal itemLevel of 50 for it. The mental model is "the cap only filters items I can SEE the iLvl of". This makes it possible to say things like "sell all whites and all greens up to iLvl 150 but no blues", or "sell every equippable under iLvl 170 regardless of rarity", without surprises. Default all off; existing users get a one-time migration from the old cumulative dropdown so their previous behaviour is preserved. New saved variable `DB.qualityRules` holds the per-rarity state. The legacy `DB.whitelistMinQuality` / `DB.whitelistQualityEnabled` keys remain for one release in case of rollback.
+- **Tooltip annotation shows iLvl-cap state** - Items either show `[EC] Will Sell - Quality Threshold` (green) when they qualify, or one of two `[EC] Protected -` (warning yellow) lines when the cap protects them: above max iLvl, or no iLvl on item with cap active. Makes the cap visible at the point of decision rather than abstract on the settings panel.
+- **Whitelist still wins over the cap** - Items on your whitelist sell regardless of any iLvl cap. The cap only acts on the quality-threshold pass.
+- **Smart Alt+Right-Click context menu** - Each list row now toggles between "Add to ..." (white) and "Remove from ..." (orange) based on the item's current membership. If the item is already on the Whitelist (Character), the row reads "Remove from Whitelist (Character)" in orange and clicking it removes the item; otherwise it reads "Add to Whitelist (Character)" in white. Each row checks its own list independently, so an item on the Account whitelist + Blacklist shows two orange "Remove from ..." rows and two white "Add to ..." rows.
+- **Welcome page text refresh** - The opening description on the main `/ec` panel was stale (predated the account whitelist, blacklist, and Alt+Right-Click menu). Rewritten to mention the per-character/account whitelist split, the blacklist, the per-rarity quality threshold with iLvl caps, and a discoverability tip for the bag context menu.
+
+### v2.4.0
+
+- **Performance/maintainability pass and two Scavenger lifecycle fixes.** The pet stuck-detection no longer relies on the `UnitPosition` distance check (which doesn't exist on stock 3.3.5a and silently no-oped); it now uses a movement-time accumulator that re-summons the Scavenger when it has been out and stationary too long. The manual-dismiss-respect logic now survives a mount/dismount cycle (was previously losing the `EC_addonDismissed` intent across `UNIT_AURA` mount transitions). Plus a code-quality sweep across the file. See the v2.4.0 commit and PR for full details.
 
 ### v2.3.0
 

@@ -151,13 +151,22 @@ four groups:
   `vendorInterval`, `maxItemsPerRun`, `fastMode`, `merchantMode`,
   `autoLootCycle`, `bagFullThreshold`, `autoOpenContainers`,
   `repairGear`, `keepBagsOpen`, `muteGreedy`, `hideGreedyChat`,
-  `hideGreedyBubbles`, `enableDeletion`, `whitelistMinQuality`,
-  `whitelistQualityEnabled`, `vendorBtnShown`
+  `hideGreedyBubbles`, `enableDeletion`, `qualityRules` (v2.5.0+;
+  per-rarity table, see below), `vendorBtnShown`
   (and `vendorBtnX`, `vendorBtnY`, `vendorBtnPoint`, `vendorBtnRelPoint`
   - dormant; see the `EC_CreateVendorButton` block).
   `fastMode` (v2.2.0+) pins the per-item interval to the 0.05 s floor
   and doubles the per-run cap; consume via `EC_EffectiveVendorInterval`
   / `EC_EffectiveMaxItemsPerRun`, never read it directly on hot paths.
+  `qualityRules` (v2.5.0+) is a table indexed by quality (1=White,
+  2=Green, 3=Blue) with `{ enabled = bool, maxILvl = number }` per
+  rarity; `maxILvl == 0` means no cap. When `maxILvl > 0` the cap
+  only filters items with a non-empty `equipLoc` (i.e. items that
+  display "Item Level: N" on their tooltip); trade goods, reagents,
+  and consumables - even if `GetItemInfo` returns a non-zero internal
+  itemLevel - are protected. Replaces the v2.3.x
+  `whitelistMinQuality` / `whitelistQualityEnabled` pair (kept on
+  the table for one release for rollback).
 - **Stats**: `totalCopper`, `totalItemsSold`, `totalItemsDeleted`,
   `totalRepairs`, `totalRepairCopper`, `soldItemCounts`,
   `deletedItemCounts`, `inventoryWorthTotal`, `inventoryWorthCount`.

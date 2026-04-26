@@ -443,6 +443,43 @@ local function EnsureDB()
     if type(DB.whitelistQualityEnabled) ~= "boolean" then
         DB.whitelistQualityEnabled = false
     end
+
+    -- Per-rarity quality threshold rules (v2.4.0+). Replaces the old single
+    -- whitelistMinQuality dropdown. Each rarity has its own enabled flag and
+    -- optional max iLvl (0 = no cap). Default all off (opt-in). Existing
+    -- users get a one-time migration: their old cumulative dropdown maps
+    -- to per-rarity flags up to and including the chosen rarity, with no
+    -- iLvl cap. The legacy keys stay for one release in case of rollback.
+    if type(DB.qualityRules) ~= "table" then
+        DB.qualityRules = {
+            [1] = { enabled = false, maxILvl = 0 },
+            [2] = { enabled = false, maxILvl = 0 },
+            [3] = { enabled = false, maxILvl = 0 },
+        }
+        if DB.whitelistQualityEnabled and type(DB.whitelistMinQuality) == "number" then
+            local minQ = math.min(math.max(DB.whitelistMinQuality, 1), 3)
+            for q = 1, minQ do
+                DB.qualityRules[q].enabled = true
+            end
+        end
+    end
+    for q = 1, 3 do
+        if type(DB.qualityRules[q]) ~= "table" then
+            DB.qualityRules[q] = { enabled = false, maxILvl = 0 }
+        end
+        if type(DB.qualityRules[q].enabled) ~= "boolean" then
+            DB.qualityRules[q].enabled = false
+        end
+        if type(DB.qualityRules[q].maxILvl) ~= "number" then
+            DB.qualityRules[q].maxILvl = 0
+        end
+        if DB.qualityRules[q].maxILvl < 0 then
+            DB.qualityRules[q].maxILvl = 0
+        end
+        if DB.qualityRules[q].maxILvl > 300 then
+            DB.qualityRules[q].maxILvl = 300
+        end
+    end
     if type(DB.minimapButtonAngle) ~= "number" then
         DB.minimapButtonAngle = 220
     end
@@ -1199,6 +1236,27 @@ local function EC_AddItemToList(setName, itemID, label)
     end
 end
 
+local function EC_RemoveItemFromList(setName, itemID, label)
+    if not itemID then
+        return
+    end
+    local t = EC_GetListTable(setName)
+    if not t or not t[itemID] then
+        return
+    end
+    t[itemID] = nil
+    local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
+    PrintNicef("Removed |cffb6ffb6%s|r from %s.", itemName, label)
+    -- Refresh the corresponding settings panel if it's been opened.
+    local panelName = EC_CTX_PANEL_FOR[setName]
+    if panelName then
+        local p = _G[panelName]
+        if p and p.listUI then
+            p.listUI:Refresh()
+        end
+    end
+end
+
 local function EC_SellNowAt(bag, slot)
     if not (MerchantFrame and MerchantFrame:IsShown()) then
         PrintNice("|cffff4444Open a merchant first to sell.|r")
@@ -1220,44 +1278,18 @@ local function EC_SellNowAt(bag, slot)
     PrintNicef("Sold |cffb6ffb6%s|r.", itemName)
 end
 
--- Action list. `requireMerchant = true` greys the row when no merchant is
--- open. Cancel just closes the popup.
-local EC_CTX_ACTIONS = {
-    {
-        label = "Add to Whitelist (Character)",
-        run = function(bag, slot, id)
-            EC_AddItemToList("whitelist", id, "Whitelist - Character")
-        end,
-    },
-    {
-        label = "Add to Whitelist (Account)",
-        run = function(bag, slot, id)
-            EC_AddItemToList("accountWhitelist", id, "Whitelist - Account")
-        end,
-    },
-    {
-        label = "Add to Blacklist (Do Not Sell)",
-        run = function(bag, slot, id)
-            EC_AddItemToList("blacklist", id, "Blacklist")
-        end,
-    },
-    {
-        label = "Add to Deletion List",
-        run = function(bag, slot, id)
-            EC_AddItemToList("deleteList", id, "Deletion List")
-        end,
-    },
-    {
-        label = "Sell Now",
-        run = function(bag, slot, id)
-            EC_SellNowAt(bag, slot)
-        end,
-        requireMerchant = true,
-    },
-    {
-        label = "Cancel",
-        run = function() end,
-    },
+-- Row metadata for the popup. Each "list" row toggles between "Add to ..."
+-- (white) and "Remove from ..." (orange) based on the item's live list
+-- membership at show time. Special rows ("sellNow", "cancel") get plain text
+-- and fixed handlers. EC_ShowItemContextMenu sets per-row text + OnClick on
+-- every show; the buttons created in EC_BuildCtxFrame are empty placeholders.
+local EC_CTX_ROWS = {
+    { kind = "list", setName = "whitelist", label = "Whitelist (Character)" },
+    { kind = "list", setName = "accountWhitelist", label = "Whitelist (Account)" },
+    { kind = "list", setName = "blacklist", label = "Blacklist (Do Not Sell)" },
+    { kind = "list", setName = "deleteList", label = "Deletion List" },
+    { kind = "sellNow" },
+    { kind = "cancel" },
 }
 
 local EC_ctxFrame
@@ -1266,7 +1298,7 @@ local function EC_BuildCtxFrame()
     if EC_ctxFrame then
         return EC_ctxFrame
     end
-    local rowCount = #EC_CTX_ACTIONS
+    local rowCount = #EC_CTX_ROWS
     -- Layout: 8 top pad + 22 title + 6 gap + rows*22 + 8 bottom pad
     local frameHeight = 8 + 22 + 6 + (rowCount * 22) + 8
     local frame = CreateFrame("Frame", "EbonClearanceCtxFrame", UIParent)
@@ -1293,14 +1325,13 @@ local function EC_BuildCtxFrame()
     frame.title = title
 
     frame.buttons = {}
-    for i, action in ipairs(EC_CTX_ACTIONS) do
+    for i = 1, #EC_CTX_ROWS do
         local btn = CreateFrame("Button", nil, frame)
         btn:SetSize(220, 20)
         btn:SetPoint("TOPLEFT", 10, -(8 + 22 + 6) - (i - 1) * 22)
         btn:SetNormalFontObject("GameFontHighlightSmall")
         btn:SetHighlightFontObject("GameFontGreenSmall")
         btn:SetDisabledFontObject("GameFontDisableSmall")
-        btn:SetText(action.label)
         local fs = btn:GetFontString()
         if fs then
             fs:ClearAllPoints()
@@ -1319,11 +1350,8 @@ local function EC_BuildCtxFrame()
         btn:SetScript("OnLeave", function()
             hl:SetAlpha(0)
         end)
-        btn:SetScript("OnClick", function()
-            local id = GetContainerItemID(frame.bag, frame.slot)
-            action.run(frame.bag, frame.slot, id)
-            frame:Hide()
-        end)
+        -- Text + OnClick are populated per-show by EC_ShowItemContextMenu
+        -- so the row labels reflect the item's live list membership.
         frame.buttons[i] = btn
     end
 
@@ -1358,11 +1386,43 @@ local function EC_ShowItemContextMenu(button)
     frame.title:SetText("|cff4db8ffEbonClearance|r: " .. itemName)
 
     local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
-    for i, action in ipairs(EC_CTX_ACTIONS) do
+    for i, row in ipairs(EC_CTX_ROWS) do
         local btn = frame.buttons[i]
-        if action.requireMerchant and not merchantOpen then
-            btn:Disable()
-        else
+        if row.kind == "list" then
+            local t = EC_GetListTable(row.setName)
+            local onList = t and t[itemID] == true
+            if onList then
+                -- Orange "Remove from ..." when the item is already on this
+                -- list. Clicking removes it.
+                btn:SetText("|cffff8000Remove from " .. row.label .. "|r")
+                btn:SetScript("OnClick", function()
+                    EC_RemoveItemFromList(row.setName, itemID, row.label)
+                    frame:Hide()
+                end)
+            else
+                btn:SetText("Add to " .. row.label)
+                btn:SetScript("OnClick", function()
+                    EC_AddItemToList(row.setName, itemID, row.label)
+                    frame:Hide()
+                end)
+            end
+            btn:Enable()
+        elseif row.kind == "sellNow" then
+            btn:SetText("Sell Now")
+            btn:SetScript("OnClick", function()
+                EC_SellNowAt(frame.bag, frame.slot)
+                frame:Hide()
+            end)
+            if merchantOpen then
+                btn:Enable()
+            else
+                btn:Disable()
+            end
+        elseif row.kind == "cancel" then
+            btn:SetText("Cancel")
+            btn:SetScript("OnClick", function()
+                frame:Hide()
+            end)
             btn:Enable()
         end
     end
@@ -1715,15 +1775,36 @@ local function EC_IsSellable(bag, slot, junkOnly)
     if not itemCount or itemCount <= 0 or locked then
         return false
     end
-    local _, link, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+    local _, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
     local hasSellPrice = sellPrice and sellPrice > 0
     local isJunk = (quality ~= nil) and (quality == 0) and hasSellPrice
     local whitelistPass = not junkOnly
         and hasSellPrice
         and (IsInSet(DB.whitelist, itemID) or (ADB and IsInSet(ADB.whitelist, itemID)))
+    -- Quality threshold: per-rarity rules (v2.4.0+). Each rarity is independently
+    -- toggleable with its own optional max iLvl.
+    --   cap == 0  -> no filter, sell every item of that rarity (cloth, trade goods, gear).
+    --   cap > 0   -> STRICT filter: sell ONLY equippable items with iLvl <= cap.
+    --                "Equippable" = the item has a non-empty equipLoc (its tooltip
+    --                visibly displays "Item Level: X"). Trade goods, reagents,
+    --                consumables, and quest items don't have an equipLoc so the
+    --                cap doesn't engage on them - they're protected. This matches
+    --                the user mental model "items I can SEE an iLvl on are the
+    --                only ones the cap should filter". Internal itemLevel from
+    --                GetItemInfo is non-zero on many trade goods (Runecloth = 50)
+    --                but those don't display Item Level to the user.
     local qualityPass = false
-    if not junkOnly and DB.whitelistQualityEnabled == true and hasSellPrice then
-        qualityPass = (quality ~= nil) and (quality <= DB.whitelistMinQuality)
+    if not junkOnly and hasSellPrice and quality and quality >= 1 and quality <= 3 and DB.qualityRules then
+        local rule = DB.qualityRules[quality]
+        if rule and rule.enabled then
+            local cap = rule.maxILvl or 0
+            local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
+            if cap == 0 then
+                qualityPass = true
+            elseif hasVisibleILvl and ilvl <= cap then
+                qualityPass = true
+            end
+        end
     end
     local blacklisted = IsInSet(DB.blacklist, itemID)
     if not (isJunk or qualityPass or whitelistPass) then
@@ -2048,10 +2129,48 @@ local function EC_AnnotateTooltip(tooltip)
         statusLine = "|cff4db8ff[EC]|r |cffff4444Will Delete - Deletion List|r"
     elseif IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id)) then
         statusLine = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
-    elseif DB.whitelistQualityEnabled then
-        local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
-        if quality and quality > 0 and quality <= (DB.whitelistMinQuality or 1) and sellPrice and sellPrice > 0 then
-            statusLine = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Quality Threshold|r"
+    elseif DB.qualityRules then
+        local _, _, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(id)
+        if quality and quality >= 1 and quality <= 3 and sellPrice and sellPrice > 0 then
+            local rule = DB.qualityRules[quality]
+            if rule and rule.enabled then
+                local cap = rule.maxILvl or 0
+                local rarityName = (quality == 1) and "White"
+                    or (quality == 2) and "Green"
+                    or "Blue"
+                local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
+                if cap == 0 then
+                    -- No cap on this rarity. All items of this rarity sell.
+                    statusLine = string.format(
+                        "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - %s (no iLvl cap)|r",
+                        rarityName
+                    )
+                elseif hasVisibleILvl and ilvl <= cap then
+                    -- Cap set; equippable item iLvl in range -> sells.
+                    statusLine = string.format(
+                        "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - %s iLvl %d (cap %d)|r",
+                        rarityName,
+                        ilvl,
+                        cap
+                    )
+                elseif not hasVisibleILvl then
+                    -- Cap set; non-equippable (trade good / reagent / consumable)
+                    -- has no visible iLvl on its tooltip -> protected.
+                    statusLine = string.format(
+                        "|cff4db8ff[EC]|r |cffffb84dProtected - %s has no iLvl (cap %d active)|r",
+                        rarityName,
+                        cap
+                    )
+                else
+                    -- Cap set; equippable item iLvl above cap -> protected.
+                    statusLine = string.format(
+                        "|cff4db8ff[EC]|r |cffffb84dProtected - %s above max iLvl (%d > %d)|r",
+                        rarityName,
+                        ilvl,
+                        cap
+                    )
+                end
+            end
         end
     end
 
@@ -3001,7 +3120,7 @@ local function BuildMainPanel(panel, refreshStats)
         descLabel2:SetWordWrap(true)
     end
     descLabel2:SetText(
-        "Grey junk is sold automatically. Add items to your whitelist to sell them too, or enable the quality threshold to sell everything up to a chosen rarity. Configure which merchants to use under Merchant Settings."
+        "Grey junk is sold automatically. For everything else: add items to your |cffb6ffb6Whitelist|r (per-character or account-wide) to vendor them, or use the |cffb6ffb6Merchant Settings|r quality threshold to sell by rarity with an optional max iLvl per rarity. Items on the |cffb6ffb6Blacklist|r are never sold. |cff888888Tip: Alt+Right-Click any bag item for a quick-action menu.|r"
     )
 
     -- Stats fontstrings. Stacked vertically; each attaches its ref to `panel`
@@ -3229,11 +3348,15 @@ MerchantPanel:SetScript("OnShow", function(self)
         if self.RefreshMerchantModeDropDown then
             self:RefreshMerchantModeDropDown()
         end
-        if self.whitelistQualityCB then
-            self.whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
-        end
-        if self.RefreshQualityDropDown then
-            self:RefreshQualityDropDown()
+        for q = 1, 3 do
+            local cb = self["qualityRow" .. q .. "CB"]
+            local input = self["qualityRow" .. q .. "Input"]
+            if cb and DB.qualityRules and DB.qualityRules[q] then
+                cb:SetChecked(DB.qualityRules[q].enabled)
+            end
+            if input and DB.qualityRules and DB.qualityRules[q] then
+                input:SetText(tostring(DB.qualityRules[q].maxILvl or 0))
+            end
         end
         return
     end
@@ -3360,9 +3483,9 @@ MerchantPanel:SetScript("OnShow", function(self)
         "|cff888888Higher throughput. Increases disconnect risk on unstable connections - disable if you DC mid-vendor.|r"
     )
 
-    -- Quality threshold: when enabled, every item at or below the chosen
-    -- quality with a vendor price is sold in addition to the whitelist. Lives
-    -- here (rather than on the Whitelist panel) because it's a sell behaviour.
+    -- Quality threshold (v2.4.0+): three per-rarity rows, each independently
+    -- togglable with its own optional max iLvl. Replaces the old single-dropdown
+    -- "sell up to quality X" model. Default all off; opt-in per rarity.
     local thresholdHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     thresholdHeader:SetPoint("TOPLEFT", fastModeNote, "BOTTOMLEFT", -26, -24)
     thresholdHeader:SetText("Quality Threshold")
@@ -3375,79 +3498,76 @@ MerchantPanel:SetScript("OnShow", function(self)
         thresholdDesc:SetWordWrap(true)
     end
     thresholdDesc:SetText(
-        "When enabled, every item at or below the chosen quality with a vendor price is sold, in addition to your whitelist. Blacklisted items are still protected."
+        "Tick a rarity to auto-sell items of that rarity. Set max iLvl to 0 to sell every item of that rarity (cloth, trade goods, gear). Set it above 0 to sell only equippable items at or below that iLvl - trade goods, reagents and other items without 'Item Level' on their tooltip are skipped. Whitelisted items always sell; blacklisted items are always protected."
     )
 
-    local whitelistQualityCB =
-        CreateFrame("CheckButton", "EbonClearanceWhitelistQualityCB", self, "InterfaceOptionsCheckButtonTemplate")
-    whitelistQualityCB:SetPoint("TOPLEFT", thresholdDesc, "BOTTOMLEFT", 0, -8)
-    whitelistQualityCB:SetChecked(DB.whitelistQualityEnabled)
-    local wqt = _G["EbonClearanceWhitelistQualityCBText"]
-    if wqt then
-        wqt:SetText("Sell items by quality threshold")
-        wqt:SetWidth(260)
-        wqt:SetJustifyH("LEFT")
+    -- Build a row per rarity. Each row: checkbox on the left, "max iLvl:"
+    -- label, numeric input on the right (0-300). Returns the checkbox so the
+    -- next row can anchor below it.
+    local function MakeQualityRow(anchor, qualityIdx, labelText, yOff)
+        local cb = AddCheckbox(
+            self,
+            "EbonClearanceQualityRow" .. qualityIdx .. "CB",
+            anchor,
+            labelText,
+            function()
+                return DB.qualityRules[qualityIdx].enabled
+            end,
+            function(v)
+                DB.qualityRules[qualityIdx].enabled = v
+            end,
+            yOff
+        )
+
+        local input = CreateFrame(
+            "EditBox",
+            "EbonClearanceQualityRow" .. qualityIdx .. "Input",
+            self,
+            "InputBoxTemplate"
+        )
+        input:SetSize(50, 20)
+        input:SetPoint("RIGHT", self, "RIGHT", -32, 0)
+        input:SetPoint("TOP", cb, "TOP", 0, -2)
+        input:SetAutoFocus(false)
+        input:SetNumeric(true)
+        input:SetMaxLetters(3)
+        input:SetText(tostring(DB.qualityRules[qualityIdx].maxILvl or 0))
+        StyleInputBox(input)
+
+        local lbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        lbl:SetPoint("RIGHT", input, "LEFT", -6, 0)
+        lbl:SetText("max iLvl:")
+
+        local function commit()
+            local v = tonumber(input:GetText() or "0") or 0
+            if v < 0 then
+                v = 0
+            end
+            if v > 300 then
+                v = 300
+            end
+            DB.qualityRules[qualityIdx].maxILvl = v
+            input:SetText(tostring(v))
+        end
+        input:SetScript("OnEnterPressed", function()
+            input:ClearFocus()
+        end)
+        input:SetScript("OnEscapePressed", function()
+            input:SetText(tostring(DB.qualityRules[qualityIdx].maxILvl or 0))
+            input:ClearFocus()
+        end)
+        input:SetScript("OnEditFocusLost", commit)
+
+        return cb, input
     end
-    whitelistQualityCB:SetScript("OnClick", function()
-        DB.whitelistQualityEnabled = whitelistQualityCB:GetChecked() and true or false
-        PlaySound("igMainMenuOptionCheckBoxOn")
-        if self.RefreshQualityDropDown then
-            self:RefreshQualityDropDown()
-        end
-    end)
-    self.whitelistQualityCB = whitelistQualityCB
 
-    local ddLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    ddLabel:SetPoint("TOPLEFT", whitelistQualityCB, "BOTTOMLEFT", 0, -4)
-    ddLabel:SetText("Sell items up to quality:")
+    local row1CB, row1Input = MakeQualityRow(thresholdDesc, 1, EC_WHITELIST_QUALITIES[1].text, -10)
+    local row2CB, row2Input = MakeQualityRow(row1CB, 2, EC_WHITELIST_QUALITIES[2].text, -8)
+    local row3CB, row3Input = MakeQualityRow(row2CB, 3, EC_WHITELIST_QUALITIES[3].text, -8)
 
-    local qualityDD = CreateFrame("Frame", "EbonClearanceWhitelistQualityDropDown", self, "UIDropDownMenuTemplate")
-    qualityDD:SetPoint("LEFT", ddLabel, "RIGHT", -8, -2)
-    UIDropDownMenu_SetWidth(qualityDD, 160)
-
-    UIDropDownMenu_Initialize(qualityDD, function(frame, level)
-        local info = UIDropDownMenu_CreateInfo()
-        for i = 1, #EC_WHITELIST_QUALITIES do
-            local opt = EC_WHITELIST_QUALITIES[i]
-            info.text = opt.text
-            info.value = opt.value
-            info.checked = (DB.whitelistMinQuality == opt.value)
-            info.func = function()
-                DB.whitelistMinQuality = opt.value
-                UIDropDownMenu_SetSelectedValue(qualityDD, opt.value)
-                UIDropDownMenu_SetText(qualityDD, opt.text)
-                PlaySound("igMainMenuOptionCheckBoxOn")
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
-
-    function self:RefreshQualityDropDown()
-        local cur = DB.whitelistMinQuality or 1
-        if cur < 1 then
-            cur = 1
-            DB.whitelistMinQuality = 1
-        end
-        local label = EC_WHITELIST_QUALITIES[1].text
-        for i = 1, #EC_WHITELIST_QUALITIES do
-            if EC_WHITELIST_QUALITIES[i].value == cur then
-                label = EC_WHITELIST_QUALITIES[i].text
-                break
-            end
-        end
-        UIDropDownMenu_SetSelectedValue(qualityDD, cur)
-        UIDropDownMenu_SetText(qualityDD, label)
-        if DB.whitelistQualityEnabled then
-            if UIDropDownMenu_EnableDropDown then
-                UIDropDownMenu_EnableDropDown(qualityDD)
-            end
-        else
-            if UIDropDownMenu_DisableDropDown then
-                UIDropDownMenu_DisableDropDown(qualityDD)
-            end
-        end
-    end
-    self:RefreshQualityDropDown()
+    self.qualityRow1CB, self.qualityRow1Input = row1CB, row1Input
+    self.qualityRow2CB, self.qualityRow2Input = row2CB, row2Input
+    self.qualityRow3CB, self.qualityRow3Input = row3CB, row3Input
 end)
 
 -- Shared "Add from bags" scan row used by both whitelist panels.
@@ -4726,8 +4846,13 @@ local function EC_BuildBugReport()
     add("")
 
     add("--- Whitelist ---")
-    add("Quality Threshold Enabled: " .. tostring(DB.whitelistQualityEnabled))
-    add("Quality Level: " .. tostring(DB.whitelistMinQuality))
+    add("Quality Rules:")
+    for q = 1, 3 do
+        local r = DB.qualityRules and DB.qualityRules[q] or {}
+        local rarityName = (q == 1) and "White" or (q == 2) and "Green" or "Blue"
+        local capStr = (r.maxILvl and r.maxILvl > 0) and tostring(r.maxILvl) or "no cap"
+        add(string.format("  %s: enabled=%s, max iLvl=%s", rarityName, tostring(r.enabled), capStr))
+    end
     add("Active Profile: " .. tostring(DB.activeProfileName))
     add("Whitelist Items: " .. tostring(EC_CountItems(DB.whitelist)))
     add("Account Whitelist Items: " .. tostring(ADB and EC_CountItems(ADB.whitelist) or 0))
@@ -5043,8 +5168,12 @@ SlashCmdList["ECDEBUG"] = function()
         return
     end
     PrintNice("|cffffff00=== EbonClearance Debug ===|r")
-    PrintNice("whitelistQualityEnabled: " .. tostring(DB.whitelistQualityEnabled))
-    PrintNice("whitelistMinQuality: " .. tostring(DB.whitelistMinQuality))
+    for q = 1, 3 do
+        local r = DB.qualityRules and DB.qualityRules[q] or {}
+        local rarityName = (q == 1) and "White" or (q == 2) and "Green" or "Blue"
+        local capStr = (r.maxILvl and r.maxILvl > 0) and tostring(r.maxILvl) or "no cap"
+        PrintNicef("Quality[%s]: enabled=%s, max iLvl=%s", rarityName, tostring(r.enabled), capStr)
+    end
 
     -- Print whitelist contents
     local wlCount = 0
@@ -5066,12 +5195,21 @@ SlashCmdList["ECDEBUG"] = function()
             if itemID then
                 local _, itemCount, locked = GetContainerItemInfo(bag, slot)
                 if itemCount and itemCount > 0 and not locked then
-                    local name, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+                    local name, _, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
                     local junk = (quality ~= nil) and (quality == 0) and sellPrice and sellPrice > 0
                     local wp = IsInSet(DB.whitelist, itemID)
                     local qp = false
-                    if DB.whitelistQualityEnabled == true and sellPrice and sellPrice > 0 then
-                        qp = (quality ~= nil) and (quality <= (DB.whitelistMinQuality or 1))
+                    if quality and quality >= 1 and quality <= 3 and sellPrice and sellPrice > 0 and DB.qualityRules then
+                        local rule = DB.qualityRules[quality]
+                        if rule and rule.enabled then
+                            local cap = rule.maxILvl or 0
+                            local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
+                            if cap == 0 then
+                                qp = true
+                            elseif hasVisibleILvl and ilvl <= cap then
+                                qp = true
+                            end
+                        end
                     end
                     if junk or wp or qp then
                         PrintNicef(

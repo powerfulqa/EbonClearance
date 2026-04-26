@@ -1,4 +1,4 @@
-# EbonClearance - Addon Development Guide
+ne# EbonClearance - Addon Development Guide
 
 **Read this first if you are an AI agent or new contributor touching
 this codebase.** It is prescriptive: when the guide and a random
@@ -508,19 +508,27 @@ delete list on first install is intentional. If a future scenario needs to
 pre-populate specific IDs, use the `_seededLists` guard to avoid re-seeding
 existing users.
 
-### `UnitPosition` does not exist on stock 3.3.5a
+### Stuck-Scavenger detection uses movement time, not distance
 
-`EC_GetCompanionDistance` gates on `if not UnitPosition then return nil end`.
-On unmodified 3.3.5a clients the check no-ops the entire distance-stuck
-detection feature. Project Ebonhold's build apparently exposes it (the
-feature works in-game), but do not assume it on other private servers.
+`UnitPosition("pet")` does not return data for CRITTER-type companions on
+3.3.5a (the `"pet"` unit ID refers to combat pets only). An earlier
+`EC_GetCompanionDistance` helper tried to use it but no-opped in practice.
+
+The current detection path is in `EC_HandleScavengerOut`: a per-frame
+accumulator (`EC_scavMovementAccum`) sums `elapsed` while the player is
+moving (`GetUnitSpeed("player") > 0`) and the Scavenger is flagged as out.
+When the accumulator crosses `EC_STUCK_MOVEMENT_THRESHOLD` seconds the
+addon dismisses the Scavenger and the next 5 s tick re-summons it at the
+player's current position. The accumulator resets on every Scavenger
+out↔in transition.
 
 ### Index of magic numbers
 
 | Value | Location | Meaning |
 |---|---|---|
 | 0.05s | vendor worker OnUpdate | Per-item pacing floor. Below this, the server boots you for packet spam. |
-| 5 yards | `EC_MAX_PET_DISTANCE` | Scavenger-drift threshold before dismiss-and-resummon. |
+| 5s | `EC_PET_CHECK_INTERVAL` | Cadence for pet-check tick (state sync, stuck detection, re-summon). |
+| 20s | `EC_STUCK_MOVEMENT_THRESHOLD` | Player time-spent-moving after which the Scavenger is dismissed-and-resummoned (stuck-on-terrain detection). |
 | 80 items | `maxItemsPerRun` | Sell-queue cap per run. Prevents the same disconnect risk as the vendor-interval floor. Recursive batching kicks in for larger inventories. |
 | 1.5s | `EC_summonGoblinTimer` | Wait between dismiss and Goblin Merchant summon so the client has time to process the companion switch. |
 | 2.0s | `EC_targetGoblinTimer` | Wait after summon before checking `isSummoned` via `GetCompanionInfo`. |

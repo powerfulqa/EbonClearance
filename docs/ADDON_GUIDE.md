@@ -522,6 +522,112 @@ addon dismisses the Scavenger and the next 5 s tick re-summons it at the
 player's current position. The accumulator resets on every Scavenger
 out↔in transition.
 
+### Caches that mirror server-side state need a `PLAYER_ENTERING_WORLD` bootstrap
+
+`EC_lastScavengerOut` is a forward-declared local that mirrors
+server-side companion state. Its declared default is `false`, but the
+player can `/reload` with the Scavenger already summoned -- in which
+case the gate stays false until the first 5 s tick observes the state
+via `EC_ClassifyScavengerTransition`. The OnUpdate accumulator that
+gates on it then loses ~5 s of counting -- which is exactly what made
+Test B fail during the v2.4 quality pass before the bootstrap landed.
+
+The fix lives in the `PLAYER_ENTERING_WORLD` branch of the event hub:
+a one-shot scan via `EC_FindGreedyScavenger()`, guarded by
+`EC_scavStateBootstrapped` so it doesn't re-fire on every zone change.
+
+If you add another local boolean that mirrors external/server state
+(companion list, merchant list, group state, etc.), bootstrap it the
+same way. Trusting the declared default works only when the addon
+loaded *before* the state could exist -- which isn't true for `/reload`.
+
+### Manual-dismiss vs game-leash: heuristic via `GetUnitSpeed`
+
+We can't ask the game *why* a companion transitioned from summoned to
+not-summoned. The player could have right-clicked the portrait, the
+game's leash mechanic could have removed it, or some other server event
+fired. The addon needs to distinguish these:
+
+- Manual dismiss → respect it; don't auto-resummon
+  (`EC_userDismissed = true`).
+- Leash dismiss → the player wants the pet back; auto-resummon on next
+  tick (`EC_addonDismissed = true`).
+
+`EC_ClassifyScavengerTransition` uses `GetUnitSpeed("player")` at tick
+time as the proxy: speed > 0 → leash; speed == 0 → manual. This is
+wrong in two edge cases:
+
+- Dismiss-while-moving: classified as leash, re-summons.
+- Leashed-while-stationary (instant teleport, fall-port, phasing):
+  classified as manual, no re-summon.
+
+Both are rare. The user can recover via a manual portrait right-click;
+the `EC_userDismissed` flag clears on every out→in transition.
+
+If you replace the heuristic, also audit `EC_TryResummonScavenger` and
+the mount handler's restore branch -- both gate on `not EC_userDismissed`.
+
+### Mount handler must check actual companion state before dismiss/restore
+
+`DismissGreedyScavenger()` unconditionally sets `EC_addonDismissed = true`
+-- that's its contract. If the mount handler calls it when the Scavenger
+isn't actually out, the flag is set on a no-op, and the unmount branch
+then "restores" something the user actively dismissed.
+
+The `UNIT_AURA` branch in the event hub:
+
+- On mount: only dismiss if `EC_FindGreedyScavenger()` returns
+  `isSummoned == true`.
+- On unmount: only restore if `EC_addonDismissed and not EC_userDismissed`.
+
+If you add a similar dismiss-and-restore around another event
+(instance load, vehicle entry, taxi flight), follow the same
+"verify-then-act" gate pattern.
+
+### `SummonGreedyScavenger` and `DismissGreedyScavenger` must sync cached state
+
+These two helpers are the addon's authoritative summon/dismiss path.
+They write to four module-level locals that the OnUpdate accumulator
+and the re-summon gate read on every frame / every tick:
+
+- `EC_addonDismissed` -- dismiss path sets true; summon path clears.
+- `EC_userDismissed` -- summon path clears it; the manual-dismiss
+  heuristic in `EC_ClassifyScavengerTransition` is the only place it
+  gets set.
+- `EC_lastScavengerOut` -- summon sets true, dismiss sets false. Syncs
+  the stuck-detection gate immediately so the OnUpdate accumulator
+  doesn't lag the next 5 s tick observation.
+- `EC_scavMovementAccum` -- zero on either side; fresh count from the
+  new state.
+
+If you add another helper that summons or dismisses the Scavenger,
+either call into these two helpers or set all four locals consistently.
+A bare `CallCompanion("CRITTER", idx)` that bypasses
+`SummonGreedyScavenger` will desync the gate and either over-fire
+stuck detection or miss legitimate summons.
+
+### `muteGreedy` is the master flag, not a sibling
+
+In `EC_GreedyEventFilter` and the `EC_bubbleFrame` OnUpdate the
+resolution is:
+
+```lua
+hideChat    = (DB.muteGreedy == true) or (DB.hideGreedyChat == true)
+hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
+```
+
+`muteGreedy` ORs into both children. Unticking `hideGreedyChat` or
+`hideGreedyBubbles` while `muteGreedy` is on does **nothing** -- the
+master forces both children true. The Scavenger Settings panel
+exposes all three checkboxes; users will reasonably expect them to be
+independent and won't be (this tripped up testing during the v2.4
+quality pass).
+
+If you ever split these into truly independent flags, audit
+`EC_GreedyEventFilter`'s tail (the `string.find` / `string.match` block
+on the Scavenger-name path) and the bubble-kill OnUpdate's guard
+accordingly.
+
 ### Index of magic numbers
 
 | Value | Location | Meaning |

@@ -1,12 +1,18 @@
 # EbonClearance - Code Review Follow-ups
 
-Items **not** addressed by the 2026-04-13 humanise pass. Ranked by
-impact-to-risk ratio. Each is a safe-to-revert single-session change
-unless noted.
+A curated backlog of known follow-ups not yet actioned. Each item is
+scoped to be a single-session change unless flagged otherwise.
+
+> **Last refresh:** post-v2.6.0 on 2026-04-26.
+> Statuses below verified against the current `EbonClearance.lua`
+> (5561 LOC). Items that have shipped are listed under
+> [Resolved](#resolved) at the bottom.
 
 ---
 
-## 1. Consolidate the two chat-filter systems - medium impact, medium risk
+## Active backlog
+
+### 1. Consolidate the two chat-filter systems - medium impact, medium risk
 
 Two independent filter installations coexist:
 
@@ -30,17 +36,20 @@ do side-by-side testing in a stable zone before deleting.
 
 ---
 
-## 2. Split `CreateListUI` - high impact, low risk
+### 2. Split [`CreateListUI`](../EbonClearance.lua) - high impact, low risk
 
-[`CreateListUI`](../EbonClearance.lua) is 227 lines of UI builder
-handling: title, EditBox, search box, sort buttons, scroll frame, row
-pool, per-row Remove button, drag-drop handling, and a nested
-`Refresh` closure with five-level sort comparators.
+`CreateListUI` is now **369 lines** (was 227 when this doc was first
+written). Since then the v2.x.0 series added the "Add matching in
+bags:" row, account / character scope handling, and tooltip-warm
+refresh logic - all bolted onto the same closure.
 
-Suggested split:
+Suggested split (still the right shape, plus the new responsibilities
+above):
 
 - `BuildListHeader(parent, titleText)` - title + EditBox + search.
 - `BuildListSortControls(parent, onSortChange)` - 4 sort buttons.
+- `BuildListMatchRow(parent, setTableName, refreshFn)` - the
+  "Add matching in bags:" row + handler.
 - `BuildListScrollArea(parent)` - the scroll frame + child.
 - `MakeListRow(parent)` - one row factory; returns a frame with
   `:SetItem(id, name)` and `:Clear()` methods.
@@ -48,32 +57,37 @@ Suggested split:
 
 Each helper is pure layout; no shared mutable state. Extracting pays
 off every time a panel uses the list widget (whitelist, blacklist,
-delete-list, any future list).
+delete-list, account whitelist, any future list).
 
 ---
 
-## 3. ~~Split `EC_petCheckFrame` OnUpdate~~ - DONE
+### 3. `local EC = {}` namespace - decision required
 
-Done in `refactor/perf-and-quality-pass`. Helpers extracted:
-`EC_TickGoblinSummon`, `EC_TickGoblinTarget`, `EC_TickMerchantReminder`,
-`EC_AutoLootStateSync`, `EC_HandleScavengerOut`, `EC_TryResummonScavenger`,
-`EC_PetCheckTick`. The OnUpdate body is now a 9-line dispatch.
+Originally framed as "deferred until the file ever splits". That
+predicate has been overtaken: the file is now **5561 LOC**, well
+past the **~4000 LOC** split threshold documented in
+[`docs/ADDON_GUIDE.md`](ADDON_GUIDE.md) "When to split the file".
+
+Decision needed:
+
+- **Stay single-file** and accept the size. CLAUDE.md and ADDON_GUIDE
+  should be updated to bump the threshold (or remove it).
+- **Split into modules** along feature seams (vendor loop / pet
+  management / UI panels / list helpers / export-import). At that
+  point the `local EC = {}` namespace stops being a stylistic
+  preference and becomes load-bearing - cross-file shared state has
+  to live somewhere.
+
+Either resolution closes this item. Do not migrate to `EC = {}`
+without committing to one of the above; doing it for its own sake on
+a single file is pure churn.
 
 ---
 
-## 4. Consider `local EC = {}` namespace - deferred
+### 4. L10n stub - low cost, future-proofing
 
-Currently every helper is `local function EC_XxxYyy()`. This is fine
-for a single file. If the file ever splits (see `docs/ADDON_GUIDE.md`
-"When to split"), migrate to a shared `EC` table at the same time -
-don't do it as a prerequisite.
-
----
-
-## 5. L10n stub - low cost, future-proofing
-
-Even without AceLocale, a trivial passthrough makes future localisation
-mechanical:
+Even without AceLocale, a trivial passthrough makes future
+localisation mechanical:
 
 ```lua
 local L = setmetatable({}, { __index = function(_, k) return k end })
@@ -84,27 +98,54 @@ English keys stay English by default. When a locale table is added,
 it overrides keys. Adoption is incremental - wrap new strings first,
 then sweep existing ones.
 
----
-
-## 6. StyLua diff once
-
-Run `stylua EbonClearance.lua` once to normalise whitespace (mixed
-blank-line runs, trailing spaces, the occasional unindented line
-we fixed in the 04-13 pass).
-Review the diff before committing; commit separately from any
-behaviour change so `git log -p` stays legible.
+Status: still applicable, still nobody asking for it. Park unless a
+concrete localisation request lands.
 
 ---
 
-## 7. Luacheck clean-sweep
+### 5. Luacheck clean-sweep - partially done
 
-Once `luacheck EbonClearance.lua` is runnable locally, get to zero
-warnings. Likely categories:
+Current state: **71 warnings, 0 errors** (under the documented 93-
+warning baseline in `CLAUDE.md`, but not at zero). `.luacheckrc` is
+checked in; running locally requires the toolchain - see the
+[For Contributors](../README.md#for-contributors) section.
 
-- W113 "accessing undefined variable X" - add legitimate globals to
-  `read_globals` in `.luacheckrc`.
-- W211 "unused local variable" - delete the dead local, don't silence.
-- W212 "unused function argument" - usually safe to `_`-prefix.
-- W542 "empty if branch" - flatten or delete.
+Categories observed in the current run (a starting checklist for the
+next pass):
 
-Do **not** add blanket `-- luacheck: ignore` comments.
+- **Undeclared globals**: `GetCursorInfo`, `GetUnitSpeed`,
+  `WorldFrame`, `DB`. Add the first three to
+  [`.luacheckrc`](../.luacheckrc) `read_globals`. `DB` is a
+  forward-declared local that Luacheck can't follow - either treat
+  as a global, add a per-section `-- luacheck: globals DB` directive,
+  or restructure the forward declaration.
+- **Unused cached API locals**: `GetMerchantNumItems`,
+  `GetMerchantItemInfo`, `GetMerchantItemLink`, `PET_CHAT_PREFIX`.
+  Either delete (if truly unused now) or use them where intended -
+  do not silence with `_` rename.
+- **Unused arguments / varargs**: `event`, `...` on chat filter
+  handlers. Standard fix: rename to `_event`, drop `...` if not
+  forwarded.
+- **`msg` shadowing**: a handful of inner `msg` locals shadow the
+  outer chat handler argument. Rename inner ones to `chatMsg` (or
+  similar) to stop the shadow.
+
+Do not add blanket `-- luacheck: ignore` comments. Each remaining
+warning, if any, should have a per-line explanation.
+
+---
+
+## Resolved
+
+### Split [`EC_petCheckFrame`](../EbonClearance.lua) OnUpdate - DONE (v2.4.0)
+
+Done in `refactor/perf-and-quality-pass`. Helpers extracted:
+`EC_TickGoblinSummon`, `EC_TickGoblinTarget`, `EC_TickMerchantReminder`,
+`EC_AutoLootStateSync`, `EC_HandleScavengerOut`, `EC_TryResummonScavenger`,
+`EC_PetCheckTick`. The OnUpdate body is now a small dispatch.
+
+### StyLua diff once - DONE
+
+`stylua --check EbonClearance.lua` is clean and has been kept clean
+across multiple recent commits. The formatter runs as part of every
+release-prep pass.

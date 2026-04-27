@@ -133,6 +133,19 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Changelog
 
+### v2.6.0
+
+- **Responsive Interface Options layouts** - The Scavenger Settings and Merchant Settings panels are now wrapped in a vertical scroll frame so every widget stays reachable at the default 3.3.5a container width (previously the bottom of those panels was being clipped under the OK/Cancel button strip on narrow setups). The scroll bar hides automatically when content fits, so wider configurations look unchanged.
+- **Fix: Whitelist Character and Whitelist Account list overflow** - Both list UIs now auto-fill the remaining panel height (anchored `BOTTOMRIGHT` to the panel) instead of using a fixed 290 px height that could clip the bottom row at narrow widths.
+- **Fix: "Add from bags:" buttons overlapping description on Whitelist panels** - The scan-by-quality row is now cascade-anchored to the description's `BOTTOMLEFT`, so it stays below the description regardless of how many lines it wraps to. Same treatment applied to the Merchant Quality Threshold block.
+- **Fix: Orphan scroll arrows on short lists** - On the Whitelist, Account Whitelist, Blacklist, Deletion, Character Settings, and Profiles panels, when the list had fewer items than the visible area the scroll-bar arrows were rendering as floating icons at the right edge. A new `OnScrollRangeChanged` hook now hides the scroll bar (arrows + thumb) when content fits.
+- **Tightened explanatory text** - The Merchant Quality Threshold description, the auto-loot cycle note on Scavenger Settings, and a couple of redundant cross-cutting lines were shortened so panels read more cleanly at narrow widths. Generic information that isn't context-specific to a sub-panel (such as "grey junk is sold automatically") is consolidated on the Main panel.
+- **Profiles row labels shortened** - Saved profile rows now read `(N wl, N bl)` instead of `(N whitelist, N blacklist)`, fitting cleanly when all three Load / Clear / Delete buttons are visible without truncating the profile name.
+- **Polish: Summon delay slider format** - The slider now reads `0.0s ... 3.0s` (was `0.000s ... 3.000s`). Three decimals were noise on a 0.1-step slider. Vendoring Speed slider unchanged (its 0.005 step warrants the precision).
+- **Copy-detection fingerprint and watermark** - EbonClearance now writes a `__EbonClearance_watermark` global at load (visible to `/run` introspection) and appends a `;fp=<6 hex>` fingerprint suffix to every export string. The fingerprint is back-compat: imports tolerate strings with or without the suffix, and there is no warning on missing or corrupted fingerprints (hand-edited strings keep working). The mechanism's purpose is mechanical detection of verbatim copies in derivative addons. See [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md) "Fingerprint and watermark" for the convention.
+- **NOTICE.md: prior-art acknowledgement** - New file at the repo root documents which structural patterns in this addon (the source-available licence shape, the `__<addon>_origin` / `__<addon>_author` provenance globals form) are adopted from conventions already present in the 3.3.5a addon ecosystem rather than originated here. Read NOTICE.md before drawing conclusions about influence in either direction.
+- **Internal: comment audit on the provenance globals; LICENSE section 2(d) preservation list expanded** to include `__EbonClearance_watermark`. Historical changelog text generalised to remove a stale named cross-reference.
+
 ### v2.5.0
 
 - **Per-rarity quality threshold with optional max item level** - The single "Sell items up to quality" dropdown is replaced with three independent per-rarity rows (White, Green, Blue) on the Merchant Settings panel. Each rarity has its own checkbox and an optional max iLvl input. Setting iLvl to `0` means no cap (sells every item of that rarity, including cloth and trade goods); setting it above `0` is a strict filter that only sells **equippable items** at or below the cap - trade goods, reagents, consumables, and anything without "Item Level" on its tooltip are protected. This means setting White cap = 100 won't accidentally vendor Runecloth, even though `GetItemInfo` reports an internal itemLevel of 50 for it. The mental model is "the cap only filters items I can SEE the iLvl of". This makes it possible to say things like "sell all whites and all greens up to iLvl 150 but no blues", or "sell every equippable under iLvl 170 regardless of rarity", without surprises. Default all off; existing users get a one-time migration from the old cumulative dropdown so their previous behaviour is preserved. New saved variable `DB.qualityRules` holds the per-rarity state. The legacy `DB.whitelistMinQuality` / `DB.whitelistQualityEnabled` keys remain for one release in case of rollback.
@@ -272,6 +285,10 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 ### v2.0.0
 
 - First release. Whitelist-based auto-vendoring, item deletion, Greedy Scavenger management, whitelist profiles, import/export, auto-repair and session stats.
+
+## Notice
+
+EbonClearance ships in a niche where similar inventory-management addons exist for the same private server. [NOTICE.md](NOTICE.md) documents prior art and convergent patterns honestly: which structural elements (the source-available licence shape, the provenance globals form) are adopted from conventions already present in the 3.3.5a addon ecosystem, and which (the fingerprint and watermark mechanism) are specific to this project. Read it before drawing conclusions about influence in either direction.
 
 ## Licence
 

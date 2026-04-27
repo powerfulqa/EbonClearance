@@ -12,6 +12,12 @@ Plain-English summary (non-binding, the formal clauses below govern):
   renaming it, and presenting it as an original work is not. There is no
   warranty.
 
+  Note on prior art: this licence's structure and the
+  `__<addon>_origin` / `__<addon>_author` provenance-globals form
+  follow patterns that exist elsewhere in the WoW 3.3.5a addon
+  ecosystem. EbonClearance adopted these patterns rather than
+  claiming originality; see NOTICE.md for the acknowledgement.
+
 Formal terms:
 
 1. Grant of Rights
@@ -32,8 +38,9 @@ Formal terms:
    (c) the "by <author>  ·  <url>" byline rendered on the main options
        panel of the in-game settings UI;
    (d) the global variables EBONCLEARANCE_IDENT, EBONCLEARANCE_AUTHOR,
-       EBONCLEARANCE_ORIGIN, __EbonClearance_origin, and
-       __EbonClearance_author, along with the values they carry;
+       EBONCLEARANCE_ORIGIN, __EbonClearance_origin,
+       __EbonClearance_author, and __EbonClearance_watermark, along
+       with the values they carry;
    (e) this LICENSE file, in full, in every distributed copy.
 
    Attribution must be genuine. Replacing the author name, URL, or

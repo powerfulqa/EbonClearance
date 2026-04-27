@@ -15,8 +15,11 @@ local TARGET_NAME = "Goblin Merchant"
 local PET_NAME = "Greedy scavenger"
 
 -- Provenance. Mirrored into globals so the origin/author are visible to any
--- /run introspection, addon-management tool, or crash trace. LICENSE requires
--- these to be preserved in derivatives.
+-- /run introspection, addon-management tool, or crash trace. LICENSE section
+-- 2(d) requires these globals to be preserved in any derivative. The
+-- double-underscore-prefix-with-addon-name form follows a convention shared
+-- elsewhere in the 3.3.5a addon ecosystem; see NOTICE.md for the prior-art
+-- acknowledgement.
 local ADDON_DISPLAY = "EbonClearance"
 local ADDON_AUTHOR = "Serv"
 local ADDON_URL = "https://github.com/powerfulqa/EbonClearance"
@@ -38,6 +41,35 @@ local function EC_GetVersion()
     end
     return GetAddOnMetadata("EbonClearance", "Version") or "unknown"
 end
+
+-- Salted, deterministic 24-bit hash. Not cryptographic; the goal is trivial
+-- verifiability of EbonClearance origin in any derivative work. The salt
+-- below is a deliberately visible signature: anyone with our source has it,
+-- but to use our fingerprint format they must either (a) carry the salt
+-- verbatim - which is the evidence - or (b) re-implement and diverge from
+-- the canonical export format, also detectable. Do NOT "clean up" or
+-- refactor the salt string away; its presence in code is the point. See
+-- docs/ADDON_GUIDE.md "Fingerprint and watermark" for the full convention.
+-- The salt lives inside the function body (not at module scope) only so it
+-- doesn't consume a main-chunk local slot - Lua 5.1 caps that at 200.
+local function EC_Fingerprint(payload)
+    local SALT = "EbonClearance|Serv|powerfulqa|2026"
+    local s = (payload or "") .. "|" .. SALT
+    local h = 5381
+    for i = 1, #s do
+        -- djb2 step, folded to 24 bits so the printed form fits in 6 hex chars.
+        h = ((h * 33) + string.byte(s, i)) % 16777216
+    end
+    return string.format("%06x", h)
+end
+
+-- Build watermark: a precomputed fingerprint of "EbonClearance@<version>".
+-- Exposed as a global so /run inspection and external auditors can read it.
+-- If this exact 6-char hex value (computed for our version) ever appears in
+-- another addon's source, that addon is a verbatim copy of EbonClearance.
+-- Written straight to _G to avoid spending a local slot in the main chunk
+-- (Lua 5.1's 200-local cap is real and we sit near it).
+_G["__EbonClearance_watermark"] = EC_Fingerprint("EbonClearance@" .. ADDON_VERSION)
 
 local EC_GetPlayerName
 local EC_IsAddonEnabledForChar
@@ -4117,7 +4149,10 @@ local function EC_ExportWhitelist(listName, scope)
     table.sort(ids)
     local name = (listName and listName ~= "") and listName or "Unnamed"
     name = name:gsub("[:|]", "_")
-    return EC_EXPORT_PREFIX .. name .. ":" .. table.concat(ids, ",")
+    local payload = EC_EXPORT_PREFIX .. name .. ":" .. table.concat(ids, ",")
+    -- Fingerprint suffix flags this export as EbonClearance-produced. See
+    -- EC_FINGERPRINT_SALT and EC_Fingerprint near the top of the file.
+    return payload .. ";fp=" .. EC_Fingerprint(payload)
 end
 
 local function EC_ImportWhitelist(str, mode, scope)
@@ -4125,6 +4160,11 @@ local function EC_ImportWhitelist(str, mode, scope)
         return false, "Empty string."
     end
     str = str:gsub("^%s+", ""):gsub("%s+$", "")
+    -- Strip a trailing ";fp=<hex>" fingerprint suffix before format
+    -- validation so pre-fingerprint and hand-edited strings still parse.
+    -- The fingerprint marks our exports going OUT; imports tolerate both
+    -- fingerprinted and unfingerprinted strings without warning.
+    str = (str:gsub(";fp=[0-9a-f]+%s*$", ""))
     if str:sub(1, #EC_EXPORT_PREFIX) ~= EC_EXPORT_PREFIX then
         return false, "Invalid format. String must start with EC:"
     end

@@ -653,6 +653,52 @@ accordingly.
 
 If you change any of these, update this table and the nearest comment.
 
+## Fingerprint and watermark
+
+EbonClearance carries a deliberate, visible fingerprint mechanism so
+verbatim copies of the source or the export-string format can be
+mechanically detected. Three pieces:
+
+1. **`EC_FINGERPRINT_SALT`** at the top of `EbonClearance.lua`. A
+   project-specific string. **Do not** "clean up", refactor, rename,
+   or shorten this constant; its presence in code is the point. Any
+   addon source containing this exact string is a verbatim copy.
+2. **`EC_Fingerprint(payload)`** helper. djb2-style 24-bit hash
+   folded into 6 hex chars, salted with the constant above. Used
+   for both the watermark and export strings.
+3. **`__EbonClearance_watermark`** global. Set at addon load to
+   `EC_Fingerprint("EbonClearance@" .. ADDON_VERSION)`. Visible to
+   `/run` and to external auditors. The hex value is reproducible:
+   for any version, run the salted hash on
+   `"EbonClearance@" .. version` and confirm.
+
+Export strings carry a `;fp=<6 hex>` suffix produced by
+`EC_Fingerprint` over the export payload. Imports tolerate strings
+with or without the suffix (back-compat with hand-edited and
+pre-fingerprint exports); imports do **not** verify the fingerprint
+or warn on a bad one. The fingerprint exists to mark our exports
+**going out**, not to police imports coming in.
+
+Convention for future agents and contributors:
+
+- Do not normalise, refactor, rename, or remove the salt constant
+  or the helper. They are intentional artefacts.
+- Do not add a fingerprint-verification step on import. This is a
+  considered design choice (see `EC_StripFingerprint` and the
+  comment above it).
+- If we ever need a per-export-type fingerprint (profiles, settings,
+  etc.), reuse `EC_Fingerprint` rather than introducing a second
+  hash function. One salt, one helper, one mechanism.
+- Section 2(d) of the LICENSE lists `__EbonClearance_watermark`
+  alongside the other provenance globals as required-to-preserve in
+  derivatives. Adding a new provenance global means updating
+  LICENSE 2(d) and `NOTICE.md`.
+
+The convergent prior-art story for the broader provenance pattern
+(`__<addon>_origin` / `__<addon>_author`) is documented in
+[`NOTICE.md`](../NOTICE.md). Read that before assuming we invented
+either pattern.
+
 ## When to split the file
 
 Keep the single-file layout until one of these is true:

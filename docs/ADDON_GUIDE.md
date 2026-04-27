@@ -703,8 +703,13 @@ either pattern.
 
 Keep the single-file layout until one of these is true:
 
-- File exceeds ~4000 LOC.
-- Two largely-independent features share almost no state.
+- File exceeds ~8000 LOC. The original threshold here was ~4000 but
+  was bumped post-v2.6.0 (file was 5561 LOC and the single-file
+  architecture was working well; comprehension and grep latency
+  weren't actually painful at that size). Re-evaluate at the next
+  threshold rather than auto-splitting on growth alone.
+- Two largely-independent features share almost no state. A clean
+  module boundary appears organically; resist forcing one.
 - We adopt Ace3, at which point AceAddon lifecycle encourages modules.
 
 If you do split: introduce a `local EC = {}` namespace table in a new

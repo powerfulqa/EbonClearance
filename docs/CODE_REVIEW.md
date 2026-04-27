@@ -3,16 +3,16 @@
 A curated backlog of known follow-ups not yet actioned. Each item is
 scoped to be a single-session change unless flagged otherwise.
 
-> **Last refresh:** post-v2.6.0 on 2026-04-26.
+> **Last refresh:** post-v2.6.0 on 2026-04-27.
 > Statuses below verified against the current `EbonClearance.lua`
-> (5561 LOC). Items that have shipped are listed under
-> [Resolved](#resolved) at the bottom.
+> (5561 LOC). Items that have shipped or been decided are listed
+> under [Resolved](#resolved) at the bottom.
 
 ---
 
 ## Active backlog
 
-> Items 6 and 7 below were added in a qlty.sh-aligned re-review of the
+> Items 5 and 6 below were added in a qlty.sh-aligned re-review of the
 > codebase (post-v2.6.0). They surfaced from running the eight default
 > qlty code-smell checks plus a Lua best-practice sweep against the
 > file as it stands today.
@@ -66,30 +66,7 @@ delete-list, account whitelist, any future list).
 
 ---
 
-### 3. `local EC = {}` namespace - decision required
-
-Originally framed as "deferred until the file ever splits". That
-predicate has been overtaken: the file is now **5561 LOC**, well
-past the **~4000 LOC** split threshold documented in
-[`docs/ADDON_GUIDE.md`](ADDON_GUIDE.md) "When to split the file".
-
-Decision needed:
-
-- **Stay single-file** and accept the size. CLAUDE.md and ADDON_GUIDE
-  should be updated to bump the threshold (or remove it).
-- **Split into modules** along feature seams (vendor loop / pet
-  management / UI panels / list helpers / export-import). At that
-  point the `local EC = {}` namespace stops being a stylistic
-  preference and becomes load-bearing - cross-file shared state has
-  to live somewhere.
-
-Either resolution closes this item. Do not migrate to `EC = {}`
-without committing to one of the above; doing it for its own sake on
-a single file is pure churn.
-
----
-
-### 4. L10n stub - low cost, future-proofing
+### 3. L10n stub - low cost, future-proofing
 
 Even without AceLocale, a trivial passthrough makes future
 localisation mechanical:
@@ -108,7 +85,7 @@ concrete localisation request lands.
 
 ---
 
-### 5. Luacheck clean-sweep - partially done
+### 4. Luacheck clean-sweep - partially done
 
 Current state: **71 warnings, 0 errors** (under the documented 93-
 warning baseline in `CLAUDE.md`, but not at zero). `.luacheckrc` is
@@ -140,7 +117,7 @@ warning, if any, should have a per-line explanation.
 
 ---
 
-### 6. Extract panel OnShow boilerplate - medium impact, low risk
+### 5. Extract panel OnShow boilerplate - medium impact, low risk
 
 Verified across the file: 10 Interface Options panels each start
 with the same five-line preamble:
@@ -181,7 +158,7 @@ rewrite.
 
 ---
 
-### 7. Named tuning constants (`TUNING` table) - low impact, very low risk
+### 6. Named tuning constants (`TUNING` table) - low impact, very low risk
 
 Coverage is currently partial. The codebase already has named
 constants for some tuning values - `EC_STUCK_MOVEMENT_THRESHOLD`,
@@ -217,6 +194,23 @@ code.
 ---
 
 ## Resolved
+
+### `local EC = {}` namespace - DECIDED (post-v2.6.0): stay single-file, threshold raised
+
+The original deferral predicate ("if we ever split") was overtaken by
+the file passing the documented 4000-LOC trigger (file is 5561 LOC at
+v2.6.0). Decision made post-v2.6.0: **stay single-file** for now.
+Comprehension and grep latency at this size aren't actually painful;
+forcing a split for its own sake is pure churn.
+
+`docs/ADDON_GUIDE.md` "When to split the file" updated to bump the
+threshold from ~4000 LOC to ~8000 LOC and to note that organic module
+boundaries (not LOC alone) should drive any future split. Re-evaluate
+at the next threshold rather than auto-splitting on growth.
+
+If the file does eventually split, the original guidance still
+applies: introduce `local EC = {}` in `EbonClearance_Core.lua`, load
+it first, and have each feature file attach to it.
 
 ### Split [`EC_petCheckFrame`](../EbonClearance.lua) OnUpdate - DONE (v2.4.0)
 

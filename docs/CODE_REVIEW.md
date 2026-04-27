@@ -12,7 +12,7 @@ scoped to be a single-session change unless flagged otherwise.
 
 ## Active backlog
 
-> Items 5 and 6 below were added in a qlty.sh-aligned re-review of the
+> Items 4 and 5 below were added in a qlty.sh-aligned re-review of the
 > codebase (post-v2.6.0). They surfaced from running the eight default
 > qlty code-smell checks plus a Lua best-practice sweep against the
 > file as it stands today.
@@ -85,39 +85,7 @@ concrete localisation request lands.
 
 ---
 
-### 4. Luacheck clean-sweep - partially done
-
-Current state: **71 warnings, 0 errors** (under the documented 93-
-warning baseline in `CLAUDE.md`, but not at zero). `.luacheckrc` is
-checked in; running locally requires the toolchain - see the
-[For Contributors](../README.md#for-contributors) section.
-
-Categories observed in the current run (a starting checklist for the
-next pass):
-
-- **Undeclared globals**: `GetCursorInfo`, `GetUnitSpeed`,
-  `WorldFrame`, `DB`. Add the first three to
-  [`.luacheckrc`](../.luacheckrc) `read_globals`. `DB` is a
-  forward-declared local that Luacheck can't follow - either treat
-  as a global, add a per-section `-- luacheck: globals DB` directive,
-  or restructure the forward declaration.
-- **Unused cached API locals**: `GetMerchantNumItems`,
-  `GetMerchantItemInfo`, `GetMerchantItemLink`, `PET_CHAT_PREFIX`.
-  Either delete (if truly unused now) or use them where intended -
-  do not silence with `_` rename.
-- **Unused arguments / varargs**: `event`, `...` on chat filter
-  handlers. Standard fix: rename to `_event`, drop `...` if not
-  forwarded.
-- **`msg` shadowing**: a handful of inner `msg` locals shadow the
-  outer chat handler argument. Rename inner ones to `chatMsg` (or
-  similar) to stop the shadow.
-
-Do not add blanket `-- luacheck: ignore` comments. Each remaining
-warning, if any, should have a per-line explanation.
-
----
-
-### 5. Extract panel OnShow boilerplate - medium impact, low risk
+### 4. Extract panel OnShow boilerplate - medium impact, low risk
 
 Verified across the file: 10 Interface Options panels each start
 with the same five-line preamble:
@@ -158,7 +126,7 @@ rewrite.
 
 ---
 
-### 6. Named tuning constants (`TUNING` table) - low impact, very low risk
+### 5. Named tuning constants (`TUNING` table) - low impact, very low risk
 
 Coverage is currently partial. The codebase already has named
 constants for some tuning values - `EC_STUCK_MOVEMENT_THRESHOLD`,
@@ -194,6 +162,36 @@ code.
 ---
 
 ## Resolved
+
+### Luacheck clean-sweep - DONE (post-v2.6.0)
+
+71 warnings -> 0 warnings. `.luacheckrc` extended with previously
+undeclared 3.3.5a globals (`GetCursorInfo`, `GetUnitSpeed`,
+`WorldFrame`, `OpenBackpack`, `OpenBag`, `IsShiftKeyDown`,
+`IsControlKeyDown`, `StaticPopup1*`, `ITEM_QUALITY_COLORS`,
+`IsMouseButtonDown`, `tinsert`); forward-declared locals (`DB`,
+`ADB`) treated as writable globals; `StaticPopupDialogs` moved to
+the writable-globals block so per-dialog field assignments stop
+tripping the read-only-field check.
+
+Surfaced and removed real dead code:
+- Unused cached API upvalues `GetMerchantNumItems`,
+  `GetMerchantItemInfo`, `GetMerchantItemLink`.
+- Unused constant `PET_CHAT_PREFIX`.
+- Unused helpers `SummonGoblinMerchant`, `DismissGoblinMerchant`
+  (their job is now done by `EC_TickGoblinSummon` and friends).
+- Unused `EC_PANEL_HEIGHT` global + the GetHeight branch in
+  `EC_UpdatePanelWidth` (was scaffolding for a future feature that
+  never landed).
+
+Other fixes:
+- `msg`/`self` shadowing on a few sites (slash-command handler,
+  Profiles panel `RefreshProfileList` method definition).
+- Unused arguments / varargs on chat filter handlers and
+  destructured returns underscore-prefixed.
+
+Net file delta: -27 LOC. CLAUDE.md now states "0 warnings; keep at
+zero" instead of the old 93-warning baseline.
 
 ### `local EC = {}` namespace - DECIDED (post-v2.6.0): stay single-file, threshold raised
 

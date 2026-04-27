@@ -42,6 +42,17 @@ globals = {
     -- Blizzard pattern for SecureActionButton-based keybinds, see
     -- EbonClearanceTargetMerchantButton wiring).
     "_G",
+    -- DB and ADB are forward-declared locals at the file scope. Luacheck's
+    -- static analysis can't follow forward declarations across the file, so
+    -- treat them as writable globals here. They remain `local` in the actual
+    -- source.
+    "DB",
+    "ADB",
+    -- StaticPopupDialogs is read-only by Blizzard's API but we register
+    -- our own dialog templates onto it (StaticPopupDialogs.EC_CONFIRM_*).
+    -- Treating it as writable silences the "setting read-only field" noise
+    -- on every dialog registration.
+    "StaticPopupDialogs",
 }
 
 -- WoW 3.3.5a API surface this addon touches. Grouped loosely by subsystem.
@@ -49,12 +60,16 @@ globals = {
 -- the whole check.
 read_globals = {
     -- Frame/UI
-    "CreateFrame", "UIParent", "GameTooltip", "ItemRefTooltip", "Minimap",
-    "MerchantFrame", "OpenAllBags", "ContainerFrame1",
+    "CreateFrame", "UIParent", "WorldFrame", "GameTooltip", "ItemRefTooltip", "Minimap",
+    "MerchantFrame", "OpenAllBags", "OpenBackpack", "OpenBag", "ContainerFrame1",
     "InterfaceOptionsFramePanelContainer",
     "InterfaceOptions_AddCategory", "InterfaceOptionsFrame_OpenToCategory",
     "InterfaceOptionsFrame",
-    "PlaySound", "StaticPopup_Show", "StaticPopupDialogs",
+    "PlaySound", "StaticPopup_Show",
+    -- StaticPopup1 named globals are auto-created by Blizzard when a
+    -- StaticPopup_Show fires; we read them to drive a few input-popup edge
+    -- cases (Enter-to-confirm wiring, focus, etc).
+    "StaticPopup1", "StaticPopup1EditBox", "StaticPopup1Button1",
 
     -- Error handler
     "geterrorhandler",
@@ -82,14 +97,15 @@ read_globals = {
     -- Unit / player
     "UnitName", "UnitExists", "UnitAura", "UnitClass",
     "IsMounted", "Dismount",
-    "IsAltKeyDown", "InCombatLockdown",
+    "IsAltKeyDown", "IsShiftKeyDown", "IsControlKeyDown", "InCombatLockdown",
+    "IsMouseButtonDown", "GetUnitSpeed",
 
     -- Blizzard constants / static popup buttons
     "YES", "NO",
     -- Locale strings used by the auto-open container tooltip scan
     "ITEM_OPENABLE", "LOCKED",
     -- Cursor positioning for the bag right-click popup
-    "GetCursorPosition",
+    "GetCursorPosition", "GetCursorInfo",
     -- Escape-key auto-hide for the bag right-click popup
     "UISpecialFrames",
     -- Dropdown menu API (used by Merchant settings dropdowns)
@@ -109,8 +125,8 @@ read_globals = {
     "GetAddOnInfo", "GetAddOnMetadata", "IsAddOnLoaded",
 
     -- Misc utilities
-    "hooksecurefunc", "wipe", "select",
-    "NORMAL_FONT_COLOR", "HIGHLIGHT_FONT_COLOR",
+    "hooksecurefunc", "wipe", "select", "tinsert",
+    "NORMAL_FONT_COLOR", "HIGHLIGHT_FONT_COLOR", "ITEM_QUALITY_COLORS",
     "GetTime", "date", "time",
     "GetRealmName", "GetCurrentRegion",
     -- _G moved to the writable globals block above; we write to _G[...]

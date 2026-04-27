@@ -83,9 +83,9 @@ local GetContainerNumSlots = GetContainerNumSlots
 local UseContainerItem = UseContainerItem
 local PickupContainerItem = PickupContainerItem
 local DeleteCursorItem = DeleteCursorItem
-local GetMerchantNumItems = GetMerchantNumItems
-local GetMerchantItemInfo = GetMerchantItemInfo
-local GetMerchantItemLink = GetMerchantItemLink
+-- Merchant API (GetMerchantNumItems / GetMerchantItemInfo / GetMerchantItemLink)
+-- removed from the cached-upvalue block: not currently called on any hot path.
+-- Re-add here if a future feature needs them.
 local GetNumCompanions = GetNumCompanions
 local GetCompanionInfo = GetCompanionInfo
 local CallCompanion = CallCompanion
@@ -159,7 +159,7 @@ local function EC_TrackGreedySpeech(msg)
     EC_greedyMessages[msg] = true
 end
 
-local function EC_GreedyEventFilter(self, event, msg, author, ...)
+local function EC_GreedyEventFilter(self, _event, msg, author)
     local hideChat = true
     local hideBubbles = true
     if DB then
@@ -297,8 +297,6 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
-local PET_CHAT_PREFIX = PET_NAME .. " says:"
-
 local CHAT_FILTER_EVENTS = {
     "CHAT_MSG_SAY",
     "CHAT_MSG_YELL",
@@ -306,7 +304,7 @@ local CHAT_FILTER_EVENTS = {
     "CHAT_MSG_TEXT_EMOTE",
 }
 
-local function GreedyScavengerChatFilter(self, event, msg, author, ...)
+local function GreedyScavengerChatFilter(self, _event, _msg, author)
     if EC_IsGreedyAuthor(author) then
         return true
     end
@@ -809,10 +807,9 @@ local function EC_CalcInventoryWorthCopper()
         for slot = 1, slots do
             local itemID = GetContainerItemID(bag, slot)
             if itemID then
-                local texture, itemCount, locked = GetContainerItemInfo(bag, slot)
+                local _, itemCount = GetContainerItemInfo(bag, slot)
                 if itemCount and itemCount > 0 then
-                    local name, link, quality, level, minLevel, itemType, subType, stackCount, equipLoc, icon, sellPrice =
-                        GetItemInfo(itemID)
+                    local sellPrice = select(11, GetItemInfo(itemID))
                     if sellPrice and sellPrice > 0 then
                         total = total + (sellPrice * itemCount)
                     end
@@ -870,7 +867,7 @@ local function SummonGreedyScavenger()
     end
 
     for i = 1, num do
-        local creatureID, creatureName, spellID, icon, isSummoned = GetCompanionInfo("CRITTER", i)
+        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
         if creatureName == PET_NAME then
             if not isSummoned then
                 -- Dismiss any active critter first, then summon Scavenger
@@ -959,28 +956,9 @@ local function EC_FindGreedyScavenger()
     return nil, false
 end
 
-local function SummonGoblinMerchant()
-    local idx = FindGoblinMerchantIndex()
-    if not idx then
-        return
-    end
-    -- Dismiss any active critter first
-    if DismissCompanion then
-        DismissCompanion("CRITTER")
-    end
-    CallCompanion("CRITTER", idx)
-end
-
-local function DismissGoblinMerchant()
-    local idx, isSummoned = FindGoblinMerchantIndex()
-    if idx and isSummoned then
-        if DismissCompanion then
-            DismissCompanion("CRITTER")
-        else
-            CallCompanion("CRITTER", idx)
-        end
-    end
-end
+-- SummonGoblinMerchant / DismissGoblinMerchant helpers were removed: the
+-- auto-loot-cycle pet management now drives the merchant companion via
+-- EC_TickGoblinSummon and friends; nothing else called these wrappers.
 
 -- Returns a coloured string describing the user's current binding for the
 -- "Target Goblin Merchant" action, or a prompt if none is bound. Used in
@@ -1985,7 +1963,7 @@ local function DoNextAction()
     elseif action.type == "delete" then
         ClearCursor()
         PickupContainerItem(action.bag, action.slot)
-        local cursorType, cursorID = GetCursorInfo()
+        local cursorType = GetCursorInfo()
 
         if cursorType == "item" then
             pendingDelete = { bag = action.bag, slot = action.slot, itemID = action.itemID }
@@ -2238,12 +2216,6 @@ local function MakeHeader(parent, text, y)
 end
 
 local EC_PANEL_WIDTH = 440 -- default fallback; updated dynamically in OnShow
--- Safe content height inside the InterfaceOptions sub-panel (container height
--- minus a reserve for the OK/Cancel button strip). Currently informational --
--- existing layouts use cascade anchoring rather than a hard cap -- but this
--- value is in scope so future "if narrow, use compact form" branches can read
--- it without re-querying the container.
-local EC_PANEL_HEIGHT = 480
 
 local function EC_UpdatePanelWidth()
     local container = InterfaceOptionsFramePanelContainer
@@ -2251,12 +2223,6 @@ local function EC_UpdatePanelWidth()
         local w = container:GetWidth()
         if w and w > 100 then
             EC_PANEL_WIDTH = w - 40
-        end
-        if container.GetHeight then
-            local h = container:GetHeight()
-            if h and h > 100 then
-                EC_PANEL_HEIGHT = h - 30
-            end
         end
     end
 end
@@ -3518,7 +3484,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         return EC_MERCHANT_MODES[1].text
     end
 
-    local function MerchantModeInit(frame, level)
+    local function MerchantModeInit(_frame, level)
         for _, entry in ipairs(EC_MERCHANT_MODES) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = entry.text
@@ -3973,7 +3939,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
     renameBtn:SetPoint("LEFT", renameInput, "RIGHT", 8, 0)
     renameBtn:SetText("Rename")
 
-    function self:RefreshProfileList()
+    -- Use field-assignment form rather than colon-method definition so the
+    -- function closes over the outer `self` (the panel) rather than receiving
+    -- a fresh `self` parameter that would shadow it. Body still references
+    -- self.activeLabel etc via that captured upvalue.
+    self.RefreshProfileList = function()
         HideAllRows()
 
         -- Update active indicator
@@ -5275,16 +5245,19 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
 
         if sub == "save" and arg ~= "" then
             EnsureDB()
-            local ok, msg = EC_SaveProfile(arg)
-            PrintNice(msg)
+            -- Discard the boolean ok flag; PrintNice surfaces the failure
+            -- message itself for the user. Renamed local from `msg` to
+            -- `result` to avoid shadowing the outer slash-input `msg`.
+            local _, result = EC_SaveProfile(arg)
+            PrintNice(result)
         elseif sub == "load" and arg ~= "" then
             EnsureDB()
-            local ok, msg = EC_LoadProfile(arg)
-            PrintNice(msg)
+            local _, result = EC_LoadProfile(arg)
+            PrintNice(result)
         elseif sub == "delete" and arg ~= "" then
             EnsureDB()
-            local ok, msg = EC_DeleteProfile(arg)
-            PrintNice(msg)
+            local _, result = EC_DeleteProfile(arg)
+            PrintNice(result)
         elseif sub == "list" or sub == "" then
             EnsureDB()
             PrintNice("Whitelist Profiles:")

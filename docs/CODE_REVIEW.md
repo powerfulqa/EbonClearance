@@ -12,6 +12,11 @@ scoped to be a single-session change unless flagged otherwise.
 
 ## Active backlog
 
+> Items 6 and 7 below were added in a qlty.sh-aligned re-review of the
+> codebase (post-v2.6.0). They surfaced from running the eight default
+> qlty code-smell checks plus a Lua best-practice sweep against the
+> file as it stands today.
+
 ### 1. Consolidate the two chat-filter systems - medium impact, medium risk
 
 Two independent filter installations coexist:
@@ -132,6 +137,82 @@ next pass):
 
 Do not add blanket `-- luacheck: ignore` comments. Each remaining
 warning, if any, should have a per-line explanation.
+
+---
+
+### 6. Extract panel OnShow boilerplate - medium impact, low risk
+
+Verified across the file: 10 Interface Options panels each start
+with the same five-line preamble:
+
+```lua
+SomePanel:SetScript("OnShow", function(self)
+    EnsureDB()
+    EC_UpdatePanelWidth()
+    if self.inited then
+        -- panel-specific refresh of dynamic widgets
+        return
+    end
+    self.inited = true
+    -- panel-specific static widget build
+end)
+```
+
+qlty's "similar code" smell catches exactly this. Real fix: a single
+`EC_InitPanel(self, refresh, build)` helper that takes a refresh
+callback (called every OnShow) and a build callback (called once
+under the `inited` guard). Each panel's OnShow then becomes:
+
+```lua
+SomePanel:SetScript("OnShow", function(self)
+    EC_InitPanel(self, function() --[[ refresh ]] end,
+                       function() --[[ build ]] end)
+end)
+```
+
+Adding a new panel goes from ~30 lines of preamble + body to ~5
+lines plus the panel-specific bodies. Any future preamble change
+(for example a width-recompute on `UI_SCALE_CHANGED`) then lands in
+one helper instead of ten copy/paste sites.
+
+The pattern is mechanically identical across all ten panels, so the
+extraction is a paste-into-helper exercise rather than a logic
+rewrite.
+
+---
+
+### 7. Named tuning constants (`TUNING` table) - low impact, very low risk
+
+Coverage is currently partial. The codebase already has named
+constants for some tuning values - `EC_STUCK_MOVEMENT_THRESHOLD`,
+`EC_PET_CHECK_INTERVAL`, `EC_PANEL_HEIGHT` - but many others are
+still inline literals scattered across the file:
+
+- `0.05` - vendor interval floor (anti-disconnect)
+- `80` - sell cap per merchant visit
+- `30` - panel OK/Cancel button-strip clearance
+- `26` - scrollbar gutter width
+- `22` - list row height
+- `1.6` - summon delay default
+- and a handful of similar numerics
+
+qlty doesn't ship a default check for "name your magic numbers", but
+it's straightforward to add as a custom ripgrep or ast-grep rule via
+`qlty.toml`. The practical maintainability win is concrete: a
+contributor wanting to tune the vendor cap can grep for one named
+constant instead of finding the literal `80` in three or four
+unrelated places.
+
+Suggested shape: a `local TUNING = { ... }` block near the file top,
+co-located with the existing named constants
+(`EC_PANEL_HEIGHT` etc). Migration is incremental - wrap new code
+in `TUNING.VENDOR_CAP` etc first, sweep the existing literals later
+(or never; the goal is consistency for new code, not retrofitting
+the entire file in one go).
+
+This is the smallest qlty-flagged item on the backlog and the
+lowest priority. Action only when already touching tuning-related
+code.
 
 ---
 

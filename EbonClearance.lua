@@ -1454,12 +1454,7 @@ local function EC_InstallBagContextHookOnce()
     EC_bagContextHookInstalled = true
     local orig = ContainerFrameItemButton_OnModifiedClick
     ContainerFrameItemButton_OnModifiedClick = function(self, button)
-        if
-            button == "RightButton"
-            and IsAltKeyDown()
-            and not IsShiftKeyDown()
-            and not IsControlKeyDown()
-        then
+        if button == "RightButton" and IsAltKeyDown() and not IsShiftKeyDown() and not IsControlKeyDown() then
             EC_ShowItemContextMenu(self)
             return
         end
@@ -1612,7 +1607,7 @@ end
 local function EC_ClassifyScavengerTransition(scavengerOut)
     if not EC_lastScavengerOut and scavengerOut then
         EC_userDismissed = false
-        EC_scavMovementAccum = 0  -- fresh count from this summon
+        EC_scavMovementAccum = 0 -- fresh count from this summon
     end
     if EC_lastScavengerOut and not scavengerOut and not EC_addonDismissed then
         local speed = GetUnitSpeed and GetUnitSpeed("player") or 0
@@ -1621,7 +1616,7 @@ local function EC_ClassifyScavengerTransition(scavengerOut)
         else
             EC_userDismissed = true
         end
-        EC_scavMovementAccum = 0  -- transitioning out, reset
+        EC_scavMovementAccum = 0 -- transitioning out, reset
     end
     EC_lastScavengerOut = scavengerOut
 end
@@ -2135,16 +2130,11 @@ local function EC_AnnotateTooltip(tooltip)
             local rule = DB.qualityRules[quality]
             if rule and rule.enabled then
                 local cap = rule.maxILvl or 0
-                local rarityName = (quality == 1) and "White"
-                    or (quality == 2) and "Green"
-                    or "Blue"
+                local rarityName = (quality == 1) and "White" or (quality == 2) and "Green" or "Blue"
                 local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
                 if cap == 0 then
                     -- No cap on this rarity. All items of this rarity sell.
-                    statusLine = string.format(
-                        "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - %s (no iLvl cap)|r",
-                        rarityName
-                    )
+                    statusLine = string.format("|cff4db8ff[EC]|r |cffb6ffb6Will Sell - %s (no iLvl cap)|r", rarityName)
                 elseif hasVisibleILvl and ilvl <= cap then
                     -- Cap set; equippable item iLvl in range -> sells.
                     statusLine = string.format(
@@ -2216,6 +2206,12 @@ local function MakeHeader(parent, text, y)
 end
 
 local EC_PANEL_WIDTH = 440 -- default fallback; updated dynamically in OnShow
+-- Safe content height inside the InterfaceOptions sub-panel (container height
+-- minus a reserve for the OK/Cancel button strip). Currently informational --
+-- existing layouts use cascade anchoring rather than a hard cap -- but this
+-- value is in scope so future "if narrow, use compact form" branches can read
+-- it without re-querying the container.
+local EC_PANEL_HEIGHT = 480
 
 local function EC_UpdatePanelWidth()
     local container = InterfaceOptionsFramePanelContainer
@@ -2224,7 +2220,107 @@ local function EC_UpdatePanelWidth()
         if w and w > 100 then
             EC_PANEL_WIDTH = w - 40
         end
+        if container.GetHeight then
+            local h = container:GetHeight()
+            if h and h > 100 then
+                EC_PANEL_HEIGHT = h - 30
+            end
+        end
     end
+end
+
+-- Auto-hide a UIPanelScrollFrameTemplate's scroll bar (up arrow, thumb,
+-- down arrow) when content fits the visible area. Avoids the "orphan icons
+-- floating at the right edge" look that lists with few items show.
+--
+-- Implementation note: a manual GetHeight comparison inside Refresh runs
+-- before WoW has laid out the scroll frame on the very first OnShow, so the
+-- initial visibility was always wrong. OnScrollRangeChanged is fired by WoW
+-- whenever it (re)computes the scroll range, which is exactly the moment the
+-- visibility decision is meaningful. The deferred initial update handles the
+-- corner case where the script handler is wired after the first range change.
+local function EC_HookScrollbarAutoHide(scrollFrame)
+    if not scrollFrame or not scrollFrame.GetName then
+        return
+    end
+    local scrollName = scrollFrame:GetName()
+    if not scrollName then
+        return
+    end
+    local sb = _G[scrollName .. "ScrollBar"]
+    if not sb then
+        return
+    end
+    local function update()
+        local yRange = 0
+        if scrollFrame.GetVerticalScrollRange then
+            yRange = scrollFrame:GetVerticalScrollRange() or 0
+        end
+        if yRange <= 0 then
+            sb:Hide()
+        else
+            sb:Show()
+        end
+    end
+    scrollFrame:HookScript("OnScrollRangeChanged", update)
+    -- Initial check: defer one short tick so layout dimensions are stable.
+    EC_Delay(0.1, update)
+end
+
+-- Wrap a settings panel's body in a vertical scroll frame and return a
+-- "content" Frame to use as the widget parent inside that panel's OnShow.
+-- Used for panels whose content overflows the Interface Options sub-panel
+-- safe area at narrow container widths (Scavenger, Merchant). Width is the
+-- panel width minus a 26px scrollbar gutter; the gutter is filled by the
+-- scroll bar itself (or empty when EC_HookScrollbarAutoHide hides it).
+--
+-- After all widgets are placed, the caller should call EC_FitScrollContent
+-- to size the content frame to the actual widget extent.
+local function EC_WrapPanelInScrollFrame(panel)
+    local scrollName = (panel:GetName() or "EbonClearancePanel") .. "Scroll"
+    local scroll = CreateFrame("ScrollFrame", scrollName, panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 0, 0)
+    -- Reserve 30 px at the bottom for the Interface Options OK/Cancel button
+    -- strip. Without this, the scroll frame extends all the way down and
+    -- those buttons render on top of the last scrolled widget (the Tip line
+    -- on Scavenger gets clipped).
+    scroll:SetPoint("BOTTOMRIGHT", -26, 30)
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetWidth(math.max(EC_PANEL_WIDTH - 26, 100))
+    content:SetHeight(1) -- expanded by EC_FitScrollContent once widgets are laid out
+    scroll:SetScrollChild(content)
+
+    EC_HookScrollbarAutoHide(scroll)
+    return content
+end
+
+-- Resize a scroll-wrapped content frame to fit the actual extent of its
+-- widgets. Pass the bottom-most widget added during OnShow.
+--
+-- Two passes: the first at 0.1 s catches the common case quickly; the second
+-- at 0.5 s covers FontStrings whose wrapped height isn't fully settled at
+-- the first tick (multi-line tips were getting clipped on the Scavenger
+-- panel because their wrapped GetBottom hadn't been computed yet).
+-- Padding defaults to 24 px so the bottom-most widget always has visible
+-- breathing room above the scroll frame's edge.
+local function EC_FitScrollContent(content, lastWidget, padding)
+    if not content or not lastWidget then
+        return
+    end
+    local pad = padding or 24
+    local function compute()
+        if not lastWidget.GetBottom or not content.GetTop then
+            return
+        end
+        local top = content:GetTop()
+        local bottom = lastWidget:GetBottom()
+        if top and bottom and top > bottom then
+            content:SetHeight(top - bottom + pad)
+        end
+    end
+    EC_Delay(0.1, compute)
+    EC_Delay(0.5, compute)
 end
 
 local function MakeLabel(parent, text, x, y)
@@ -2371,8 +2467,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     matchBtn:SetPoint("TOPRIGHT", box, "TOPRIGHT", 0, -76)
     matchBtn:SetText("Add Match")
 
-    local matchInput =
-        CreateFrame("EditBox", "EbonClearanceMatchInput_" .. setTableName, box, "InputBoxTemplate")
+    local matchInput = CreateFrame("EditBox", "EbonClearanceMatchInput_" .. setTableName, box, "InputBoxTemplate")
     matchInput:SetAutoFocus(false)
     matchInput:SetHeight(20)
     matchInput:SetPoint("LEFT", matchLabel, "RIGHT", 8, 0)
@@ -2389,6 +2484,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(w - 26, 1)
     scroll:SetScrollChild(content)
+    -- Auto-hide the scroll bar (arrows + thumb) when content fits the visible
+    -- area. Wired once here; OnScrollRangeChanged fires on every Refresh that
+    -- changes content height, so visibility tracks the list automatically.
+    EC_HookScrollbarAutoHide(scroll)
 
     local rowPool = {}
     local activeRows = 0
@@ -2524,6 +2623,9 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
 
         activeRows = shown
         content:SetHeight(math.max(1, (shown * 22) + 8))
+        -- Scroll-bar visibility auto-updates via the OnScrollRangeChanged hook
+        -- wired in EC_HookScrollbarAutoHide(scroll) below; SetHeight here
+        -- triggers that hook, no manual call needed.
 
         -- If any items were uncached, retry after a delay to pick up server responses
         if hasUncached and not pendingRetry then
@@ -2606,11 +2708,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             return
         end
         local added = AddMatchingFromBags(txt)
-        PrintNicef(
-            "Scanned bags: added |cffffff00%d|r matching item(s) (substring: |cffffff00%s|r).",
-            added,
-            txt
-        )
+        PrintNicef("Scanned bags: added |cffffff00%d|r matching item(s) (substring: |cffffff00%s|r).", added, txt)
         matchInput:SetText("")
         Refresh()
         PlaySound("igMainMenuOptionCheckBoxOn")
@@ -3186,8 +3284,7 @@ local function BuildMainPanel(panel, refreshStats)
 
     -- Session delta is inlined into each lifetime stat line by RefreshStats (EC_session).
     -- The Reset Session button sits side-by-side with Reset Lifetime to avoid adding vertical space.
-    local resetSessionBtn =
-        CreateFrame("Button", "EbonClearanceResetSessionBtn", panel, "UIPanelButtonTemplate")
+    local resetSessionBtn = CreateFrame("Button", "EbonClearanceResetSessionBtn", panel, "UIPanelButtonTemplate")
     resetSessionBtn:SetSize(170, 22)
     resetSessionBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
     resetSessionBtn:SetText("Reset Session Stats")
@@ -3214,16 +3311,14 @@ local function BuildMainPanel(panel, refreshStats)
     if cmdText.SetWordWrap then
         cmdText:SetWordWrap(true)
     end
+    -- Compact summary; full reference is printed by /ec help. Keeping this
+    -- block short means the Main panel fits inside the default Interface
+    -- Options sub-panel height without overlapping the OK/Cancel button strip.
     cmdText:SetText(
         "|cffffff00/ec|r  Open settings\n"
-            .. "|cffffff00/ec profile list|r  Show all saved profiles\n"
-            .. "|cffffff00/ec profile save <name>|r  Save current whitelist as a profile\n"
-            .. "|cffffff00/ec profile load <name>|r  Load a saved profile\n"
-            .. "|cffffff00/ec profile delete <name>|r  Delete a profile\n"
-            .. "|cffffff00/ec clean|r  Report items present in more than one list\n"
-            .. "|cffffff00/ec clean apply|r  Auto-resolve conflicts (blacklist > deleteList > whitelist)\n"
-            .. "|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports\n"
-            .. "|cffffff00/ecdebug|r  Show debug info and bag scan"
+            .. "|cffffff00/ec profile [list|save|load|delete <name>]|r  Manage saved profiles\n"
+            .. "|cffffff00/ec clean [apply]|r  Find and resolve list conflicts\n"
+            .. "Type |cffffff00/ec help|r in chat for the full reference."
     )
 end
 
@@ -3268,7 +3363,9 @@ MainOptions:SetScript("OnShow", function(self)
         self.statsMoney:SetText(
             "Total Money Made: " .. CopperToColoredText(DB.totalCopper or 0) .. sessionMoneySuffix(EC_session.copper)
         )
-        self.statsSold:SetText("Total Items Sold: " .. tostring(DB.totalItemsSold or 0) .. sessionSuffix(EC_session.sold))
+        self.statsSold:SetText(
+            "Total Items Sold: " .. tostring(DB.totalItemsSold or 0) .. sessionSuffix(EC_session.sold)
+        )
         self.statsDeleted:SetText(
             "Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0) .. sessionSuffix(EC_session.deleted)
         )
@@ -3296,7 +3393,6 @@ MainOptions:SetScript("OnShow", function(self)
         else
             self.statsMostSold:SetText("Most Sold Item: None")
         end
-
     end
 
     if self.inited then
@@ -3362,16 +3458,23 @@ MerchantPanel:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    MakeHeader(self, "Merchant Settings", -16)
-    MakeLabel(self, "These settings control automatic vendoring behaviour.", 16, -44)
-    MakeLabel(self, "Grey items are always sold as junk at any merchant.", 16, -60)
+    -- Scroll-wrap the panel: at narrow Interface Options widths the Blue
+    -- (Rare) quality row overflows the safe area and is overlapped by the
+    -- OK/Cancel button strip. Wrapping in a scroll frame keeps every widget
+    -- reachable; the scrollbar auto-hides on wider containers where it fits.
+    local content = EC_WrapPanelInScrollFrame(self)
+
+    MakeHeader(content, "Merchant Settings", -16)
+    -- Panel-specific intro only. Generic "grey junk auto-sells" cross-cut
+    -- removed; it's covered on the Main panel.
+    MakeLabel(content, "These settings control automatic vendoring behaviour.", 16, -44)
 
     -- Merchant mode dropdown
-    local modeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    modeLabel:SetPoint("TOPLEFT", 16, -90)
+    local modeLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    modeLabel:SetPoint("TOPLEFT", 16, -76)
     modeLabel:SetText("Sell at:")
 
-    local modeDD = CreateFrame("Frame", "EbonClearanceMerchantModeDD", self, "UIDropDownMenuTemplate")
+    local modeDD = CreateFrame("Frame", "EbonClearanceMerchantModeDD", content, "UIDropDownMenuTemplate")
     modeDD:SetPoint("LEFT", modeLabel, "RIGHT", -8, -2)
 
     local function GetModeText(mode)
@@ -3407,8 +3510,11 @@ MerchantPanel:SetScript("OnShow", function(self)
     end
 
     local repairCB =
-        CreateFrame("CheckButton", "EbonClearanceRepairGearCB", self, "InterfaceOptionsCheckButtonTemplate")
-    repairCB:SetPoint("TOPLEFT", 16, -110)
+        CreateFrame("CheckButton", "EbonClearanceRepairGearCB", content, "InterfaceOptionsCheckButtonTemplate")
+    -- Shifted up 14 px (was -110) to follow the removed grey-junk line above
+    -- the dropdown; preserves the original visual gap between dropdown and
+    -- this checkbox.
+    repairCB:SetPoint("TOPLEFT", 16, -96)
     repairCB:SetChecked(DB.repairGear)
     local rt = _G[repairCB:GetName() .. "Text"]
     if rt then
@@ -3423,7 +3529,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     self.repairCB = repairCB
 
     local keepBagsCB =
-        CreateFrame("CheckButton", "EbonClearanceKeepBagsOpenCB", self, "InterfaceOptionsCheckButtonTemplate")
+        CreateFrame("CheckButton", "EbonClearanceKeepBagsOpenCB", content, "InterfaceOptionsCheckButtonTemplate")
     keepBagsCB:SetPoint("TOPLEFT", repairCB, "BOTTOMLEFT", 0, -6)
     keepBagsCB:SetChecked(DB.keepBagsOpen)
     local kbt = _G[keepBagsCB:GetName() .. "Text"]
@@ -3439,7 +3545,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     self.keepBagsCB = keepBagsCB
 
     local speedSlider = AddSlider(
-        self,
+        content,
         "EbonClearanceVendoringSpeedSlider",
         keepBagsCB,
         "Vendoring Speed",
@@ -3458,7 +3564,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     speedSlider:SetWidth(200)
 
     local fastModeCB = AddCheckbox(
-        self,
+        content,
         "EbonClearanceFastModeCB",
         speedSlider,
         "Fast Mode (0.05 s interval, 160-item cap)",
@@ -3472,7 +3578,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     )
     self.fastModeCB = fastModeCB
 
-    local fastModeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local fastModeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     fastModeNote:SetPoint("TOPLEFT", fastModeCB, "BOTTOMLEFT", 26, -2)
     fastModeNote:SetWidth(EC_PANEL_WIDTH - 60)
     fastModeNote:SetJustifyH("LEFT")
@@ -3486,11 +3592,11 @@ MerchantPanel:SetScript("OnShow", function(self)
     -- Quality threshold (v2.4.0+): three per-rarity rows, each independently
     -- togglable with its own optional max iLvl. Replaces the old single-dropdown
     -- "sell up to quality X" model. Default all off; opt-in per rarity.
-    local thresholdHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local thresholdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     thresholdHeader:SetPoint("TOPLEFT", fastModeNote, "BOTTOMLEFT", -26, -24)
     thresholdHeader:SetText("Quality Threshold")
 
-    local thresholdDesc = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    local thresholdDesc = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     thresholdDesc:SetPoint("TOPLEFT", thresholdHeader, "BOTTOMLEFT", 0, -4)
     thresholdDesc:SetWidth(EC_PANEL_WIDTH - 16)
     thresholdDesc:SetJustifyH("LEFT")
@@ -3498,35 +3604,26 @@ MerchantPanel:SetScript("OnShow", function(self)
         thresholdDesc:SetWordWrap(true)
     end
     thresholdDesc:SetText(
-        "Tick a rarity to auto-sell items of that rarity. Set max iLvl to 0 to sell every item of that rarity (cloth, trade goods, gear). Set it above 0 to sell only equippable items at or below that iLvl - trade goods, reagents and other items without 'Item Level' on their tooltip are skipped. Whitelisted items always sell; blacklisted items are always protected."
+        "Tick a rarity to auto-sell that rarity. |cffffff00max iLvl 0|r = sell every item of that rarity. Above 0 = sell only equippable gear at or below that iLvl (trade goods/reagents skipped). Whitelist always sells; blacklist always protects."
     )
 
     -- Build a row per rarity. Each row: checkbox on the left, "max iLvl:"
     -- label, numeric input on the right (0-300). Returns the checkbox so the
     -- next row can anchor below it.
     local function MakeQualityRow(anchor, qualityIdx, labelText, yOff)
-        local cb = AddCheckbox(
-            self,
-            "EbonClearanceQualityRow" .. qualityIdx .. "CB",
-            anchor,
-            labelText,
-            function()
-                return DB.qualityRules[qualityIdx].enabled
-            end,
-            function(v)
-                DB.qualityRules[qualityIdx].enabled = v
-            end,
-            yOff
-        )
+        local cb = AddCheckbox(content, "EbonClearanceQualityRow" .. qualityIdx .. "CB", anchor, labelText, function()
+            return DB.qualityRules[qualityIdx].enabled
+        end, function(v)
+            DB.qualityRules[qualityIdx].enabled = v
+        end, yOff)
 
-        local input = CreateFrame(
-            "EditBox",
-            "EbonClearanceQualityRow" .. qualityIdx .. "Input",
-            self,
-            "InputBoxTemplate"
-        )
+        local input =
+            CreateFrame("EditBox", "EbonClearanceQualityRow" .. qualityIdx .. "Input", content, "InputBoxTemplate")
         input:SetSize(50, 20)
-        input:SetPoint("RIGHT", self, "RIGHT", -32, 0)
+        -- Anchored to content's right edge with a small margin. Content's
+        -- right edge already sits 26 px inside the panel (scrollbar gutter),
+        -- so -6 here matches the original panel-anchored -32 offset visually.
+        input:SetPoint("RIGHT", content, "RIGHT", -6, 0)
         input:SetPoint("TOP", cb, "TOP", 0, -2)
         input:SetAutoFocus(false)
         input:SetNumeric(true)
@@ -3534,7 +3631,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         input:SetText(tostring(DB.qualityRules[qualityIdx].maxILvl or 0))
         StyleInputBox(input)
 
-        local lbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        local lbl = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         lbl:SetPoint("RIGHT", input, "LEFT", -6, 0)
         lbl:SetText("max iLvl:")
 
@@ -3568,12 +3665,22 @@ MerchantPanel:SetScript("OnShow", function(self)
     self.qualityRow1CB, self.qualityRow1Input = row1CB, row1Input
     self.qualityRow2CB, self.qualityRow2Input = row2CB, row2Input
     self.qualityRow3CB, self.qualityRow3Input = row3CB, row3Input
+
+    -- Size the scroll content to fit the bottom-most widget so the scrollbar
+    -- range matches actual content. Blue Rare's row is the lowest.
+    EC_FitScrollContent(content, row3CB)
 end)
 
 -- Shared "Add from bags" scan row used by both whitelist panels.
 -- setTableName resolves to the underlying list via EC_GetListTable, so the same
 -- helper drives the per-character whitelist and the account whitelist.
-local function EC_AddScanByQualityRow(parent, setTableName, listLabel, refreshFn, x, y)
+-- Build the "Add from bags: [White] [Green] [Blue]" scan row. Returns a
+-- container Frame whose BOTTOMLEFT is the natural anchor for the next
+-- downstream widget (typically the list UI). Callers pass an anchorFrame
+-- (usually the panel description) so the row cascades when the description
+-- wraps to more lines on narrow Interface Options containers, instead of
+-- using a brittle hardcoded y-offset.
+local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLabel, refreshFn, xOff, yOff)
     local function ScanBagsForQuality(quality)
         local t = EC_GetListTable(setTableName)
         if not t then
@@ -3596,12 +3703,19 @@ local function EC_AddScanByQualityRow(parent, setTableName, listLabel, refreshFn
         return added
     end
 
-    local scanLabel = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    scanLabel:SetPoint("TOPLEFT", x, y)
+    -- Wrap the row in a container Frame so callers can anchor the next widget
+    -- to rowFrame:BOTTOMLEFT cleanly without having to know about button
+    -- heights vs the (shorter) text label.
+    local rowFrame = CreateFrame("Frame", nil, parent)
+    rowFrame:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", xOff or 0, yOff or -10)
+    rowFrame:SetSize(EC_PANEL_WIDTH, 22)
+
+    local scanLabel = rowFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    scanLabel:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
     scanLabel:SetText("Add from bags:")
 
     local function MakeBtn(prevAnchor, leftPad, label, qualityNum, colorWord)
-        local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        local b = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
         b:SetSize(55, 20)
         b:SetPoint("LEFT", prevAnchor, "RIGHT", leftPad, 0)
         b:SetText(label)
@@ -3619,6 +3733,8 @@ local function EC_AddScanByQualityRow(parent, setTableName, listLabel, refreshFn
     local btnWhite = MakeBtn(scanLabel, 8, "|cffffffffWhite|r", 1, "white")
     local btnGreen = MakeBtn(btnWhite, 4, "|cff1eff00Green|r", 2, "green")
     MakeBtn(btnGreen, 4, "|cff0070ddBlue|r", 3, "blue")
+
+    return rowFrame
 end
 
 local WhitelistPanel = CreateFrame("Frame", "EbonClearanceOptionsWhitelist", InterfaceOptionsFramePanelContainer)
@@ -3638,21 +3754,31 @@ WhitelistPanel:SetScript("OnShow", function(self)
 
     MakeHeader(self, "Whitelist Settings", -16)
 
-    MakeLabel(
+    -- Panel-specific description only. Cross-cutting info (grey junk
+    -- auto-sell, quality threshold) lives on the Main panel to avoid
+    -- repeating the same explanation on every list page.
+    local descLabel = MakeLabel(
         self,
-        "Items below are sold on this character. They're saved and restored by profiles. For items you want sold on every alt, use |cffb6ffb6Whitelist - Account|r instead. Grey junk is always sold automatically; the quality threshold lives on Merchant Settings.",
+        "Items below are sold on this character. They're saved and restored by profiles. For items you want sold on every alt, use |cffb6ffb6Whitelist - Account|r instead.",
         16,
         -44
     )
 
-    EC_AddScanByQualityRow(self, "whitelist", "your character whitelist", function()
+    -- Cascade-anchor the scan row to the description's BOTTOMLEFT so it stays
+    -- below the description regardless of how many lines it wraps to. Then
+    -- the list UI cascades below the scan row and fills the remaining panel
+    -- height via a BOTTOMRIGHT anchor (fixed SetHeight previously caused the
+    -- bottom row to clip past the panel safe area at narrow widths).
+    local scanRow = EC_AddScanByQualityRow(self, descLabel, "whitelist", "your character whitelist", function()
         if self.listUI then
             self.listUI:Refresh()
         end
-    end, 16, -94)
+    end, 0, -10)
 
     self.listUI = CreateListUI(self, "Manual Add (Shift-click item or type ID)", "whitelist", 16, -118)
-    self.listUI:SetHeight(290)
+    self.listUI:ClearAllPoints()
+    self.listUI:SetPoint("TOPLEFT", scanRow, "BOTTOMLEFT", 0, -16)
+    self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
     self.listUI:Refresh()
 end)
 
@@ -3741,6 +3867,10 @@ ProfilesPanel:SetScript("OnShow", function(self)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(EC_PANEL_WIDTH - 42, 1)
     scroll:SetScrollChild(content)
+    -- Auto-hide the scroll bar (arrows + thumb) when content fits the visible
+    -- area. Wired once here; OnScrollRangeChanged fires on every Refresh that
+    -- changes content height, so visibility tracks the list automatically.
+    EC_HookScrollbarAutoHide(scroll)
 
     local rowPool = {}
     local activeRows = 0
@@ -3843,14 +3973,12 @@ ProfilesPanel:SetScript("OnShow", function(self)
             local isActive = (pName == DB.activeProfileName)
             local wlCount = EC_CountItems(DB.whitelistProfiles[pName])
             local blCount = DB.blacklistProfiles[pName] and EC_CountItems(DB.blacklistProfiles[pName]) or 0
+            -- Use compact "wl/bl" labels: row text shares horizontal space
+            -- with up to three buttons (Load/Clear/Delete), so longer phrasing
+            -- gets truncated at narrow Interface Options widths.
             local label = isActive
-                    and string.format(
-                        "|cff00ff00%s|r  |cff888888(%d whitelist, %d blacklist, active)|r",
-                        pName,
-                        wlCount,
-                        blCount
-                    )
-                or string.format("|cffffff00%s|r  |cff888888(%d whitelist, %d blacklist)|r", pName, wlCount, blCount)
+                    and string.format("|cff00ff00%s|r  |cff888888(%d wl, %d bl, active)|r", pName, wlCount, blCount)
+                or string.format("|cffffff00%s|r  |cff888888(%d wl, %d bl)|r", pName, wlCount, blCount)
             row.text:SetText(label)
 
             row.loadBtn:SetScript("OnClick", function()
@@ -3868,9 +3996,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
                 if dialog then
                     dialog.data = function()
                         local ok, msg = EC_DeleteProfile(pName)
-                        statusFS:SetText(
-                            ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r")
-                        )
+                        statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
                         if ok then
                             PrintNice(msg)
                             PlaySound("igMainMenuOptionCheckBoxOn")
@@ -3893,9 +4019,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
                                     wp.listUI:Refresh()
                                 end
                             end
-                            statusFS:SetText(
-                                '|cff00ff00Cleared profile "|cffffff00' .. pName .. '|r|cff00ff00".|r'
-                            )
+                            statusFS:SetText('|cff00ff00Cleared profile "|cffffff00' .. pName .. '|r|cff00ff00".|r')
                             PrintNicef('Cleared profile "|cffffff00%s|r".', pName)
                             PlaySound("igMainMenuOptionCheckBoxOn")
                         end
@@ -3919,6 +4043,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
         activeRows = shown
         content:SetHeight(math.max(1, (shown * 22) + 8))
+        -- Scroll-bar visibility handled by the OnScrollRangeChanged hook.
     end
 
     saveBtn:SetScript("OnClick", function()
@@ -4222,8 +4347,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         if ok then
             PlaySound("igMainMenuOptionCheckBoxOn")
             PrintNice(msg)
-            local panelName = (importScope == "account")
-                and "EbonClearanceOptionsAccountWhitelist"
+            local panelName = (importScope == "account") and "EbonClearanceOptionsAccountWhitelist"
                 or "EbonClearanceOptionsWhitelist"
             local wp = _G[panelName]
             if wp and wp.listUI then
@@ -4340,15 +4464,22 @@ ScavengerPanel:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    MakeHeader(self, "Scavenger Settings", -16)
+    -- Scroll-wrap the panel: at narrow Interface Options widths the bottom
+    -- of this panel (Tip line) overflows the safe area. Wrapping in a scroll
+    -- frame lets all widgets remain reachable; the scrollbar auto-hides on
+    -- wider containers where everything fits.
+    local content = EC_WrapPanelInScrollFrame(self)
+
+    MakeHeader(content, "Scavenger Settings", -16)
     MakeLabel(
-        self,
+        content,
         "Controls summoning and muting of |cffff7f7fGreedy Scavenger|r. The auto-loot cycle will continuously loot and sell while your bags fill up.",
         16,
         -44
     )
 
-    local sumCB = CreateFrame("CheckButton", "EbonClearanceSummonGreedyCB", self, "InterfaceOptionsCheckButtonTemplate")
+    local sumCB =
+        CreateFrame("CheckButton", "EbonClearanceSummonGreedyCB", content, "InterfaceOptionsCheckButtonTemplate")
     sumCB:SetPoint("TOPLEFT", 16, -96)
     sumCB:SetChecked(DB.summonGreedy)
     local st = _G[sumCB:GetName() .. "Text"]
@@ -4370,7 +4501,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     self.sumCB = sumCB
 
     local chatCB = AddCheckbox(
-        self,
+        content,
         "EbonClearanceHideGreedyChatCB",
         sumCB,
         "Hide |cffff7f7fGreedy Scavenger|r's chat messages",
@@ -4386,7 +4517,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     self.chatCB = chatCB
 
     local bubCB = AddCheckbox(
-        self,
+        content,
         "EbonClearanceHideGreedyBubblesCB",
         chatCB,
         "Hide |cffff7f7fGreedy Scavenger|r's chat bubbles",
@@ -4401,7 +4532,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     self.bubCB = bubCB
 
     local delaySlider = AddSlider(
-        self,
+        content,
         "EbonClearanceSummonDelaySlider",
         bubCB,
         "Summon delay",
@@ -4414,13 +4545,14 @@ ScavengerPanel:SetScript("OnShow", function(self)
         function(v)
             DB.summonDelay = v
         end,
-        -16
+        -16,
+        "%.1fs"
     )
     self.delaySlider = delaySlider
     delaySlider:SetWidth(200)
 
     local cycleCB = AddCheckbox(
-        self,
+        content,
         "EbonClearanceAutoLootCycleCB",
         delaySlider,
         "Enable auto-loot cycle (loot, sell, repeat)",
@@ -4440,16 +4572,16 @@ ScavengerPanel:SetScript("OnShow", function(self)
     )
     self.cycleCB = cycleCB
 
-    local cycleNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local cycleNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     cycleNote:SetPoint("TOPLEFT", cycleCB, "BOTTOMLEFT", 26, -2)
     cycleNote:SetWidth(EC_PANEL_WIDTH - 60)
     cycleNote:SetJustifyH("LEFT")
     cycleNote:SetText(
-        "|cff888888When bags hit the threshold, Greedy is dismissed and the Goblin Merchant is summoned for you. Right-click the Goblin Merchant to open the vendor window - selling and re-summoning Greedy happens automatically from there.|r"
+        "|cff888888At threshold: Greedy is dismissed and the Goblin Merchant is summoned. Right-click it to sell; Greedy re-summons automatically.|r"
     )
 
     local threshSlider = AddSlider(
-        self,
+        content,
         "EbonClearanceBagThresholdSlider",
         cycleNote,
         "Bag slots remaining before selling",
@@ -4469,7 +4601,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     threshSlider:SetWidth(200)
 
     local autoOpenCB = AddCheckbox(
-        self,
+        content,
         "EbonClearanceAutoOpenCB",
         threshSlider,
         "Auto-open lootable containers from your bags",
@@ -4483,20 +4615,18 @@ ScavengerPanel:SetScript("OnShow", function(self)
     )
     self.autoOpenCB = autoOpenCB
 
-    local autoOpenNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local autoOpenNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     autoOpenNote:SetPoint("TOPLEFT", autoOpenCB, "BOTTOMLEFT", 26, -2)
     autoOpenNote:SetWidth(EC_PANEL_WIDTH - 60)
     autoOpenNote:SetJustifyH("LEFT")
     if autoOpenNote.SetWordWrap then
         autoOpenNote:SetWordWrap(true)
     end
-    autoOpenNote:SetText(
-        "|cff888888Lockboxes that need a key or lockpick are skipped. Combat-paused.|r"
-    )
+    autoOpenNote:SetText("|cff888888Lockboxes that need a key or lockpick are skipped. Combat-paused.|r")
 
     -- Discoverability hint for the right-click context menu. Lives on this
     -- panel because both v2.3.0 bag-action features cluster here.
-    local rightClickHint = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local rightClickHint = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     rightClickHint:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", 0, -16)
     rightClickHint:SetWidth(EC_PANEL_WIDTH - 60)
     rightClickHint:SetJustifyH("LEFT")
@@ -4506,6 +4636,10 @@ ScavengerPanel:SetScript("OnShow", function(self)
     rightClickHint:SetText(
         "|cffffb84dTip:|r |cff888888Alt+Right-Click any item in your bags for a quick-action menu (whitelist, blacklist, delete, sell now).|r"
     )
+
+    -- Size the scroll content to fit the bottom-most widget so the scrollbar
+    -- range matches actual content (no excess empty space at the bottom).
+    EC_FitScrollContent(content, rightClickHint)
 end)
 
 local CharPanel = CreateFrame("Frame", "EbonClearanceOptionsCharacter", InterfaceOptionsFramePanelContainer)
@@ -4553,6 +4687,10 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(w - 26, 1)
     scroll:SetScrollChild(content)
+    -- Auto-hide the scroll bar (arrows + thumb) when content fits the visible
+    -- area. Wired once here; OnScrollRangeChanged fires on every Refresh that
+    -- changes content height, so visibility tracks the list automatically.
+    EC_HookScrollbarAutoHide(scroll)
 
     local rowPool = {}
     local activeRows = 0
@@ -4632,6 +4770,7 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
 
         activeRows = shown
         content:SetHeight(math.max(1, (shown * 22) + 8))
+        -- Scroll-bar visibility handled by the OnScrollRangeChanged hook.
     end
 
     addBtn:SetScript("OnClick", function()
@@ -4758,21 +4897,28 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
     self.inited = true
 
     MakeHeader(self, "Account Whitelist", -16)
-    MakeLabel(
+    local descLabel = MakeLabel(
         self,
         "Items here are sold on every character on this account, in addition to each character's personal whitelist. Useful for shared trash like reagents or seasonal items. |cffaaaaaaThis list is not part of profiles - it stays the same when you switch profiles.|r",
         16,
         -44
     )
 
-    EC_AddScanByQualityRow(self, "accountWhitelist", "the account whitelist", function()
+    -- Cascade-anchor the scan row to the description's BOTTOMLEFT so it stays
+    -- below the description regardless of how many lines it wraps to. Then the
+    -- list UI cascades below the scan row. Mirrors WhitelistPanel.
+    local scanRow = EC_AddScanByQualityRow(self, descLabel, "accountWhitelist", "the account whitelist", function()
         if self.listUI then
             self.listUI:Refresh()
         end
-    end, 16, -94)
+    end, 0, -10)
 
     self.listUI = CreateListUI(self, "Account-Wide Items", "accountWhitelist", 16, -118)
-    self.listUI:SetHeight(290)
+    self.listUI:ClearAllPoints()
+    self.listUI:SetPoint("TOPLEFT", scanRow, "BOTTOMLEFT", 0, -16)
+    -- Fill remaining vertical space rather than fixed-height; mirrors
+    -- WhitelistPanel and avoids bottom-row clipping at narrow widths.
+    self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
     self.listUI:Refresh()
 end)
 
@@ -5056,10 +5202,7 @@ end
 function EbonClearance_ToggleEnabled()
     EnsureDB()
     DB.enabled = not DB.enabled
-    PrintNicef(
-        "EbonClearance is now %s.",
-        DB.enabled and "|cff00ff00enabled|r" or "|cffff4444disabled|r"
-    )
+    PrintNicef("EbonClearance is now %s.", DB.enabled and "|cff00ff00enabled|r" or "|cffff4444disabled|r")
     PlaySound(DB.enabled and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
 end
 
@@ -5131,6 +5274,23 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         return
     end
 
+    if cmd == "help" or cmd == "?" then
+        -- Full reference; the Main panel only shows a 4-line summary so it
+        -- fits the default Interface Options sub-panel height. Chat has no
+        -- height constraint, so the long list lives here instead.
+        PrintNice("|cffffff00=== EbonClearance Slash Commands ===|r")
+        PrintNice("|cffffff00/ec|r  Open settings")
+        PrintNice("|cffffff00/ec profile list|r  Show all saved profiles")
+        PrintNice("|cffffff00/ec profile save <name>|r  Save current whitelist as a profile")
+        PrintNice("|cffffff00/ec profile load <name>|r  Load a saved profile")
+        PrintNice("|cffffff00/ec profile delete <name>|r  Delete a profile")
+        PrintNice("|cffffff00/ec clean|r  Report items present in more than one list")
+        PrintNice("|cffffff00/ec clean apply|r  Auto-resolve conflicts (blacklist > deleteList > whitelist)")
+        PrintNice("|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports")
+        PrintNice("|cffffff00/ecdebug|r  Show debug info and bag scan")
+        return
+    end
+
     if cmd == "clean" then
         EnsureDB()
         local conflicts = EC_ScanListConflicts()
@@ -5199,7 +5359,14 @@ SlashCmdList["ECDEBUG"] = function()
                     local junk = (quality ~= nil) and (quality == 0) and sellPrice and sellPrice > 0
                     local wp = IsInSet(DB.whitelist, itemID)
                     local qp = false
-                    if quality and quality >= 1 and quality <= 3 and sellPrice and sellPrice > 0 and DB.qualityRules then
+                    if
+                        quality
+                        and quality >= 1
+                        and quality <= 3
+                        and sellPrice
+                        and sellPrice > 0
+                        and DB.qualityRules
+                    then
                         local rule = DB.qualityRules[quality]
                         if rule and rule.enabled then
                             local cap = rule.maxILvl or 0

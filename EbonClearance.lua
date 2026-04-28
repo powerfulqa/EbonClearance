@@ -108,14 +108,11 @@ local STATE = {
 }
 local EC_lootCycleState = STATE.IDLE
 local EC_addonDismissed = false
--- True when the user has manually dismissed the Scavenger (right-click
--- portrait while stationary). Suppresses tick-based re-summon and the mount
--- restore path. Cleared whenever the Scavenger is back out (SummonGreedyScavenger
--- on the addon side, or an out->in transition detected at tick time).
-local EC_userDismissed = false
--- Last-tick value of "is the Scavenger summoned?". Used by EC_PetCheckTick to
--- detect transitions and classify them (leash vs manual dismiss vs explicit
--- summon). Forward-declared here so the closures further down capture it.
+-- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
+-- movement accumulator (only counts while the pet is out) and the
+-- bag-full / mount-cycle paths. Forward-declared here so the closures
+-- further down capture it. v2.6.1 dropped the speed-based transition
+-- classifier that paired with this flag; see docs/ADDON_GUIDE.md.
 local EC_lastScavengerOut = false
 -- Player time-spent-moving (seconds) accumulated while the Scavenger is out.
 -- Drives the stuck-detection heuristic in EC_HandleScavengerOut. Resets on
@@ -877,9 +874,6 @@ local function SummonGreedyScavenger()
                 CallCompanion("CRITTER", i)
             end
             EC_addonDismissed = false
-            -- Scavenger is now out (or already was) -- a manual-dismiss
-            -- preference is moot at this point.
-            EC_userDismissed = false
             -- Sync the stuck-detection gate immediately so the OnUpdate
             -- accumulator starts counting from this summon, not from the
             -- next 5 s tick observation.
@@ -1038,7 +1032,17 @@ end
 -- UnitPosition("pet") doesn't return data for CRITTER-type companions on
 -- 3.3.5a (the unit ID "pet" refers to combat pets only). GetUnitSpeed works
 -- universally and is what we accumulate against in the OnUpdate.
-local EC_STUCK_MOVEMENT_THRESHOLD = 20
+--
+-- v2.6.1 raised this from 20 s to 180 s (in two steps: 20->60 then 60->180
+-- after in-game testing). 20 s of cumulative movement happens inside
+-- ~60-90 s of normal questing, so the original value triggered a dismiss-
+-- and-resummon roughly every minute or two even when the pet wasn't
+-- actually stuck. 60 s was less twitchy but still fired during ordinary
+-- kill-loot-move play. 180 s leaves the pet alone through normal questing
+-- cadence -- mob fight, loot, move on, repeat -- and only intervenes when
+-- the player has been moving for a sustained period that's almost
+-- certainly outpaced the leash.
+local EC_STUCK_MOVEMENT_THRESHOLD = 180
 
 -- Fast Mode: when enabled, pin the per-item vendor interval to the 0.05 s
 -- floor and double the per-run cap. Opt-in via DB.fastMode.
@@ -1078,6 +1082,12 @@ local EC_summonGoblinPending = false
 local EC_summonGoblinTimer = 0
 local EC_targetGoblinPending = false
 local EC_targetGoblinTimer = 0
+-- One-shot retry budget for the post-summon verify in EC_TickGoblinTarget.
+-- If the 2 s verify sees the Goblin not summoned (companion GCD overlap from
+-- a recent dismiss is the usual cause), we issue one more CallCompanion and
+-- re-arm the timer instead of giving up. Reset to false at every fresh
+-- bag-full cycle in EC_HandleBagFullForCycle.
+local EC_goblinSummonRetried = false
 local EC_merchantReminderPending = false
 local EC_merchantReminderTimer = 0
 -- Auto-open container in-flight flag. Same forward-declaration discipline as
@@ -1116,6 +1126,7 @@ local function EC_HandleBagFullForCycle()
     end
     EC_summonGoblinPending = true
     EC_summonGoblinTimer = 1.5
+    EC_goblinSummonRetried = false
 end
 
 -- ===========================================================================
@@ -1509,7 +1520,9 @@ end
 
 -- 2.0 s post-summon verify: GetCompanionInfo lags the actual summon, so we
 -- wait before checking whether the merchant came out, then arm the 8 s
--- "right-click me" reminder if it did.
+-- "right-click me" reminder if it did. On the first miss we retry once --
+-- the Blizzard companion GCD from a recent dismiss can swallow the first
+-- CallCompanion under lag without surfacing an error.
 local function EC_TickGoblinTarget(elapsed)
     if not EC_targetGoblinPending then
         return false
@@ -1517,15 +1530,22 @@ local function EC_TickGoblinTarget(elapsed)
     EC_targetGoblinTimer = EC_targetGoblinTimer - elapsed
     if EC_targetGoblinTimer <= 0 then
         EC_targetGoblinPending = false
-        local _, nowSummoned = FindGoblinMerchantIndex()
+        local idx, nowSummoned = FindGoblinMerchantIndex()
         if nowSummoned then
+            EC_goblinSummonRetried = false
             PrintNicef(
                 "|cff00ff00Goblin Merchant summoned|r - press %s or right-click to sell.",
                 EC_FormatTargetMerchantBinding()
             )
             EC_merchantReminderPending = true
             EC_merchantReminderTimer = 8.0
+        elseif not EC_goblinSummonRetried and idx then
+            EC_goblinSummonRetried = true
+            CallCompanion("CRITTER", idx)
+            EC_targetGoblinPending = true
+            EC_targetGoblinTimer = 2.0
         else
+            EC_goblinSummonRetried = false
             PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
             EC_lootCycleState = STATE.LOOTING
         end
@@ -1583,12 +1603,23 @@ local function EC_HandleScavengerOut(scavengerOut)
 end
 
 -- Re-summon the Scavenger if and only if we (this addon) dismissed it.
--- Manual user dismisses (EC_userDismissed) are respected; concurrent companions
--- (bank mule, mailbox) suppress; the 10 s mount-dismiss cooldown suppresses.
+-- Manual portrait dismisses leave EC_addonDismissed=false, so this gate
+-- naturally honours them. Concurrent companions (bank mule, mailbox)
+-- suppress; the 10 s mount-dismiss cooldown suppresses.
+--
+-- Player-speed gate: on Project Ebonhold a CRITTER summon issued while
+-- the player is moving spawns the pet but its follow AI never engages --
+-- the critter stays where it spawned, as a zombie. Deferring the call
+-- until the player is stationary gets a clean spawn that immediately
+-- starts following. EC_addonDismissed stays true while we wait, so the
+-- next 5 s tick after the player stops will fire the summon.
+--
+-- EC_addonDismissed is NOT cleared here either. CallCompanion can also
+-- be silently rejected (separate from the zombie case) and we want the
+-- retry budget. EC_PetCheckTick clears the flag when it observes
+-- scavengerOut=true on the next enumeration -- the canonical
+-- "summon landed" signal.
 local function EC_TryResummonScavenger(greedyIndex, anyPetOut)
-    if EC_userDismissed then
-        return
-    end
     if anyPetOut then
         return
     end
@@ -1601,34 +1632,13 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut)
     if not greedyIndex then
         return
     end
-    EC_addonDismissed = false
+    if GetUnitSpeed and GetUnitSpeed("player") > 0 then
+        return
+    end
     CallCompanion("CRITTER", greedyIndex)
     if DB and DB.autoLootCycle then
         EC_lootCycleState = STATE.LOOTING
     end
-end
-
--- Classify a Scavenger out-state transition. We can't ask the game *why* the
--- Scavenger went away; the heuristic uses player movement at tick time as a
--- proxy. Moving = leash (auto-restore via EC_addonDismissed). Stationary =
--- manual right-click on the portrait (suppress restore via EC_userDismissed).
--- Out->in transitions (player or addon summoned via portrait/keybind) clear
--- the manual-dismiss flag because the Scavenger is back regardless.
-local function EC_ClassifyScavengerTransition(scavengerOut)
-    if not EC_lastScavengerOut and scavengerOut then
-        EC_userDismissed = false
-        EC_scavMovementAccum = 0 -- fresh count from this summon
-    end
-    if EC_lastScavengerOut and not scavengerOut and not EC_addonDismissed then
-        local speed = GetUnitSpeed and GetUnitSpeed("player") or 0
-        if speed > 0 then
-            EC_addonDismissed = true
-        else
-            EC_userDismissed = true
-        end
-        EC_scavMovementAccum = 0 -- transitioning out, reset
-    end
-    EC_lastScavengerOut = scavengerOut
 end
 
 -- 5 s-gated body. Pre-flight guards, state sync, stuck check, re-summon.
@@ -1671,7 +1681,20 @@ local function EC_PetCheckTick()
         end
     end
 
-    EC_ClassifyScavengerTransition(scavengerOut)
+    -- Reset the movement accumulator on every out<->in transition so each
+    -- new summon (and each fresh dismiss) starts the stuck-counter cleanly.
+    -- Also confirm the dismiss-and-resummon retry loop in EC_TryResummonScavenger
+    -- here: a false->true transition while EC_addonDismissed is still true
+    -- means our last CallCompanion landed, so we can clear the flag and stop
+    -- retrying. (If the player summoned manually via /ec, SummonGreedyScavenger
+    -- has already cleared the flag itself.)
+    if EC_lastScavengerOut ~= scavengerOut then
+        EC_scavMovementAccum = 0
+        if scavengerOut and EC_addonDismissed then
+            EC_addonDismissed = false
+        end
+    end
+    EC_lastScavengerOut = scavengerOut
 
     if EC_HandleScavengerOut(scavengerOut) then
         return
@@ -5503,9 +5526,11 @@ f:SetScript("OnEvent", function(self, event, ...)
                     EC_mountDismissTime = GetTime()
                 end
             elseif not mounted and EC_wasMounted then
-                -- Restore only if (a) the addon dismissed for the mount AND
-                -- (b) the user hasn't manually dismissed since.
-                if EC_addonDismissed and not EC_userDismissed then
+                -- Restore only if the addon dismissed for the mount. A
+                -- manual portrait dismiss before mount-up never set
+                -- EC_addonDismissed=true (the mount-up branch above gates
+                -- on `if scavOut` first), so this naturally honours it.
+                if EC_addonDismissed then
                     EC_SummonGreedyWithDelay()
                 end
             end

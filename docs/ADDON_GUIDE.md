@@ -536,10 +536,10 @@ out↔in transition.
 `EC_lastScavengerOut` is a forward-declared local that mirrors
 server-side companion state. Its declared default is `false`, but the
 player can `/reload` with the Scavenger already summoned -- in which
-case the gate stays false until the first 5 s tick observes the state
-via `EC_ClassifyScavengerTransition`. The OnUpdate accumulator that
-gates on it then loses ~5 s of counting -- which is exactly what made
-Test B fail during the v2.4 quality pass before the bootstrap landed.
+case the gate stays false until the first 5 s tick observes the state.
+The OnUpdate accumulator that gates on it then loses ~5 s of counting
+-- which is exactly what made Test B fail during the v2.4 quality pass
+before the bootstrap landed.
 
 The fix lives in the `PLAYER_ENTERING_WORLD` branch of the event hub:
 a one-shot scan via `EC_FindGreedyScavenger()`, guarded by
@@ -550,31 +550,37 @@ If you add another local boolean that mirrors external/server state
 same way. Trusting the declared default works only when the addon
 loaded *before* the state could exist -- which isn't true for `/reload`.
 
-### Manual-dismiss vs game-leash: heuristic via `GetUnitSpeed`
+### Manual-dismiss is honoured implicitly: do not try to classify *why* the pet went away
 
-We can't ask the game *why* a companion transitioned from summoned to
-not-summoned. The player could have right-clicked the portrait, the
-game's leash mechanic could have removed it, or some other server event
-fired. The addon needs to distinguish these:
+v2.4.0 shipped an `EC_ClassifyScavengerTransition` helper that watched
+every Scavenger out→not-out transition at the 5 s tick and used
+`GetUnitSpeed("player")` as a heuristic to guess whether the player had
+right-clicked the portrait (stationary → "manual dismiss") or the leash
+had fired (moving → "auto-resummon"). It set an `EC_userDismissed` flag
+that suppressed the re-summon path forever.
 
-- Manual dismiss → respect it; don't auto-resummon
-  (`EC_userDismissed = true`).
-- Leash dismiss → the player wants the pet back; auto-resummon on next
-  tick (`EC_addonDismissed = true`).
+**v2.6.1 removed both the helper and the flag.** The premise was wrong:
+plenty of non-manual reasons (server-side companion-duration timers,
+brief disconnects, loading screens, phasing) cause the pet to despawn
+while the player happens to be standing still. Each of those latched
+`EC_userDismissed = true` permanently, and nothing the user did short
+of an explicit `/ec` re-summon would clear it.
 
-`EC_ClassifyScavengerTransition` uses `GetUnitSpeed("player")` at tick
-time as the proxy: speed > 0 → leash; speed == 0 → manual. This is
-wrong in two edge cases:
+The new contract is simpler:
 
-- Dismiss-while-moving: classified as leash, re-summons.
-- Leashed-while-stationary (instant teleport, fall-port, phasing):
-  classified as manual, no re-summon.
+- `EC_addonDismissed` is the single source of truth. **We** set it when
+  **we** dismiss (`DismissGreedyScavenger`, `EC_HandleScavengerOut`,
+  the mount-up branch). Anything else -- manual portrait dismiss,
+  server despawn, phase change -- leaves it `false`.
+- `EC_TryResummonScavenger` only fires when `EC_addonDismissed == true`.
+  This naturally honours manual dismisses and benign server despawns
+  alike: the addon won't auto-resummon, but the user can trigger it
+  themselves via `/ec` or the panel.
 
-Both are rare. The user can recover via a manual portrait right-click;
-the `EC_userDismissed` flag clears on every out→in transition.
-
-If you replace the heuristic, also audit `EC_TryResummonScavenger` and
-the mount handler's restore branch -- both gate on `not EC_userDismissed`.
+If you bring back any heuristic that wants to distinguish manual from
+non-manual transitions, weigh the cost carefully. The previous
+implementation broke for users on lossy connections; the simpler
+"only auto-resummon what we dismissed" rule is correct.
 
 ### Mount handler must check actual companion state before dismiss/restore
 
@@ -587,7 +593,10 @@ The `UNIT_AURA` branch in the event hub:
 
 - On mount: only dismiss if `EC_FindGreedyScavenger()` returns
   `isSummoned == true`.
-- On unmount: only restore if `EC_addonDismissed and not EC_userDismissed`.
+- On unmount: only restore if `EC_addonDismissed`. The mount-up branch
+  above is what protects manual-dismiss-before-mount: if the pet wasn't
+  summoned at mount-up time, the dismiss is skipped and the flag stays
+  `false`, so the dismount branch correctly leaves the pet alone.
 
 If you add a similar dismiss-and-restore around another event
 (instance load, vehicle entry, taxi flight), follow the same
@@ -596,13 +605,10 @@ If you add a similar dismiss-and-restore around another event
 ### `SummonGreedyScavenger` and `DismissGreedyScavenger` must sync cached state
 
 These two helpers are the addon's authoritative summon/dismiss path.
-They write to four module-level locals that the OnUpdate accumulator
+They write to three module-level locals that the OnUpdate accumulator
 and the re-summon gate read on every frame / every tick:
 
 - `EC_addonDismissed` -- dismiss path sets true; summon path clears.
-- `EC_userDismissed` -- summon path clears it; the manual-dismiss
-  heuristic in `EC_ClassifyScavengerTransition` is the only place it
-  gets set.
 - `EC_lastScavengerOut` -- summon sets true, dismiss sets false. Syncs
   the stuck-detection gate immediately so the OnUpdate accumulator
   doesn't lag the next 5 s tick observation.
@@ -610,7 +616,7 @@ and the re-summon gate read on every frame / every tick:
   new state.
 
 If you add another helper that summons or dismisses the Scavenger,
-either call into these two helpers or set all four locals consistently.
+either call into these two helpers or set all three locals consistently.
 A bare `CallCompanion("CRITTER", idx)` that bypasses
 `SummonGreedyScavenger` will desync the gate and either over-fire
 stuck detection or miss legitimate summons.
@@ -643,7 +649,7 @@ accordingly.
 |---|---|---|
 | 0.05s | vendor worker OnUpdate | Per-item pacing floor. Below this, the server boots you for packet spam. |
 | 5s | `EC_PET_CHECK_INTERVAL` | Cadence for pet-check tick (state sync, stuck detection, re-summon). |
-| 20s | `EC_STUCK_MOVEMENT_THRESHOLD` | Player time-spent-moving after which the Scavenger is dismissed-and-resummoned (stuck-on-terrain detection). |
+| 180s | `EC_STUCK_MOVEMENT_THRESHOLD` | Player time-spent-moving after which the Scavenger is dismissed-and-resummoned (stuck-on-terrain detection). Was 20 s in v2.4-v2.6.0, briefly 60 s in early v2.6.1 testing, settled at 180 s after in-game UX feedback -- below that the dismiss fired during normal kill-loot-move questing cadence. |
 | 80 items | `maxItemsPerRun` | Sell-queue cap per run. Prevents the same disconnect risk as the vendor-interval floor. Recursive batching kicks in for larger inventories. |
 | 1.5s | `EC_summonGoblinTimer` | Wait between dismiss and Goblin Merchant summon so the client has time to process the companion switch. |
 | 2.0s | `EC_targetGoblinTimer` | Wait after summon before checking `isSummoned` via `GetCompanionInfo`. |

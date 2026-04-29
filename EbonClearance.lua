@@ -5553,7 +5553,7 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     if event == "PLAYER_LOGIN" then
         EC_Delay(1, function()
-            DEFAULT_CHAT_FRAME:AddMessage("|cffffd100EbonClearance Enabled|r - Use |cff00ff00/ec|r to configure.")
+            PrintNice("Enabled. Use |cff00ff00/ec|r to configure.")
         end)
     end
 end)

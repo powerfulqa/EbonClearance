@@ -8,14 +8,14 @@ If you're an AI agent or a new contributor, **read [docs/ADDON_GUIDE.md](docs/AD
 - SavedVariables migrations via `EnsureDB`
 - Interface Options panel idempotency
 - The decision record for **not** embedding Ace3
-- **Gotchas and refactoring traps** — non-obvious design choices that have silently broken in the past. Read this before you "simplify" anything.
+- **Gotchas and refactoring traps** - non-obvious design choices that have silently broken in the past. Read this before you "simplify" anything.
 
 ## The short version
 
 - This is a WoW 3.3.5a addon for Project Ebonhold, one file: [EbonClearance.lua](EbonClearance.lua)
 - No external libraries. All Blizzard APIs.
-- Run `stylua EbonClearance.lua && luacheck EbonClearance.lua` before committing. Luacheck sits at **0 warnings** (cleaned post-v2.6.0); keep it at zero. If a new warning appears, fix the cause or extend [`.luacheckrc`](.luacheckrc) — do not silence with blanket directives.
-- Known deferred refactors are tracked in [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md). Don't repeat items that are already there — cite them by number if you touch adjacent code.
+- Run `stylua EbonClearance.lua && luacheck EbonClearance.lua` before committing. Luacheck sits at **0 warnings** (cleaned post-v2.6.0); keep it at zero. If a new warning appears, fix the cause or extend [`.luacheckrc`](.luacheckrc) - do not silence with blanket directives.
+- Known deferred refactors are tracked in [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md). Don't repeat items that are already there - cite them by number if you touch adjacent code.
 
 ## Conventions at a glance
 

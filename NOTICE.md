@@ -1,4 +1,4 @@
-# Notice — prior art and convergent patterns
+# Notice - prior art and convergent patterns
 
 This file documents the design lineage of EbonClearance honestly, so
 that any future "they copied us" or "you copied them" claim has a

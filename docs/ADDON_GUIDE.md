@@ -531,6 +531,29 @@ addon dismisses the Scavenger and the next 5 s tick re-summons it at the
 player's current position. The accumulator resets on every Scavenger
 out↔in transition.
 
+### Stuck detection has two signals; do not collapse them
+
+The movement-time signal above misses kills-and-loots-in-place (AOE
+channels, melee in one spot, tight kiting). A complementary signal lives
+alongside it: `EC_GreedyEventFilter` records `EC_lastScavSpokeAt` on
+every Scavenger speech, `LOOT_CLOSED` pushes timestamps into
+`EC_recentLootTimes`, and `EC_IsLootSilenceStuck()` fires when the player
+has looted at least 2 corpses inside 60 s without the Scavenger speaking
+since the oldest. Both signals OR together inside `EC_HandleScavengerOut`;
+the chat output distinguishes which fired so the user knows what happened.
+
+The timestamp recording and the `LOOT_CLOSED` accumulator are both gated
+on `DB.autoLootCycle` so cycle-off users pay nothing on the chat-event
+path. `EC_recentLootTimes` is pruned in place on every check AND cleared
+on Scavenger out↔in transitions in `EC_PetCheckTick`; both clears are
+required (the prune bounds growth, the transition reset prevents an
+immediate re-fire after a benign respawn).
+
+If you add a third stuck signal, do it the same way: another OR clause
+in `EC_HandleScavengerOut`, with its own state cleared on transitions,
+and with cause-distinguishing chat output so the user can tell the
+signals apart.
+
 ### Caches that mirror server-side state need a `PLAYER_ENTERING_WORLD` bootstrap
 
 `EC_lastScavengerOut` is a forward-declared local that mirrors
@@ -643,6 +666,29 @@ If you ever split these into truly independent flags, audit
 on the Scavenger-name path) and the bubble-kill OnUpdate's guard
 accordingly.
 
+### Cross-list conflicts are refused at input time, not just resolved post-hoc
+
+`EC_ScanListConflicts` and `EC_ApplyCleanResolution` (driven by `/ec clean`)
+sweep up items present on multiple lists with overlapping intent;
+precedence is `blacklist > deleteList > whitelist`. They remain, but they
+are a safety net for legacy DBs and imports rather than a routine cleanup
+tool.
+
+`EC_FindAddConflict` is the upstream guard. It runs at every add site:
+the bag-context single-add inside `EC_AddItemToList`, the panel "Add by
+ID" button in `CreateListUI`, the `AddMatchingFromBags` substring scan,
+and the `ScanBagsForQuality` bulk-by-quality scan. It refuses adds that
+would create a cross-intent conflict and prints which list already holds
+the item. Same-intent scopes (per-character `whitelist` + account-wide
+`accountWhitelist`, both intent "keep") do not conflict and the add
+proceeds normally.
+
+If you add another list or another scope, update both `EC_FindAddConflict`
+(its `intentOf` map and the `checks` table) and `EC_ScanListConflicts` so
+they stay in sync. Skipping the guard means silent post-hoc cleanups will
+surprise the user; skipping the cleaner means legacy or imported data has
+nowhere to be detected.
+
 ### Index of magic numbers
 
 | Value | Location | Meaning |
@@ -650,6 +696,8 @@ accordingly.
 | 0.05s | vendor worker OnUpdate | Per-item pacing floor. Below this, the server boots you for packet spam. |
 | 5s | `EC_PET_CHECK_INTERVAL` | Cadence for pet-check tick (state sync, stuck detection, re-summon). |
 | 180s | `EC_STUCK_MOVEMENT_THRESHOLD` | Player time-spent-moving after which the Scavenger is dismissed-and-resummoned (stuck-on-terrain detection). Was 20 s in v2.4-v2.6.0, briefly 60 s in early v2.6.1 testing, settled at 180 s after in-game UX feedback -- below that the dismiss fired during normal kill-loot-move questing cadence. |
+| 60s | `EC_IsLootSilenceStuck` (inline `WINDOW`) | Window over which the loot-silence stuck signal evaluates. Player must have looted at least `MIN_LOOTS` corpses inside this window without hearing the Scavenger speak before the signal fires. |
+| 2 | `EC_IsLootSilenceStuck` (inline `MIN_LOOTS`) | Minimum corpse loots inside the loot-silence window before the signal can fire. Floor of 2 prevents a single-corpse false positive. |
 | 80 items | `maxItemsPerRun` | Sell-queue cap per run. Prevents the same disconnect risk as the vendor-interval floor. Recursive batching kicks in for larger inventories. |
 | 1.5s | `EC_summonGoblinTimer` | Wait between dismiss and Goblin Merchant summon so the client has time to process the companion switch. |
 | 2.0s | `EC_targetGoblinTimer` | Wait after summon before checking `isSummoned` via `GetCompanionInfo`. |

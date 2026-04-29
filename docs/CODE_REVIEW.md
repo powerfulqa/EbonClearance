@@ -3,10 +3,13 @@
 A curated backlog of known follow-ups not yet actioned. Each item is
 scoped to be a single-session change unless flagged otherwise.
 
-> **Last refresh:** post-v2.6.0 on 2026-04-27.
-> Statuses below verified against the current `EbonClearance.lua`
-> (5561 LOC). Items that have shipped or been decided are listed
-> under [Resolved](#resolved) at the bottom.
+> **Last refresh:** post-v2.7.0 on 2026-04-29.
+> Statuses below verified against the current `EbonClearance.lua`.
+> None of items 1-5 were touched in v2.7.0; that release added a
+> secondary stuck-detection signal, an add-time list-conflict guard,
+> and chat output for the silent stuck-resummon path. Items that
+> have shipped or been decided are listed under [Resolved](#resolved)
+> at the bottom.
 
 ---
 

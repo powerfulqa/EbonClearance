@@ -123,10 +123,29 @@ local EC_scavMovementAccum = 0
 -- gate above stays false until the first 5 s tick observes the state, which
 -- eats ~5 s of accumulation if the Scavenger was already out at /reload.
 local EC_scavStateBootstrapped = false
+-- Last GetTime() at which we observed the Scavenger speak (matched in
+-- EC_GreedyEventFilter, either by author or by the textual fallback). Drives
+-- the loot-silence stuck signal: if the player has looted N+ corpses inside
+-- the window without the Scavenger speaking, the pet is presumed lost
+-- out-of-range and the addon dismisses-then-resummons. Updated only while
+-- DB.autoLootCycle is on, so users not running the cycle pay no extra work
+-- on the chat-event path.
+local EC_lastScavSpokeAt = 0
+-- Ring of GetTime() values pushed on every LOOT_CLOSED (player corpse loot
+-- completed). Pruned in place inside EC_IsLootSilenceStuck on each pet-tick
+-- check, so it cannot grow unboundedly across a session.
+local EC_recentLootTimes = {}
 local running = false
 
 local EC_greedyMessages = {}
 local EC_greedyFiltersInstalled = false
+
+-- Forward-declared so EC_AddItemToList (defined below) can call it before the
+-- helper body is reached further down the file. Returns the name of a list
+-- that already holds the item with a different intent (keep / sell / delete),
+-- or nil when the add is safe. Same-intent scopes (character whitelist plus
+-- account whitelist) do not conflict.
+local EC_FindAddConflict
 
 local function EC_StripCodes(s)
     if type(s) ~= "string" then
@@ -163,6 +182,19 @@ local function EC_GreedyEventFilter(self, _event, msg, author)
         hideChat = (DB.muteGreedy == true) or (DB.hideGreedyChat == true)
         hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
     end
+
+    -- Record the Scavenger's speech timestamp BEFORE the mute-disabled
+    -- early-return below, so the loot-silence stuck signal works even when
+    -- the user has both chat and bubble mute off. Gated on DB.autoLootCycle
+    -- so users not running the cycle don't pay the author-check on every
+    -- chat line. Author-based only; the textual-fallback path further down
+    -- already runs only when at least one mute is on, which is fine because
+    -- the author-based check above catches the common case (MONSTER_SAY /
+    -- _YELL / _WHISPER all carry the Scavenger as author).
+    if DB and DB.autoLootCycle and EC_IsGreedyAuthor(author) then
+        EC_lastScavSpokeAt = GetTime()
+    end
+
     -- Both feature flags off -> filter has no effect; skip the string-op tail.
     -- Fires on 10 chat events for every line of chat received.
     if not hideChat and not hideBubbles then
@@ -184,6 +216,12 @@ local function EC_GreedyEventFilter(self, _event, msg, author)
             clean:find("greedy scavenger", 1, true)
             and (clean:find(" says", 1, true) or clean:find(" yells", 1, true) or clean:find(" whispers", 1, true))
         then
+            -- Textual-fallback path. Refresh the speech timestamp here too so
+            -- the loot-silence signal stays accurate when the chat line
+            -- arrives via an event that doesn't set the author field.
+            if DB and DB.autoLootCycle then
+                EC_lastScavSpokeAt = GetTime()
+            end
             if hideBubbles then
                 local said = clean:match("greedy scavenger%s*says[:%s]*(.*)")
                     or clean:match("greedy scavenger%s*yells[:%s]*(.*)")
@@ -1245,6 +1283,16 @@ local function EC_AddItemToList(setName, itemID, label)
         PrintNicef("|cffaaaaaa%s already on %s.|r", itemName, label)
         return
     end
+    -- Cross-intent conflict guard. Refuse adds that would create a multi-list
+    -- conflict; the user must explicitly remove the item from the other list
+    -- first. Same-intent scopes (character + account whitelist) do not trip
+    -- this and the add proceeds normally.
+    local conflictName = EC_FindAddConflict(itemID, setName)
+    if conflictName then
+        PrintNicef("|cffff8888%s is already on %s. Remove it from there first.|r", itemName, conflictName)
+        PlaySound("igMainMenuOptionCheckBoxOff")
+        return
+    end
     t[itemID] = true
     PrintNicef("Added |cffb6ffb6%s|r to %s.", itemName, label)
     -- Refresh the corresponding settings panel if it's been opened.
@@ -1420,14 +1468,31 @@ local function EC_ShowItemContextMenu(button)
                     EC_RemoveItemFromList(row.setName, itemID, row.label)
                     frame:Hide()
                 end)
+                btn:Enable()
             else
-                btn:SetText("Add to " .. row.label)
-                btn:SetScript("OnClick", function()
-                    EC_AddItemToList(row.setName, itemID, row.label)
-                    frame:Hide()
-                end)
+                -- If a different-intent list already holds the item, grey
+                -- out the row so the user can see the option exists but
+                -- can't currently take it (mirrors how Sell Now disables
+                -- itself when no merchant is open). The which-list-holds-it
+                -- info is already visually announced by the highlighted
+                -- "Remove from X" row above, so we don't repeat it here
+                -- (the parenthetical version overflowed the 220-px button).
+                -- Same-intent scopes (per-character + account whitelist)
+                -- do not trip this.
+                local conflictName = EC_FindAddConflict(itemID, row.setName)
+                if conflictName then
+                    btn:SetText("Add to " .. row.label)
+                    btn:SetScript("OnClick", function() end)
+                    btn:Disable()
+                else
+                    btn:SetText("Add to " .. row.label)
+                    btn:SetScript("OnClick", function()
+                        EC_AddItemToList(row.setName, itemID, row.label)
+                        frame:Hide()
+                    end)
+                    btn:Enable()
+                end
             end
-            btn:Enable()
         elseif row.kind == "sellNow" then
             btn:SetText("Sell Now")
             btn:SetScript("OnClick", function()
@@ -1585,18 +1650,55 @@ local function EC_AutoLootStateSync()
     end
 end
 
--- Stuck-Scavenger handling. If the player has spent more than
--- EC_STUCK_MOVEMENT_THRESHOLD seconds moving since the Scavenger was last
--- summoned, assume it's stuck on terrain or got left behind, dismiss it,
--- and let the next tick re-summon at the player's current position.
+-- Secondary stuck-detection signal. Movement-time alone misses cases where
+-- the player kills and loots in place (channels, melee, kiting in tight
+-- circles): the Scavenger gets left behind on terrain but the accumulator
+-- never accrues. This signal fires when the player has looted at least
+-- MIN_LOOTS corpses inside the WINDOW and the Scavenger has not been heard
+-- to speak since the oldest of those loots. Prunes the loot ring as a side
+-- effect on every check, so it cannot grow unboundedly.
+local function EC_IsLootSilenceStuck()
+    local WINDOW, MIN_LOOTS = 60, 2
+    local now = GetTime()
+    local kept = {}
+    for i = 1, #EC_recentLootTimes do
+        local t = EC_recentLootTimes[i]
+        if (now - t) <= WINDOW then
+            kept[#kept + 1] = t
+        end
+    end
+    EC_recentLootTimes = kept
+    if #kept < MIN_LOOTS then
+        return false
+    end
+    return EC_lastScavSpokeAt < kept[1]
+end
+
+-- Stuck-Scavenger handling. Two signals OR'd together:
+--   1. EC_scavMovementAccum >= EC_STUCK_MOVEMENT_THRESHOLD - the player has
+--      moved enough that the pet should have caught up but hasn't (since
+--      the OnUpdate accumulator only ticks while the pet is flagged out).
+--   2. EC_IsLootSilenceStuck() - the player kept looting while the pet went
+--      silent, suggesting it's geographically lost even though the player
+--      isn't moving much.
+-- On either signal the Scavenger is dismissed; the next 5 s tick re-summons
+-- at the player's current position via EC_TryResummonScavenger.
 -- Returns true if the Scavenger is out (caller bails out of re-summon path).
 local function EC_HandleScavengerOut(scavengerOut)
     if not scavengerOut then
         return false
     end
-    if EC_scavMovementAccum >= EC_STUCK_MOVEMENT_THRESHOLD then
+    local stuckByMovement = EC_scavMovementAccum >= EC_STUCK_MOVEMENT_THRESHOLD
+    local stuckByLootSilence = EC_IsLootSilenceStuck()
+    if stuckByMovement or stuckByLootSilence then
         EC_addonDismissed = true
         EC_scavMovementAccum = 0
+        EC_recentLootTimes = {}
+        if stuckByMovement then
+            PrintNice("|cffffff00Scavenger fell behind. Resummoning when you stop moving.|r")
+        else
+            PrintNice("|cffffff00Scavenger went quiet during looting. Resummoning when you stop moving.|r")
+        end
         DismissGreedyScavenger()
     end
     return true
@@ -1690,6 +1792,10 @@ local function EC_PetCheckTick()
     -- has already cleared the flag itself.)
     if EC_lastScavengerOut ~= scavengerOut then
         EC_scavMovementAccum = 0
+        -- Drop any prior loot timestamps so a fresh out<->in transition starts
+        -- the loot-silence counter cleanly (otherwise stale pre-transition
+        -- loots could trigger an immediate re-fire after a benign respawn).
+        EC_recentLootTimes = {}
         if scavengerOut and EC_addonDismissed then
             EC_addonDismissed = false
         end
@@ -2664,6 +2770,13 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             PlaySound("igMainMenuOptionCheckBoxOff")
             return
         end
+        local conflictName = EC_FindAddConflict(v, setTableName)
+        if conflictName then
+            PrintNicef("|cffff8888Item %d is already on %s. Remove it from there first.|r", v, conflictName)
+            PlaySound("igMainMenuOptionCheckBoxOff")
+            input:SetText("")
+            return
+        end
         local t = EC_GetListTable(setTableName)
         if t then
             t[v] = true
@@ -2702,10 +2815,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     local function AddMatchingFromBags(substr)
         local t = EC_GetListTable(setTableName)
         if not t or not substr or substr == "" then
-            return 0
+            return 0, 0
         end
         local needle = substr:lower()
-        local added = 0
+        local added, skipped = 0, 0
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             for slot = 1, slots do
@@ -2713,13 +2826,17 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 if itemID and not t[itemID] then
                     local name = GetItemInfo(itemID)
                     if name and name:lower():find(needle, 1, true) then
-                        t[itemID] = true
-                        added = added + 1
+                        if EC_FindAddConflict(itemID, setTableName) then
+                            skipped = skipped + 1
+                        else
+                            t[itemID] = true
+                            added = added + 1
+                        end
                     end
                 end
             end
         end
-        return added
+        return added, skipped
     end
 
     matchBtn:SetScript("OnClick", function()
@@ -2728,8 +2845,11 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             PlaySound("igMainMenuOptionCheckBoxOff")
             return
         end
-        local added = AddMatchingFromBags(txt)
+        local added, skipped = AddMatchingFromBags(txt)
         PrintNicef("Scanned bags: added |cffffff00%d|r matching item(s) (substring: |cffffff00%s|r).", added, txt)
+        if skipped and skipped > 0 then
+            PrintNicef("Skipped |cffffff00%d|r already on another list.", skipped)
+        end
         matchInput:SetText("")
         Refresh()
         PlaySound("igMainMenuOptionCheckBoxOn")
@@ -3705,9 +3825,9 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
     local function ScanBagsForQuality(quality)
         local t = EC_GetListTable(setTableName)
         if not t then
-            return 0
+            return 0, 0
         end
-        local added = 0
+        local added, skipped = 0, 0
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             for slot = 1, slots do
@@ -3715,13 +3835,17 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
                 if itemID then
                     local _, _, q, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
                     if q == quality and sellPrice and sellPrice > 0 and not t[itemID] then
-                        t[itemID] = true
-                        added = added + 1
+                        if EC_FindAddConflict(itemID, setTableName) then
+                            skipped = skipped + 1
+                        else
+                            t[itemID] = true
+                            added = added + 1
+                        end
                     end
                 end
             end
         end
-        return added
+        return added, skipped
     end
 
     -- Wrap the row in a container Frame so callers can anchor the next widget
@@ -3741,8 +3865,11 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
         b:SetPoint("LEFT", prevAnchor, "RIGHT", leftPad, 0)
         b:SetText(label)
         b:SetScript("OnClick", function()
-            local added = ScanBagsForQuality(qualityNum)
+            local added, skipped = ScanBagsForQuality(qualityNum)
             PrintNicef("Scanned bags: added |cffffff00%d|r %s items to %s.", added, colorWord, listLabel)
+            if skipped and skipped > 0 then
+                PrintNicef("Skipped |cffffff00%d|r already on another list.", skipped)
+            end
             if refreshFn then
                 refreshFn()
             end
@@ -5145,6 +5272,53 @@ _G["BINDING_NAME_CLICK EbonClearanceTargetMerchantButton:LeftButton"] = "Target 
 BINDING_NAME_EBONCLEARANCE_TOGGLE_SETTINGS = "Open/close settings"
 BINDING_NAME_EBONCLEARANCE_TOGGLE_ENABLED = "Toggle enabled"
 BINDING_NAME_EBONCLEARANCE_FORCE_SELL = "Force sell at current merchant"
+-- Cross-list intent groups for the add-time conflict guard:
+--   keep   = whitelist (per-character) + accountWhitelist (account-wide)
+--   sell   = blacklist
+--   delete = deleteList
+-- Same-intent scopes are NOT in conflict (whitelist + accountWhitelist is
+-- redundant, not contradictory). Cross-intent IS the conflict we refuse at
+-- input time. The post-hoc EC_ApplyCleanResolution below remains as the
+-- legacy-data safety net for DBs that pre-date this guard.
+--
+-- Returns the name of an already-occupying list with a different intent,
+-- or nil when the add is safe. Forward-declared at the top of the file so
+-- EC_AddItemToList can call it before this body is reached.
+EC_FindAddConflict = function(itemID, targetListName)
+    if not itemID or not targetListName then
+        return nil
+    end
+    local function intentOf(n)
+        if n == "whitelist" or n == "accountWhitelist" then
+            return "keep"
+        end
+        if n == "blacklist" then
+            return "sell"
+        end
+        if n == "deleteList" then
+            return "delete"
+        end
+        return nil
+    end
+    local targetIntent = intentOf(targetListName)
+    if not targetIntent then
+        return nil
+    end
+    local checks = {
+        { name = "blacklist", data = DB and DB.blacklist },
+        { name = "deleteList", data = DB and DB.deleteList },
+        { name = "whitelist", data = DB and DB.whitelist },
+        { name = "accountWhitelist", data = ADB and ADB.whitelist },
+    }
+    for i = 1, #checks do
+        local c = checks[i]
+        if c.name ~= targetListName and c.data and c.data[itemID] and intentOf(c.name) ~= targetIntent then
+            return c.name
+        end
+    end
+    return nil
+end
+
 -- Conflict detection + resolution across whitelist/blacklist/deleteList.
 -- Precedence when auto-resolving: blacklist > deleteList > whitelist.
 local function EC_ScanListConflicts()
@@ -5445,6 +5619,10 @@ f:RegisterEvent("MERCHANT_CLOSED")
 -- BAG_UPDATE drives auto-loot-cycle bag-full detection. Cheap handler;
 -- early-returns unless STATE.LOOTING + cycle enabled. See EC_HandleBagFullForCycle.
 f:RegisterEvent("BAG_UPDATE")
+-- LOOT_CLOSED feeds the loot-silence stuck signal in EC_IsLootSilenceStuck.
+-- Pushes one timestamp per corpse looted; pruned lazily on the 5 s pet tick.
+-- Only accumulates while DB.autoLootCycle is on, so cycle-off users pay nothing.
+f:RegisterEvent("LOOT_CLOSED")
 -- UNIT_AURA fires per-unit. The player-only form is much cheaper in raids
 -- than an unfiltered registration; fall back on clients that lack it.
 if f.RegisterUnitEvent then
@@ -5497,6 +5675,12 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- guard if the vendor cycle is already active.
         EC_HandleBagFullForCycle()
         EC_HandleAutoOpenContainers()
+    elseif event == "LOOT_CLOSED" then
+        -- One push per corpse looted. EC_IsLootSilenceStuck prunes the ring
+        -- inside its body (called from the 5 s pet tick), so growth is bounded.
+        if DB and DB.autoLootCycle then
+            EC_recentLootTimes[#EC_recentLootTimes + 1] = GetTime()
+        end
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
         EC_merchantReminderPending = false

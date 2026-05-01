@@ -159,14 +159,18 @@ four groups:
   and doubles the per-run cap; consume via `EC_EffectiveVendorInterval`
   / `EC_EffectiveMaxItemsPerRun`, never read it directly on hot paths.
   `qualityRules` (v2.5.0+) is a table indexed by quality (1=White,
-  2=Green, 3=Blue) with `{ enabled = bool, maxILvl = number }` per
-  rarity; `maxILvl == 0` means no cap. When `maxILvl > 0` the cap
-  only filters items with a non-empty `equipLoc` (i.e. items that
-  display "Item Level: N" on their tooltip); trade goods, reagents,
-  and consumables - even if `GetItemInfo` returns a non-zero internal
-  itemLevel - are protected. Replaces the v2.3.x
-  `whitelistMinQuality` / `whitelistQualityEnabled` pair (kept on
-  the table for one release for rollback).
+  2=Green, 3=Blue, 4=Epic added in v2.8.0) with
+  `{ enabled = bool, maxILvl = number }` per rarity; `maxILvl == 0`
+  means no cap. When `maxILvl > 0` the cap only filters items with a
+  non-empty `equipLoc` (i.e. items that display "Item Level: N" on
+  their tooltip); trade goods, reagents, and consumables - even if
+  `GetItemInfo` returns a non-zero internal itemLevel - are protected.
+  Replaces the v2.3.x `whitelistMinQuality` / `whitelistQualityEnabled`
+  pair (kept on the table for one release for rollback). If you ever
+  add a fifth tier (Legendary), extend the loop in `EnsureDB` plus the
+  three `quality >= 1 and quality <= 4` checks in `EC_IsSellable`,
+  `EC_AnnotateTooltip`, and the `/ecdebug` bag scan, plus the
+  per-rarity row builder in the Merchant Settings panel.
 - **Stats**: `totalCopper`, `totalItemsSold`, `totalItemsDeleted`,
   `totalRepairs`, `totalRepairCopper`, `soldItemCounts`,
   `deletedItemCounts`, `inventoryWorthTotal`, `inventoryWorthCount`.
@@ -553,6 +557,70 @@ If you add a third stuck signal, do it the same way: another OR clause
 in `EC_HandleScavengerOut`, with its own state cleared on transitions,
 and with cause-distinguishing chat output so the user can tell the
 signals apart.
+
+### `EC_IsPlayerBusy()` gates every CallCompanion the addon issues (v2.8.0+)
+
+`CallCompanion` goes through WoW's spell-cast pipeline. If the player is
+mid-cast, mid-channel, or moving when the addon fires it, the server
+silently rejects the call (the spell can't queue into someone else's
+cast slot) and *no error is raised*. Worse, on Project Ebonhold a
+CRITTER summon issued while the player is moving spawns the pet but
+never engages its follow AI -- the critter sits at the spawn point as a
+zombie. Stationary heavy-DPS rotations and bag-full mid-combat both
+hit this constantly.
+
+`EC_IsPlayerBusy()` checks `UnitCastingInfo("player")`,
+`UnitChannelInfo("player")`, and `GetUnitSpeed("player") > 0`. When any
+of those are true, the call defers. Three places gate on it:
+
+- `EC_TryResummonScavenger` -- the tick-driven retry path. When
+  `EC_addonDismissed = true` and the player is busy, it returns
+  without firing; the OnUpdate samples at 1 s instead of 5 s while
+  the dismiss flag is set so the next clear window catches faster.
+- `SummonGreedyScavenger` -- called from `EC_SummonGreedyWithDelay`
+  after every merchant cycle. If busy, it sets `EC_addonDismissed
+  = true` and bails out so the tick path picks up recovery.
+- `EC_TickGoblinSummon` -- the bag-full Goblin Merchant summon path
+  pushes its 1.5 s post-dismiss timer forward by 0.5 s if the player
+  is busy, until a clear window opens.
+
+`EC_TickGoblinTarget`'s retry budget (`EC_GOBLIN_MAX_RETRIES = 3`) is
+the failure mode for the Goblin path: if three CallCompanion attempts
+all miss (e.g. the cast-busy gate keeps firing them but the spell
+system rejects them anyway under sustained casting), it gives up and
+prints `Goblin Merchant failed to summon. Resuming looting.`.
+
+`EC_IsPlayerBusy()` is defined just above `SummonGreedyScavenger` so
+it's reachable as an upvalue from all three gate sites. Don't add a
+fourth `CallCompanion` call site without routing it through the gate;
+it will silently fail on lossy connections or during heavy combat.
+
+The bare GCD from instant-cast abilities is *not* covered by the gate
+(3.3.5a doesn't expose a clean GCD query). The retry-until-confirmed
+loops (`EC_addonDismissed` stays true until `EC_PetCheckTick` observes
+`scavengerOut = true` on the enumeration) and the Goblin retry budget
+compensate.
+
+### `EC_TryResummonScavenger` distinguishes leftover-goblin from user's pet (v2.8.0+)
+
+The Goblin Merchant doesn't auto-dismiss when the merchant window
+closes -- it lingers in the CRITTER slot for some time. The naive
+`if anyPetOut then return end` guard (designed to respect the user's
+manually-summoned bank mule / mailbox) treated this leftover goblin
+as a user pet and refused to bring the Scavenger back. Forever.
+
+`EC_PetCheckTick` now tracks a separate `goblinStillOut` flag in its
+companion enumeration, set when the in-slot pet matches `TARGET_NAME`
+or `GOBLIN_MERCHANT_SPELL_ID`. `EC_TryResummonScavenger` uses
+`anyPetOut and not goblinStillOut` as the bail condition, so:
+
+- Slot empty: proceed normally.
+- Slot has the Scavenger: skip (already out).
+- Slot has the goblin: dismiss it explicitly, then summon Scavenger.
+- Slot has anything else (user's third-party companion): respect it.
+
+Don't simplify back to "any pet out → respect"; the leftover goblin is
+the common case after every bag-full cycle.
 
 ### Caches that mirror server-side state need a `PLAYER_ENTERING_WORLD` bootstrap
 

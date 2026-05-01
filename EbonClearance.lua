@@ -187,12 +187,26 @@ local function EC_GreedyEventFilter(self, _event, msg, author)
     -- early-return below, so the loot-silence stuck signal works even when
     -- the user has both chat and bubble mute off. Gated on DB.autoLootCycle
     -- so users not running the cycle don't pay the author-check on every
-    -- chat line. Author-based only; the textual-fallback path further down
-    -- already runs only when at least one mute is on, which is fine because
-    -- the author-based check above catches the common case (MONSTER_SAY /
-    -- _YELL / _WHISPER all carry the Scavenger as author).
-    if DB and DB.autoLootCycle and EC_IsGreedyAuthor(author) then
-        EC_lastScavSpokeAt = GetTime()
+    -- chat line.
+    --
+    -- v2.8.0: substring match on author OR body. Strict equality on
+    -- "greedy scavenger" missed Project Ebonhold's customised pet names
+    -- (e.g. "Serv's Scavenger") and emote-style messages whose body
+    -- contains the species name but no "says/yells/whispers" pattern
+    -- ("Greedy Scavenger gnaws on the corpse"). Either source naming the
+    -- pet is enough to refresh the speech baseline. Without this, normal
+    -- farming triggered false positives every time the player looted
+    -- 2 items in 60 s.
+    if DB and DB.autoLootCycle then
+        local lcAuthor = type(author) == "string" and author:lower() or ""
+        if lcAuthor:find("scavenger", 1, true) then
+            EC_lastScavSpokeAt = GetTime()
+        elseif type(msg) == "string" then
+            local lcMsg = EC_StripCodes(msg):lower()
+            if lcMsg:find("scavenger", 1, true) then
+                EC_lastScavSpokeAt = GetTime()
+            end
+        end
     end
 
     -- Both feature flags off -> filter has no effect; skip the string-op tail.
@@ -520,15 +534,21 @@ local function EnsureDB()
             [1] = { enabled = false, maxILvl = 0 },
             [2] = { enabled = false, maxILvl = 0 },
             [3] = { enabled = false, maxILvl = 0 },
+            [4] = { enabled = false, maxILvl = 0 },
         }
         if DB.whitelistQualityEnabled and type(DB.whitelistMinQuality) == "number" then
+            -- Legacy migration: the old dropdown only ever offered up to
+            -- quality 3. Clamp the migration source to 3 so we don't
+            -- accidentally light up Epic on legacy upgraders. Existing
+            -- post-v2.4 installs without the legacy keys go through the
+            -- per-quality default (all off).
             local minQ = math.min(math.max(DB.whitelistMinQuality, 1), 3)
             for q = 1, minQ do
                 DB.qualityRules[q].enabled = true
             end
         end
     end
-    for q = 1, 3 do
+    for q = 1, 4 do
         if type(DB.qualityRules[q]) ~= "table" then
             DB.qualityRules[q] = { enabled = false, maxILvl = 0 }
         end
@@ -890,6 +910,24 @@ ChatEdit_InsertLink = function(link)
     return EC_Original_ChatEdit_InsertLink(link)
 end
 
+-- True if the player is in a state that will silently swallow CallCompanion.
+-- Catches: cast-time spells (UnitCastingInfo), channels (UnitChannelInfo),
+-- and movement (GetUnitSpeed > 0). Doesn't catch the bare GCD from instant-
+-- cast abilities -- 3.3.5a doesn't expose a clean GCD query -- but the
+-- retry-until-confirmed loops above this layer compensate for that gap.
+local function EC_IsPlayerBusy()
+    if UnitCastingInfo and UnitCastingInfo("player") then
+        return true
+    end
+    if UnitChannelInfo and UnitChannelInfo("player") then
+        return true
+    end
+    if GetUnitSpeed and GetUnitSpeed("player") > 0 then
+        return true
+    end
+    return false
+end
+
 local function SummonGreedyScavenger()
     -- Don't summon while mounted (delayed calls from dismount can race with remounting)
     if IsMounted and IsMounted() then
@@ -905,6 +943,16 @@ local function SummonGreedyScavenger()
         local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
         if creatureName == PET_NAME then
             if not isSummoned then
+                -- v2.7.1: cast-busy gate. CallCompanion goes through the
+                -- spell-cast pipeline; if the player is mid-cast / channel /
+                -- moving, the server silently rejects it. Marking
+                -- EC_addonDismissed=true and bailing out routes recovery
+                -- through EC_TryResummonScavenger's tick path, which has
+                -- the same busy gate plus retry-until-confirmed.
+                if EC_IsPlayerBusy() then
+                    EC_addonDismissed = true
+                    return
+                end
                 -- Dismiss any active critter first, then summon Scavenger
                 if DismissCompanion then
                     DismissCompanion("CRITTER")
@@ -1120,12 +1168,16 @@ local EC_summonGoblinPending = false
 local EC_summonGoblinTimer = 0
 local EC_targetGoblinPending = false
 local EC_targetGoblinTimer = 0
--- One-shot retry budget for the post-summon verify in EC_TickGoblinTarget.
--- If the 2 s verify sees the Goblin not summoned (companion GCD overlap from
--- a recent dismiss is the usual cause), we issue one more CallCompanion and
--- re-arm the timer instead of giving up. Reset to false at every fresh
--- bag-full cycle in EC_HandleBagFullForCycle.
-local EC_goblinSummonRetried = false
+-- Counter of CallCompanion attempts in the current bag-full cycle. When the
+-- 2 s verify (EC_TickGoblinTarget) sees the Goblin not summoned, we re-arm
+-- the dismiss-then-summon path with a short delay so EC_TickGoblinSummon's
+-- cast-busy gate gets another chance to fire during a clear window. v2.6.2
+-- raised the cap from a single retry (boolean) to EC_GOBLIN_MAX_RETRIES
+-- attempts: under heavy combat the bare GCD from instant-cast rotations
+-- can swallow several attempts in a row before one lands cleanly.
+-- Reset to 0 at every fresh bag-full cycle in EC_HandleBagFullForCycle.
+local EC_goblinRetryCount = 0
+local EC_GOBLIN_MAX_RETRIES = 3
 local EC_merchantReminderPending = false
 local EC_merchantReminderTimer = 0
 -- Auto-open container in-flight flag. Same forward-declaration discipline as
@@ -1164,7 +1216,7 @@ local function EC_HandleBagFullForCycle()
     end
     EC_summonGoblinPending = true
     EC_summonGoblinTimer = 1.5
-    EC_goblinSummonRetried = false
+    EC_goblinRetryCount = 0
 end
 
 -- ===========================================================================
@@ -1562,17 +1614,28 @@ local EC_petCheckFrame = CreateFrame("Frame")
 
 -- 1.5 s post-dismiss delay before summoning the Goblin Merchant. The dismiss
 -- has to land server-side before CallCompanion, otherwise the slot is still
--- occupied by the Scavenger and the call no-ops.
+-- occupied by the Scavenger and the call no-ops. v2.6.2 adds a cast-busy
+-- gate: if the timer fires while the player is mid-cast / channeling /
+-- moving, push the timer 0.5 s and try again so the summon doesn't get
+-- silently rejected by the spell system.
 local function EC_TickGoblinSummon(elapsed)
     if not EC_summonGoblinPending then
         return false
     end
     EC_summonGoblinTimer = EC_summonGoblinTimer - elapsed
     if EC_summonGoblinTimer <= 0 then
+        if EC_IsPlayerBusy() then
+            -- Defer 0.5 s and let the next tick re-evaluate. Stays pending
+            -- so the OnUpdate will keep entering this branch until a clear
+            -- cast/movement window opens.
+            EC_summonGoblinTimer = 0.5
+            return true
+        end
         EC_summonGoblinPending = false
         local idx = FindGoblinMerchantIndex()
         if idx then
             CallCompanion("CRITTER", idx)
+            EC_goblinRetryCount = EC_goblinRetryCount + 1
             EC_targetGoblinPending = true
             EC_targetGoblinTimer = 2.0
         else
@@ -1585,9 +1648,12 @@ end
 
 -- 2.0 s post-summon verify: GetCompanionInfo lags the actual summon, so we
 -- wait before checking whether the merchant came out, then arm the 8 s
--- "right-click me" reminder if it did. On the first miss we retry once --
--- the Blizzard companion GCD from a recent dismiss can swallow the first
--- CallCompanion under lag without surfacing an error.
+-- "right-click me" reminder if it did. v2.6.2 expanded the retry budget
+-- from 1 to EC_GOBLIN_MAX_RETRIES attempts: under heavy combat the bare
+-- GCD from instant-cast rotations can swallow several attempts before
+-- one lands. On a miss we re-arm EC_summonGoblinPending with a 0.5 s
+-- delay so the next attempt routes through EC_TickGoblinSummon's
+-- cast-busy gate before firing CallCompanion.
 local function EC_TickGoblinTarget(elapsed)
     if not EC_targetGoblinPending then
         return false
@@ -1597,20 +1663,20 @@ local function EC_TickGoblinTarget(elapsed)
         EC_targetGoblinPending = false
         local idx, nowSummoned = FindGoblinMerchantIndex()
         if nowSummoned then
-            EC_goblinSummonRetried = false
+            EC_goblinRetryCount = 0
             PrintNicef(
                 "|cff00ff00Goblin Merchant summoned|r - press %s or right-click to sell.",
                 EC_FormatTargetMerchantBinding()
             )
             EC_merchantReminderPending = true
             EC_merchantReminderTimer = 8.0
-        elseif not EC_goblinSummonRetried and idx then
-            EC_goblinSummonRetried = true
-            CallCompanion("CRITTER", idx)
-            EC_targetGoblinPending = true
-            EC_targetGoblinTimer = 2.0
+        elseif idx and EC_goblinRetryCount < EC_GOBLIN_MAX_RETRIES then
+            -- Re-route through the summon path so the next CallCompanion
+            -- waits for a clear cast/movement window first.
+            EC_summonGoblinPending = true
+            EC_summonGoblinTimer = 0.5
         else
-            EC_goblinSummonRetried = false
+            EC_goblinRetryCount = 0
             PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
             EC_lootCycleState = STATE.LOOTING
         end
@@ -1709,20 +1775,27 @@ end
 -- naturally honours them. Concurrent companions (bank mule, mailbox)
 -- suppress; the 10 s mount-dismiss cooldown suppresses.
 --
--- Player-speed gate: on Project Ebonhold a CRITTER summon issued while
--- the player is moving spawns the pet but its follow AI never engages --
--- the critter stays where it spawned, as a zombie. Deferring the call
--- until the player is stationary gets a clean spawn that immediately
--- starts following. EC_addonDismissed stays true while we wait, so the
--- next 5 s tick after the player stops will fire the summon.
+-- Cast-busy gate (v2.6.2, broadened from the v2.6.1 movement-only gate):
+-- on Project Ebonhold a CRITTER summon issued while the player is moving
+-- spawns the pet as a zombie that never follows; under heavy combat,
+-- summons issued mid-cast or mid-channel get silently rejected by the
+-- spell system (it lands inside someone else's cast / GCD slot). Both
+-- failure modes are handled by deferring until EC_IsPlayerBusy() is
+-- false. EC_addonDismissed stays true while we wait, so the next tick
+-- after the player is clear will fire the summon.
 --
 -- EC_addonDismissed is NOT cleared here either. CallCompanion can also
 -- be silently rejected (separate from the zombie case) and we want the
 -- retry budget. EC_PetCheckTick clears the flag when it observes
 -- scavengerOut=true on the next enumeration -- the canonical
 -- "summon landed" signal.
-local function EC_TryResummonScavenger(greedyIndex, anyPetOut)
-    if anyPetOut then
+local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
+    -- Slot occupancy: if SOME other companion is in the slot, distinguish
+    -- "user's manually-summoned critter" (respect it) from "our own
+    -- leftover Goblin Merchant from the bag-full cycle that never got
+    -- dismissed because the merchant window doesn't auto-clear it"
+    -- (we should clear it to make room for the Scavenger).
+    if anyPetOut and not goblinStillOut then
         return
     end
     if (GetTime() - EC_mountDismissTime) <= 10 then
@@ -1734,8 +1807,14 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut)
     if not greedyIndex then
         return
     end
-    if GetUnitSpeed and GetUnitSpeed("player") > 0 then
+    if EC_IsPlayerBusy() then
         return
+    end
+    if goblinStillOut and DismissCompanion then
+        -- Server-side; CallCompanion below toggles the slot atomically on
+        -- most realms but a small minority queue both calls and only the
+        -- last takes effect. Explicit dismiss is safer.
+        DismissCompanion("CRITTER")
     end
     CallCompanion("CRITTER", greedyIndex)
     if DB and DB.autoLootCycle then
@@ -1769,11 +1848,21 @@ local function EC_PetCheckTick()
     if not num or num <= 0 then
         return
     end
-    local greedyIndex, scavengerOut, anyPetOut = nil, false, false
+    local greedyIndex, scavengerOut, anyPetOut, goblinStillOut = nil, false, false, false
     for i = 1, num do
-        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        local _, creatureName, spellID, _, isSummoned = GetCompanionInfo("CRITTER", i)
         if isSummoned then
             anyPetOut = true
+            -- Track whether the in-slot pet is OUR leftover goblin from a
+            -- recent bag-full cycle. The goblin doesn't auto-dismiss when
+            -- the merchant window closes; if we treat it as "user's other
+            -- companion" the resummon path will respect it forever and
+            -- never bring the Scavenger back. Distinguished from a
+            -- genuine third-party companion (bank mule, mailbox) which
+            -- the addon never summons.
+            if creatureName == TARGET_NAME or spellID == GOBLIN_MERCHANT_SPELL_ID then
+                goblinStillOut = true
+            end
         end
         if creatureName == PET_NAME then
             greedyIndex = i
@@ -1799,13 +1888,21 @@ local function EC_PetCheckTick()
         if scavengerOut and EC_addonDismissed then
             EC_addonDismissed = false
         end
+        -- v2.8.0: refresh the loot-silence baseline on every fresh out
+        -- transition (false->true). Pet just appeared; even if the speech
+        -- detection misses something, the silence clock should not start
+        -- counting from the moment of summon -- the pet hasn't had time
+        -- to vacuum anything yet.
+        if scavengerOut then
+            EC_lastScavSpokeAt = GetTime()
+        end
     end
     EC_lastScavengerOut = scavengerOut
 
     if EC_HandleScavengerOut(scavengerOut) then
         return
     end
-    EC_TryResummonScavenger(greedyIndex, anyPetOut)
+    EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
 end
 
 EC_petCheckFrame:SetScript("OnUpdate", function(_, elapsed)
@@ -1824,7 +1921,12 @@ EC_petCheckFrame:SetScript("OnUpdate", function(_, elapsed)
     EC_TickMerchantReminder(elapsed)
 
     EC_petCheckElapsed = EC_petCheckElapsed + elapsed
-    if EC_petCheckElapsed < EC_PET_CHECK_INTERVAL then
+    -- v2.6.2: when actively trying to resummon (EC_addonDismissed = true),
+    -- sample at 1 s instead of 5 s so we catch cast-clear windows much
+    -- faster during heavy combat. Falls back to the 5 s baseline once the
+    -- pet is back and we're just polling for the next stuck/dismiss event.
+    local interval = EC_addonDismissed and 1 or EC_PET_CHECK_INTERVAL
+    if EC_petCheckElapsed < interval then
         return
     end
     EC_petCheckElapsed = 0
@@ -1928,7 +2030,7 @@ local function EC_IsSellable(bag, slot, junkOnly)
     --                GetItemInfo is non-zero on many trade goods (Runecloth = 50)
     --                but those don't display Item Level to the user.
     local qualityPass = false
-    if not junkOnly and hasSellPrice and quality and quality >= 1 and quality <= 3 and DB.qualityRules then
+    if not junkOnly and hasSellPrice and quality and quality >= 1 and quality <= 4 and DB.qualityRules then
         local rule = DB.qualityRules[quality]
         if rule and rule.enabled then
             local cap = rule.maxILvl or 0
@@ -2262,14 +2364,30 @@ local function EC_AnnotateTooltip(tooltip)
     elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
         statusLine = "|cff4db8ff[EC]|r |cffff4444Will Delete - Deletion List|r"
     elseif IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id)) then
-        statusLine = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
+        -- Honesty: EC_IsSellable also requires sellPrice > 0 and not currently
+        -- equipped. Without these checks the tooltip used to claim "Will Sell"
+        -- on items that the merchant cycle correctly refuses (custom items
+        -- with no vendor price, or items the player has equipped). Surface
+        -- both reasons in warning-yellow so the user sees them at the point
+        -- of decision instead of wondering why the cycle skipped them.
+        local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
+        if IsEquippedItem(id) then
+            statusLine = "|cff4db8ff[EC]|r |cffffb84dWhitelisted - Currently Equipped (cannot sell)|r"
+        elseif not (sellPrice and sellPrice > 0) then
+            statusLine = "|cff4db8ff[EC]|r |cffffb84dWhitelisted - No Vendor Price (cannot sell)|r"
+        else
+            statusLine = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
+        end
     elseif DB.qualityRules then
         local _, _, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(id)
-        if quality and quality >= 1 and quality <= 3 and sellPrice and sellPrice > 0 then
+        if quality and quality >= 1 and quality <= 4 and sellPrice and sellPrice > 0 then
             local rule = DB.qualityRules[quality]
             if rule and rule.enabled then
                 local cap = rule.maxILvl or 0
-                local rarityName = (quality == 1) and "White" or (quality == 2) and "Green" or "Blue"
+                local rarityName = (quality == 1) and "White"
+                    or (quality == 2) and "Green"
+                    or (quality == 3) and "Blue"
+                    or "Epic"
                 local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
                 if cap == 0 then
                     -- No cap on this rarity. All items of this rarity sell.
@@ -3554,6 +3672,7 @@ local EC_WHITELIST_QUALITIES = {
     { text = ColorTextByQuality(1, "White (Common)"), value = 1 },
     { text = ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
     { text = ColorTextByQuality(3, "Blue (Rare)"), value = 3 },
+    { text = ColorTextByQuality(4, "Purple (Epic)"), value = 4 },
 }
 
 local MerchantPanel = CreateFrame("Frame", "EbonClearanceOptionsMerchant", InterfaceOptionsFramePanelContainer)
@@ -3585,7 +3704,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         if self.RefreshMerchantModeDropDown then
             self:RefreshMerchantModeDropDown()
         end
-        for q = 1, 3 do
+        for q = 1, 4 do
             local cb = self["qualityRow" .. q .. "CB"]
             local input = self["qualityRow" .. q .. "Input"]
             if cb and DB.qualityRules and DB.qualityRules[q] then
@@ -3802,14 +3921,16 @@ MerchantPanel:SetScript("OnShow", function(self)
     local row1CB, row1Input = MakeQualityRow(thresholdDesc, 1, EC_WHITELIST_QUALITIES[1].text, -10)
     local row2CB, row2Input = MakeQualityRow(row1CB, 2, EC_WHITELIST_QUALITIES[2].text, -8)
     local row3CB, row3Input = MakeQualityRow(row2CB, 3, EC_WHITELIST_QUALITIES[3].text, -8)
+    local row4CB, row4Input = MakeQualityRow(row3CB, 4, EC_WHITELIST_QUALITIES[4].text, -8)
 
     self.qualityRow1CB, self.qualityRow1Input = row1CB, row1Input
     self.qualityRow2CB, self.qualityRow2Input = row2CB, row2Input
     self.qualityRow3CB, self.qualityRow3Input = row3CB, row3Input
+    self.qualityRow4CB, self.qualityRow4Input = row4CB, row4Input
 
     -- Size the scroll content to fit the bottom-most widget so the scrollbar
-    -- range matches actual content. Blue Rare's row is the lowest.
-    EC_FitScrollContent(content, row3CB)
+    -- range matches actual content. Purple Epic's row is the lowest.
+    EC_FitScrollContent(content, row4CB)
 end)
 
 -- Shared "Add from bags" scan row used by both whitelist panels.
@@ -5153,9 +5274,12 @@ local function EC_BuildBugReport()
 
     add("--- Whitelist ---")
     add("Quality Rules:")
-    for q = 1, 3 do
+    for q = 1, 4 do
         local r = DB.qualityRules and DB.qualityRules[q] or {}
-        local rarityName = (q == 1) and "White" or (q == 2) and "Green" or "Blue"
+        local rarityName = (q == 1) and "White"
+            or (q == 2) and "Green"
+            or (q == 3) and "Blue"
+            or "Epic"
         local capStr = (r.maxILvl and r.maxILvl > 0) and tostring(r.maxILvl) or "no cap"
         add(string.format("  %s: enabled=%s, max iLvl=%s", rarityName, tostring(r.enabled), capStr))
     end
@@ -5538,9 +5662,12 @@ SlashCmdList["ECDEBUG"] = function()
         return
     end
     PrintNice("|cffffff00=== EbonClearance Debug ===|r")
-    for q = 1, 3 do
+    for q = 1, 4 do
         local r = DB.qualityRules and DB.qualityRules[q] or {}
-        local rarityName = (q == 1) and "White" or (q == 2) and "Green" or "Blue"
+        local rarityName = (q == 1) and "White"
+            or (q == 2) and "Green"
+            or (q == 3) and "Blue"
+            or "Epic"
         local capStr = (r.maxILvl and r.maxILvl > 0) and tostring(r.maxILvl) or "no cap"
         PrintNicef("Quality[%s]: enabled=%s, max iLvl=%s", rarityName, tostring(r.enabled), capStr)
     end
@@ -5572,7 +5699,7 @@ SlashCmdList["ECDEBUG"] = function()
                     if
                         quality
                         and quality >= 1
-                        and quality <= 3
+                        and quality <= 4
                         and sellPrice
                         and sellPrice > 0
                         and DB.qualityRules

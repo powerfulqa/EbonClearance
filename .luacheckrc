@@ -93,6 +93,8 @@ read_globals = {
     "BuyMerchantItem",
     "RepairAllItems", "GetRepairAllCost", "CanMerchantRepair",
     "GetMoney",
+    -- Guild bank repair (v2.9.0 optional repair-funds path)
+    "IsInGuild", "CanGuildBankRepair", "GetGuildBankWithdrawMoney",
 
     -- Unit / player
     "UnitName", "UnitExists", "UnitAura", "UnitClass",

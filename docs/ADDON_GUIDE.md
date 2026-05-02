@@ -467,16 +467,24 @@ break the grey-always-sold invariant that users and the README rely on. The
 only things that can veto a match are `IsEquippedItem(itemID)` and the
 blacklist, both of which are safety gates.
 
-### Localisation: `TARGET_NAME` / `PET_NAME` are enUS strings
+### Localisation: `TARGET_NAME` / `PET_NAME` mirror `DB.merchantName` / `DB.scavengerName`
 
-`TARGET_NAME = "Goblin Merchant"` and `PET_NAME = "Greedy scavenger"` are
-compared directly against `creatureName` returned by `GetCompanionInfo`. A
-non-enUS realm with localised NPC names would silently fail both lookups.
+As of v2.9.0 these two file-scope locals are no longer string literals: they
+hold the live names which `EnsureDB` (and `EC_compCache.refreshNames`, used
+by the Scavenger Settings text inputs) writes from `DB.merchantName` and
+`DB.scavengerName`. Defaults are the enUS strings the addon shipped with
+through v2.8.0; users can edit them in the Scavenger Settings panel without
+having to fork.
 
-`FindGoblinMerchantIndex` already has a `spellID == 600126` fallback which
-is the localisation escape hatch. If a future user reports "summoning
-doesn't work on Ebonhold-EU," add a matching spellID fallback to
-`SummonGreedyScavenger` rather than trying to translate the names.
+Companion lookup is now ID-first via `EC_compCache` - we learn each pet's
+creature ID on first successful name match and prefer that ID on every
+subsequent lookup. Editing a name in the UI wipes the cache so the next
+lookup re-learns. The `spellID == 600126` fallback in
+`FindGoblinMerchantIndex` is now the safety net for the case where a user
+clears or mistypes the merchant name AND the cache is cold (e.g. fresh
+session after the change). If you need to add a similar safety net for the
+Scavenger on a future realm, drop a hardcoded `spellID == ...` branch into
+`EC_compCache.findByName` mirroring the merchant pattern.
 
 ### The `"CRITTER"` companion type covers both pet and merchant
 

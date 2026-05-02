@@ -4,13 +4,16 @@
 -- License: see LICENSE; attribution preservation is required.
 
 local ADDON_NAME = "EbonClearance"
--- TARGET_NAME / PET_NAME are the enUS display names of the two Project Ebonhold
--- companion NPCs the addon drives. These strings are compared directly against
--- creatureName in FindGoblinMerchantIndex / SummonGreedyScavenger, so a realm
--- with localised names would break those lookups. FindGoblinMerchantIndex
--- already has a spellID == 600126 fallback for the Goblin Merchant; adding a
--- matching fallback for the Scavenger is the L10n escape hatch if we ever need
--- one. See docs/ADDON_GUIDE.md "Gotchas" for the full localisation notes.
+-- TARGET_NAME / PET_NAME hold the live display names of the two Project
+-- Ebonhold companion NPCs. The defaults below are the enUS strings the
+-- addon shipped with; v2.9.0 made them user-configurable via DB.merchantName
+-- / DB.scavengerName so a realm with a renamed or localised pet can be
+-- driven without forking. EnsureDB (and EC_compCache.refreshNames for UI
+-- edits) writes back into these locals every time DB is re-read, and
+-- PET_NAME_LC is recomputed alongside. Companion lookup is now ID-first via the cache
+-- declared in the forward-decl block; the spellID 600126 fallback in
+-- FindGoblinMerchantIndex remains the safety net for first-run resolution
+-- when the cache is empty AND the merchant has been renamed in DB.
 local TARGET_NAME = "Goblin Merchant"
 local PET_NAME = "Greedy scavenger"
 
@@ -108,6 +111,34 @@ local STATE = {
 }
 local EC_lootCycleState = STATE.IDLE
 local EC_addonDismissed = false
+-- Cached companion creature IDs and v2.9.0 dismiss-vs-leash classifier state,
+-- colocated on a single table to keep the main-chunk local count down (Lua
+-- 5.1 caps that at 200; see docs/ADDON_GUIDE.md).
+--
+-- scav / merch: the CRITTER companion list is keyed by creature ID at the
+-- API level; matching on creatureName alone is brittle against rename /
+-- localisation. We learn the ID on first successful name match and prefer
+-- it on subsequent lookups, falling back to name + re-cache if the slot
+-- reshuffles. Both nil means "not yet resolved this session".
+--
+-- lastSummonAt / userUntil / USER_WINDOW_S / USER_GRACE_S: classifier for
+-- "the user just clicked the portrait off" vs "range-leash failure". When
+-- WE summon the Scavenger we write GetTime() to lastSummonAt. When the
+-- pet's "summoned" flag flips out -> not-out without our own dismiss flag
+-- set, and the transition lands within USER_WINDOW_S of that summon, we
+-- treat it as a manual portrait click and suppress restore until userUntil.
+-- Range-leash transitions take longer to surface, so the timing
+-- distinguishes cleanly without misclassifying stationary casts. Restores
+-- the discrimination v2.6.1 removed when it dropped the speed-based
+-- classifier without a replacement.
+local EC_compCache = {
+    scav = nil,
+    merch = nil,
+    lastSummonAt = 0,
+    userUntil = 0,
+    USER_WINDOW_S = 5.0,
+    USER_GRACE_S = 30.0,
+}
 -- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
 -- movement accumulator (only counts while the pet is out) and the
 -- bag-full / mount-cycle paths. Forward-declared here so the closures
@@ -135,6 +166,17 @@ local EC_lastScavSpokeAt = 0
 -- completed). Pruned in place inside EC_IsLootSilenceStuck on each pet-tick
 -- check, so it cannot grow unboundedly across a session.
 local EC_recentLootTimes = {}
+-- v2.9.0 manual-sell attribution. inSelfSell brackets every UseContainerItem
+-- call DoNextAction makes so the hooksecurefunc bound at ADDON_LOADED skips
+-- it (counters are bumped directly by the worker queue). snapshot is a
+-- slot -> { link, count, itemID } map taken at MERCHANT_SHOW and refreshed
+-- per-slot after every observed sell; the hook reads it to identify what
+-- just left a bag slot once the slot is empty.
+local EC_manualSell = {
+    inSelfSell = false,
+    snapshot = {},
+    hookInstalled = false,
+}
 local running = false
 
 local EC_greedyMessages = {}
@@ -172,7 +214,12 @@ local function EC_TrackGreedySpeech(msg)
         return
     end
     msg = msg:lower()
-    EC_greedyMessages[msg] = true
+    -- Store the time of speech rather than a boolean; the bubble OnUpdate
+    -- prunes entries older than 8 s each tick (chat bubbles in 3.3.5 are
+    -- visible for ~5-7 s, so an 8 s TTL covers a bubble's lifetime). The
+    -- truthy value still satisfies the existing
+    -- `if EC_greedyMessages[clean] then` match in the bubble walker.
+    EC_greedyMessages[msg] = GetTime()
 end
 
 local function EC_GreedyEventFilter(self, _event, msg, author)
@@ -301,9 +348,34 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
     if not hideBubbles then
         return
     end
-    -- Nothing tracked: no killed frames to re-hide and no Greedy speech to
-    -- match against. Becomes a constant-time no-op until either set fills.
-    if not next(EC_killedBubbles) and not next(EC_greedyMessages) then
+
+    -- Tick gate. 200 ms is short enough that a fresh bubble dies in 1-2
+    -- ticks of its visibility window (bubbles last ~5-7 s) and long enough
+    -- that the WorldFrame-children walk does not run more than five times
+    -- per second in raids, where the child count is highest. Capping the
+    -- gated work this way is the cheapest defence against a busy world.
+    self.elapsed = (self.elapsed or 0) + elapsed
+    if self.elapsed < 0.20 then
+        return
+    end
+    self.elapsed = 0
+
+    -- Prune expired greedy-speech timestamps (8 s TTL). Without this the
+    -- set never empties on its own and the OnUpdate body keeps walking
+    -- WorldFrame children long after the Scavenger has gone quiet.
+    local now = GetTime()
+    local hasLive = false
+    for k, t in pairs(EC_greedyMessages) do
+        if (now - t) > 8 then
+            EC_greedyMessages[k] = nil
+        else
+            hasLive = true
+        end
+    end
+
+    -- Nothing tracked: no killed frames to re-hide and no live Greedy speech
+    -- to match against. Becomes a constant-time no-op until either set fills.
+    if not next(EC_killedBubbles) and not hasLive then
         return
     end
 
@@ -314,15 +386,9 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 
-    if not next(EC_greedyMessages) then
+    if not hasLive then
         return
     end
-
-    self.elapsed = (self.elapsed or 0) + elapsed
-    if self.elapsed < 0.05 then
-        return
-    end
-    self.elapsed = 0
 
     local numChildren = WorldFrame and WorldFrame.GetNumChildren and WorldFrame:GetNumChildren() or 0
     for i = 1, numChildren do
@@ -451,6 +517,13 @@ local function EnsureDB()
     if type(DB.repairGear) ~= "boolean" then
         DB.repairGear = true
     end
+    -- v2.9.0: opt-in guild-bank repair. Off by default so existing users
+    -- keep paying out of personal funds; turning it on routes through
+    -- RepairAllItems(1) when the player is in a guild AND has bank-funded
+    -- repair permission AND the bank holds at least the required amount.
+    if type(DB.repairUseGuildBank) ~= "boolean" then
+        DB.repairUseGuildBank = false
+    end
 
     if type(DB.enableDeletion) ~= "boolean" then
         DB.enableDeletion = true
@@ -485,6 +558,19 @@ local function EnsureDB()
     end
     if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then
         DB.merchantMode = "goblin"
+    end
+
+    -- v2.9.0: companion display names are now user-editable. Defaults are the
+    -- enUS strings we shipped with through v2.8.0; users on a renamed or
+    -- localised realm can change either field via the General settings panel.
+    -- EnsureDB and EC_compCache.refreshNames mirror these into PET_NAME /
+    -- TARGET_NAME / PET_NAME_LC locals so every existing reference picks them
+    -- up without an audit of every call site.
+    if type(DB.scavengerName) ~= "string" or DB.scavengerName == "" then
+        DB.scavengerName = "Greedy scavenger"
+    end
+    if type(DB.merchantName) ~= "string" or DB.merchantName == "" then
+        DB.merchantName = "Goblin Merchant"
     end
 
     if type(DB.muteGreedy) ~= "boolean" then
@@ -615,6 +701,21 @@ local function EnsureDB()
     if not DB._seededLists then
         DB._seededLists = true
     end
+
+    -- Mirror name fields into PET_NAME / TARGET_NAME / PET_NAME_LC. Done in
+    -- EnsureDB rather than in a separate helper so every caller (event hub,
+    -- slash commands, settings panels) inherits the same up-to-date strings
+    -- without each having to refresh manually. The companion-ID cache is
+    -- wiped so the next lookup re-learns under the new names.
+    if type(DB.scavengerName) == "string" and DB.scavengerName ~= "" then
+        PET_NAME = DB.scavengerName
+    end
+    if type(DB.merchantName) == "string" and DB.merchantName ~= "" then
+        TARGET_NAME = DB.merchantName
+    end
+    PET_NAME_LC = PET_NAME:lower()
+    EC_compCache.scav = nil
+    EC_compCache.merch = nil
 end
 
 -- Session stats (in-memory only; reset on /reload or by user button).
@@ -928,48 +1029,105 @@ local function EC_IsPlayerBusy()
     return false
 end
 
+-- Companion lookup primitives. Match by name (case-insensitive equality), or
+-- by a previously-cached creature ID. The ID path is the cheap path: a single
+-- numeric compare per slot. The name path is the cold-cache fallback and the
+-- post-rename recovery path. Both return (index, isSummoned, creatureID) or
+-- (nil, false, nil); callers re-cache the ID on every successful hit.
+-- Hung off EC_compCache rather than as module-scope locals so the helpers
+-- and the cache they read share a namespace and we save two main-chunk
+-- local slots (Lua 5.1 caps that at 200).
+function EC_compCache.findByName(name)
+    if not name or name == "" then
+        return nil, false, nil
+    end
+    local num = GetNumCompanions("CRITTER") or 0
+    local needle = string.lower(name)
+    for i = 1, num do
+        local cId, cName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if cName and string.lower(cName) == needle then
+            return i, isSummoned, cId
+        end
+    end
+    return nil, false, nil
+end
+
+function EC_compCache.findByID(cachedID, fallbackName)
+    if cachedID then
+        local num = GetNumCompanions("CRITTER") or 0
+        for i = 1, num do
+            local cId, _, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+            if cId == cachedID then
+                return i, isSummoned, cId
+            end
+        end
+    end
+    return EC_compCache.findByName(fallbackName)
+end
+
+-- Apply DB-side companion display names to the file-scope PET_NAME /
+-- TARGET_NAME / PET_NAME_LC locals and wipe the ID cache. EnsureDB does
+-- the same work at the end of its body; this lightweight method is for
+-- UI handlers that change a name without wanting the full DB validation
+-- pass.
+function EC_compCache.refreshNames()
+    if not DB then
+        return
+    end
+    if type(DB.scavengerName) == "string" and DB.scavengerName ~= "" then
+        PET_NAME = DB.scavengerName
+    end
+    if type(DB.merchantName) == "string" and DB.merchantName ~= "" then
+        TARGET_NAME = DB.merchantName
+    end
+    PET_NAME_LC = PET_NAME:lower()
+    EC_compCache.scav = nil
+    EC_compCache.merch = nil
+end
+
 local function SummonGreedyScavenger()
     -- Don't summon while mounted (delayed calls from dismount can race with remounting)
     if IsMounted and IsMounted() then
         return
     end
 
-    local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then
+    local idx, isSummoned, cId = EC_compCache.findByID(EC_compCache.scav, PET_NAME)
+    if cId then
+        EC_compCache.scav = cId
+    end
+    if not idx then
         return
     end
 
-    for i = 1, num do
-        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
-        if creatureName == PET_NAME then
-            if not isSummoned then
-                -- v2.7.1: cast-busy gate. CallCompanion goes through the
-                -- spell-cast pipeline; if the player is mid-cast / channel /
-                -- moving, the server silently rejects it. Marking
-                -- EC_addonDismissed=true and bailing out routes recovery
-                -- through EC_TryResummonScavenger's tick path, which has
-                -- the same busy gate plus retry-until-confirmed.
-                if EC_IsPlayerBusy() then
-                    EC_addonDismissed = true
-                    return
-                end
-                -- Dismiss any active critter first, then summon Scavenger
-                if DismissCompanion then
-                    DismissCompanion("CRITTER")
-                end
-                CallCompanion("CRITTER", i)
-            end
-            EC_addonDismissed = false
-            -- Sync the stuck-detection gate immediately so the OnUpdate
-            -- accumulator starts counting from this summon, not from the
-            -- next 5 s tick observation.
-            EC_lastScavengerOut = true
-            EC_scavMovementAccum = 0
-            if DB and DB.autoLootCycle then
-                EC_lootCycleState = STATE.LOOTING
-            end
+    if not isSummoned then
+        -- v2.7.1: cast-busy gate. CallCompanion goes through the
+        -- spell-cast pipeline; if the player is mid-cast / channel /
+        -- moving, the server silently rejects it. Marking
+        -- EC_addonDismissed=true and bailing out routes recovery
+        -- through EC_TryResummonScavenger's tick path, which has
+        -- the same busy gate plus retry-until-confirmed.
+        if EC_IsPlayerBusy() then
+            EC_addonDismissed = true
             return
         end
+        -- Dismiss any active critter first, then summon Scavenger
+        if DismissCompanion then
+            DismissCompanion("CRITTER")
+        end
+        CallCompanion("CRITTER", idx)
+        -- v2.9.0: anchor the user-dismiss-vs-leash classification window.
+        -- A subsequent out -> not-out transition within EC_compCache.USER_WINDOW_S
+        -- of this timestamp is treated as "the user clicked the portrait off".
+        EC_compCache.lastSummonAt = GetTime()
+    end
+    EC_addonDismissed = false
+    -- Sync the stuck-detection gate immediately so the OnUpdate
+    -- accumulator starts counting from this summon, not from the
+    -- next 5 s tick observation.
+    EC_lastScavengerOut = true
+    EC_scavMovementAccum = 0
+    if DB and DB.autoLootCycle then
+        EC_lootCycleState = STATE.LOOTING
     end
 end
 
@@ -1004,36 +1162,44 @@ local GOBLIN_MERCHANT_SPELL_ID = 600126
 -- pets AND functional companions like the Goblin Merchant on Project Ebonhold
 -- -- they share one companion slot. That's why summoning the Merchant
 -- dismisses the Scavenger and vice versa: they can't coexist.
+--
+-- Lookup is ID-first (cheap, survives a future rename / localisation), with a
+-- name fallback that also matches on spellID 600126 so the very first lookup
+-- on a fresh client still resolves the merchant before any cache exists.
 local function FindGoblinMerchantIndex()
-    local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then
-        return nil
+    if EC_compCache.merch then
+        local num = GetNumCompanions("CRITTER") or 0
+        for i = 1, num do
+            local cId, _, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+            if cId == EC_compCache.merch then
+                return i, isSummoned
+            end
+        end
     end
+    local num = GetNumCompanions("CRITTER") or 0
     for i = 1, num do
-        local _, creatureName, spellID, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        local cId, creatureName, spellID, _, isSummoned = GetCompanionInfo("CRITTER", i)
         if creatureName == TARGET_NAME or spellID == GOBLIN_MERCHANT_SPELL_ID then
+            EC_compCache.merch = cId
             return i, isSummoned
         end
     end
     return nil
 end
 
--- Locate the Greedy Scavenger by name in the player's companion list.
--- Returns (index, isSummoned). index is nil if it isn't in the list at all
--- (e.g. user hasn't learned the pet). The mount handler uses this to skip
--- the dismiss/restore cycle when the Scavenger isn't actually out.
+-- Locate the Greedy Scavenger in the player's companion list. Returns
+-- (index, isSummoned). index is nil if the pet isn't in the list at all
+-- (e.g. user hasn't learned it). ID-first lookup keeps the rename / L10n
+-- escape hatch consistent with the merchant path.
 local function EC_FindGreedyScavenger()
-    local num = GetNumCompanions("CRITTER")
-    if not num or num <= 0 then
+    local idx, isSummoned, cId = EC_compCache.findByID(EC_compCache.scav, PET_NAME)
+    if cId then
+        EC_compCache.scav = cId
+    end
+    if not idx then
         return nil, false
     end
-    for i = 1, num do
-        local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
-        if creatureName == PET_NAME then
-            return i, isSummoned
-        end
-    end
-    return nil, false
+    return idx, isSummoned
 end
 
 -- SummonGoblinMerchant / DismissGoblinMerchant helpers were removed: the
@@ -1214,6 +1380,15 @@ local function EC_HandleBagFullForCycle()
     if DismissCompanion then
         DismissCompanion("CRITTER")
     end
+    -- v2.9.0: signal that this dismiss is addon-driven so the dismiss-vs-leash
+    -- classifier in EC_PetCheckTick doesn't mis-classify the bag-full
+    -- transition as a manual portrait click and trip a 30 s grace that
+    -- would block the post-merchant Scavenger restore (especially during
+    -- heavy combat, where the busy-gated retry path needs every tick).
+    -- The flag stays true through WAITING_MERCHANT/SELLING (pet-tick is
+    -- gated on those states so it can't act on it) and is cleared by
+    -- SummonGreedyScavenger when FinishRun brings the Scavenger back.
+    EC_addonDismissed = true
     EC_summonGoblinPending = true
     EC_summonGoblinTimer = 1.5
     EC_goblinRetryCount = 0
@@ -1790,6 +1965,24 @@ end
 -- scavengerOut=true on the next enumeration -- the canonical
 -- "summon landed" signal.
 local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
+    -- v2.9.0: honour the user-dismiss-vs-leash grace window. If a recent
+    -- transition was classified as a manual portrait dismiss, suppress the
+    -- restore until the grace expires so the addon does not fight the user.
+    -- Worst case is a 30 s gap before auto-recovery resumes; the manual
+    -- /ec slash command is an explicit override path that bypasses this.
+    if GetTime() < EC_compCache.userUntil then
+        return
+    end
+    -- v2.9.0: post-CallCompanion server-confirm window. After we fire a
+    -- CallCompanion the server takes ~1-2 s to flip the companion's
+    -- summoned flag to true; the next pet-tick (1 s cadence while
+    -- EC_addonDismissed is true) would otherwise see scavengerOut=false
+    -- still and fire a second redundant CallCompanion + chat print. Wait
+    -- 2 s before retrying so the confirmation transition has a chance to
+    -- land. If the call was rejected, the retry resumes after the wait.
+    if (GetTime() - EC_compCache.lastSummonAt) < 2 then
+        return
+    end
     -- Slot occupancy: if SOME other companion is in the slot, distinguish
     -- "user's manually-summoned critter" (respect it) from "our own
     -- leftover Goblin Merchant from the bag-full cycle that never got
@@ -1817,6 +2010,18 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
         DismissCompanion("CRITTER")
     end
     CallCompanion("CRITTER", greedyIndex)
+    -- v2.9.0: surface the recovery in chat. This path covers post-merchant
+    -- restore (including the user-Escape mid-sell case where FinishRun never
+    -- ran), stuck-detection re-summon, and any other case where the
+    -- cast-busy gate eventually catches a clear window. Without a print the
+    -- summon happens silently and the user has no signal that the addon
+    -- did the right thing - the bag-full / Goblin-summoned chat line gets
+    -- left dangling without a matching close.
+    PrintNice("|cff00ff00Greedy Scavenger resummoned.|r")
+    -- Anchor the user-dismiss-vs-leash classification window for this summon
+    -- too, so a fast portrait click that happens immediately after a recovery
+    -- gets honoured the same way as one immediately after a manual /ec.
+    EC_compCache.lastSummonAt = GetTime()
     if DB and DB.autoLootCycle then
         EC_lootCycleState = STATE.LOOTING
     end
@@ -1885,6 +2090,23 @@ local function EC_PetCheckTick()
         -- the loot-silence counter cleanly (otherwise stale pre-transition
         -- loots could trigger an immediate re-fire after a benign respawn).
         EC_recentLootTimes = {}
+        -- v2.9.0: classify true -> false transitions as a possible manual
+        -- portrait dismiss. The `not EC_addonDismissed` guard is the
+        -- definitive signal: every addon-driven dismiss path
+        -- (DismissGreedyScavenger, EC_HandleBagFullForCycle, the auto-loot
+        -- cycle's mid-cycle dismiss before summoning the Goblin Merchant)
+        -- sets EC_addonDismissed = true, so any transition that reaches
+        -- here with the flag still false was not us. If the timing also
+        -- lands inside EC_compCache.USER_WINDOW_S of our last summon we
+        -- mark a 30 s grace via EC_compCache.userUntil and EC_TryResummonScavenger
+        -- honours it. Range-leash transitions take longer than 5 s to
+        -- surface, so they fall outside the window and the existing
+        -- recovery path runs unchanged.
+        if EC_lastScavengerOut and not scavengerOut and not EC_addonDismissed then
+            if (GetTime() - EC_compCache.lastSummonAt) < EC_compCache.USER_WINDOW_S then
+                EC_compCache.userUntil = GetTime() + EC_compCache.USER_GRACE_S
+            end
+        end
         if scavengerOut and EC_addonDismissed then
             EC_addonDismissed = false
         end
@@ -1935,6 +2157,100 @@ end)
 
 local pendingDelete = nil
 local deletePopupHooked = false
+
+-- v2.9.0: bag snapshot for manual-sell attribution. Run at MERCHANT_SHOW so
+-- the post-call hook can look up what was in (bag, slot) before the player
+-- right-clicked it. By the time hooksecurefunc fires the slot is empty, so
+-- a synchronous read inside the hook can't see what was sold. All three
+-- helpers hang off EC_manualSell to keep main-chunk local count down (Lua
+-- 5.1 caps that at 200).
+function EC_manualSell.snapshotBags()
+    wipe(EC_manualSell.snapshot)
+    for bag = 0, 4 do
+        local n = GetContainerNumSlots(bag) or 0
+        for slot = 1, n do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local _, count = GetContainerItemInfo(bag, slot)
+                EC_manualSell.snapshot[bag * 1000 + slot] = {
+                    link = link,
+                    count = count or 1,
+                    itemID = GetContainerItemID(bag, slot),
+                }
+            end
+        end
+    end
+end
+
+function EC_manualSell.refreshSlot(bag, slot)
+    if not bag or not slot then
+        return
+    end
+    local key = bag * 1000 + slot
+    local link = GetContainerItemLink(bag, slot)
+    if link then
+        local _, count = GetContainerItemInfo(bag, slot)
+        EC_manualSell.snapshot[key] = {
+            link = link,
+            count = count or 1,
+            itemID = GetContainerItemID(bag, slot),
+        }
+    else
+        EC_manualSell.snapshot[key] = nil
+    end
+end
+
+-- Hook UseContainerItem ONCE at addon load. hooksecurefunc preserves the
+-- original (we cannot replace it: UseContainerItem is in the secure-dispatch
+-- path for items that trigger spells/casts, and Blizzard's secure system
+-- silently rejects calls to a non-Blizzard implementation). The hook only
+-- attributes a sell when (a) we did NOT do it ourselves (EC_manualSell.inSelfSell is
+-- false) and (b) the merchant frame is open and (c) the snapshot has an
+-- entry for that slot - i.e. the item was present at MERCHANT_SHOW or after
+-- the last refresh. Stat fields match what DoNextAction bumps for the
+-- worker-driven path so lifetime/session totals are uniform regardless of
+-- which path actually completed the sale.
+function EC_manualSell.installHookOnce()
+    if EC_manualSell.hookInstalled then
+        return
+    end
+    EC_manualSell.hookInstalled = true
+    hooksecurefunc("UseContainerItem", function(bag, slot)
+        if EC_manualSell.inSelfSell then
+            return
+        end
+        if not (MerchantFrame and MerchantFrame:IsShown()) then
+            return
+        end
+        if not bag or not slot then
+            return
+        end
+        local snap = EC_manualSell.snapshot[bag * 1000 + slot]
+        if snap and snap.link then
+            local sellPrice = select(11, GetItemInfo(snap.link))
+            if sellPrice and sellPrice > 0 then
+                local copper = sellPrice * (snap.count or 1)
+                if DB then
+                    DB.totalCopper = (DB.totalCopper or 0) + copper
+                    DB.totalItemsSold = (DB.totalItemsSold or 0) + 1
+                    if snap.itemID then
+                        DB.soldItemCounts = DB.soldItemCounts or {}
+                        DB.soldItemCounts[snap.itemID] = (DB.soldItemCounts[snap.itemID] or 0) + 1
+                    end
+                end
+                EC_session.copper = EC_session.copper + copper
+                EC_session.sold = EC_session.sold + 1
+            end
+        end
+        -- Refresh the snapshot for this slot after the sell completes. The
+        -- 0.1 s delay gives the bag a tick to update before we re-read
+        -- (hooksecurefunc fires synchronously inside the protected call,
+        -- so the slot may still report the just-sold item if we read now).
+        EC_Delay(0.1, function()
+            EC_manualSell.refreshSlot(bag, slot)
+        end)
+    end)
+end
 
 local function HookDeletePopupOnce()
     if deletePopupHooked then
@@ -2184,7 +2500,12 @@ local function DoNextAction()
     end
 
     if action.type == "sell" then
+        -- v2.9.0: bracket the worker-path UseContainerItem so the
+        -- manual-sell hook (installed at ADDON_LOADED) skips this call.
+        -- The counters below own the attribution for the worker path.
+        EC_manualSell.inSelfSell = true
         UseContainerItem(action.bag, action.slot)
+        EC_manualSell.inSelfSell = false
         DB.totalItemsSold = (DB.totalItemsSold or 0) + (action.count or 1)
         EC_session.sold = EC_session.sold + (action.count or 1)
         DB.soldItemCounts = DB.soldItemCounts or {}
@@ -2295,6 +2616,11 @@ local function StartRun()
 
     EC_RecordInventoryWorthSample()
 
+    -- Auto-repair. v2.9.0 added the optional guild-bank branch: when
+    -- DB.repairUseGuildBank is on AND the player is in a guild AND the
+    -- guild bank can fund the full repair cost, RepairAllItems(1) charges
+    -- the bank instead of personal gold. Any miss in the guild chain
+    -- falls through to the existing personal-gold branch.
     if
         DB
         and DB.repairGear == true
@@ -2304,12 +2630,28 @@ local function StartRun()
         and RepairAllItems
     then
         local repairCost, canRepair = GetRepairAllCost()
-        if canRepair and repairCost and repairCost > 0 and GetMoney and GetMoney() >= repairCost then
-            RepairAllItems()
-            DB.totalRepairs = (DB.totalRepairs or 0) + 1
-            DB.totalRepairCopper = (DB.totalRepairCopper or 0) + repairCost
-            EC_session.repairs = EC_session.repairs + 1
-            EC_session.repairCopper = EC_session.repairCopper + repairCost
+        if canRepair and repairCost and repairCost > 0 then
+            local useGuild = DB.repairUseGuildBank == true
+                and IsInGuild
+                and IsInGuild()
+                and CanGuildBankRepair
+                and CanGuildBankRepair()
+                and GetGuildBankWithdrawMoney
+                and GetGuildBankWithdrawMoney() >= repairCost
+            if useGuild then
+                RepairAllItems(1) -- 1 = use guild bank funds
+                DB.totalRepairs = (DB.totalRepairs or 0) + 1
+                DB.totalRepairCopper = (DB.totalRepairCopper or 0) + repairCost
+                EC_session.repairs = EC_session.repairs + 1
+                EC_session.repairCopper = EC_session.repairCopper + repairCost
+                PrintNicef("Repaired from guild bank: %s", CopperToColoredText(repairCost))
+            elseif GetMoney and GetMoney() >= repairCost then
+                RepairAllItems()
+                DB.totalRepairs = (DB.totalRepairs or 0) + 1
+                DB.totalRepairCopper = (DB.totalRepairCopper or 0) + repairCost
+                EC_session.repairs = EC_session.repairs + 1
+                EC_session.repairCopper = EC_session.repairCopper + repairCost
+            end
         end
     end
 
@@ -3692,6 +4034,9 @@ MerchantPanel:SetScript("OnShow", function(self)
         if self.repairCB then
             self.repairCB:SetChecked(DB.repairGear)
         end
+        if self.guildRepairCB then
+            self.guildRepairCB:SetChecked(DB.repairUseGuildBank)
+        end
         if self.keepBagsCB then
             self.keepBagsCB:SetChecked(DB.keepBagsOpen)
         end
@@ -3788,9 +4133,34 @@ MerchantPanel:SetScript("OnShow", function(self)
     end)
     self.repairCB = repairCB
 
+    -- Guild-bank funded repair. Indented under the master repair toggle so
+    -- the visual hierarchy reads "repair, and prefer guild bank if I can".
+    -- The runtime path falls back to personal gold whenever the bank can't
+    -- supply the full amount, so toggling this on is safe even on alts who
+    -- aren't in a guild.
+    local guildRepairCB = CreateFrame(
+        "CheckButton",
+        "EbonClearanceRepairGuildBankCB",
+        content,
+        "InterfaceOptionsCheckButtonTemplate"
+    )
+    guildRepairCB:SetPoint("TOPLEFT", repairCB, "BOTTOMLEFT", 22, -2)
+    guildRepairCB:SetChecked(DB.repairUseGuildBank)
+    local grt = _G[guildRepairCB:GetName() .. "Text"]
+    if grt then
+        grt:SetText("Use guild bank funds when available")
+        grt:SetWidth(EC_PANEL_WIDTH - 80)
+        grt:SetJustifyH("LEFT")
+    end
+    guildRepairCB:SetScript("OnClick", function()
+        DB.repairUseGuildBank = guildRepairCB:GetChecked() and true or false
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    self.guildRepairCB = guildRepairCB
+
     local keepBagsCB =
         CreateFrame("CheckButton", "EbonClearanceKeepBagsOpenCB", content, "InterfaceOptionsCheckButtonTemplate")
-    keepBagsCB:SetPoint("TOPLEFT", repairCB, "BOTTOMLEFT", 0, -6)
+    keepBagsCB:SetPoint("TOPLEFT", guildRepairCB, "BOTTOMLEFT", -22, -6)
     keepBagsCB:SetChecked(DB.keepBagsOpen)
     local kbt = _G[keepBagsCB:GetName() .. "Text"]
     if kbt then
@@ -4741,6 +5111,12 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if self.autoOpenCB then
             self.autoOpenCB:SetChecked(DB.autoOpenContainers)
         end
+        if self.scavInput then
+            self.scavInput:SetText(DB.scavengerName or "")
+        end
+        if self.merchInput then
+            self.merchInput:SetText(DB.merchantName or "")
+        end
         return
     end
     self.inited = true
@@ -4905,10 +5281,92 @@ ScavengerPanel:SetScript("OnShow", function(self)
     end
     autoOpenNote:SetText("|cff888888Lockboxes that need a key or lockpick are skipped. Combat-paused.|r")
 
+    -- v2.9.0: editable companion display names. Defaults are the enUS strings
+    -- the addon shipped with through v2.8.0; users on a renamed or localised
+    -- realm can change either field. EC_compCache.refreshNames mirrors the
+    -- values into the lookup locals and wipes the companion-ID cache so
+    -- the next summon learns the new pet by name and re-caches its ID.
+    local nameHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    nameHeader:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", 0, -16)
+    nameHeader:SetText("Companion names")
+
+    local scavLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    scavLabel:SetPoint("TOPLEFT", nameHeader, "BOTTOMLEFT", 0, -10)
+    scavLabel:SetText("Loot pet:")
+
+    local scavInput = CreateFrame("EditBox", "EbonClearanceScavengerNameInput", content, "InputBoxTemplate")
+    scavInput:SetAutoFocus(false)
+    scavInput:SetSize(220, 20)
+    scavInput:SetPoint("TOPLEFT", scavLabel, "TOPRIGHT", 16, 4)
+    scavInput:SetMaxLetters(64)
+    scavInput:SetText(DB.scavengerName or "Greedy scavenger")
+    -- Raise above the InputBoxTemplate's Left/Middle/Right backdrop textures
+    -- so clicks land on the EditBox instead of being swallowed by the
+    -- backdrop. Every other InputBoxTemplate field in this file uses the
+    -- same helper for the same reason.
+    StyleInputBox(scavInput)
+    scavInput:SetScript("OnEnterPressed", function(s)
+        local txt = (s:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if txt == "" then
+            s:SetText(DB.scavengerName or "")
+            s:ClearFocus()
+            return
+        end
+        DB.scavengerName = txt
+        EC_compCache.refreshNames()
+        PrintNicef("Loot pet name set to |cffb6ffb6%s|r.", txt)
+        s:ClearFocus()
+    end)
+    scavInput:SetScript("OnEscapePressed", function(s)
+        s:SetText(DB.scavengerName or "")
+        s:ClearFocus()
+    end)
+    self.scavInput = scavInput
+
+    local merchLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    merchLabel:SetPoint("TOPLEFT", scavInput, "BOTTOMLEFT", -16, -10)
+    merchLabel:SetText("Vendor pet:")
+
+    local merchInput = CreateFrame("EditBox", "EbonClearanceMerchantNameInput", content, "InputBoxTemplate")
+    merchInput:SetAutoFocus(false)
+    merchInput:SetSize(220, 20)
+    merchInput:SetPoint("TOPLEFT", merchLabel, "TOPRIGHT", 16, 4)
+    merchInput:SetMaxLetters(64)
+    merchInput:SetText(DB.merchantName or "Goblin Merchant")
+    StyleInputBox(merchInput)
+    merchInput:SetScript("OnEnterPressed", function(s)
+        local txt = (s:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if txt == "" then
+            s:SetText(DB.merchantName or "")
+            s:ClearFocus()
+            return
+        end
+        DB.merchantName = txt
+        EC_compCache.refreshNames()
+        PrintNicef("Vendor pet name set to |cffb6ffb6%s|r.", txt)
+        s:ClearFocus()
+    end)
+    merchInput:SetScript("OnEscapePressed", function(s)
+        s:SetText(DB.merchantName or "")
+        s:ClearFocus()
+    end)
+    self.merchInput = merchInput
+
+    local nameNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    nameNote:SetPoint("TOPLEFT", merchInput, "BOTTOMLEFT", -16, -6)
+    nameNote:SetWidth(EC_PANEL_WIDTH - 60)
+    nameNote:SetJustifyH("LEFT")
+    if nameNote.SetWordWrap then
+        nameNote:SetWordWrap(true)
+    end
+    nameNote:SetText(
+        "|cff888888Press Enter to apply. Change only if your realm uses different display names; the spell-ID 600126 fallback still resolves the merchant slot if its name is unset.|r"
+    )
+
     -- Discoverability hint for the right-click context menu. Lives on this
     -- panel because both v2.3.0 bag-action features cluster here.
     local rightClickHint = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    rightClickHint:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", 0, -16)
+    rightClickHint:SetPoint("TOPLEFT", nameNote, "BOTTOMLEFT", 0, -16)
     rightClickHint:SetWidth(EC_PANEL_WIDTH - 60)
     rightClickHint:SetJustifyH("LEFT")
     if rightClickHint.SetWordWrap then
@@ -5776,6 +6234,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_CreateLDBLauncher()
             EC_CreateTargetMerchantButton()
             EC_InstallBagContextHookOnce()
+            EC_manualSell.installHookOnce()
         end
     elseif event == "PLAYER_LOGOUT" then
         if DB then
@@ -5814,6 +6273,13 @@ f:SetScript("OnEvent", function(self, event, ...)
         EC_batchTotalSold = 0
         EC_batchTotalGold = 0
         EC_keepBagsFlag = true
+        -- v2.9.0: snapshot bag contents BEFORE StartRun fires its first sell.
+        -- The hooksecurefunc on UseContainerItem reads this map to attribute
+        -- right-click sells (which empty the slot before the hook callback
+        -- runs); the worker path is excluded by EC_manualSell.inSelfSell. Captured even
+        -- when the addon is disabled for this character so manual sells at a
+        -- merchant the user opened by hand are still tracked.
+        EC_manualSell.snapshotBags()
         if DB and DB.autoLootCycle then
             EC_lootCycleState = STATE.SELLING
         end

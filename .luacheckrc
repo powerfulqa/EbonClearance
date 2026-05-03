@@ -126,6 +126,9 @@ read_globals = {
     -- Addon metadata
     "GetAddOnInfo", "GetAddOnMetadata", "IsAddOnLoaded",
 
+    -- Loot
+    "IsFishingLoot",
+
     -- Misc utilities
     "hooksecurefunc", "wipe", "select", "tinsert",
     "NORMAL_FONT_COLOR", "HIGHLIGHT_FONT_COLOR", "ITEM_QUALITY_COLORS",

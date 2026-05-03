@@ -44,8 +44,8 @@ _G["__EbonClearance_author"] = ADDON_AUTHOR
 -- .toc files on full client restart, not /reload) cannot make the displayed
 -- version lie on a release build. Pre-v2.9.1 builds shipped a stale "v2.5.0"
 -- literal because the workflow's sed pattern didn't match this line; fixed
--- in v2.9.1 by switching to the v2.9.1 placeholder convention.
-local ADDON_VERSION = "v2.9.1"
+-- in v2.9.1 by switching to the @VERSION@ placeholder convention.
+local ADDON_VERSION = "@VERSION@"
 local function EC_GetVersion()
     if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then
         return ADDON_VERSION
@@ -146,6 +146,27 @@ local EC_compCache = {
     userUntil = 0,
     USER_WINDOW_S = 5.0,
     USER_GRACE_S = 30.0,
+    -- v2.9.2 loot-silence false-positive guard. The loot-silence stuck signal
+    -- (EC_IsLootSilenceStuck) trips when 2+ LOOT_CLOSED fire inside its
+    -- 60 s window without the Scavenger speaking. LOOT_CLOSED also fires
+    -- for non-corpse loot sources - disenchanting, milling, prospecting,
+    -- lockpicking, opening engineered containers - which the Scavenger
+    -- never reacts to, so a player crafting in town would dismiss-and-
+    -- resummon the pet every minute. UNIT_SPELLCAST_SUCCEEDED for the
+    -- player updates lastProfLootCastAt; the LOOT_CLOSED handler skips
+    -- the loot-ring push when (now - lastProfLootCastAt) < PROF_LOOT_WINDOW_S
+    -- because the loot frame that just closed was the result of that
+    -- profession cast, not a corpse loot. Fishing is excluded via
+    -- IsFishingLoot() in the same path.
+    lastProfLootCastAt = 0,
+    PROF_LOOT_WINDOW_S = 3.0,
+    PROF_LOOT_SPELLS = {
+        ["Disenchant"] = true,
+        ["Milling"] = true,
+        ["Prospecting"] = true,
+        ["Pick Lock"] = true,
+        ["Opening"] = true, -- lockpick + engineering container open
+    },
 }
 -- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
 -- movement accumulator (only counts while the pet is out) and the
@@ -1686,24 +1707,57 @@ local function EC_ShowItemContextMenu(button)
     frame.bag = bag
     frame.slot = slot
 
-    local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
+    -- Pull sellPrice alongside the name so the smart-row filter below can
+    -- decide which actions are meaningful for this item.
+    local name, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+    local itemName = name or ("ItemID:" .. itemID)
     frame.title:SetText("|cff4db8ffEbonClearance|r: " .. itemName)
 
+    -- Smart-row filter. When we know the item has no vendor value (sellPrice
+    -- 0 or nil from a cache hit) the only useful "Add to X" action is the
+    -- Deletion List - the auto-rules already ignore unsellable items so
+    -- whitelisting/blacklisting them is no-op, and Sell Now is meaningless
+    -- because no vendor will buy it. Existing list memberships still expose
+    -- a "Remove from X" row so users can clean up stale entries (e.g. an
+    -- item that was added to the whitelist before its sellPrice was known).
+    -- The cross-list conflict greying remains unchanged: an unsellable item
+    -- already on the Whitelist still shows the Deletion List row as a
+    -- greyed "Add to Deletion List" so the user knows they need to remove
+    -- it from Whitelist first - same UX rule the panel-side adds enforce,
+    -- which is why the tooltip annotation also stays as the canonical
+    -- "why is this item being treated this way?" indicator.
+    --
+    -- The cache-miss path (name == nil) falls back to showing every row;
+    -- we don't know yet whether the item is unsellable. Reopen the menu
+    -- after a moment to let GetItemInfo populate.
+    local cacheKnown = (name ~= nil)
+    local noVendorValue = cacheKnown and (not sellPrice or sellPrice == 0)
+
     local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
+    local visibleSlot = 0
     for i, row in ipairs(EC_CTX_ROWS) do
         local btn = frame.buttons[i]
+        local rowHidden = false
         if row.kind == "list" then
             local t = EC_GetListTable(row.setName)
             local onList = t and t[itemID] == true
             if onList then
                 -- Orange "Remove from ..." when the item is already on this
-                -- list. Clicking removes it.
+                -- list. Clicking removes it. Always shown - this is how
+                -- users clean up stale entries, including for unsellable
+                -- items that may have been added before their price was
+                -- known.
                 btn:SetText("|cffff8000Remove from " .. row.label .. "|r")
                 btn:SetScript("OnClick", function()
                     EC_RemoveItemFromList(row.setName, itemID, row.label)
                     frame:Hide()
                 end)
                 btn:Enable()
+            elseif noVendorValue and row.setName ~= "deleteList" then
+                -- Hide whitelist/account-whitelist/blacklist Add rows for
+                -- items the auto-rules can't act on anyway. Add-to-Deletion
+                -- stays visible because that's the actually-useful action.
+                rowHidden = true
             else
                 -- If a different-intent list already holds the item, grey
                 -- out the row so the user can see the option exists but
@@ -1729,15 +1783,22 @@ local function EC_ShowItemContextMenu(button)
                 end
             end
         elseif row.kind == "sellNow" then
-            btn:SetText("Sell Now")
-            btn:SetScript("OnClick", function()
-                EC_SellNowAt(frame.bag, frame.slot)
-                frame:Hide()
-            end)
-            if merchantOpen then
-                btn:Enable()
+            if noVendorValue then
+                -- No vendor will buy it - row is meaningless. Hide rather
+                -- than disable so the menu collapses to what's actually
+                -- useful.
+                rowHidden = true
             else
-                btn:Disable()
+                btn:SetText("Sell Now")
+                btn:SetScript("OnClick", function()
+                    EC_SellNowAt(frame.bag, frame.slot)
+                    frame:Hide()
+                end)
+                if merchantOpen then
+                    btn:Enable()
+                else
+                    btn:Disable()
+                end
             end
         elseif row.kind == "cancel" then
             btn:SetText("Cancel")
@@ -1746,7 +1807,24 @@ local function EC_ShowItemContextMenu(button)
             end)
             btn:Enable()
         end
+
+        if rowHidden then
+            btn:Hide()
+        else
+            -- Pack visible rows contiguously starting at slot 0; the frame
+            -- height below resizes to match the count so the trailing
+            -- padding is consistent regardless of how many rows are shown.
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", 10, -(8 + 22 + 6) - visibleSlot * 22)
+            btn:Show()
+            visibleSlot = visibleSlot + 1
+        end
     end
+
+    -- Resize the frame to match the visible row count. Same layout formula
+    -- the build path uses; visibleSlot is the count of rows we just laid
+    -- out (it ended at last_index + 1).
+    frame:SetHeight(8 + 22 + 6 + (visibleSlot * 22) + 8)
 
     -- Position at the cursor. WoW's GetCursorPosition returns screen pixels;
     -- divide by UIParent's effective scale to get UIParent-local coords.
@@ -6223,6 +6301,17 @@ if f.RegisterUnitEvent then
 else
     f:RegisterEvent("UNIT_AURA")
 end
+-- v2.9.2: track player-only profession-cast successes so the LOOT_CLOSED
+-- handler can suppress the loot-silence ring push when the loot was
+-- triggered by a craft / disenchant / mill / prospect / lockpick rather
+-- than a corpse loot. RegisterUnitEvent("player") avoids firing for
+-- party/raid casts (irrelevant traffic), with the unfiltered fallback
+-- for clients that lack it.
+if f.RegisterUnitEvent then
+    f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+else
+    f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+end
 
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -6272,8 +6361,35 @@ f:SetScript("OnEvent", function(self, event, ...)
     elseif event == "LOOT_CLOSED" then
         -- One push per corpse looted. EC_IsLootSilenceStuck prunes the ring
         -- inside its body (called from the 5 s pet tick), so growth is bounded.
+        --
+        -- v2.9.2 false-positive guards: LOOT_CLOSED also fires for fishing,
+        -- disenchanting, milling, prospecting, lockpicking, and opening
+        -- engineered containers. The Scavenger doesn't react to any of those,
+        -- so counting them as "loot the pet should have answered" produced
+        -- false-positive stuck-and-resummon loops for players crafting in
+        -- town. Fishing is excluded via IsFishingLoot(); the profession
+        -- spells are excluded by the timestamp window populated from
+        -- UNIT_SPELLCAST_SUCCEEDED below.
         if DB and DB.autoLootCycle then
-            EC_recentLootTimes[#EC_recentLootTimes + 1] = GetTime()
+            local skip = false
+            if IsFishingLoot and IsFishingLoot() then
+                skip = true
+            elseif (GetTime() - EC_compCache.lastProfLootCastAt) < EC_compCache.PROF_LOOT_WINDOW_S then
+                skip = true
+            end
+            if not skip then
+                EC_recentLootTimes[#EC_recentLootTimes + 1] = GetTime()
+            end
+        end
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        -- arg1 is the unit (always "player" thanks to RegisterUnitEvent),
+        -- arg2 is the spell name. Only update the timestamp when the cast
+        -- is one of the loot-generating profession spells; everything else
+        -- (combat rotations, mounts, food, etc.) is irrelevant to the
+        -- loot-silence guard and shouldn't suppress real corpse loots.
+        local _, spellName = ...
+        if spellName and EC_compCache.PROF_LOOT_SPELLS[spellName] then
+            EC_compCache.lastProfLootCastAt = GetTime()
         end
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()

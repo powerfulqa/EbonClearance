@@ -32,12 +32,20 @@ _G["EBONCLEARANCE_ORIGIN"] = ADDON_URL
 _G["__EbonClearance_origin"] = ADDON_URL
 _G["__EbonClearance_author"] = ADDON_AUTHOR
 
--- Build-time version. The release workflow rewrites the v2.5.0 placeholder
--- with the pushed git tag (`vX.Y.Z`); dev checkouts keep the literal and fall
--- back to the .toc value via EC_GetVersion below. Carrying the version here
--- means a stale .toc cache (WoW only re-reads .toc files on full client
--- restart, not /reload) can't make the in-game display lie.
-local ADDON_VERSION = "v2.5.0"
+-- Build-time version. The release workflow rewrites the @VERSION@ placeholder
+-- with the pushed git tag (`vX.Y.Z`) via the same `s/@VERSION@/$VERSION/g`
+-- sed rule that updates the .toc, so the in-game UI surfaces (settings
+-- panel header, bug-report builder, anything routed through EC_GetVersion)
+-- always match the .toc on a release build. Dev checkouts keep the literal
+-- `@VERSION@`; EC_GetVersion's match check fails on the placeholder and the
+-- function falls back to GetAddOnMetadata, which on dev returns the .toc's
+-- last-shipped value -- a legitimate "what's actually installed" indicator.
+-- Carrying the version here means a stale .toc cache (WoW only re-reads
+-- .toc files on full client restart, not /reload) cannot make the displayed
+-- version lie on a release build. Pre-v2.9.1 builds shipped a stale "v2.5.0"
+-- literal because the workflow's sed pattern didn't match this line; fixed
+-- in v2.9.1 by switching to the @VERSION@ placeholder convention.
+local ADDON_VERSION = "@VERSION@"
 local function EC_GetVersion()
     if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then
         return ADDON_VERSION

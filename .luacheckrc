@@ -87,6 +87,8 @@ read_globals = {
     "DeleteCursorItem", "ClearCursor",
     "IsEquippedItem",
     "GetItemQualityColor",
+    -- Equipped inventory (v2.10.0 auto-protect-equipped path)
+    "GetInventoryItemLink",
 
     -- Merchant
     "GetMerchantNumItems", "GetMerchantItemInfo", "GetMerchantItemLink",

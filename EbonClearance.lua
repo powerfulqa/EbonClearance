@@ -44,8 +44,8 @@ _G["__EbonClearance_author"] = ADDON_AUTHOR
 -- .toc files on full client restart, not /reload) cannot make the displayed
 -- version lie on a release build. Pre-v2.9.1 builds shipped a stale "v2.5.0"
 -- literal because the workflow's sed pattern didn't match this line; fixed
--- in v2.9.1 by switching to the v2.9.2 placeholder convention.
-local ADDON_VERSION = "v2.9.2"
+-- in v2.9.1 by switching to the @VERSION@ placeholder convention.
+local ADDON_VERSION = "@VERSION@"
 local function EC_GetVersion()
     if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then
         return ADDON_VERSION
@@ -167,6 +167,45 @@ local EC_compCache = {
         ["Pick Lock"] = true,
         ["Opening"] = true, -- lockpick + engineering container open
     },
+    -- v2.10.0 bind-type cache. Drives the per-rarity bindFilter rule
+    -- ("any" / "boe" / "bop") in EC_IsSellable. Bind type is immutable for
+    -- a given itemID, so a session-scoped { [itemID] = "boe"|"bop"|"any" }
+    -- cache eliminates rescans on every bag walk. The cache is populated
+    -- lazily by EC_compCache.getBindType (defined further down once the
+    -- shared EC_scanTooltip frame exists). Entries are never invalidated;
+    -- the cache resets naturally on /reload because it lives in this
+    -- module-local table and isn't persisted.
+    bindCache = {},
+    -- v2.10.0 resummon-print debounce. v2.9.2 added the "Greedy Scavenger
+    -- resummoned." chat line on every successful CallCompanion in the
+    -- recovery path, plus a 2 s post-call cooldown to avoid back-to-back
+    -- prints. Under heavy combat the server can take 4-6 s to flip the
+    -- companion's summoned flag to true, which means the 2 s cooldown
+    -- expires while addonDismissed is still set, the pet-tick re-fires
+    -- CallCompanion, and the user sees 3-5 "resummoned" lines for one
+    -- visible recovery. pendingAnnounce isolates the print from the
+    -- retry: every dismiss path that wants the recovery announced sets
+    -- it to true; EC_TryResummonScavenger prints only if it's true and
+    -- clears it. Subsequent CallCompanion retries within the same cycle
+    -- stay silent. The pet-tick clearing of EC_addonDismissed (false ->
+    -- true scavenger transition) also clears this flag defensively.
+    pendingAnnounce = false,
+    -- v2.10.0 silent-realm guard for the v2.7.0 / v2.8.0 loot-silence
+    -- stuck signal. The signal assumed the Scavenger pet audibly chats
+    -- on every loot pickup, but on Project Ebonhold the pet's chat
+    -- events don't always reach the chat filter (server-side throttling,
+    -- custom pet behaviour, or the pet just doesn't broadcast on this
+    -- realm at all). With the on-summon synthetic refresh of
+    -- EC_lastScavSpokeAt, the signal then fires every ~60 s of farming
+    -- in a feedback loop. This flag tracks "have we ever observed a
+    -- real Scavenger speech event this session" - set to true only by
+    -- the chat filter's actual matches (NOT by the on-summon refresh)
+    -- and read by EC_IsLootSilenceStuck to early-return when false. If
+    -- the pet never speaks on this realm, the flag stays false and the
+    -- signal is permanently disabled for the session. Movement-time
+    -- stuck detection (EC_STUCK_MOVEMENT_THRESHOLD, 180 s) remains the
+    -- primary signal in all cases.
+    scavSpeechEverHeard = false,
 }
 -- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
 -- movement accumulator (only counts while the pet is out) and the
@@ -277,10 +316,16 @@ local function EC_GreedyEventFilter(self, _event, msg, author)
         local lcAuthor = type(author) == "string" and author:lower() or ""
         if lcAuthor:find("scavenger", 1, true) then
             EC_lastScavSpokeAt = GetTime()
+            -- v2.10.0: arm the silent-realm guard. Set ONLY by real chat
+            -- matches; the on-summon synthetic refresh further down does
+            -- not touch this flag. Once true, the loot-silence stuck
+            -- signal is allowed to fire for the rest of the session.
+            EC_compCache.scavSpeechEverHeard = true
         elseif type(msg) == "string" then
             local lcMsg = EC_StripCodes(msg):lower()
             if lcMsg:find("scavenger", 1, true) then
                 EC_lastScavSpokeAt = GetTime()
+                EC_compCache.scavSpeechEverHeard = true
             end
         end
     end
@@ -309,8 +354,11 @@ local function EC_GreedyEventFilter(self, _event, msg, author)
             -- Textual-fallback path. Refresh the speech timestamp here too so
             -- the loot-silence signal stays accurate when the chat line
             -- arrives via an event that doesn't set the author field.
+            -- v2.10.0: also arm the silent-realm guard here, on the same
+            -- "real-speech-observed" rule as the author/body matches above.
             if DB and DB.autoLootCycle then
                 EC_lastScavSpokeAt = GetTime()
+                EC_compCache.scavSpeechEverHeard = true
             end
             if hideBubbles then
                 local said = clean:match("greedy scavenger%s*says[:%s]*(.*)")
@@ -590,16 +638,50 @@ local function EnsureDB()
     end
 
     -- v2.9.0: companion display names are now user-editable. Defaults are the
-    -- enUS strings we shipped with through v2.8.0; users on a renamed or
-    -- localised realm can change either field via the General settings panel.
-    -- EnsureDB and EC_compCache.refreshNames mirror these into PET_NAME /
-    -- TARGET_NAME / PET_NAME_LC locals so every existing reference picks them
-    -- up without an audit of every call site.
+    -- enUS strings we shipped with through v2.8.0. EnsureDB and
+    -- EC_compCache.refreshNames mirror these into PET_NAME / TARGET_NAME /
+    -- PET_NAME_LC locals so every existing reference picks them up without
+    -- an audit of every call site.
+    --
+    -- v2.10.0: removed the user-facing input boxes from the Scavenger
+    -- Settings panel after PE-ElvUI clickability issues made the field
+    -- unreliable. The DB fields stay as a power-user override (`/run
+    -- EbonClearanceDB.merchantName = ...`) but the typical case is now
+    -- "fixed at default". One-time migration below resets clearly-broken
+    -- values from the v2.9.0 UI session: any name that does not contain
+    -- the expected substring ("scavenger" / "merchant", case-insensitive)
+    -- is reset to its default. Catches truncations like "Gob" without
+    -- clobbering legitimate overrides like "Greedy Scavenger Custom".
+    -- Marked done via DB._v210NameReset so a power user who later
+    -- overrides via /run isn't second-guessed on every load.
     if type(DB.scavengerName) ~= "string" or DB.scavengerName == "" then
         DB.scavengerName = "Greedy scavenger"
     end
     if type(DB.merchantName) ~= "string" or DB.merchantName == "" then
         DB.merchantName = "Goblin Merchant"
+    end
+    if not DB._v210NameReset then
+        local notified = false
+        local sn = DB.scavengerName or ""
+        if not string.find(string.lower(sn), "scavenger", 1, true) then
+            DB.scavengerName = "Greedy scavenger"
+            notified = true
+        end
+        local mn = DB.merchantName or ""
+        if not string.find(string.lower(mn), "merchant", 1, true) then
+            DB.merchantName = "Goblin Merchant"
+            notified = true
+        end
+        DB._v210NameReset = true
+        if notified then
+            -- Defer the chat notice so PrintNice is loaded by the time
+            -- it fires (EnsureDB runs at ADDON_LOADED, before chat is
+            -- ready on some clients). EC_Delay isn't yet defined here;
+            -- the message lands at PLAYER_LOGIN naturally because the
+            -- second EnsureDB pass at PLAYER_LOGIN goes through the
+            -- DB._v210NameReset = true short-circuit above.
+            DB._v210NameResetNotice = true
+        end
     end
 
     if type(DB.muteGreedy) ~= "boolean" then
@@ -627,6 +709,27 @@ local function EnsureDB()
     end
     if type(DB.whitelist) ~= "table" then
         DB.whitelist = {}
+    end
+    -- v2.10.0: parallel "source" map flagging which Blacklist (Keep) entries
+    -- arrived via the auto-protect-equipped path versus a manual user add.
+    -- Used by EC_AnnotateTooltip to surface "(auto-protected: equipped)" so
+    -- users who expected an item to sell can see why it's being kept and
+    -- follow the existing context-menu remove path to override. The
+    -- blacklist check itself (IsInSet(DB.blacklist, ...)) only reads
+    -- DB.blacklist; this map is purely diagnostic. Cleared in lockstep
+    -- with DB.blacklist on every remove path so it can never carry a
+    -- stale entry.
+    if type(DB.blacklistAuto) ~= "table" then
+        DB.blacklistAuto = {}
+    end
+    -- v2.10.0: master toggle for the auto-protect-equipped behaviour. When
+    -- on, equipping an item auto-adds its ID to the per-character Blacklist
+    -- (Keep) list and stamps DB.blacklistAuto. The auto-rules' blacklist
+    -- veto then prevents that item from ever auto-selling. Default off so
+    -- existing users see no behaviour change until they enable it from
+    -- the Blacklist (Keep) panel.
+    if type(DB.autoAddEquipped) ~= "boolean" then
+        DB.autoAddEquipped = false
     end
     if type(DB.whitelistMinQuality) ~= "number" then
         DB.whitelistMinQuality = 1
@@ -678,6 +781,23 @@ local function EnsureDB()
         end
         if DB.qualityRules[q].maxILvl > 300 then
             DB.qualityRules[q].maxILvl = 300
+        end
+        -- v2.10.0: per-rarity bind-type filter. "any" preserves the v2.4.0+
+        -- behaviour (rule applies regardless of bind type); "boe" / "bop"
+        -- restrict matches to items the tooltip says bind on equip / on
+        -- pickup. Items with no bind line at all (consumables, reagents)
+        -- read as "any" from EC_compCache.getBindType and are protected
+        -- when bindFilter is "boe" or "bop". Existing users see the "any"
+        -- default; idempotent re-init matches the rest of EnsureDB.
+        if type(DB.qualityRules[q].bindFilter) ~= "string" then
+            DB.qualityRules[q].bindFilter = "any"
+        end
+        if
+            DB.qualityRules[q].bindFilter ~= "any"
+            and DB.qualityRules[q].bindFilter ~= "boe"
+            and DB.qualityRules[q].bindFilter ~= "bop"
+        then
+            DB.qualityRules[q].bindFilter = "any"
         end
     end
     if type(DB.minimapButtonAngle) ~= "number" then
@@ -866,6 +986,14 @@ local function EC_LoadProfile(name)
         return false, string.format('Profile "%s" not found.', tostring(name))
     end
     wipe(DB.whitelist)
+    -- v2.10.0: profiles persist Whitelist + Blacklist item IDs but not the
+    -- "auto-added when equipped" source flag. Loading a profile is a fresh
+    -- intent (the user is changing what they want protected); reset the
+    -- Blacklist auto map so leftover entries from the previous profile
+    -- don't bleed their tooltip annotation through.
+    if type(DB.blacklistAuto) == "table" then
+        wipe(DB.blacklistAuto)
+    end
     for k, v in pairs(DB.whitelistProfiles[name]) do
         DB.whitelist[k] = v
     end
@@ -961,7 +1089,7 @@ local function CopperToColoredText(copper)
 end
 
 local function PrintNice(msg)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff7fbfff[EbonClearance]|r " .. msg)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[EbonClearance]|r " .. msg)
 end
 
 -- Format + print convenience. Use instead of PrintNice(string.format(fmt, ...)).
@@ -1137,6 +1265,11 @@ local function SummonGreedyScavenger()
         -- the same busy gate plus retry-until-confirmed.
         if EC_IsPlayerBusy() then
             EC_addonDismissed = true
+            -- v2.10.0: arm the resummon-print debounce so the eventual
+            -- pet-tick retry that catches a clear cast/movement window
+            -- prints once. Without this, FinishRun-initiated summons that
+            -- bounce off the busy gate would silently recover.
+            EC_compCache.pendingAnnounce = true
             return
         end
         -- Dismiss any active critter first, then summon Scavenger
@@ -1150,6 +1283,12 @@ local function SummonGreedyScavenger()
         EC_compCache.lastSummonAt = GetTime()
     end
     EC_addonDismissed = false
+    -- v2.10.0: a direct successful summon (e.g. /ec slash, FinishRun
+    -- success path) doesn't need the "resummoned" chat line - the user
+    -- either initiated this themselves or already saw "Vendoring
+    -- complete!". Clear the announce flag so the next dismiss-and-
+    -- resummon cycle can arm it cleanly without inheriting a stale value.
+    EC_compCache.pendingAnnounce = false
     -- Sync the stuck-detection gate immediately so the OnUpdate
     -- accumulator starts counting from this summon, not from the
     -- next 5 s tick observation.
@@ -1418,6 +1557,12 @@ local function EC_HandleBagFullForCycle()
     -- gated on those states so it can't act on it) and is cleared by
     -- SummonGreedyScavenger when FinishRun brings the Scavenger back.
     EC_addonDismissed = true
+    -- v2.10.0: arm the resummon-print debounce. If FinishRun's
+    -- SummonGreedyScavenger hits the busy-gate the recovery falls through
+    -- to EC_TryResummonScavenger; that path's chat line should fire once
+    -- so the user gets a matching close-out for the bag-full / Goblin-
+    -- summoned messages.
+    EC_compCache.pendingAnnounce = true
     EC_summonGoblinPending = true
     EC_summonGoblinTimer = 1.5
     EC_goblinRetryCount = 0
@@ -1461,6 +1606,98 @@ local function EC_IsOpenable(bag, slot)
         end
     end
     return false
+end
+
+-- v2.10.0: bind-type detection for the per-rarity bindFilter rule. Returns
+-- "boe", "bop", or "any" by scanning the same hidden EC_scanTooltip frame
+-- the openable-container check uses. Results are cached on
+-- EC_compCache.bindCache for the session because bind type is immutable
+-- for a given itemID. Strings matched are the enUS Blizzard tooltip lines
+-- (`Binds when picked up`, `Soulbound`, `Binds when equipped`); same enUS
+-- constraint that already governs EC_IsOpenable's use of ITEM_OPENABLE /
+-- LOCKED locale strings.
+--
+-- Items with no bind line at all (consumables, reagents, trade goods,
+-- quest items) return "any" - they aren't subject to BoE-only or BoP-only
+-- filters, which is the user-intended behaviour: "Sell BoE only" should
+-- not sweep up reagents.
+function EC_compCache.getBindType(bag, slot)
+    local itemID = GetContainerItemID(bag, slot)
+    if not itemID then
+        return "any"
+    end
+    local cached = EC_compCache.bindCache[itemID]
+    if cached then
+        return cached
+    end
+    EC_scanTooltip:ClearLines()
+    EC_scanTooltip:SetBagItem(bag, slot)
+    local result = "any"
+    -- 30-line cap matches the openable-container scan; well above any
+    -- realistic tooltip we'd encounter on Project Ebonhold.
+    for i = 1, 30 do
+        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        if not line then
+            break
+        end
+        local txt = line:GetText()
+        if txt then
+            if txt == "Binds when picked up" or txt == "Soulbound" then
+                result = "bop"
+                break
+            elseif txt == "Binds when equipped" then
+                result = "boe"
+                break
+            end
+        end
+    end
+    EC_compCache.bindCache[itemID] = result
+    return result
+end
+
+-- v2.10.0: bind-type detection that reads a live tooltip's lines instead
+-- of scanning a freshly-built EC_scanTooltip via SetBagItem. Used by
+-- EC_AnnotateTooltip so the bind-filter rule can colour-code an item the
+-- user is hovering when we don't have a (bag, slot) pair (the annotation
+-- entry point is itemLink, not a container slot). Reads the cache first
+-- so a previously-scanned bag item never re-scans; otherwise walks the
+-- live tooltip's TextLeft lines for the same enUS bind-type strings the
+-- bag-scan path matches. Stamps the cache on a successful result so a
+-- subsequent EC_IsSellable call on the same itemID stays cheap.
+function EC_compCache.getBindTypeFromTooltip(tooltip, itemID)
+    if itemID and EC_compCache.bindCache[itemID] then
+        return EC_compCache.bindCache[itemID]
+    end
+    if not tooltip or not tooltip.NumLines or not tooltip.GetName then
+        return "any"
+    end
+    local tname = tooltip:GetName()
+    if not tname then
+        return "any"
+    end
+    local n = tooltip:NumLines() or 0
+    local result = "any"
+    -- Start at line 2: line 1 is the item name; bind line is always one of
+    -- the early header lines (line 2 or 3 in 3.3.5a item tooltips).
+    for i = 2, n do
+        local fs = _G[tname .. "TextLeft" .. i]
+        if fs and fs.GetText then
+            local txt = fs:GetText()
+            if txt then
+                if txt == "Binds when picked up" or txt == "Soulbound" then
+                    result = "bop"
+                    break
+                elseif txt == "Binds when equipped" then
+                    result = "boe"
+                    break
+                end
+            end
+        end
+    end
+    if itemID then
+        EC_compCache.bindCache[itemID] = result
+    end
+    return result
 end
 
 -- Driver. Walks bags, opens the first openable item, and recurses via
@@ -1525,19 +1762,30 @@ local EC_CTX_PANEL_FOR = {
     deleteList = "EbonClearanceOptionsDeletion",
 }
 
-local function EC_AddItemToList(setName, itemID, label)
+-- v2.10.0: optional `quiet` flag suppresses the success / dedupe / conflict
+-- chat lines and returns true on a successful add, false on dedupe, conflict
+-- or unresolved list. Used by the auto-protect-equipped one-shot sync (which
+-- prints a single summary line for the whole 19-slot walk) and by the
+-- PLAYER_EQUIPMENT_CHANGED reactive handler (which prints one targeted line
+-- per add). The default-mode call sites are unchanged - they pass nil for
+-- quiet and ignore the return value.
+local function EC_AddItemToList(setName, itemID, label, quiet)
     if not itemID then
-        return
+        return false
     end
     local t = EC_GetListTable(setName)
     if not t then
-        PrintNicef("|cffff4444Could not resolve list: %s|r", tostring(setName))
-        return
+        if not quiet then
+            PrintNicef("|cffff4444Could not resolve list: %s|r", tostring(setName))
+        end
+        return false
     end
     local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
     if t[itemID] then
-        PrintNicef("|cffaaaaaa%s already on %s.|r", itemName, label)
-        return
+        if not quiet then
+            PrintNicef("|cffaaaaaa%s already on %s.|r", itemName, label)
+        end
+        return false
     end
     -- Cross-intent conflict guard. Refuse adds that would create a multi-list
     -- conflict; the user must explicitly remove the item from the other list
@@ -1545,12 +1793,16 @@ local function EC_AddItemToList(setName, itemID, label)
     -- this and the add proceeds normally.
     local conflictName = EC_FindAddConflict(itemID, setName)
     if conflictName then
-        PrintNicef("|cffff8888%s is already on %s. Remove it from there first.|r", itemName, conflictName)
-        PlaySound("igMainMenuOptionCheckBoxOff")
-        return
+        if not quiet then
+            PrintNicef("|cffff8888%s is already on %s. Remove it from there first.|r", itemName, conflictName)
+            PlaySound("igMainMenuOptionCheckBoxOff")
+        end
+        return false
     end
     t[itemID] = true
-    PrintNicef("Added |cffb6ffb6%s|r to %s.", itemName, label)
+    if not quiet then
+        PrintNicef("Added |cffb6ffb6%s|r to %s.", itemName, label)
+    end
     -- Refresh the corresponding settings panel if it's been opened.
     local panelName = EC_CTX_PANEL_FOR[setName]
     if panelName then
@@ -1559,6 +1811,7 @@ local function EC_AddItemToList(setName, itemID, label)
             p.listUI:Refresh()
         end
     end
+    return true
 end
 
 local function EC_RemoveItemFromList(setName, itemID, label)
@@ -1570,6 +1823,15 @@ local function EC_RemoveItemFromList(setName, itemID, label)
         return
     end
     t[itemID] = nil
+    -- v2.10.0: keep the auto-protected source map in lockstep so the
+    -- tooltip annotation can never claim "(auto-protected: equipped)" for
+    -- an item the user has explicitly removed. Cleared regardless of
+    -- which list we removed from; blacklistAuto entries are only ever
+    -- valid against the per-character Blacklist (Keep), but the no-op
+    -- branch is fast on the other lists.
+    if DB and type(DB.blacklistAuto) == "table" then
+        DB.blacklistAuto[itemID] = nil
+    end
     local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
     PrintNicef("Removed |cffb6ffb6%s|r from %s.", itemName, label)
     -- Refresh the corresponding settings panel if it's been opened.
@@ -1579,6 +1841,63 @@ local function EC_RemoveItemFromList(setName, itemID, label)
         if p and p.listUI then
             p.listUI:Refresh()
         end
+    end
+end
+
+-- v2.10.0: equipped-gear protection. Slot 4 is the shirt, slot 19 the tabard;
+-- both are cosmetic-only and skipped. Helpers hang off EC_compCache (same
+-- pattern as the v2.9.2 PROF_LOOT_SPELLS set) to keep this addon under Lua
+-- 5.1's 200-local cap.
+
+-- Auto-protect a single equipped slot. Routes through EC_AddItemToList in
+-- quiet mode so the success / dedupe / conflict chat lines are suppressed
+-- during the 19-slot one-shot sync; the reactive PLAYER_EQUIPMENT_CHANGED
+-- caller prints one targeted line per add. Stamps DB.blacklistAuto on a
+-- successful add so EC_AnnotateTooltip can attach the "(auto-protected:
+-- equipped)" suffix at hover time. Returns true iff the slot was newly
+-- added to the whitelist.
+function EC_compCache.protectEquipSlot(slot)
+    if not slot or slot == 4 or slot == 19 then
+        return false
+    end
+    local link = GetInventoryItemLink and GetInventoryItemLink("player", slot)
+    if not link then
+        return false
+    end
+    local id = tonumber(link:match("item:(%d+)"))
+    if not id then
+        return false
+    end
+    -- v2.10.0: equipped gear lands on the BLACKLIST (Keep / do-not-sell)
+    -- list, not the Whitelist (sell list). The Whitelist is the list of
+    -- items the addon WILL sell - adding equipped gear there would mean
+    -- "vendor everything I'm wearing the moment I swap to anything else".
+    -- Blacklist is the protected list; that's the correct semantic for
+    -- "remember what I'm wearing and don't auto-sell it".
+    if EC_AddItemToList("blacklist", id, "Blacklist (Keep)", true) then
+        DB.blacklistAuto = DB.blacklistAuto or {}
+        DB.blacklistAuto[id] = true
+        return true
+    end
+    return false
+end
+
+-- One-shot sync helper. Called by the Blacklist (Keep) panel's
+-- "Auto-protect equipped gear" checkbox when the user flips it from off to
+-- on. Walks every gear slot once and prints a single summary line for the
+-- whole batch. The reactive PLAYER_EQUIPMENT_CHANGED handler covers all
+-- subsequent equipment swaps; this one-shot is only needed at toggle time.
+function EC_compCache.syncEquipped()
+    local added = 0
+    for slot = 1, 19 do
+        if EC_compCache.protectEquipSlot(slot) then
+            added = added + 1
+        end
+    end
+    if added > 0 then
+        PrintNicef("|cffb6ffb6Auto-protected %d currently equipped item%s.|r", added, added == 1 and "" or "s")
+    else
+        PrintNice("|cffaaaaaaNo new equipped items to auto-protect; current gear was already on the keep list.|r")
     end
 end
 
@@ -1711,7 +2030,7 @@ local function EC_ShowItemContextMenu(button)
     -- decide which actions are meaningful for this item.
     local name, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
     local itemName = name or ("ItemID:" .. itemID)
-    frame.title:SetText("|cff4db8ffEbonClearance|r: " .. itemName)
+    frame.title:SetText("|cff66ccffEbonClearance|r: " .. itemName)
 
     -- Smart-row filter. When we know the item has no vendor value (sellPrice
     -- 0 or nil from a cache hit) the only useful "Add to X" action is the
@@ -1985,6 +2304,23 @@ end
 -- to speak since the oldest of those loots. Prunes the loot ring as a side
 -- effect on every check, so it cannot grow unboundedly.
 local function EC_IsLootSilenceStuck()
+    -- v2.10.0 silent-realm guard. The signal assumes the Scavenger pet
+    -- audibly chats on each loot pickup. On Project Ebonhold the pet's
+    -- chat events don't reliably reach the chat filter (verified: a
+    -- user's heavy-farming chat log shows zero pet-speech messages
+    -- across an entire session). Without this guard the on-summon
+    -- synthetic refresh of EC_lastScavSpokeAt resets the silence clock
+    -- at every dismiss-and-resummon cycle, producing a feedback loop
+    -- where the signal fires every ~60 s of farming. Gating on
+    -- EC_compCache.scavSpeechEverHeard - which only flips true via a
+    -- real chat-filter match, never via the on-summon refresh - makes
+    -- the signal self-disable on silent realms while preserving the
+    -- v2.7.0 / v2.8.0 behaviour for any future realm where the pet
+    -- does broadcast normally. Movement-time stuck detection
+    -- (EC_STUCK_MOVEMENT_THRESHOLD, 180 s) remains the catch-all.
+    if not EC_compCache.scavSpeechEverHeard then
+        return false
+    end
     local WINDOW, MIN_LOOTS = 60, 2
     local now = GetTime()
     local kept = {}
@@ -2019,6 +2355,11 @@ local function EC_HandleScavengerOut(scavengerOut)
     local stuckByLootSilence = EC_IsLootSilenceStuck()
     if stuckByMovement or stuckByLootSilence then
         EC_addonDismissed = true
+        -- v2.10.0: arm the resummon-print debounce. The recovery path may
+        -- fire CallCompanion several times before the server confirms the
+        -- summon; this flag ensures only the first successful CallCompanion
+        -- in the cycle prints "Greedy Scavenger resummoned.".
+        EC_compCache.pendingAnnounce = true
         EC_scavMovementAccum = 0
         EC_recentLootTimes = {}
         if stuckByMovement then
@@ -2059,14 +2400,16 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
     if GetTime() < EC_compCache.userUntil then
         return
     end
-    -- v2.9.0: post-CallCompanion server-confirm window. After we fire a
-    -- CallCompanion the server takes ~1-2 s to flip the companion's
-    -- summoned flag to true; the next pet-tick (1 s cadence while
-    -- EC_addonDismissed is true) would otherwise see scavengerOut=false
-    -- still and fire a second redundant CallCompanion + chat print. Wait
-    -- 2 s before retrying so the confirmation transition has a chance to
-    -- land. If the call was rejected, the retry resumes after the wait.
-    if (GetTime() - EC_compCache.lastSummonAt) < 2 then
+    -- v2.9.0 / v2.10.0: post-CallCompanion server-confirm window. After
+    -- we fire a CallCompanion the server can take 4-6 s under heavy combat
+    -- to flip the companion's summoned flag to true; the next pet-tick
+    -- (1 s cadence while EC_addonDismissed is true) would otherwise see
+    -- scavengerOut=false still and fire a redundant CallCompanion. Five
+    -- seconds covers the long-tail confirm; if the call was actually
+    -- rejected the retry resumes after the wait. The print suppression
+    -- below ensures even the retried CallCompanion stays silent if the
+    -- announce already fired earlier in the cycle.
+    if (GetTime() - EC_compCache.lastSummonAt) < 5 then
         return
     end
     -- Slot occupancy: if SOME other companion is in the slot, distinguish
@@ -2096,14 +2439,18 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
         DismissCompanion("CRITTER")
     end
     CallCompanion("CRITTER", greedyIndex)
-    -- v2.9.0: surface the recovery in chat. This path covers post-merchant
-    -- restore (including the user-Escape mid-sell case where FinishRun never
-    -- ran), stuck-detection re-summon, and any other case where the
-    -- cast-busy gate eventually catches a clear window. Without a print the
-    -- summon happens silently and the user has no signal that the addon
-    -- did the right thing - the bag-full / Goblin-summoned chat line gets
-    -- left dangling without a matching close.
-    PrintNice("|cff00ff00Greedy Scavenger resummoned.|r")
+    -- v2.9.0 / v2.10.0: surface the recovery in chat exactly once per
+    -- dismiss-and-resummon cycle. Each dismiss site that wants the
+    -- recovery announced sets EC_compCache.pendingAnnounce; the first
+    -- successful CallCompanion in the cycle prints and clears the flag.
+    -- Subsequent retries inside the same cycle (server slow to confirm
+    -- the summon) call CallCompanion again but stay silent so the chat
+    -- log doesn't fill with duplicate "resummoned" lines during heavy
+    -- combat farming.
+    if EC_compCache.pendingAnnounce then
+        PrintNice("|cff00ff00Greedy Scavenger resummoned.|r")
+        EC_compCache.pendingAnnounce = false
+    end
     -- Anchor the user-dismiss-vs-leash classification window for this summon
     -- too, so a fast portrait click that happens immediately after a recovery
     -- gets honoured the same way as one immediately after a manual /ec.
@@ -2195,6 +2542,10 @@ local function EC_PetCheckTick()
         end
         if scavengerOut and EC_addonDismissed then
             EC_addonDismissed = false
+            -- v2.10.0: cycle ended cleanly - the server has confirmed the
+            -- summon. Drop any leftover pendingAnnounce so the next
+            -- dismiss-and-resummon cycle starts from a known-clean state.
+            EC_compCache.pendingAnnounce = false
         end
         -- v2.8.0: refresh the loot-silence baseline on every fresh out
         -- transition (false->true). Pet just appeared; even if the speech
@@ -2441,6 +2792,21 @@ local function EC_IsSellable(bag, slot, junkOnly)
                 qualityPass = true
             elseif hasVisibleILvl and ilvl <= cap then
                 qualityPass = true
+            end
+            -- v2.10.0: bind-type filter. "any" preserves v2.4.0+ behaviour;
+            -- "boe" / "bop" restrict matches to items binding on equip /
+            -- pickup. Items with no bind line at all (consumables, trade
+            -- goods, quest items) read as "any" and are filtered out by
+            -- both "boe" and "bop", matching the user mental model "Sell
+            -- BoE only" should not sweep up reagents.
+            if qualityPass then
+                local bindFilter = rule.bindFilter or "any"
+                if bindFilter ~= "any" then
+                    local bindType = EC_compCache.getBindType(bag, slot)
+                    if bindFilter ~= bindType then
+                        qualityPass = false
+                    end
+                end
             end
         end
     end
@@ -2788,9 +3154,30 @@ local function EC_AnnotateTooltip(tooltip)
 
     local statusLine
     if IsInSet(DB.blacklist, id) then
-        statusLine = "|cff4db8ff[EC]|r |cffffb84dProtected - Blacklisted|r"
+        -- v2.10.0: distinguish "user manually blacklisted this" from "the
+        -- auto-protect-equipped path added it". DB.blacklistAuto is stamped
+        -- only by the equipment handler / one-shot sync; manual adds don't
+        -- touch it. The suffix is concatenated onto the existing label so
+        -- the annotation stays a single line. The suffix tells the user
+        -- "this is on Keep because you equipped it, not because you hand-
+        -- added it" - useful when they expected an item to vendor and want
+        -- to know why the rules are leaving it alone. The override is the
+        -- existing Alt+Right-Click context menu's "Remove from Blacklist"
+        -- row.
+        local isAutoProtected = DB.blacklistAuto and DB.blacklistAuto[id]
+        if isAutoProtected then
+            -- v2.10.0: distinct concise label for the auto-protected case.
+            -- The full "Protected - Blacklisted (auto-protected: equipped)"
+            -- ran 53 chars and competed with bag-tooltip wrap on narrow
+            -- frames. The shorter form fits on one line in any sane bag
+            -- skin and tells the user the same two facts: it's protected,
+            -- and it's protected because they equipped it.
+            statusLine = "|cff66ccff[EC]|r |cffffb84dEquip Auto-Protected|r"
+        else
+            statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Blacklisted|r"
+        end
     elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
-        statusLine = "|cff4db8ff[EC]|r |cffff4444Will Delete - Deletion List|r"
+        statusLine = "|cff66ccff[EC]|r |cffff4444Will Delete - Deletion List|r"
     elseif IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id)) then
         -- Honesty: EC_IsSellable also requires sellPrice > 0 and not currently
         -- equipped. Without these checks the tooltip used to claim "Will Sell"
@@ -2800,11 +3187,11 @@ local function EC_AnnotateTooltip(tooltip)
         -- of decision instead of wondering why the cycle skipped them.
         local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
         if IsEquippedItem(id) then
-            statusLine = "|cff4db8ff[EC]|r |cffffb84dWhitelisted - Currently Equipped (cannot sell)|r"
+            statusLine = "|cff66ccff[EC]|r |cffffb84dWhitelisted - Currently Equipped (cannot sell)|r"
         elseif not (sellPrice and sellPrice > 0) then
-            statusLine = "|cff4db8ff[EC]|r |cffffb84dWhitelisted - No Vendor Price (cannot sell)|r"
+            statusLine = "|cff66ccff[EC]|r |cffffb84dWhitelisted - No Vendor Price (cannot sell)|r"
         else
-            statusLine = "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
+            statusLine = "|cff66ccff[EC]|r |cffb6ffb6Will Sell - Whitelisted|r"
         end
     elseif DB.qualityRules then
         local _, _, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(id)
@@ -2817,29 +3204,58 @@ local function EC_AnnotateTooltip(tooltip)
                     or (quality == 3) and "Blue"
                     or "Epic"
                 local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
-                if cap == 0 then
-                    -- No cap on this rarity. All items of this rarity sell.
-                    statusLine = string.format("|cff4db8ff[EC]|r |cffb6ffb6Will Sell - %s (no iLvl cap)|r", rarityName)
-                elseif hasVisibleILvl and ilvl <= cap then
-                    -- Cap set; equippable item iLvl in range -> sells.
-                    statusLine = string.format(
-                        "|cff4db8ff[EC]|r |cffb6ffb6Will Sell - %s iLvl %d (cap %d)|r",
-                        rarityName,
-                        ilvl,
-                        cap
-                    )
+                -- iLvl gate first - matches EC_IsSellable's qualityPass logic.
+                local matchesILvl = (cap == 0) or (hasVisibleILvl and ilvl <= cap)
+                if matchesILvl then
+                    -- v2.10.0: bind-filter check. EC_IsSellable applies this
+                    -- AFTER the iLvl gate; the tooltip annotation has to
+                    -- mirror the same chain so users get an accurate read
+                    -- of what the rules will do at the next vendor visit.
+                    -- Items the bind filter rejects get a "Protected"
+                    -- annotation explaining which rule caught them and
+                    -- which bind type the rule actually wants.
+                    local bindFilter = rule.bindFilter or "any"
+                    local bindRejected = false
+                    if bindFilter ~= "any" then
+                        local bindType = EC_compCache.getBindTypeFromTooltip(tooltip, id)
+                        if bindType ~= bindFilter then
+                            bindRejected = true
+                        end
+                    end
+                    if bindRejected then
+                        local fLabel = (bindFilter == "boe") and "BoE" or "BoP"
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffffb84dProtected - %s rule wants %s only|r",
+                            rarityName,
+                            fLabel
+                        )
+                    elseif cap == 0 then
+                        -- No cap on this rarity. All items of this rarity sell.
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffb6ffb6Will Sell - %s (no iLvl cap)|r",
+                            rarityName
+                        )
+                    else
+                        -- Cap set; equippable item iLvl in range -> sells.
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffb6ffb6Will Sell - %s iLvl %d (cap %d)|r",
+                            rarityName,
+                            ilvl,
+                            cap
+                        )
+                    end
                 elseif not hasVisibleILvl then
                     -- Cap set; non-equippable (trade good / reagent / consumable)
                     -- has no visible iLvl on its tooltip -> protected.
                     statusLine = string.format(
-                        "|cff4db8ff[EC]|r |cffffb84dProtected - %s has no iLvl (cap %d active)|r",
+                        "|cff66ccff[EC]|r |cffffb84dProtected - %s has no iLvl (cap %d active)|r",
                         rarityName,
                         cap
                     )
                 else
                     -- Cap set; equippable item iLvl above cap -> protected.
                     statusLine = string.format(
-                        "|cff4db8ff[EC]|r |cffffb84dProtected - %s above max iLvl (%d > %d)|r",
+                        "|cff66ccff[EC]|r |cffffb84dProtected - %s above max iLvl (%d > %d)|r",
                         rarityName,
                         ilvl,
                         cap
@@ -2953,16 +3369,35 @@ local function EC_WrapPanelInScrollFrame(panel)
     local scrollName = (panel:GetName() or "EbonClearancePanel") .. "Scroll"
     local scroll = CreateFrame("ScrollFrame", scrollName, panel, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 0, 0)
-    -- Reserve 30 px at the bottom for the Interface Options OK/Cancel button
-    -- strip. Without this, the scroll frame extends all the way down and
-    -- those buttons render on top of the last scrolled widget (the Tip line
-    -- on Scavenger gets clipped).
-    scroll:SetPoint("BOTTOMRIGHT", -26, 30)
+    -- v2.10.0: extended the scroll frame down to within 6 px of the panel's
+    -- bottom edge (was 30 px). With the v2.4.0 quality threshold + v2.10.0
+    -- bind-filter dropdowns, the panel content tall enough for the
+    -- scrollbar to be visible all the time, and the previous 30 px reserve
+    -- left the down arrow floating above the OK/Cancel button strip with
+    -- no visual relationship to the panel frame. EC_FitScrollContent's 24
+    -- px padding still keeps the bottom-most widget clear of the OK/Cancel
+    -- area; the gap that used to come from the 30 px reserve now comes
+    -- from that padding instead.
+    scroll:SetPoint("BOTTOMRIGHT", -26, 6)
 
     local content = CreateFrame("Frame", nil, scroll)
     content:SetWidth(math.max(EC_PANEL_WIDTH - 26, 100))
     content:SetHeight(1) -- expanded by EC_FitScrollContent once widgets are laid out
     scroll:SetScrollChild(content)
+
+    -- v2.10.0: nudge the scrollbar's top anchor 4 px further down. The
+    -- UIPanelScrollFrameTemplate default insets the bar 16 px from the
+    -- ScrollFrame top; the up arrow that lives there ended up sitting
+    -- above the panel's content area on Project Ebonhold's Interface
+    -- Options layout. Bottom anchor stays at the template default (16 px
+    -- inset from ScrollFrame bottom) - the new 6 px outer reserve already
+    -- pulls the down arrow down to where it should be.
+    local sb = _G[scrollName .. "ScrollBar"]
+    if sb then
+        sb:ClearAllPoints()
+        sb:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -6, -20)
+        sb:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -6, 16)
+    end
 
     EC_HookScrollbarAutoHide(scroll)
     return content
@@ -4138,11 +4573,15 @@ MerchantPanel:SetScript("OnShow", function(self)
         for q = 1, 4 do
             local cb = self["qualityRow" .. q .. "CB"]
             local input = self["qualityRow" .. q .. "Input"]
+            local dd = self["qualityRow" .. q .. "DD"]
             if cb and DB.qualityRules and DB.qualityRules[q] then
                 cb:SetChecked(DB.qualityRules[q].enabled)
             end
             if input and DB.qualityRules and DB.qualityRules[q] then
                 input:SetText(tostring(DB.qualityRules[q].maxILvl or 0))
+            end
+            if dd and DB.qualityRules and DB.qualityRules[q] and self._BindFilterText then
+                UIDropDownMenu_SetText(dd, self._BindFilterText(DB.qualityRules[q].bindFilter))
             end
         end
         return
@@ -4323,9 +4762,31 @@ MerchantPanel:SetScript("OnShow", function(self)
         "Tick a rarity to auto-sell that rarity. |cffffff00max iLvl 0|r = sell every item of that rarity. Above 0 = sell only equippable gear at or below that iLvl (trade goods/reagents skipped). Whitelist always sells; blacklist always protects."
     )
 
+    -- v2.10.0: bind-type filter options shared across all four rarity rows.
+    -- "any" = today's behaviour (rule applies regardless of bind type);
+    -- "boe" / "bop" restrict to items the tooltip says bind on equip /
+    -- on pickup. Items with no bind line at all read as "any" from
+    -- EC_compCache.getBindType so reagents/consumables/quest items are
+    -- protected when bindFilter is "boe" or "bop".
+    local EC_BIND_FILTER_OPTIONS = {
+        { text = "Any bind type", value = "any" },
+        { text = "BoE only", value = "boe" },
+        { text = "BoP only", value = "bop" },
+    }
+    local function EC_BindFilterText(value)
+        for _, entry in ipairs(EC_BIND_FILTER_OPTIONS) do
+            if entry.value == value then
+                return entry.text
+            end
+        end
+        return EC_BIND_FILTER_OPTIONS[1].text
+    end
+
     -- Build a row per rarity. Each row: checkbox on the left, "max iLvl:"
-    -- label, numeric input on the right (0-300). Returns the checkbox so the
-    -- next row can anchor below it.
+    -- label + numeric input on the right (0-300). Below the checkbox, a
+    -- "Bind: <Any/BoE/BoP>" dropdown that gates the rule on bind type.
+    -- Returns the bind dropdown so the next row's anchor descends past
+    -- the second line cleanly.
     local function MakeQualityRow(anchor, qualityIdx, labelText, yOff)
         local cb = AddCheckbox(content, "EbonClearanceQualityRow" .. qualityIdx .. "CB", anchor, labelText, function()
             return DB.qualityRules[qualityIdx].enabled
@@ -4371,22 +4832,72 @@ MerchantPanel:SetScript("OnShow", function(self)
         end)
         input:SetScript("OnEditFocusLost", commit)
 
-        return cb, input
+        -- Bind-type filter dropdown on a second line below the checkbox.
+        -- Indented to align with the checkbox label so the rule reads as
+        -- "[x] Blue (Rare) max iLvl: [200] / Bind: [Any bind type]".
+        local bindLbl = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        bindLbl:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 26, -4)
+        bindLbl:SetText("Bind:")
+
+        local bindDD = CreateFrame(
+            "Frame",
+            "EbonClearanceQualityRow" .. qualityIdx .. "BindDD",
+            content,
+            "UIDropDownMenuTemplate"
+        )
+        bindDD:SetPoint("LEFT", bindLbl, "RIGHT", -8, -2)
+
+        local function BindFilterInit(_frame, _level)
+            for _, entry in ipairs(EC_BIND_FILTER_OPTIONS) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = entry.text
+                info.value = entry.value
+                info.checked = (DB.qualityRules[qualityIdx].bindFilter == entry.value)
+                info.func = function()
+                    DB.qualityRules[qualityIdx].bindFilter = entry.value
+                    UIDropDownMenu_SetText(bindDD, entry.text)
+                    PlaySound("igMainMenuOptionCheckBoxOn")
+                end
+                UIDropDownMenu_AddButton(info, _level)
+            end
+        end
+        UIDropDownMenu_SetWidth(bindDD, 120)
+        UIDropDownMenu_SetText(bindDD, EC_BindFilterText(DB.qualityRules[qualityIdx].bindFilter))
+        UIDropDownMenu_Initialize(bindDD, BindFilterInit)
+
+        return cb, input, bindDD
     end
 
-    local row1CB, row1Input = MakeQualityRow(thresholdDesc, 1, EC_WHITELIST_QUALITIES[1].text, -10)
-    local row2CB, row2Input = MakeQualityRow(row1CB, 2, EC_WHITELIST_QUALITIES[2].text, -8)
-    local row3CB, row3Input = MakeQualityRow(row2CB, 3, EC_WHITELIST_QUALITIES[3].text, -8)
-    local row4CB, row4Input = MakeQualityRow(row3CB, 4, EC_WHITELIST_QUALITIES[4].text, -8)
+    -- All four rarity rows anchor their checkbox to the threshold description,
+    -- not to the previous row's dropdown. The dropdown's left edge is offset
+    -- by the UIDropDownMenuTemplate's internal padding (~16 px), and chaining
+    -- row N to row N-1's dropdown made each successive row staircase right.
+    -- A single shared anchor with explicit -y offsets keeps every checkbox,
+    -- bind label, and dropdown on the same X column.
+    --
+    -- Per-row vertical budget: ~28 px (checkbox + label) + ~6 px gap + ~30 px
+    -- dropdown frame + ~10 px gap to next row = ~74 px. -78 leaves a small
+    -- breathing margin between rows without overlapping the dropdown's
+    -- bottom shadow.
+    local row1CB, row1Input, row1DD = MakeQualityRow(thresholdDesc, 1, EC_WHITELIST_QUALITIES[1].text, -10)
+    local row2CB, row2Input, row2DD = MakeQualityRow(thresholdDesc, 2, EC_WHITELIST_QUALITIES[2].text, -88)
+    local row3CB, row3Input, row3DD = MakeQualityRow(thresholdDesc, 3, EC_WHITELIST_QUALITIES[3].text, -166)
+    local row4CB, row4Input, row4DD = MakeQualityRow(thresholdDesc, 4, EC_WHITELIST_QUALITIES[4].text, -244)
 
-    self.qualityRow1CB, self.qualityRow1Input = row1CB, row1Input
-    self.qualityRow2CB, self.qualityRow2Input = row2CB, row2Input
-    self.qualityRow3CB, self.qualityRow3Input = row3CB, row3Input
-    self.qualityRow4CB, self.qualityRow4Input = row4CB, row4Input
+    self.qualityRow1CB, self.qualityRow1Input, self.qualityRow1DD = row1CB, row1Input, row1DD
+    self.qualityRow2CB, self.qualityRow2Input, self.qualityRow2DD = row2CB, row2Input, row2DD
+    self.qualityRow3CB, self.qualityRow3Input, self.qualityRow3DD = row3CB, row3Input, row3DD
+    self.qualityRow4CB, self.qualityRow4Input, self.qualityRow4DD = row4CB, row4Input, row4DD
+
+    -- Stash the BindFilterText helper on the panel so the inited refresh
+    -- block can update each dropdown's display text without re-defining
+    -- the option set.
+    self._BindFilterText = EC_BindFilterText
 
     -- Size the scroll content to fit the bottom-most widget so the scrollbar
-    -- range matches actual content. Purple Epic's row is the lowest.
-    EC_FitScrollContent(content, row4CB)
+    -- range matches actual content. Purple Epic's bind dropdown is now the
+    -- lowest widget on the panel.
+    EC_FitScrollContent(content, row4DD)
 end)
 
 -- Shared "Add from bags" scan row used by both whitelist panels.
@@ -5197,12 +5708,6 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if self.autoOpenCB then
             self.autoOpenCB:SetChecked(DB.autoOpenContainers)
         end
-        if self.scavInput then
-            self.scavInput:SetText(DB.scavengerName or "")
-        end
-        if self.merchInput then
-            self.merchInput:SetText(DB.merchantName or "")
-        end
         return
     end
     self.inited = true
@@ -5367,92 +5872,22 @@ ScavengerPanel:SetScript("OnShow", function(self)
     end
     autoOpenNote:SetText("|cff888888Lockboxes that need a key or lockpick are skipped. Combat-paused.|r")
 
-    -- v2.9.0: editable companion display names. Defaults are the enUS strings
-    -- the addon shipped with through v2.8.0; users on a renamed or localised
-    -- realm can change either field. EC_compCache.refreshNames mirrors the
-    -- values into the lookup locals and wipes the companion-ID cache so
-    -- the next summon learns the new pet by name and re-caches its ID.
-    local nameHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    nameHeader:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", 0, -16)
-    nameHeader:SetText("Companion names")
-
-    local scavLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    scavLabel:SetPoint("TOPLEFT", nameHeader, "BOTTOMLEFT", 0, -10)
-    scavLabel:SetText("Loot pet:")
-
-    local scavInput = CreateFrame("EditBox", "EbonClearanceScavengerNameInput", content, "InputBoxTemplate")
-    scavInput:SetAutoFocus(false)
-    scavInput:SetSize(220, 20)
-    scavInput:SetPoint("TOPLEFT", scavLabel, "TOPRIGHT", 16, 4)
-    scavInput:SetMaxLetters(64)
-    scavInput:SetText(DB.scavengerName or "Greedy scavenger")
-    -- Raise above the InputBoxTemplate's Left/Middle/Right backdrop textures
-    -- so clicks land on the EditBox instead of being swallowed by the
-    -- backdrop. Every other InputBoxTemplate field in this file uses the
-    -- same helper for the same reason.
-    StyleInputBox(scavInput)
-    scavInput:SetScript("OnEnterPressed", function(s)
-        local txt = (s:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        if txt == "" then
-            s:SetText(DB.scavengerName or "")
-            s:ClearFocus()
-            return
-        end
-        DB.scavengerName = txt
-        EC_compCache.refreshNames()
-        PrintNicef("Loot pet name set to |cffb6ffb6%s|r.", txt)
-        s:ClearFocus()
-    end)
-    scavInput:SetScript("OnEscapePressed", function(s)
-        s:SetText(DB.scavengerName or "")
-        s:ClearFocus()
-    end)
-    self.scavInput = scavInput
-
-    local merchLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    merchLabel:SetPoint("TOPLEFT", scavInput, "BOTTOMLEFT", -16, -10)
-    merchLabel:SetText("Vendor pet:")
-
-    local merchInput = CreateFrame("EditBox", "EbonClearanceMerchantNameInput", content, "InputBoxTemplate")
-    merchInput:SetAutoFocus(false)
-    merchInput:SetSize(220, 20)
-    merchInput:SetPoint("TOPLEFT", merchLabel, "TOPRIGHT", 16, 4)
-    merchInput:SetMaxLetters(64)
-    merchInput:SetText(DB.merchantName or "Goblin Merchant")
-    StyleInputBox(merchInput)
-    merchInput:SetScript("OnEnterPressed", function(s)
-        local txt = (s:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        if txt == "" then
-            s:SetText(DB.merchantName or "")
-            s:ClearFocus()
-            return
-        end
-        DB.merchantName = txt
-        EC_compCache.refreshNames()
-        PrintNicef("Vendor pet name set to |cffb6ffb6%s|r.", txt)
-        s:ClearFocus()
-    end)
-    merchInput:SetScript("OnEscapePressed", function(s)
-        s:SetText(DB.merchantName or "")
-        s:ClearFocus()
-    end)
-    self.merchInput = merchInput
-
-    local nameNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    nameNote:SetPoint("TOPLEFT", merchInput, "BOTTOMLEFT", -16, -6)
-    nameNote:SetWidth(EC_PANEL_WIDTH - 60)
-    nameNote:SetJustifyH("LEFT")
-    if nameNote.SetWordWrap then
-        nameNote:SetWordWrap(true)
-    end
-    nameNote:SetText(
-        "|cff888888Press Enter to apply. Change only if your realm uses different display names; the spell-ID 600126 fallback still resolves the merchant slot if its name is unset.|r"
-    )
+    -- v2.10.0: the v2.9.0 editable companion-name input boxes were removed
+    -- from this panel after in-game testing showed the click-to-focus path
+    -- was unreliable on PE-ElvUI; users could see the inputs but typing did
+    -- not update DB.scavengerName / DB.merchantName consistently. The
+    -- underlying mechanism (DB fields, EC_compCache.refreshNames, the
+    -- EnsureDB defaults, and the spellID 600126 cold-cache fallback in
+    -- FindGoblinMerchantIndex) all stay - they are still the source of
+    -- truth for companion lookup and a future re-enable can drop the UI
+    -- back in without touching the runtime path. For now if a user needs
+    -- to override either name they can edit DB.scavengerName /
+    -- DB.merchantName directly via /run on a single character.
 
     -- Discoverability hint for the right-click context menu. Lives on this
     -- panel because both v2.3.0 bag-action features cluster here.
     local rightClickHint = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    rightClickHint:SetPoint("TOPLEFT", nameNote, "BOTTOMLEFT", 0, -16)
+    rightClickHint:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", 0, -16)
     rightClickHint:SetWidth(EC_PANEL_WIDTH - 60)
     rightClickHint:SetJustifyH("LEFT")
     if rightClickHint.SetWordWrap then
@@ -5674,6 +6109,9 @@ BlacklistPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
+        if self.autoEquipCB then
+            self.autoEquipCB:SetChecked(DB.autoAddEquipped)
+        end
         if self.listUI then
             self.listUI:Refresh()
         end
@@ -5701,7 +6139,61 @@ BlacklistPanel:SetScript("OnShow", function(self)
     end
     blHint:SetText("Add items by Shift-Clicking, dragging, or typing the Item ID below.")
 
-    self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -130)
+    -- v2.10.0: auto-protect equipped gear. Toggling on runs a one-shot sync
+    -- of every currently equipped slot into THIS list (Blacklist - Keep),
+    -- then a reactive PLAYER_EQUIPMENT_CHANGED handler keeps the list in
+    -- step with future gear swaps. The blacklist veto in EC_IsSellable
+    -- prevents auto-rules from touching anything on this list, so a
+    -- replaced upgrade sliding into bags is automatically protected. The
+    -- tooltip annotation surfaces "(auto-protected: equipped)" so users
+    -- who decide they want an auto-added item sold can see why it's being
+    -- kept and Alt+Right-Click to remove it.
+    local autoEquipCB = CreateFrame(
+        "CheckButton",
+        "EbonClearanceAutoProtectEquippedCB",
+        self,
+        "InterfaceOptionsCheckButtonTemplate"
+    )
+    autoEquipCB:SetPoint("TOPLEFT", blHint, "BOTTOMLEFT", 0, -10)
+    autoEquipCB:SetChecked(DB.autoAddEquipped)
+    local aeText = _G[autoEquipCB:GetName() .. "Text"]
+    if aeText then
+        aeText:SetText("Auto-protect equipped gear")
+        aeText:SetWidth(EC_PANEL_WIDTH - 60)
+        aeText:SetJustifyH("LEFT")
+    end
+    autoEquipCB:SetScript("OnClick", function(cb)
+        local on = cb:GetChecked() and true or false
+        local wasOff = (DB.autoAddEquipped ~= true)
+        DB.autoAddEquipped = on
+        PlaySound("igMainMenuOptionCheckBoxOn")
+        if on and wasOff then
+            EC_compCache.syncEquipped()
+            if self.listUI then
+                self.listUI:Refresh()
+            end
+        end
+    end)
+    self.autoEquipCB = autoEquipCB
+
+    local autoEquipNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    autoEquipNote:SetPoint("TOPLEFT", autoEquipCB, "BOTTOMLEFT", 26, -2)
+    autoEquipNote:SetWidth(EC_PANEL_WIDTH - 60)
+    autoEquipNote:SetJustifyH("LEFT")
+    if autoEquipNote.SetWordWrap then
+        autoEquipNote:SetWordWrap(true)
+    end
+    autoEquipNote:SetText(
+        "|cff888888Adds your currently equipped gear to this Keep list on toggle, then auto-adds anything you equip later so replaced upgrades sliding into bags are automatically protected from auto-sell rules. The bag tooltip explains why each item is kept; Alt+Right-Click an item to remove it if you want it sold.|r"
+    )
+
+    -- Cascade-anchor the list UI to the auto-protect note's BOTTOMLEFT so
+    -- the manual-add list always sits below the new toggle regardless of
+    -- how many lines the note wraps to.
+    self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -200)
+    self.listUI:ClearAllPoints()
+    self.listUI:SetPoint("TOPLEFT", autoEquipNote, "BOTTOMLEFT", -26, -16)
+    self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
     self.listUI:Refresh()
 end)
 
@@ -6312,6 +6804,11 @@ if f.RegisterUnitEvent then
 else
     f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 end
+-- v2.10.0: drives the auto-protect-equipped reactive path. Fires every time
+-- the player swaps a gear slot; the handler routes through
+-- EC_AutoProtectEquippedSlot which short-circuits when the toggle is off,
+-- so users not opted in pay one early-return per swap.
+f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -6391,6 +6888,27 @@ f:SetScript("OnEvent", function(self, event, ...)
         if spellName and EC_compCache.PROF_LOOT_SPELLS[spellName] then
             EC_compCache.lastProfLootCastAt = GetTime()
         end
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        -- v2.10.0: auto-protect equipped gear. arg1 is the slot id (1-19);
+        -- empty slots fire too (the player just un-equipped). The helper
+        -- gates on DB.autoAddEquipped, skips shirt/tabard, and bails when
+        -- the slot is empty. On a successful add it prints one targeted
+        -- chat line and stamps DB.blacklistAuto so the tooltip annotation
+        -- can label the entry as "(auto-protected: equipped)".
+        if not (DB and DB.autoAddEquipped) then
+            return
+        end
+        local slot = ...
+        if EC_compCache.protectEquipSlot(slot) then
+            local link = GetInventoryItemLink and GetInventoryItemLink("player", slot)
+            local id = link and tonumber(link:match("item:(%d+)"))
+            local itemName = (id and GetItemInfo(id)) or "item"
+            PrintNicef("Auto-protected |cffb6ffb6%s|r (added to Keep list).", itemName)
+            local bp = _G["EbonClearanceOptionsBlacklist"]
+            if bp and bp.listUI then
+                bp.listUI:Refresh()
+            end
+        end
     elseif event == "MERCHANT_SHOW" then
         EnsureDB()
         EC_merchantReminderPending = false
@@ -6455,6 +6973,20 @@ f:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         EC_Delay(1, function()
             PrintNice("Enabled. Use |cff00ff00/ec|r to configure.")
+            -- v2.10.0: surface the one-time companion-name migration after
+            -- the welcome line so the user sees both. The flag is set in
+            -- EnsureDB only on the migration run that actually touched
+            -- something; subsequent loads short-circuit and never raise it.
+            if DB and DB._v210NameResetNotice then
+                DB._v210NameResetNotice = nil
+                PrintNice(
+                    "|cffffb84dCompanion-name override reset to defaults.|r "
+                        .. "|cff888888The v2.9.0 name input was removed in v2.10.0; "
+                        .. "an outdated value from that UI was preventing the "
+                        .. "Goblin Merchant cycle from running. Power-users can "
+                        .. "still override via /run EbonClearanceDB.merchantName = ...|r"
+                )
+            end
         end)
     end
 end)

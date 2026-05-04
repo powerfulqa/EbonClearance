@@ -561,6 +561,22 @@ on Scavenger out↔in transitions in `EC_PetCheckTick`; both clears are
 required (the prune bounds growth, the transition reset prevents an
 immediate re-fire after a benign respawn).
 
+**Silent-realm guard (v2.10.0+).** The loot-silence signal assumes the
+Scavenger pet audibly chats on each loot pickup. On Project Ebonhold
+the pet's chat events don't reliably reach the chat filter (verified
+across multiple heavy-farming sessions: zero pet-speech messages). The
+on-summon synthetic refresh of `EC_lastScavSpokeAt` then resets the
+silence clock at every dismiss-and-resummon cycle, producing a
+feedback loop where the signal fires every ~60 s of farming. v2.10.0
+adds `EC_compCache.scavSpeechEverHeard` (boolean, false at session
+start) that is set to true ONLY by real chat-filter matches in
+`EC_GreedyEventFilter` (NOT by the on-summon refresh). The
+`EC_IsLootSilenceStuck` early-returns false when the flag is unset,
+so the signal self-disables on silent realms while preserving the
+v2.7.0 / v2.8.0 behaviour on any realm where the pet does broadcast.
+The flag is session-scoped (lives on `EC_compCache`, not in
+SavedVariables); a `/reload` re-evaluates from scratch.
+
 If you add a third stuck signal, do it the same way: another OR clause
 in `EC_HandleScavengerOut`, with its own state cleared on transitions,
 and with cause-distinguishing chat output so the user can tell the
@@ -764,6 +780,64 @@ If you add another list or another scope, update both `EC_FindAddConflict`
 they stay in sync. Skipping the guard means silent post-hoc cleanups will
 surprise the user; skipping the cleaner means legacy or imported data has
 nowhere to be detected.
+
+### `DB.blacklistAuto` is a source-tag map, not a second blacklist (v2.10.0+)
+
+The auto-protect-equipped feature stores `{ [itemID] = true }` on
+`DB.blacklistAuto`. This map is a **diagnostic tag**, not an additive
+blacklist. The actual blacklist-veto predicate (`IsInSet(DB.blacklist, ...)`
+inside `EC_IsSellable`) only ever reads `DB.blacklist`; `DB.blacklistAuto`
+exists exclusively so `EC_AnnotateTooltip` can append the `(auto-protected:
+equipped)` suffix when an entry got onto the Keep list via the equipment
+handler instead of a manual user add.
+
+The list is the **Blacklist (Keep)** - i.e. `DB.blacklist`, not
+`DB.whitelist`. EbonClearance's naming is inverted from the conventional
+"whitelist = allow, blacklist = block" sense: in this codebase
+`DB.whitelist` is the SELL list ("items to sell on this character") and
+`DB.blacklist` is the KEEP / DO-NOT-SELL list ("items the auto-rules
+must never touch"). v2.10.0 originally shipped against the wrong list
+and was corrected before tag; do not re-introduce that confusion.
+
+**Three invariants any Blacklist remove path must preserve:**
+
+1. Every `DB.blacklist[id] = nil` must be paired with
+   `DB.blacklistAuto[id] = nil` (or a `wipe(DB.blacklistAuto)` for bulk
+   wipes). Otherwise the tooltip annotation can claim auto-protection
+   for an item the user has explicitly removed.
+2. Manual adds (panel UI, slash, Alt+Right-Click context menu) MUST NOT
+   write to `DB.blacklistAuto`. Only the equipment handler /
+   `EC_compCache.protectEquipSlot` /
+   `EC_compCache.syncEquipped` paths stamp it.
+3. Profile load wipes `DB.blacklistAuto` alongside `DB.blacklist`. A
+   profile snapshot doesn't carry the auto flag, so loading a profile
+   starts the auto map from scratch. The profile-clear button (which
+   only wipes the live whitelist, not the live blacklist) MUST NOT
+   touch `blacklistAuto` - the blacklist itself isn't being cleared.
+
+The 200-local cap influenced the implementation: the helpers
+`protectEquipSlot` and `syncEquipped` hang off `EC_compCache` (already a
+junk-drawer for v2.9.x state) rather than as module-scope `local function`
+declarations. Same pattern as `PROF_LOOT_SPELLS`.
+
+### Bind-type detection shares `EC_scanTooltip` (v2.10.0+)
+
+The per-rarity `bindFilter` rule reads bind type via the same hidden
+`EC_scanTooltip` frame the openable-container check uses. `EC_compCache.getBindType`
+returns `"boe"`, `"bop"`, or `"any"` and stamps `EC_compCache.bindCache`
+to avoid rescanning on every bag walk.
+
+Strings matched (`Binds when picked up`, `Soulbound`, `Binds when equipped`)
+are enUS only. EbonClearance's L10n posture is enUS-only on Project
+Ebonhold; if the project ever ships a localised realm, this scanner needs
+the same treatment as `ITEM_OPENABLE` / `LOCKED` in `EC_IsOpenable`.
+
+Items with no bind line at all (consumables, reagents, trade goods, quest
+items) return `"any"`. Critically, `"any"` is matched by neither `"boe"`
+nor `"bop"` filters — so a `BoE only` rule on Blue does NOT sweep up
+reagents that happen to be blue quality. This matches user mental model
+("sell BoE blues only" should not touch reagents) and is the reason the
+filter check is INSIDE the `qualityPass` branch, not outside it.
 
 ### Index of magic numbers
 

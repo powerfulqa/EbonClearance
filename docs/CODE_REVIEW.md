@@ -3,13 +3,21 @@
 A curated backlog of known follow-ups not yet actioned. Each item is
 scoped to be a single-session change unless flagged otherwise.
 
-> **Last refresh:** post-v2.7.0 on 2026-04-29.
+> **Last refresh:** post-v2.11.0 on 2026-05-04.
 > Statuses below verified against the current `EbonClearance.lua`.
-> None of items 1-5 were touched in v2.7.0; that release added a
-> secondary stuck-detection signal, an add-time list-conflict guard,
-> and chat output for the silent stuck-resummon path. Items that
-> have shipped or been decided are listed under [Resolved](#resolved)
-> at the bottom.
+> None of items 1-5 below were resolved in v2.8.0 - v2.11.0; those
+> releases shipped feature work (per-rarity Purple row, smarter stuck
+> detection, manual-sell attribution, guild-bank repair, auto-protect
+> equipped, bind-type filter, auto-protect upgrades, bag-full
+> hysteresis, combat-only summon, reactive panel layout) plus
+> targeted reliability fixes. **Item 4 (extract panel OnShow
+> boilerplate) is now elevated**: v2.10.0 added a tenth panel onto
+> the same boilerplate, and v2.11.0's reactive-layout handler
+> ([EC_compCache.refreshLayouts](../EbonClearance.lua)) registers
+> width-snapshot widgets via helper hooks rather than per-panel hand-
+> coding. When item 4 is actioned, the future `EC_InitPanel(self,
+> refresh, build)` helper should also internalise the registry
+> registration so panel authors don't have to remember to call it.
 
 ---
 

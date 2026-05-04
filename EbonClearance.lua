@@ -44,8 +44,8 @@ _G["__EbonClearance_author"] = ADDON_AUTHOR
 -- .toc files on full client restart, not /reload) cannot make the displayed
 -- version lie on a release build. Pre-v2.9.1 builds shipped a stale "v2.5.0"
 -- literal because the workflow's sed pattern didn't match this line; fixed
--- in v2.9.1 by switching to the v2.10.0 placeholder convention.
-local ADDON_VERSION = "v2.10.0"
+-- in v2.9.1 by switching to the @VERSION@ placeholder convention.
+local ADDON_VERSION = "@VERSION@"
 local function EC_GetVersion()
     if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then
         return ADDON_VERSION
@@ -206,6 +206,37 @@ local EC_compCache = {
     -- stuck detection (EC_STUCK_MOVEMENT_THRESHOLD, 180 s) remains the
     -- primary signal in all cases.
     scavSpeechEverHeard = false,
+    -- v2.11.0 bag-full hysteresis. Without this, a single transient
+    -- BAG_UPDATE that crosses DB.bagFullThreshold (a vendor opening up,
+    -- an item splitting, an inventory shuffle) immediately fires the
+    -- dismiss-Scav / summon-Goblin cycle even if the next tick puts the
+    -- count back over the threshold. AutoDelete v3.17.x ships a 1.5 s
+    -- confirm window for the same reason. bagFullSince is timestamped at
+    -- the first tick the threshold is crossed and cleared the moment the
+    -- count rises back above it; EC_HandleBagFullForCycle only fires
+    -- when (GetTime() - bagFullSince) >= BAG_FULL_CONFIRM_S.
+    bagFullSince = nil,
+    BAG_FULL_CONFIRM_S = 1.5,
+    -- v2.11.0 GCD-aware busy gate. EC_IsPlayerBusy() can detect cast,
+    -- channel, and movement, but 3.3.5a has no clean GCD query - so a
+    -- heavy instant-cast rotation runs the GCD continuously while every
+    -- check between casts reports "not busy". CallCompanion goes through
+    -- the spell pipeline and is silently rejected by the GCD, the 2 s
+    -- verify reports not-summoned, retry budget exhausts, and the user
+    -- sees "Goblin Merchant failed to summon. Resuming looting." even
+    -- though they were just spamming instants the whole time.
+    --
+    -- Workaround: derive the GCD from UNIT_SPELLCAST_SUCCEEDED. After
+    -- any player cast we treat the next GCD_WINDOW_S as "busy" too. The
+    -- 1.5 s window matches the standard GCD; rotations with shorter
+    -- haste-reduced GCDs will see the gate clear too early occasionally,
+    -- but those CallCompanion attempts that DO fall in a GCD slot now
+    -- just defer (via the busy gate) rather than burning the retry
+    -- budget. The fix is for the goblin summon path; the Scavenger
+    -- resummon path retries indefinitely anyway via EC_addonDismissed,
+    -- so it just defers a bit longer.
+    lastPlayerCastAt = 0,
+    GCD_WINDOW_S = 1.5,
 }
 -- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
 -- movement accumulator (only counts while the pet is out) and the
@@ -608,6 +639,9 @@ local function EnsureDB()
     if type(DB.summonGreedy) ~= "boolean" then
         DB.summonGreedy = true
     end
+    if type(DB.summonOnlyOutOfCombat) ~= "boolean" then
+        DB.summonOnlyOutOfCombat = false
+    end
     if type(DB.summonDelay) ~= "number" then
         DB.summonDelay = 1.6
     end
@@ -730,6 +764,9 @@ local function EnsureDB()
     -- the Blacklist (Keep) panel.
     if type(DB.autoAddEquipped) ~= "boolean" then
         DB.autoAddEquipped = false
+    end
+    if type(DB.autoProtectUpgrades) ~= "boolean" then
+        DB.autoProtectUpgrades = false
     end
     if type(DB.whitelistMinQuality) ~= "number" then
         DB.whitelistMinQuality = 1
@@ -1183,6 +1220,14 @@ local function EC_IsPlayerBusy()
     if GetUnitSpeed and GetUnitSpeed("player") > 0 then
         return true
     end
+    -- v2.11.0: GCD proxy. UNIT_SPELLCAST_SUCCEEDED stamps lastPlayerCastAt
+    -- on every player cast (instant or otherwise); the GCD blocks
+    -- CallCompanion for ~1.5 s afterwards. Without this, rapid instant-
+    -- cast rotations slipped through the busy gate and burned the goblin
+    -- summon retry budget on calls the server silently dropped.
+    if (GetTime() - EC_compCache.lastPlayerCastAt) < EC_compCache.GCD_WINDOW_S then
+        return true
+    end
     return false
 end
 
@@ -1263,12 +1308,16 @@ local function SummonGreedyScavenger()
         -- EC_addonDismissed=true and bailing out routes recovery
         -- through EC_TryResummonScavenger's tick path, which has
         -- the same busy gate plus retry-until-confirmed.
-        if EC_IsPlayerBusy() then
+        if EC_IsPlayerBusy() or (DB and DB.summonOnlyOutOfCombat and InCombatLockdown()) then
             EC_addonDismissed = true
             -- v2.10.0: arm the resummon-print debounce so the eventual
             -- pet-tick retry that catches a clear cast/movement window
             -- prints once. Without this, FinishRun-initiated summons that
-            -- bounce off the busy gate would silently recover.
+            -- bounce off the busy gate would silently recover. v2.11.0
+            -- extends the gate with the optional combat-only setting:
+            -- when DB.summonOnlyOutOfCombat is true, defer the summon
+            -- until combat ends. The pet-tick retry path picks it up
+            -- the moment InCombatLockdown clears.
             EC_compCache.pendingAnnounce = true
             return
         end
@@ -1281,14 +1330,22 @@ local function SummonGreedyScavenger()
         -- A subsequent out -> not-out transition within EC_compCache.USER_WINDOW_S
         -- of this timestamp is treated as "the user clicked the portrait off".
         EC_compCache.lastSummonAt = GetTime()
+        -- v2.11.0: do NOT clear EC_addonDismissed or pendingAnnounce here.
+        -- A combat keypress that lands in the same client tick as
+        -- CallCompanion can take the cast slot and silently reject the
+        -- summon; if we'd already cleared EC_addonDismissed the pet-tick
+        -- retry path (the only thing that would catch the rejection) is
+        -- disarmed and the Scavenger stays gone for the rest of the
+        -- session. The pet-tick at the EC_PetCheckTick transition handler
+        -- is the canonical "summon confirmed" signal and clears both
+        -- flags after observing scavengerOut=true. Same model v2.6.1
+        -- applied to EC_TryResummonScavenger.
+    else
+        -- Already out on entry: CallCompanion is a no-op, safe to clear
+        -- both flags here (no rejection window to worry about).
+        EC_addonDismissed = false
+        EC_compCache.pendingAnnounce = false
     end
-    EC_addonDismissed = false
-    -- v2.10.0: a direct successful summon (e.g. /ec slash, FinishRun
-    -- success path) doesn't need the "resummoned" chat line - the user
-    -- either initiated this themselves or already saw "Vendoring
-    -- complete!". Clear the announce flag so the next dismiss-and-
-    -- resummon cycle can arm it cleanly without inheriting a stale value.
-    EC_compCache.pendingAnnounce = false
     -- Sync the stuck-detection gate immediately so the OnUpdate
     -- accumulator starts counting from this summon, not from the
     -- next 5 s tick observation.
@@ -1541,8 +1598,27 @@ local function EC_HandleBagFullForCycle()
     end
     local free = EC_GetFreeBagSlots()
     if free > (DB.bagFullThreshold or 2) then
+        -- v2.11.0: clear the hysteresis stamp the moment we rise back
+        -- above the threshold. A subsequent dip will start a fresh
+        -- confirm window from the new GetTime().
+        EC_compCache.bagFullSince = nil
         return
     end
+    -- v2.11.0 hysteresis: require the threshold to be continuously
+    -- crossed for BAG_FULL_CONFIRM_S before tearing down the looting
+    -- pet and summoning the merchant. Suppresses spurious cycles on
+    -- transient bag fluctuations. The scheduled re-check guarantees
+    -- the cycle still fires if no further BAG_UPDATE arrives during
+    -- the confirm window (e.g. one big loot leaves the player idle).
+    if not EC_compCache.bagFullSince then
+        EC_compCache.bagFullSince = GetTime()
+        EC_Delay(EC_compCache.BAG_FULL_CONFIRM_S + 0.05, EC_HandleBagFullForCycle)
+        return
+    end
+    if (GetTime() - EC_compCache.bagFullSince) < EC_compCache.BAG_FULL_CONFIRM_S then
+        return
+    end
+    EC_compCache.bagFullSince = nil
     EC_lootCycleState = STATE.WAITING_MERCHANT
     PrintNicef("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free)
     if DismissCompanion then
@@ -1901,6 +1977,112 @@ function EC_compCache.syncEquipped()
     end
 end
 
+-- v2.11.0 auto-protect upgraded gear (BAG_UPDATE-driven). Closes the gap
+-- left by v2.10.0's PLAYER_EQUIPMENT_CHANGED-driven path: that path only
+-- protected the *previously-equipped* item the moment the user swaps in
+-- an upgrade. A higher-iLvl drop sitting in bags waiting to be equipped
+-- was unprotected, and any active per-rarity iLvl-cap rule could vendor
+-- it on the next merchant visit. The new path scans bag items on every
+-- BAG_UPDATE, computes their slot type and base iLvl from GetItemInfo,
+-- and stamps the Keep list when a bag item's iLvl exceeds the equipped
+-- item in any of its candidate slots. Multi-slot equipLocs (rings,
+-- trinkets, weapons) compare against the LOWER of the two equipped
+-- iLvls so any genuine upgrade triggers.
+--
+-- Cost: GetItemInfo + a few inventory link reads per never-seen-before
+-- itemID. EC_compCache.upgradeProcessed dedupes per-itemID for the
+-- session - a /reload reseeds. EC_AddItemToList's quiet+dedupe path
+-- short-circuits items already on the blacklist, so the only chat
+-- output is the per-add notice.
+EC_compCache.INVTYPE_SLOTS = {
+    INVTYPE_HEAD = { 1 },
+    INVTYPE_NECK = { 2 },
+    INVTYPE_SHOULDER = { 3 },
+    INVTYPE_CHEST = { 5 },
+    INVTYPE_ROBE = { 5 },
+    INVTYPE_WAIST = { 6 },
+    INVTYPE_LEGS = { 7 },
+    INVTYPE_FEET = { 8 },
+    INVTYPE_WRIST = { 9 },
+    INVTYPE_HAND = { 10 },
+    INVTYPE_FINGER = { 11, 12 },
+    INVTYPE_TRINKET = { 13, 14 },
+    INVTYPE_CLOAK = { 15 },
+    INVTYPE_WEAPON = { 16, 17 },
+    INVTYPE_2HWEAPON = { 16 },
+    INVTYPE_WEAPONMAINHAND = { 16 },
+    INVTYPE_WEAPONOFFHAND = { 17 },
+    INVTYPE_HOLDABLE = { 17 },
+    INVTYPE_SHIELD = { 17 },
+    INVTYPE_RANGED = { 18 },
+    INVTYPE_RANGEDRIGHT = { 18 },
+    INVTYPE_THROWN = { 18 },
+    INVTYPE_RELIC = { 18 },
+}
+
+EC_compCache.upgradeProcessed = {}
+
+function EC_compCache.getEquippedILvl(slotID)
+    local link = GetInventoryItemLink and GetInventoryItemLink("player", slotID)
+    if not link then
+        return 0
+    end
+    local _, _, _, iLvl = GetItemInfo(link)
+    return iLvl or 0
+end
+
+function EC_compCache.checkBagsForUpgrades()
+    if not DB or not DB.autoProtectUpgrades then
+        return
+    end
+    -- Skip while a vendor cycle is mid-flight: the worker queue was
+    -- built before any add we'd make now, so a fresh blacklist stamp
+    -- wouldn't influence the current run anyway. Next BAG_UPDATE post-
+    -- MERCHANT_CLOSED picks up the same items cleanly.
+    if running then
+        return
+    end
+    for bag = 0, 4 do
+        local n = GetContainerNumSlots(bag) or 0
+        for slot = 1, n do
+            local itemID = GetContainerItemID(bag, slot)
+            if itemID and not EC_compCache.upgradeProcessed[itemID] then
+                EC_compCache.upgradeProcessed[itemID] = true
+                if not (DB.blacklist and DB.blacklist[itemID]) then
+                    local _, _, _, iLvl, _, _, _, _, equipLoc = GetItemInfo(itemID)
+                    local slots = equipLoc and EC_compCache.INVTYPE_SLOTS[equipLoc]
+                    if iLvl and iLvl > 0 and slots then
+                        -- For multi-slot equipLocs (rings, trinkets,
+                        -- 1H weapons), compute the LOWEST iLvl among
+                        -- the populated candidate slots. Empty slots
+                        -- are ignored - otherwise an empty ring-2 slot
+                        -- (iLvl 0) would suppress upgrade detection
+                        -- against an iLvl-250 ring-1. If every slot is
+                        -- empty (alt with no gear), threshold collapses
+                        -- to 0 and the first-equip case still triggers.
+                        local lowestEquipped = nil
+                        for _, sid in ipairs(slots) do
+                            local eq = EC_compCache.getEquippedILvl(sid)
+                            if eq > 0 and (lowestEquipped == nil or eq < lowestEquipped) then
+                                lowestEquipped = eq
+                            end
+                        end
+                        local threshold = lowestEquipped or 0
+                        if iLvl > threshold then
+                            if EC_AddItemToList("blacklist", itemID, "Blacklist (Keep)", true) then
+                                DB.blacklistAuto = DB.blacklistAuto or {}
+                                DB.blacklistAuto[itemID] = true
+                                local name = GetItemInfo(itemID) or ("Item:" .. itemID)
+                                PrintNicef("|cffb6ffb6Auto-protected upgrade %s (added to Keep list).|r", name)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function EC_SellNowAt(bag, slot)
     if not (MerchantFrame and MerchantFrame:IsShown()) then
         PrintNice("|cffff4444Open a merchant first to sell.|r")
@@ -2251,6 +2433,19 @@ local function EC_TickGoblinTarget(elapsed)
             EC_merchantReminderPending = true
             EC_merchantReminderTimer = 8.0
         elseif idx and EC_goblinRetryCount < EC_GOBLIN_MAX_RETRIES then
+            -- v2.11.0: nudge the user when we're about to fire the last
+            -- attempt. Two missed retries means the previous CallCompanions
+            -- bounced off the GCD - the v2.11.0 GCD-aware busy gate covers
+            -- the common case but can't see haste-reduced GCDs or any other
+            -- server-side reject reason. Telling the user gives them a
+            -- ~2.5 s window (0.5 s pre-fire + 2.0 s verify) to pause their
+            -- rotation so the next CallCompanion catches a clear window.
+            -- Only fires once per cycle (transition from N-1 -> N retries).
+            if EC_goblinRetryCount == EC_GOBLIN_MAX_RETRIES - 1 then
+                PrintNice(
+                    "|cffffb84dGoblin Merchant retrying. Hold off your rotation briefly so the summon can land.|r"
+                )
+            end
             -- Re-route through the summon path so the next CallCompanion
             -- waits for a clear cast/movement window first.
             EC_summonGoblinPending = true
@@ -2430,6 +2625,11 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
         return
     end
     if EC_IsPlayerBusy() then
+        return
+    end
+    -- v2.11.0: optional combat-only summon. Defers stuck-recovery and
+    -- post-merchant-restore CallCompanions until combat ends.
+    if DB and DB.summonOnlyOutOfCombat and InCombatLockdown() then
         return
     end
     if goblinStillOut and DismissCompanion then
@@ -3166,13 +3366,13 @@ local function EC_AnnotateTooltip(tooltip)
         -- row.
         local isAutoProtected = DB.blacklistAuto and DB.blacklistAuto[id]
         if isAutoProtected then
-            -- v2.10.0: distinct concise label for the auto-protected case.
-            -- The full "Protected - Blacklisted (auto-protected: equipped)"
-            -- ran 53 chars and competed with bag-tooltip wrap on narrow
-            -- frames. The shorter form fits on one line in any sane bag
-            -- skin and tells the user the same two facts: it's protected,
-            -- and it's protected because they equipped it.
-            statusLine = "|cff66ccff[EC]|r |cffffb84dEquip Auto-Protected|r"
+            -- v2.10.0 introduced a distinct concise label for the auto-
+            -- protected case. v2.11.0 generalised the wording from
+            -- "Equip Auto-Protected" to "Auto-Protected" because the
+            -- auto-protect-upgrades path also stamps DB.blacklistAuto;
+            -- there's no longer a single "this came from equipping"
+            -- origin to call out.
+            statusLine = "|cff66ccff[EC]|r |cffffb84dAuto-Protected|r"
         else
             statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Blacklisted|r"
         end
@@ -3318,6 +3518,94 @@ local function EC_UpdatePanelWidth()
     end
 end
 
+-- v2.11.0 reactive layout registry. Pre-v2.11.0 the panel-build pass
+-- snapshotted EC_PANEL_WIDTH at first OnShow into every label, every
+-- scroll-content, every list internal width - and never touched them
+-- again. Dragging the Interface Options frame's resize handle did
+-- nothing to the addon's panels because none of those widgets re-read
+-- EC_PANEL_WIDTH after their build call. v2.11.0 hooks
+-- InterfaceOptionsFramePanelContainer's OnSizeChanged once; widgets
+-- whose width snapshots EC_PANEL_WIDTH at construction register
+-- themselves on EC_compCache.widthRegistry.widgets, scroll-wrapped
+-- panels register their (content, last-widget) pair on
+-- EC_compCache.widthRegistry.scrollFits, and the OnSizeChanged callback
+-- walks both lists to re-apply widths and re-fit scroll content. No
+-- widget rebuilds; pure width refresh.
+EC_compCache.widthRegistry = {
+    widgets = {},
+    scrollFits = {},
+}
+
+function EC_compCache.registerWidth(widget, xOffset)
+    if not widget then
+        return
+    end
+    local list = EC_compCache.widthRegistry.widgets
+    list[#list + 1] = { w = widget, x = xOffset or 0 }
+end
+
+function EC_compCache.registerScrollFit(content, last, padding)
+    if not content or not last then
+        return
+    end
+    local list = EC_compCache.widthRegistry.scrollFits
+    list[#list + 1] = { c = content, l = last, p = padding }
+end
+
+-- Convenience: SetWidth + register in one call. Use this at every site
+-- that snapshots EC_PANEL_WIDTH into a widget's width so the widget
+-- tracks Interface Options frame resizes. Replaces the v2.10.0-and-
+-- earlier pattern of "widget:SetWidth(EC_PANEL_WIDTH - X)" - that
+-- worked fine on a non-resizable panel but leaves widgets clamped at
+-- their snapshot width on resize.
+function EC_compCache.setPanelWidth(widget, x)
+    if not widget or not widget.SetWidth then
+        return
+    end
+    widget:SetWidth(EC_PANEL_WIDTH - (x or 0))
+    EC_compCache.registerWidth(widget, x or 0)
+end
+
+function EC_compCache.refreshLayouts()
+    EC_UpdatePanelWidth()
+    local widgets = EC_compCache.widthRegistry.widgets
+    for i = 1, #widgets do
+        local d = widgets[i]
+        if d.w and d.w.SetWidth then
+            d.w:SetWidth(math.max(EC_PANEL_WIDTH - d.x, 100))
+        end
+    end
+    -- After widths are re-applied, the wrapped FontString heights change;
+    -- re-fit each scroll content's height to the (now possibly taller)
+    -- last-widget extent. Inlined rather than calling EC_FitScrollContent
+    -- to avoid re-registering on every resize - the registry pair was
+    -- already added at build time.
+    local fits = EC_compCache.widthRegistry.scrollFits
+    local function compute(f)
+        if not f.c or not f.l or not f.l.GetBottom or not f.c.GetTop then
+            return
+        end
+        local top = f.c:GetTop()
+        local bottom = f.l:GetBottom()
+        if top and bottom and top > bottom then
+            f.c:SetHeight(top - bottom + (f.p or 24))
+        end
+    end
+    -- Two-pass identical to EC_FitScrollContent's: first tick catches the
+    -- common case, second tick covers FontStrings whose wrapped height
+    -- isn't fully settled yet.
+    EC_Delay(0.1, function()
+        for i = 1, #fits do
+            compute(fits[i])
+        end
+    end)
+    EC_Delay(0.5, function()
+        for i = 1, #fits do
+            compute(fits[i])
+        end
+    end)
+end
+
 -- Auto-hide a UIPanelScrollFrameTemplate's scroll bar (up arrow, thumb,
 -- down arrow) when content fits the visible area. Avoids the "orphan icons
 -- floating at the right edge" look that lists with few items show.
@@ -3384,6 +3672,9 @@ local function EC_WrapPanelInScrollFrame(panel)
     content:SetWidth(math.max(EC_PANEL_WIDTH - 26, 100))
     content:SetHeight(1) -- expanded by EC_FitScrollContent once widgets are laid out
     scroll:SetScrollChild(content)
+    -- v2.11.0: register the scroll content's width with the reactive
+    -- layout registry so it tracks Interface Options frame resizes.
+    EC_compCache.registerWidth(content, 26)
 
     -- v2.10.0: nudge the scrollbar's top anchor 4 px further down. The
     -- UIPanelScrollFrameTemplate default insets the bar 16 px from the
@@ -3429,6 +3720,11 @@ local function EC_FitScrollContent(content, lastWidget, padding)
     end
     EC_Delay(0.1, compute)
     EC_Delay(0.5, compute)
+    -- v2.11.0: register the (content, last) pair so the reactive layout
+    -- handler can re-fit when the panel container resizes (label re-wrap
+    -- changes lastWidget's GetBottom and the content height needs to
+    -- track that). Idempotent re-fits are safe.
+    EC_compCache.registerScrollFit(content, lastWidget, pad)
 end
 
 local function MakeLabel(parent, text, x, y)
@@ -3437,6 +3733,9 @@ local function MakeLabel(parent, text, x, y)
     fs:SetWidth(EC_PANEL_WIDTH - x)
     fs:SetJustifyH("LEFT")
     fs:SetJustifyV("TOP")
+    -- v2.11.0: register the label's width with the reactive layout
+    -- registry so it re-wraps when the panel container resizes.
+    EC_compCache.registerWidth(fs, x)
     if fs.SetWordWrap then
         fs:SetWordWrap(true)
     end
@@ -3597,6 +3896,21 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     -- changes content height, so visibility tracks the list automatically.
     EC_HookScrollbarAutoHide(scroll)
 
+    -- v2.11.0: when the panel resizes the box stretches via its
+    -- BOTTOMRIGHT anchor (set externally), scroll stretches with the
+    -- box, but content (a ScrollChild) needs explicit SetWidth -
+    -- ScrollChild doesn't auto-track parent. Hook OnSizeChanged to keep
+    -- content width in step. Rows inside the content already track via
+    -- TOPLEFT/TOPRIGHT anchors so they stretch with content automatically.
+    box:SetScript("OnSizeChanged", function(self, width)
+        if not width or width <= 0 then
+            return
+        end
+        if content and content.SetWidth then
+            content:SetWidth(width - 26)
+        end
+    end)
+
     local rowPool = {}
     local activeRows = 0
 
@@ -3605,7 +3919,11 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             return rowPool[index]
         end
         local row = CreateFrame("Frame", nil, content)
-        row:SetSize(w - 26, 22)
+        row:SetHeight(22)
+        -- v2.11.0: rows track content width via TOPLEFT/TOPRIGHT anchors
+        -- (re-applied at every position update in Refresh below). The text
+        -- inside is anchored TOPLEFT/TOPRIGHT relative to row + Remove
+        -- button so it auto-stretches; no SetWidth snapshot left to drift.
 
         local rm = CreateFrame(
             "Button",
@@ -3619,7 +3937,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
 
         local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         text:SetPoint("LEFT", row, "LEFT", 2, 0)
-        text:SetWidth(w - 106)
+        text:SetPoint("RIGHT", rm, "LEFT", -8, 0)
         text:SetJustifyH("LEFT")
 
         row.rm = rm
@@ -3714,7 +4032,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 shown = shown + 1
                 local row = GetRow(shown)
                 row:ClearAllPoints()
-                row:SetPoint("TOPLEFT", 0, rowY)
+                -- v2.11.0: anchor both TOPLEFT and TOPRIGHT so the row
+                -- stretches with the (resizable) content frame.
+                row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, rowY)
+                row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, rowY)
                 row.text:SetText(string.format("|cffb6ffb6%d|r  %s", id, name))
                 row.rm:SetScript("OnClick", function()
                     local t = EC_GetListTable(setTableName)
@@ -4333,7 +4654,7 @@ local function BuildMainPanel(panel, refreshStats)
     )
     local descLabel2 = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
-    descLabel2:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(descLabel2, 16)
     descLabel2:SetJustifyH("LEFT")
     descLabel2:SetJustifyV("TOP")
     if descLabel2.SetWordWrap then
@@ -4371,13 +4692,13 @@ local function BuildMainPanel(panel, refreshStats)
 
     local mostSold = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     mostSold:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -6)
-    mostSold:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(mostSold, 16)
     mostSold:SetJustifyH("LEFT")
     panel.statsMostSold = mostSold
 
     local statsNote = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     statsNote:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -4)
-    statsNote:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(statsNote, 16)
     statsNote:SetJustifyH("LEFT")
     statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
 
@@ -4428,7 +4749,7 @@ local function BuildMainPanel(panel, refreshStats)
 
     local cmdText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     cmdText:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 0, -6)
-    cmdText:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(cmdText, 16)
     cmdText:SetJustifyH("LEFT")
     if cmdText.SetWordWrap then
         cmdText:SetWordWrap(true)
@@ -4674,7 +4995,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     local grt = _G[guildRepairCB:GetName() .. "Text"]
     if grt then
         grt:SetText("Use guild bank funds when available")
-        grt:SetWidth(EC_PANEL_WIDTH - 80)
+        EC_compCache.setPanelWidth(grt, 80)
         grt:SetJustifyH("LEFT")
     end
     guildRepairCB:SetScript("OnClick", function()
@@ -4690,7 +5011,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     local kbt = _G[keepBagsCB:GetName() .. "Text"]
     if kbt then
         kbt:SetText("Keep bags open when merchant window closes")
-        kbt:SetWidth(EC_PANEL_WIDTH - 60)
+        EC_compCache.setPanelWidth(kbt, 60)
         kbt:SetJustifyH("LEFT")
     end
     keepBagsCB:SetScript("OnClick", function()
@@ -4735,7 +5056,7 @@ MerchantPanel:SetScript("OnShow", function(self)
 
     local fastModeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     fastModeNote:SetPoint("TOPLEFT", fastModeCB, "BOTTOMLEFT", 26, -2)
-    fastModeNote:SetWidth(EC_PANEL_WIDTH - 60)
+    EC_compCache.setPanelWidth(fastModeNote, 60)
     fastModeNote:SetJustifyH("LEFT")
     if fastModeNote.SetWordWrap then
         fastModeNote:SetWordWrap(true)
@@ -4753,7 +5074,7 @@ MerchantPanel:SetScript("OnShow", function(self)
 
     local thresholdDesc = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     thresholdDesc:SetPoint("TOPLEFT", thresholdHeader, "BOTTOMLEFT", 0, -4)
-    thresholdDesc:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(thresholdDesc, 16)
     thresholdDesc:SetJustifyH("LEFT")
     if thresholdDesc.SetWordWrap then
         thresholdDesc:SetWordWrap(true)
@@ -5047,7 +5368,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
     -- lines the description wraps to (fixed-y caused overlap on narrower panels).
     local clarifyLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     clarifyLabel:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -8)
-    clarifyLabel:SetWidth(EC_PANEL_WIDTH - 32)
+    EC_compCache.setPanelWidth(clarifyLabel, 32)
     clarifyLabel:SetJustifyH("LEFT")
     clarifyLabel:SetJustifyV("TOP")
     if clarifyLabel.SetWordWrap then
@@ -5060,7 +5381,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
     -- Active profile indicator
     local activeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     activeLabel:SetPoint("TOPLEFT", clarifyLabel, "BOTTOMLEFT", 0, -16)
-    activeLabel:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(activeLabel, 16)
     activeLabel:SetJustifyH("LEFT")
     self.activeLabel = activeLabel
 
@@ -5086,7 +5407,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
     -- Status text (relative to the save row above it).
     local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     statusFS:SetPoint("TOPLEFT", saveLabel, "BOTTOMLEFT", 0, -10)
-    statusFS:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(statusFS, 16)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")
     self.statusFS = statusFS
@@ -5099,9 +5420,14 @@ ProfilesPanel:SetScript("OnShow", function(self)
     local scroll = CreateFrame("ScrollFrame", "EbonClearanceProfileListScroll", self, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -4)
     scroll:SetSize(EC_PANEL_WIDTH - 42, 160)
+    -- v2.11.0: register width so the scroll tracks Interface Options
+    -- frame resizes. SetSize set the height to 160 here; registry's
+    -- SetWidth-only refresh leaves height alone.
+    EC_compCache.registerWidth(scroll, 42)
 
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(EC_PANEL_WIDTH - 42, 1)
+    EC_compCache.registerWidth(content, 42)
     scroll:SetScrollChild(content)
     -- Auto-hide the scroll bar (arrows + thumb) when content fits the visible
     -- area. Wired once here; OnScrollRangeChanged fires on every Refresh that
@@ -5110,14 +5436,13 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
     local rowPool = {}
     local activeRows = 0
-    local listW = EC_PANEL_WIDTH - 42
 
     local function GetRow(index)
         if rowPool[index] then
             return rowPool[index]
         end
         local row = CreateFrame("Frame", nil, content)
-        row:SetSize(listW, 22)
+        row:SetHeight(22)
 
         local delBtn = CreateFrame("Button", "EbonClearanceProfileDel_" .. index, content, "UIPanelButtonTemplate")
         delBtn:SetSize(58, 18)
@@ -5208,7 +5533,9 @@ ProfilesPanel:SetScript("OnShow", function(self)
             shown = shown + 1
             local row = GetRow(shown)
             row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", 0, rowY)
+            -- v2.11.0: anchor TOPLEFT + TOPRIGHT so the row stretches.
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, rowY)
+            row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, rowY)
 
             local isActive = (pName == DB.activeProfileName)
             local wlCount = EC_CountItems(DB.whitelistProfiles[pName])
@@ -5489,6 +5816,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
     local exportScroll = CreateFrame("ScrollFrame", "EbonClearanceExportScroll", self, "UIPanelScrollFrameTemplate")
     exportScroll:SetPoint("TOPLEFT", 16, -128)
     exportScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
+    -- v2.11.0: track Interface Options frame resizes (registry refreshes
+    -- width only; height stays at the value set above).
+    EC_compCache.registerWidth(exportScroll, 36)
 
     local exportBox = CreateFrame("EditBox", "EbonClearanceExportBox", exportScroll)
     exportBox:SetAutoFocus(false)
@@ -5559,6 +5889,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
     local importScroll = CreateFrame("ScrollFrame", "EbonClearanceImportScroll", self, "UIPanelScrollFrameTemplate")
     importScroll:SetPoint("TOPLEFT", 16, -254)
     importScroll:SetSize(EC_PANEL_WIDTH - 36, 50)
+    -- v2.11.0: track Interface Options frame resizes (registry refreshes
+    -- width only; height stays at the value set above).
+    EC_compCache.registerWidth(importScroll, 36)
 
     local importBox = CreateFrame("EditBox", "EbonClearanceImportBox", importScroll)
     importBox:SetAutoFocus(false)
@@ -5585,7 +5918,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
     local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     statusFS:SetPoint("TOPLEFT", 16, -340)
-    statusFS:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(statusFS, 16)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetText("")
 
@@ -5616,7 +5949,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
     -- below, even when the status wraps to two lines (e.g. long error).
     local importNote = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     importNote:SetPoint("TOPLEFT", statusFS, "BOTTOMLEFT", 0, -8)
-    importNote:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(importNote, 16)
     importNote:SetJustifyH("LEFT")
     importNote:SetJustifyV("TOP")
     if importNote.SetWordWrap then
@@ -5647,7 +5980,7 @@ DeletePanel:SetScript("OnShow", function(self)
     local delDesc = MakeLabel(self, "If enabled, items on this list will be deleted from your bags.", 16, -44)
     local delHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     delHint:SetPoint("TOPLEFT", delDesc, "BOTTOMLEFT", 0, -4)
-    delHint:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(delHint, 16)
     delHint:SetJustifyH("LEFT")
     delHint:SetJustifyV("TOP")
     if delHint.SetWordWrap then
@@ -5672,6 +6005,14 @@ DeletePanel:SetScript("OnShow", function(self)
     end)
 
     self.listUI = CreateListUI(self, "Deletion List", "deleteList", 16, -130)
+    -- v2.11.0: anchor BOTTOMRIGHT so the list stretches with the panel
+    -- on Interface Options frame resize - mirrors the Whitelist /
+    -- Blacklist / Account-Whitelist setups. Without this the list box
+    -- stays at its build-time width and the search row + add-matching
+    -- row buttons drift outside the panel boundary on shrink.
+    self.listUI:ClearAllPoints()
+    self.listUI:SetPoint("TOPLEFT", 16, -130)
+    self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
     self.listUI:Refresh()
 end)
 
@@ -5748,10 +6089,25 @@ ScavengerPanel:SetScript("OnShow", function(self)
     end)
     self.sumCB = sumCB
 
+    local combatOnlyCB = AddCheckbox(
+        content,
+        "EbonClearanceSummonOnlyOutOfCombatCB",
+        sumCB,
+        "Only summon |cffff7f7fGreedy Scavenger|r when out of combat",
+        function()
+            return DB.summonOnlyOutOfCombat
+        end,
+        function(v)
+            DB.summonOnlyOutOfCombat = v
+        end,
+        -8
+    )
+    self.combatOnlyCB = combatOnlyCB
+
     local chatCB = AddCheckbox(
         content,
         "EbonClearanceHideGreedyChatCB",
-        sumCB,
+        combatOnlyCB,
         "Hide |cffff7f7fGreedy Scavenger|r's chat messages",
         function()
             return DB.hideGreedyChat
@@ -5822,7 +6178,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
 
     local cycleNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     cycleNote:SetPoint("TOPLEFT", cycleCB, "BOTTOMLEFT", 26, -2)
-    cycleNote:SetWidth(EC_PANEL_WIDTH - 60)
+    EC_compCache.setPanelWidth(cycleNote, 60)
     cycleNote:SetJustifyH("LEFT")
     cycleNote:SetText(
         "|cff888888At threshold: Greedy is dismissed and the Goblin Merchant is summoned. Right-click it to sell; Greedy re-summons automatically.|r"
@@ -5865,7 +6221,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
 
     local autoOpenNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     autoOpenNote:SetPoint("TOPLEFT", autoOpenCB, "BOTTOMLEFT", 26, -2)
-    autoOpenNote:SetWidth(EC_PANEL_WIDTH - 60)
+    EC_compCache.setPanelWidth(autoOpenNote, 60)
     autoOpenNote:SetJustifyH("LEFT")
     if autoOpenNote.SetWordWrap then
         autoOpenNote:SetWordWrap(true)
@@ -5888,7 +6244,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     -- panel because both v2.3.0 bag-action features cluster here.
     local rightClickHint = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     rightClickHint:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", 0, -16)
-    rightClickHint:SetWidth(EC_PANEL_WIDTH - 60)
+    EC_compCache.setPanelWidth(rightClickHint, 60)
     rightClickHint:SetJustifyH("LEFT")
     if rightClickHint.SetWordWrap then
         rightClickHint:SetWordWrap(true)
@@ -5952,6 +6308,17 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     -- changes content height, so visibility tracks the list automatically.
     EC_HookScrollbarAutoHide(scroll)
 
+    -- v2.11.0: track box width on resize so the content (a ScrollChild)
+    -- and its rows stretch with the panel. Mirror of CreateListUI.
+    box:SetScript("OnSizeChanged", function(self, width)
+        if not width or width <= 0 then
+            return
+        end
+        if content and content.SetWidth then
+            content:SetWidth(width - 26)
+        end
+    end)
+
     local rowPool = {}
     local activeRows = 0
 
@@ -5960,7 +6327,11 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
             return rowPool[index]
         end
         local row = CreateFrame("Frame", nil, content)
-        row:SetSize(w - 26, 22)
+        row:SetHeight(22)
+        -- v2.11.0: row anchors set in Refresh below (TOPLEFT + TOPRIGHT
+        -- relative to content) so the row stretches with content. Text
+        -- inside spans LEFT-of-row to LEFT-of-Remove-button via anchors,
+        -- no SetWidth snapshot.
 
         local rm = CreateFrame(
             "Button",
@@ -5974,7 +6345,7 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
 
         local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         text:SetPoint("LEFT", row, "LEFT", 2, 0)
-        text:SetWidth(w - 106)
+        text:SetPoint("RIGHT", rm, "LEFT", -8, 0)
         text:SetJustifyH("LEFT")
 
         row.rm = rm
@@ -6017,7 +6388,9 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
             shown = shown + 1
             local row = GetRow(shown)
             row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", 0, rowY)
+            -- v2.11.0: anchor TOPLEFT + TOPRIGHT so the row stretches.
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, rowY)
+            row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, rowY)
             row.text:SetText("|cffb6ffb6" .. name .. "|r")
             row.rm:SetScript("OnClick", function()
                 DB[setTableName][name] = nil
@@ -6084,7 +6457,7 @@ CharPanel:SetScript("OnShow", function(self)
     local t = _G[cb:GetName() .. "Text"]
     if t then
         t:SetText("Enable Only for Listed Characters")
-        t:SetWidth(EC_PANEL_WIDTH - 60)
+        EC_compCache.setPanelWidth(t, 60)
         t:SetJustifyH("LEFT")
     end
 
@@ -6095,6 +6468,12 @@ CharPanel:SetScript("OnShow", function(self)
     self.onlyCB = cb
 
     self.listUI = CreateNameListUI(self, "Allowed Characters", "allowedChars", 16, -130)
+    -- v2.11.0: anchor BOTTOMRIGHT so the list stretches with the panel
+    -- on resize - keeps each row's "Remove" button inside the panel
+    -- boundary even after the user shrinks the Interface Options frame.
+    self.listUI:ClearAllPoints()
+    self.listUI:SetPoint("TOPLEFT", 16, -130)
+    self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
     self.listUI:Refresh()
 end)
 
@@ -6111,6 +6490,9 @@ BlacklistPanel:SetScript("OnShow", function(self)
     if self.inited then
         if self.autoEquipCB then
             self.autoEquipCB:SetChecked(DB.autoAddEquipped)
+        end
+        if self.autoUpgradeCB then
+            self.autoUpgradeCB:SetChecked(DB.autoProtectUpgrades)
         end
         if self.listUI then
             self.listUI:Refresh()
@@ -6131,7 +6513,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
     -- wraps to multiple lines (previous absolute y=-80 overlapped the wrap).
     local blHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     blHint:SetPoint("TOPLEFT", blDesc, "BOTTOMLEFT", 0, -8)
-    blHint:SetWidth(EC_PANEL_WIDTH - 16)
+    EC_compCache.setPanelWidth(blHint, 16)
     blHint:SetJustifyH("LEFT")
     blHint:SetJustifyV("TOP")
     if blHint.SetWordWrap then
@@ -6159,7 +6541,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
     local aeText = _G[autoEquipCB:GetName() .. "Text"]
     if aeText then
         aeText:SetText("Auto-protect equipped gear")
-        aeText:SetWidth(EC_PANEL_WIDTH - 60)
+        EC_compCache.setPanelWidth(aeText, 60)
         aeText:SetJustifyH("LEFT")
     end
     autoEquipCB:SetScript("OnClick", function(cb)
@@ -6178,7 +6560,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
 
     local autoEquipNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     autoEquipNote:SetPoint("TOPLEFT", autoEquipCB, "BOTTOMLEFT", 26, -2)
-    autoEquipNote:SetWidth(EC_PANEL_WIDTH - 60)
+    EC_compCache.setPanelWidth(autoEquipNote, 60)
     autoEquipNote:SetJustifyH("LEFT")
     if autoEquipNote.SetWordWrap then
         autoEquipNote:SetWordWrap(true)
@@ -6187,12 +6569,58 @@ BlacklistPanel:SetScript("OnShow", function(self)
         "|cff888888Adds your currently equipped gear to this Keep list on toggle, then auto-adds anything you equip later so replaced upgrades sliding into bags are automatically protected from auto-sell rules. The bag tooltip explains why each item is kept; Alt+Right-Click an item to remove it if you want it sold.|r"
     )
 
-    -- Cascade-anchor the list UI to the auto-protect note's BOTTOMLEFT so
-    -- the manual-add list always sits below the new toggle regardless of
-    -- how many lines the note wraps to.
+    -- v2.11.0 auto-protect upgrades. The companion to v2.10.0's auto-
+    -- protect-equipped: this one watches BAG_UPDATE for items whose iLvl
+    -- exceeds the equipped item in any of their candidate slots (rings,
+    -- trinkets, weapons compare against the lower of the two equipped
+    -- slots so any genuine upgrade triggers). Looted upgrades sitting in
+    -- bags are stamped on this Keep list before any iLvl-cap rule on
+    -- Merchant Settings can sweep them up. Default off; opt-in.
+    local autoUpgradeCB = CreateFrame(
+        "CheckButton",
+        "EbonClearanceAutoProtectUpgradesCB",
+        self,
+        "InterfaceOptionsCheckButtonTemplate"
+    )
+    autoUpgradeCB:SetPoint("TOPLEFT", autoEquipNote, "BOTTOMLEFT", -26, -10)
+    autoUpgradeCB:SetChecked(DB.autoProtectUpgrades)
+    local auText = _G[autoUpgradeCB:GetName() .. "Text"]
+    if auText then
+        auText:SetText("Auto-protect upgraded gear in bags")
+        EC_compCache.setPanelWidth(auText, 60)
+        auText:SetJustifyH("LEFT")
+    end
+    autoUpgradeCB:SetScript("OnClick", function(cb)
+        DB.autoProtectUpgrades = cb:GetChecked() and true or false
+        PlaySound("igMainMenuOptionCheckBoxOn")
+        if DB.autoProtectUpgrades then
+            -- Re-check on toggle so existing bag contents are evaluated
+            -- immediately rather than waiting for the next BAG_UPDATE.
+            EC_compCache.checkBagsForUpgrades()
+            if self.listUI then
+                self.listUI:Refresh()
+            end
+        end
+    end)
+    self.autoUpgradeCB = autoUpgradeCB
+
+    local autoUpgradeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    autoUpgradeNote:SetPoint("TOPLEFT", autoUpgradeCB, "BOTTOMLEFT", 26, -2)
+    EC_compCache.setPanelWidth(autoUpgradeNote, 60)
+    autoUpgradeNote:SetJustifyH("LEFT")
+    if autoUpgradeNote.SetWordWrap then
+        autoUpgradeNote:SetWordWrap(true)
+    end
+    autoUpgradeNote:SetText(
+        "|cff888888Watches new bag items and auto-adds any whose item level beats your currently equipped gear in the same slot, so a fresh drop sitting in your bags can never be auto-vendored before you have a chance to swap to it.|r"
+    )
+
+    -- Cascade-anchor the list UI to the auto-upgrade note's BOTTOMLEFT so
+    -- the manual-add list always sits below the new toggle pair regardless
+    -- of how many lines the notes wrap to.
     self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -200)
     self.listUI:ClearAllPoints()
-    self.listUI:SetPoint("TOPLEFT", autoEquipNote, "BOTTOMLEFT", -26, -16)
+    self.listUI:SetPoint("TOPLEFT", autoUpgradeNote, "BOTTOMLEFT", -26, -16)
     self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
     self.listUI:Refresh()
 end)
@@ -6249,6 +6677,22 @@ InterfaceOptions_AddCategory(DeletePanel)
 InterfaceOptions_AddCategory(BlacklistPanel)
 InterfaceOptions_AddCategory(WhitelistPanel)
 InterfaceOptions_AddCategory(AccountWhitelistPanel)
+
+-- v2.11.0 reactive panel layout. The Interface Options frame is user-
+-- resizable in some UI mod packs (and the resize handle is exposed as a
+-- draggable widget on PE-ElvUI). Pre-v2.11.0 the addon's panels stayed
+-- clamped at their build-time width because every label, scroll-content,
+-- and list-row width was a snapshot of EC_PANEL_WIDTH taken at first
+-- OnShow. Hooking the container's OnSizeChanged once routes every
+-- registered widget through EC_compCache.refreshLayouts on each resize -
+-- labels re-wrap, scroll content re-fits, list frames already track via
+-- BOTTOMRIGHT anchors (their visible drift was just label clutter on
+-- top, fixed by the same width refresh).
+if InterfaceOptionsFramePanelContainer and InterfaceOptionsFramePanelContainer.HookScript then
+    InterfaceOptionsFramePanelContainer:HookScript("OnSizeChanged", function()
+        EC_compCache.refreshLayouts()
+    end)
+end
 
 -- Bug report diagnostic snapshot
 local function EC_CopperToPlainText(copper)
@@ -6855,6 +7299,11 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- guard if the vendor cycle is already active.
         EC_HandleBagFullForCycle()
         EC_HandleAutoOpenContainers()
+        -- v2.11.0 auto-protect-upgrades. No-op unless DB.autoProtectUpgrades
+        -- is on. Per-itemID dedupe via EC_compCache.upgradeProcessed keeps
+        -- the steady-state cost to one GetItemInfo lookup per never-seen
+        -- bag item.
+        EC_compCache.checkBagsForUpgrades()
     elseif event == "LOOT_CLOSED" then
         -- One push per corpse looted. EC_IsLootSilenceStuck prunes the ring
         -- inside its body (called from the 5 s pet tick), so growth is bounded.
@@ -6880,14 +7329,22 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         -- arg1 is the unit (always "player" thanks to RegisterUnitEvent),
-        -- arg2 is the spell name. Only update the timestamp when the cast
-        -- is one of the loot-generating profession spells; everything else
-        -- (combat rotations, mounts, food, etc.) is irrelevant to the
-        -- loot-silence guard and shouldn't suppress real corpse loots.
+        -- arg2 is the spell name. Two timestamps get updated here:
+        --
+        --   * lastProfLootCastAt - only on loot-generating profession
+        --     spells. Drives the loot-silence false-positive guard so
+        --     the Scavenger isn't accused of going quiet because the
+        --     player was disenchanting / milling / prospecting.
+        --
+        --   * lastPlayerCastAt - on EVERY successful player cast.
+        --     Drives the v2.11.0 GCD-aware busy gate so the goblin
+        --     summon retry budget isn't burned on CallCompanion calls
+        --     the server silently drops during instant-cast rotations.
         local _, spellName = ...
         if spellName and EC_compCache.PROF_LOOT_SPELLS[spellName] then
             EC_compCache.lastProfLootCastAt = GetTime()
         end
+        EC_compCache.lastPlayerCastAt = GetTime()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         -- v2.10.0: auto-protect equipped gear. arg1 is the slot id (1-19);
         -- empty slots fire too (the player just un-equipped). The helper

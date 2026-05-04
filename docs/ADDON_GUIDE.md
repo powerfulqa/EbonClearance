@@ -277,6 +277,60 @@ end)
 InterfaceOptions_AddCategory(MyPanel)
 ```
 
+**Reactive layout (v2.11.0+).** Panels are no longer width-frozen at
+their first OnShow. The
+[`InterfaceOptionsFramePanelContainer:HookScript("OnSizeChanged", ...)`](../EbonClearance.lua)
+near the bottom of the file calls
+[`EC_compCache.refreshLayouts`](../EbonClearance.lua) on every resize,
+which walks `EC_compCache.widthRegistry.widgets` and re-applies
+`SetWidth(EC_PANEL_WIDTH - x)` to each, then re-fits scroll content for
+each `(content, lastWidget)` pair on `widthRegistry.scrollFits`.
+
+**Use the helper.** New widgets that snapshot `EC_PANEL_WIDTH` MUST
+go through one of these:
+
+```lua
+EC_compCache.setPanelWidth(widget, x)        -- SetWidth + register in one call
+-- or, when you've already called SetWidth:
+EC_compCache.registerWidth(widget, x)        -- register only
+```
+
+[`MakeLabel`](../EbonClearance.lua) and
+[`EC_WrapPanelInScrollFrame`](../EbonClearance.lua) register their
+widgets automatically;
+[`EC_FitScrollContent`](../EbonClearance.lua) registers itself the
+first time it's called per panel. List widgets created via
+[`CreateListUI`](../EbonClearance.lua) and
+[`CreateNameListUI`](../EbonClearance.lua) install their own
+`box:OnSizeChanged` hook so internal rows track via the registered
+content frame.
+
+**Panels using CreateListUI / CreateNameListUI MUST anchor BOTTOMRIGHT
+to the panel** so the box itself stretches with the panel:
+
+```lua
+self.listUI = CreateListUI(self, ...)
+self.listUI:ClearAllPoints()
+self.listUI:SetPoint("TOPLEFT", anchor, ...)
+self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
+```
+
+Without the BOTTOMRIGHT anchor the box never receives an
+`OnSizeChanged` event when the panel resizes, and the
+`box:OnSizeChanged` hook inside the helper never fires.
+
+The registry is session-scoped (lives on `EC_compCache`, not in
+SavedVariables); a `/reload` reseeds.
+
+**Regression tests.** The structural invariants are checked by
+[`tests/test_layout_reactivity.lua`](../tests/test_layout_reactivity.lua),
+run on every push by [`.github/workflows/test.yml`](../.github/workflows/test.yml).
+The test catches: bare `:SetWidth(EC_PANEL_WIDTH - X)` calls outside
+the helpers, missing `box:OnSizeChanged` hooks, panels missing the
+`ClearAllPoints + BOTTOMRIGHT` follow-up, and list-row text using
+`SetWidth(w - N)` instead of TOPLEFT/TOPRIGHT anchors. If you add a
+new structural invariant, add a check to that file.
+
 ### Colour palette
 
 Use the existing palette - do not invent new shades:

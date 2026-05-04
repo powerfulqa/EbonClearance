@@ -1,0 +1,27 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Lua syntax check
+        run: luac5.1 -p EbonClearance.lua
+
+      - name: Layout-reactivity regression tests
+        run: lua5.1 tests/test_layout_reactivity.lua

@@ -15,6 +15,7 @@ If you're an AI agent or a new contributor, **read [docs/ADDON_GUIDE.md](docs/AD
 - This is a WoW 3.3.5a addon for Project Ebonhold, one file: [EbonClearance.lua](EbonClearance.lua)
 - No external libraries. All Blizzard APIs.
 - Run `stylua EbonClearance.lua && luacheck EbonClearance.lua` before committing. Luacheck sits at **0 warnings** (cleaned post-v2.6.0); keep it at zero. If a new warning appears, fix the cause or extend [`.luacheckrc`](.luacheckrc) - do not silence with blanket directives.
+- Run `lua tests/test_layout_reactivity.lua` to confirm the v2.11.0 reactive-panel-layout invariants still hold. CI runs the same test on every push via [.github/workflows/test.yml](.github/workflows/test.yml). Any new widget that snapshots `EC_PANEL_WIDTH` MUST go through `EC_compCache.setPanelWidth(widget, x)` or `EC_compCache.registerWidth(widget, x)` - otherwise it'll silently freeze at build-time width on resize.
 - Known deferred refactors are tracked in [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md). Don't repeat items that are already there - cite them by number if you touch adjacent code.
 
 ## Conventions at a glance

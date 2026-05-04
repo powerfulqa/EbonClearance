@@ -1,0 +1,206 @@
+#!/usr/bin/env lua
+-- Layout-reactivity regression tests for EbonClearance.
+--
+-- Run from repo root:    lua tests/test_layout_reactivity.lua
+--
+-- v2.11.0 made the Interface Options panels reactive to the user
+-- resizing the container frame (previously every label / list / scroll
+-- snapshotted EC_PANEL_WIDTH at first OnShow and never re-flowed).
+-- The plumbing is small but easy to bypass: a contributor adding a new
+-- panel widget can write `:SetWidth(EC_PANEL_WIDTH - X)` directly and
+-- the widget silently freezes at its build-time width.
+--
+-- These tests are static-pattern checks against the source. They do NOT
+-- run the addon - the WoW API is not mockable - but they catch the four
+-- structural mistakes that caused the original v2.11.0 regression report:
+--
+--   1. Bare :SetWidth(EC_PANEL_WIDTH - X) outside the registered helpers.
+--   2. CreateListUI / CreateNameListUI missing the box:OnSizeChanged hook.
+--   3. Panels using CreateListUI without the ClearAllPoints + BOTTOMRIGHT
+--      anchor follow-up (so list rows can stretch with the parent).
+--   4. List row text using SetWidth instead of TOPLEFT + TOPRIGHT anchors.
+--
+-- Add new tests below as new structural invariants emerge. Keep them
+-- pattern-matching only - this file must run under stock lua5.1 with no
+-- external dependencies so it works in CI without a luarocks step.
+
+local SOURCE_PATH = "EbonClearance.lua"
+
+local f, err = io.open(SOURCE_PATH, "r")
+if not f then
+    io.stderr:write("FAIL: cannot open " .. SOURCE_PATH .. ": " .. tostring(err) .. "\n")
+    os.exit(1)
+end
+local src = f:read("*a")
+f:close()
+
+local fails = 0
+
+local function check(name, ok, message)
+    if ok then
+        print("PASS  " .. name)
+    else
+        print("FAIL  " .. name)
+        if message then
+            print("      " .. message)
+        end
+        fails = fails + 1
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 1: no bare :SetWidth(EC_PANEL_WIDTH - N) outside the two known helpers.
+-- ---------------------------------------------------------------------------
+-- Two patterns are allowed:
+--   * Inside EC_compCache.setPanelWidth: "widget:SetWidth(EC_PANEL_WIDTH - (x or 0))"
+--   * Inside MakeLabel:                    "fs:SetWidth(EC_PANEL_WIDTH - x)"
+-- Plus comment lines (the helper's own docstring references the pattern).
+-- Any other ":SetWidth(EC_PANEL_WIDTH" is a regression - the widget will
+-- not track resize. Use EC_compCache.setPanelWidth instead.
+do
+    local violators = {}
+    for line in src:gmatch("([^\n]+)") do
+        if line:find(":SetWidth%(EC_PANEL_WIDTH") then
+            local stripped = line:gsub("^%s+", "")
+            local isHelperBody = stripped:find("^widget:SetWidth%(EC_PANEL_WIDTH %- %(x or 0%)%)")
+            local isMakeLabel = stripped:find("^fs:SetWidth%(EC_PANEL_WIDTH %- x%)")
+            local isComment = stripped:find("^%-%-")
+            if not (isHelperBody or isMakeLabel or isComment) then
+                violators[#violators + 1] = line
+            end
+        end
+    end
+    local detail
+    if #violators > 0 then
+        local list = {}
+        for i = 1, #violators do
+            list[i] = "    " .. violators[i]
+        end
+        detail = "found " .. #violators .. " bare snapshot(s); use EC_compCache.setPanelWidth instead:\n" ..
+                 table.concat(list, "\n")
+    end
+    check("no bare SetWidth(EC_PANEL_WIDTH-X) outside helpers", #violators == 0, detail)
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 2: CreateListUI and CreateNameListUI must each install an
+-- OnSizeChanged hook on their `box` so the ScrollChild content (and
+-- therefore the rows anchored to it) tracks parent resize.
+-- ---------------------------------------------------------------------------
+do
+    local function hasOnSizeChanged(funcName)
+        local body = src:match("local function " .. funcName .. ".-end\n$")
+        if not body then
+            -- Fallback: take everything from the function definition to the
+            -- next "local function " (or end of file) - good enough for the
+            -- structural check and avoids needing a real Lua parser.
+            local startIdx = src:find("local function " .. funcName)
+            if not startIdx then
+                return nil, "function " .. funcName .. " not found"
+            end
+            local nextIdx = src:find("\nlocal function ", startIdx + 1) or #src
+            body = src:sub(startIdx, nextIdx)
+        end
+        return body:find('box:SetScript%("OnSizeChanged"') ~= nil, body
+    end
+
+    local ok1 = hasOnSizeChanged("CreateListUI")
+    check("CreateListUI installs box:OnSizeChanged", ok1,
+        "missing - rows inside CreateListUI will not stretch with the panel on resize")
+
+    local ok2 = hasOnSizeChanged("CreateNameListUI")
+    check("CreateNameListUI installs box:OnSizeChanged", ok2,
+        "missing - rows inside CreateNameListUI will not stretch with the panel on resize")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 3: every panel that uses CreateListUI / CreateNameListUI must
+-- follow up with ClearAllPoints + BOTTOMRIGHT anchor so the list box
+-- itself tracks the panel size. Without this the box stays at its
+-- build-time width and the OnSizeChanged inside the helper is never
+-- triggered with a new size.
+-- ---------------------------------------------------------------------------
+do
+    local panelsMissingAnchor = {}
+    -- Capture each "self.listUI = CreateListUI/CreateNameListUI(..." line plus
+    -- the next ~6 lines of context. If "ClearAllPoints" and "BOTTOMRIGHT"
+    -- aren't both present in that block, the panel doesn't anchor properly.
+    for callLine in src:gmatch("(self%.listUI = Create[N]?a?m?e?ListUI%([^\n]*)") do
+        local startIdx = src:find(callLine, 1, true)
+        if startIdx then
+            local block = src:sub(startIdx, startIdx + 600) -- ~10-15 lines
+            -- Stop the block at "self.listUI:Refresh()" or "end)" - whichever
+            -- comes first - so we don't leak into the next panel.
+            local stopAt = block:find("self%.listUI:Refresh%(%)") or block:find("\nend%)")
+            if stopAt then
+                block = block:sub(1, stopAt)
+            end
+            if not (block:find("ClearAllPoints") and block:find("BOTTOMRIGHT")) then
+                panelsMissingAnchor[#panelsMissingAnchor + 1] = callLine
+            end
+        end
+    end
+    local detail
+    if #panelsMissingAnchor > 0 then
+        local list = {}
+        for i = 1, #panelsMissingAnchor do
+            list[i] = "    " .. panelsMissingAnchor[i]
+        end
+        detail = "found " .. #panelsMissingAnchor .. " call(s) without ClearAllPoints + BOTTOMRIGHT setup:\n" ..
+                 table.concat(list, "\n")
+    end
+    check("every CreateListUI/CreateNameListUI call anchors BOTTOMRIGHT",
+          #panelsMissingAnchor == 0, detail)
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 4: list row text must use SetPoint("RIGHT", ...) anchoring, not
+-- SetWidth(w - N). The latter snapshots width at construction; the
+-- former auto-stretches with the parent row.
+-- ---------------------------------------------------------------------------
+do
+    -- Look for the GetRow-style construction of the row text. The
+    -- regression pattern was: text:SetWidth(w - 106). The fix replaces
+    -- it with: text:SetPoint("RIGHT", rm, "LEFT", -8, 0)
+    local rowTextSnapshots = 0
+    for line in src:gmatch("([^\n]+)") do
+        if line:find("text:SetWidth%(w %- %d") then
+            rowTextSnapshots = rowTextSnapshots + 1
+        end
+    end
+    check("list row text uses anchors not SetWidth(w-N)",
+        rowTextSnapshots == 0,
+        "found " .. rowTextSnapshots ..
+        " row text snapshot(s); use text:SetPoint(\"RIGHT\", rm, \"LEFT\", ...) instead")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 5: the reactive layout machinery itself must be wired up. If any
+-- of these go missing the whole system silently degrades to v2.10.0
+-- behaviour (snapshotted everything).
+-- ---------------------------------------------------------------------------
+do
+    check("widthRegistry is defined on EC_compCache",
+        src:find("EC_compCache%.widthRegistry%s*=%s*{") ~= nil,
+        "EC_compCache.widthRegistry table missing - registerWidth has nothing to push to")
+
+    check("EC_compCache.refreshLayouts is defined",
+        src:find("function EC_compCache%.refreshLayouts%(%)") ~= nil,
+        "refresh entrypoint missing - the OnSizeChanged hook will fail")
+
+    check("InterfaceOptionsFramePanelContainer:OnSizeChanged hook is wired",
+        src:find('InterfaceOptionsFramePanelContainer:HookScript%("OnSizeChanged"') ~= nil,
+        "the container OnSizeChanged hook is gone - panels will not refresh on resize")
+end
+
+-- ---------------------------------------------------------------------------
+-- Result.
+-- ---------------------------------------------------------------------------
+print()
+if fails > 0 then
+    io.stderr:write("RESULT: " .. fails .. " test(s) failed\n")
+    os.exit(1)
+else
+    print("RESULT: all tests passed")
+    os.exit(0)
+end

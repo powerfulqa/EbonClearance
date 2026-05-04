@@ -576,6 +576,14 @@ local function EnsureAccountDB()
 end
 
 local function EnsureDB()
+    -- Fresh-install detection. We're a fresh install only if neither the
+    -- current SavedVariable nor the legacy EbonholdStuff one existed
+    -- before this session. Captured BEFORE the rename migration below
+    -- so an EbonholdStuff upgrader doesn't get treated as fresh and
+    -- have ON-by-default fields enabled without consent. Drives the
+    -- "default autoAddEquipped ON for new installs only" rule below.
+    local isFreshInstall = (EbonClearanceDB == nil) and (EbonholdStuffDB == nil)
+
     -- Legacy-rename migration. MUST run before field defaults below, because
     -- the profile-migration block (further down) reads existing DB.whitelist
     -- to decide whether to snapshot it into an "Imported" profile. If field
@@ -763,7 +771,19 @@ local function EnsureDB()
     -- existing users see no behaviour change until they enable it from
     -- the Blacklist (Keep) panel.
     if type(DB.autoAddEquipped) ~= "boolean" then
-        DB.autoAddEquipped = false
+        -- Fresh installs from v2.12.0+ default to ON so brand-new users
+        -- get equipped-gear protection out of the box - matches AutoDelete
+        -- v3.18+ UX. Existing users (v2.10.0+ already have the field as a
+        -- boolean and skip this branch; pre-v2.10.0 users hit this branch
+        -- but with isFreshInstall = false) keep OFF so they don't see a
+        -- silent behaviour change on upgrade.
+        DB.autoAddEquipped = isFreshInstall
+        if isFreshInstall and DB.autoAddEquipped then
+            -- Defer the one-shot equipped-gear sync to PLAYER_LOGIN
+            -- (handled at the bottom of the file) - inventory APIs
+            -- aren't reliably populated at ADDON_LOADED time.
+            EC_compCache.pendingFreshInstallSync = true
+        end
     end
     if type(DB.autoProtectUpgrades) ~= "boolean" then
         DB.autoProtectUpgrades = false
@@ -7443,6 +7463,19 @@ f:SetScript("OnEvent", function(self, event, ...)
                         .. "Goblin Merchant cycle from running. Power-users can "
                         .. "still override via /run EbonClearanceDB.merchantName = ...|r"
                 )
+            end
+            -- Fresh-install one-shot equipped sync. Set in EnsureDB only
+            -- when the SavedVariable was nil at first ADDON_LOADED, so
+            -- existing characters never trigger this. The 2 s extra
+            -- defer (on top of the 1 s welcome delay) gives inventory
+            -- APIs time to settle before walking the slots.
+            if EC_compCache.pendingFreshInstallSync then
+                EC_compCache.pendingFreshInstallSync = nil
+                EC_Delay(2, function()
+                    if EC_compCache.syncEquipped then
+                        EC_compCache.syncEquipped()
+                    end
+                end)
             end
         end)
     end

@@ -667,7 +667,14 @@ local function EnsureDB()
         DB.fastMode = false
     end
     if type(DB.autoLootCycle) ~= "boolean" then
-        DB.autoLootCycle = false
+        -- v2.12.0: fresh installs default ON. The auto-loot cycle is the
+        -- headline PE feature (Greedy Scavenger pet looting, Goblin
+        -- Merchant auto-summon at bag-full); a brand-new user finishing
+        -- the welcome popup with this still off would feel like the
+        -- addon "isn't doing anything". Existing characters keep their
+        -- saved value via the type-check above. The cycle gracefully
+        -- no-ops on realms that lack the PE companion pets.
+        DB.autoLootCycle = isFreshInstall
     end
     if type(DB.bagFullThreshold) ~= "number" then
         DB.bagFullThreshold = 2
@@ -784,6 +791,16 @@ local function EnsureDB()
             -- aren't reliably populated at ADDON_LOADED time.
             EC_compCache.pendingFreshInstallSync = true
         end
+        -- v2.12.0: arm the first-run welcome message + setup popup.
+        -- Persisted via DB._needsWelcome (not session-scoped) so a
+        -- /reload between ADDON_LOADED and PLAYER_LOGIN doesn't lose it.
+        -- Existing characters never reach this branch because their
+        -- EbonClearanceDB existed before the session and isFreshInstall
+        -- is false. The flag is consumed (set to nil) by the
+        -- PLAYER_LOGIN handler after the welcome fires.
+        if isFreshInstall then
+            DB._needsWelcome = true
+        end
     end
     if type(DB.autoProtectUpgrades) ~= "boolean" then
         DB.autoProtectUpgrades = false
@@ -883,7 +900,12 @@ local function EnsureDB()
         DB.minimapButtonAngle = 220
     end
     if type(DB.keepBagsOpen) ~= "boolean" then
-        DB.keepBagsOpen = true
+        -- v2.12.0: flipped from true to false per UX feedback - the
+        -- "bags stay open after merchant closes" behaviour was felt
+        -- as intrusive. Existing users with the field already set to
+        -- true keep their saved value and can untick the panel toggle
+        -- if they want bags closing again. New installs default off.
+        DB.keepBagsOpen = false
     end
     if type(DB.vendorBtnShown) ~= "boolean" then
         DB.vendorBtnShown = false
@@ -4811,25 +4833,81 @@ StaticPopupDialogs["EC_CONFIRM_CLEAR_LIST"] = {
     preferredIndex = 3,
 }
 
+-- v2.12.0 stale-upgrade cleanup confirmation popup. The %d slot is filled
+-- with the count of stale entries detected by /ec clean upgrades. The
+-- OnAccept invokes the callback function passed via StaticPopup_Show's
+-- third "data" argument, mirroring the EC_CONFIRM_CLEAR_LIST pattern.
+StaticPopupDialogs["EC_CONFIRM_CLEAN_UPGRADES"] = {
+    text = "Remove |cffffff00%d|r stale 'Upgrade'-tagged entries from your Blacklist?\n"
+        .. "|cffaaaaaaThese items were auto-tagged as upgrades but are no longer above your "
+        .. "currently-equipped iLvl. Manual blacklist entries (no auto-tag) and 'Worn'-tagged "
+        .. "entries are not affected.|r",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- v2.12.0 first-run welcome popup. Fired once on PLAYER_LOGIN when EnsureDB
+-- detected a fresh install (EC_compCache.pendingWelcome). Two-button choice:
+-- Keep Defaults (closes silently after a chat ack) or Open Settings (jumps
+-- the Interface Options frame to the EbonClearance main panel). The double
+-- InterfaceOptionsFrame_OpenToCategory call is a known 3.3.5a workaround
+-- for the first-time-this-session focus quirk - the same pattern used by
+-- the slash command's "open settings" fallback at the bottom of the file.
+StaticPopupDialogs["EC_WELCOME"] = {
+    text = "Welcome to EbonClearance!\n\n"
+        .. "Greys auto-sell. Whites and greens below your equipped iLvl also auto-sell. "
+        .. "Items you equip and looted upgrades are auto-protected from auto-sell.\n\n"
+        .. "Click |cffffff00Open Settings|r to review, or |cffffff00Keep Defaults|r "
+        .. "to start farming.",
+    button1 = "Keep Defaults",
+    button2 = "Open Settings",
+    OnAccept = function()
+        PrintNice("|cffb6ffb6Defaults kept.|r Type |cffffff00/ec|r any time to customise.")
+    end,
+    OnCancel = function()
+        if InterfaceOptionsFrame_OpenToCategory and MainOptions then
+            InterfaceOptionsFrame_OpenToCategory(MainOptions)
+            InterfaceOptionsFrame_OpenToCategory(MainOptions)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -- Build the static widgets for the main options panel. Called once per panel
 -- (guarded by `panel.inited` in OnShow). `refreshStats` is the dynamic refresh
 -- callback captured by the Reset button.
-local function BuildMainPanel(panel, refreshStats)
+local function BuildMainPanel(panel, content, refreshStats)
+    -- v2.12.0: widgets are created on `content` (the scroll-frame child)
+    -- so vertical overflow is handled by the scroll bar. Stat refs are
+    -- still stored on `panel` (the outer Interface Options panel) so
+    -- RefreshStats's self.statsX reads keep working across re-OnShows.
     local addonVersion = EC_GetVersion()
-    MakeHeader(panel, "EbonClearance " .. addonVersion, -16)
+    MakeHeader(content, "EbonClearance " .. addonVersion, -16)
 
     -- Byline (required by LICENSE; do not remove in derivatives).
-    local byline = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local byline = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     byline:SetPoint("TOPLEFT", 16, -32)
     byline:SetText("|cff888866by " .. ADDON_AUTHOR .. "  \194\183  " .. ADDON_URL .. "|r")
 
     local welcomeLabel = MakeLabel(
-        panel,
+        content,
         "Welcome to |cffb6ffb6EbonClearance|r! Automatic vendoring and item management for Project Ebonhold.",
         16,
         -52
     )
-    local descLabel2 = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local descLabel2 = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
     EC_compCache.setPanelWidth(descLabel2, 16)
     descLabel2:SetJustifyH("LEFT")
@@ -4843,43 +4921,43 @@ local function BuildMainPanel(panel, refreshStats)
 
     -- Stats fontstrings. Stacked vertically; each attaches its ref to `panel`
     -- so RefreshStats can find them across subsequent OnShow calls.
-    local money = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local money = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     money:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)
     panel.statsMoney = money
 
-    local sold = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local sold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     sold:SetPoint("TOPLEFT", money, "BOTTOMLEFT", 0, -6)
     panel.statsSold = sold
 
-    local deleted = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local deleted = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     deleted:SetPoint("TOPLEFT", sold, "BOTTOMLEFT", 0, -6)
     panel.statsDeleted = deleted
 
-    local repairs = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local repairs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     repairs:SetPoint("TOPLEFT", deleted, "BOTTOMLEFT", 0, -6)
     panel.statsRepairs = repairs
 
-    local repairCost = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local repairCost = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     repairCost:SetPoint("TOPLEFT", repairs, "BOTTOMLEFT", 0, -6)
     panel.statsRepairCost = repairCost
 
-    local avgWorth = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local avgWorth = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     avgWorth:SetPoint("TOPLEFT", repairCost, "BOTTOMLEFT", 0, -6)
     panel.statsAvgWorth = avgWorth
 
-    local mostSold = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local mostSold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     mostSold:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -6)
     EC_compCache.setPanelWidth(mostSold, 16)
     mostSold:SetJustifyH("LEFT")
     panel.statsMostSold = mostSold
 
-    local statsNote = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local statsNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     statsNote:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -4)
     EC_compCache.setPanelWidth(statsNote, 16)
     statsNote:SetJustifyH("LEFT")
     statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
 
-    local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", panel, "UIPanelButtonTemplate")
+    local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", content, "UIPanelButtonTemplate")
     resetBtn:SetSize(170, 22)
     resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -8)
     resetBtn:SetText("Reset Lifetime Stats")
@@ -4904,7 +4982,7 @@ local function BuildMainPanel(panel, refreshStats)
 
     -- Session delta is inlined into each lifetime stat line by RefreshStats (EC_session).
     -- The Reset Session button sits side-by-side with Reset Lifetime to avoid adding vertical space.
-    local resetSessionBtn = CreateFrame("Button", "EbonClearanceResetSessionBtn", panel, "UIPanelButtonTemplate")
+    local resetSessionBtn = CreateFrame("Button", "EbonClearanceResetSessionBtn", content, "UIPanelButtonTemplate")
     resetSessionBtn:SetSize(170, 22)
     resetSessionBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
     resetSessionBtn:SetText("Reset Session Stats")
@@ -4920,26 +4998,30 @@ local function BuildMainPanel(panel, refreshStats)
     end)
 
     -- Slash commands reference.
-    local cmdHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local cmdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     cmdHeader:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -16)
     cmdHeader:SetText("Slash Commands")
 
-    local cmdText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    local cmdText = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     cmdText:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 0, -6)
     EC_compCache.setPanelWidth(cmdText, 16)
     cmdText:SetJustifyH("LEFT")
     if cmdText.SetWordWrap then
         cmdText:SetWordWrap(true)
     end
-    -- Compact summary; full reference is printed by /ec help. Keeping this
-    -- block short means the Main panel fits inside the default Interface
-    -- Options sub-panel height without overlapping the OK/Cancel button strip.
     cmdText:SetText(
         "|cffffff00/ec|r  Open settings\n"
             .. "|cffffff00/ec profile [list|save|load|delete <name>]|r  Manage saved profiles\n"
             .. "|cffffff00/ec clean [apply]|r  Find and resolve list conflicts\n"
+            .. "|cffffff00/ec clean upgrades [apply]|r  Clean stale 'Upgrade'-tagged Blacklist entries\n"
             .. "Type |cffffff00/ec help|r in chat for the full reference."
     )
+
+    -- v2.12.0: size the scroll content to fit the bottom-most widget so
+    -- the scroll bar engages when the Interface Options frame is too
+    -- short to show everything (matches the Scavenger / Merchant /
+    -- Profiles / Import-Export panels' pattern).
+    EC_FitScrollContent(content, cmdText)
 end
 
 MainOptions:SetScript("OnShow", function(self)
@@ -5021,7 +5103,12 @@ MainOptions:SetScript("OnShow", function(self)
     end
     self.inited = true
 
-    BuildMainPanel(self, RefreshStats)
+    -- v2.12.0: scroll-wrap the Main panel so the Slash Commands block
+    -- at the bottom doesn't overlap the OK/Cancel button strip when
+    -- the Interface Options frame is shorter than the panel content.
+    -- Scavenger and Merchant Settings are wrapped the same way.
+    local content = EC_WrapPanelInScrollFrame(self)
+    BuildMainPanel(self, content, RefreshStats)
     RefreshStats()
 end)
 
@@ -6874,7 +6961,12 @@ BlacklistPanel:SetScript("OnShow", function(self)
         autoUpgradeNote:SetWordWrap(true)
     end
     autoUpgradeNote:SetText(
-        "|cff888888Watches new bag items and auto-adds any whose item level beats your currently equipped gear in the same slot, so a fresh drop sitting in your bags can never be auto-vendored before you have a chance to swap to it.|r"
+        "|cff888888Watches new bag items and auto-adds any whose item level beats your currently equipped gear in the same slot. |r"
+            .. "|cffaaaaaaRedundant when Merchant Settings uses |cffffff00Use equipped iLvl|r|cffaaaaaa "
+            .. "(the dynamic cap already excludes upgrades from auto-sell). "
+            .. "Useful when you switch a rarity to a fixed |cffffff00max iLvl|r|cffaaaaaa "
+            .. "above your equipped iLvl - then an upgrade falling below that cap could "
+            .. "vendor without this protection.|r"
     )
 
     -- Cascade-anchor the list UI to the auto-upgrade note's BOTTOMLEFT so
@@ -7261,6 +7353,73 @@ local function EC_ApplyCleanResolution(conflicts)
     return removed
 end
 
+-- v2.12.0 stale-upgrade scanner. Walks DB.blacklistAuto entries with the
+-- "upgrade" tag and re-evaluates each against the player's currently-
+-- equipped gear. Returns three lists:
+--   stale    - entries that are no longer upgrades (iLvl <= lowest equipped)
+--   deferred - entries we couldn't evaluate (GetItemInfo not loaded yet)
+--   skipped  - entries we can't evaluate (no equipLoc / all candidate slots
+--              empty / equipLoc not in INVTYPE_SLOTS); these stay put
+-- Mirror of EC_compCache.checkBagsForUpgrades' eligibility logic, inverted.
+-- Hung off EC_compCache to avoid burning two main-chunk local slots
+-- (Lua 5.1 caps that at 200 and we sit near it).
+function EC_compCache.buildStaleUpgradeReport()
+    local stale, deferred, skipped = {}, {}, {}
+    if not DB or type(DB.blacklistAuto) ~= "table" then
+        return { stale = stale, deferred = deferred, skipped = skipped }
+    end
+    for id, tag in pairs(DB.blacklistAuto) do
+        if tag == "upgrade" and DB.blacklist and DB.blacklist[id] then
+            local name, _, _, iLvl, _, _, _, _, equipLoc = GetItemInfo(id)
+            if not name or not iLvl then
+                deferred[#deferred + 1] = id
+            else
+                local slots = equipLoc and equipLoc ~= "" and EC_compCache.INVTYPE_SLOTS[equipLoc]
+                if not slots then
+                    skipped[#skipped + 1] = { id = id, name = name }
+                else
+                    local lowestEquipped = nil
+                    for _, sid in ipairs(slots) do
+                        local eq = EC_compCache.getEquippedILvl(sid)
+                        if eq > 0 and (lowestEquipped == nil or eq < lowestEquipped) then
+                            lowestEquipped = eq
+                        end
+                    end
+                    if not lowestEquipped then
+                        skipped[#skipped + 1] = { id = id, name = name }
+                    elseif iLvl <= lowestEquipped then
+                        stale[#stale + 1] =
+                            { id = id, name = name, iLvl = iLvl, lowestEquipped = lowestEquipped }
+                    end
+                end
+            end
+        end
+    end
+    return { stale = stale, deferred = deferred, skipped = skipped }
+end
+
+-- Removes the entries flagged as stale by buildStaleUpgradeReport.
+-- Pulls them out of both DB.blacklist and DB.blacklistAuto so the tooltip
+-- annotation and EC_IsSellable both stop treating them as protected.
+-- Returns the count of removed entries.
+function EC_compCache.applyStaleUpgradeCleanup(report)
+    if not report or not report.stale then
+        return 0
+    end
+    local removed = 0
+    for i = 1, #report.stale do
+        local id = report.stale[i].id
+        if DB.blacklist and DB.blacklist[id] then
+            DB.blacklist[id] = nil
+        end
+        if DB.blacklistAuto and DB.blacklistAuto[id] then
+            DB.blacklistAuto[id] = nil
+        end
+        removed = removed + 1
+    end
+    return removed
+end
+
 -- Handlers for the three operational keybindings (declared in Bindings.xml,
 -- labels above with the binding registration block).
 function EbonClearance_ToggleSettings()
@@ -7362,6 +7521,8 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         PrintNice("|cffffff00/ec profile delete <name>|r  Delete a profile")
         PrintNice("|cffffff00/ec clean|r  Report items present in more than one list")
         PrintNice("|cffffff00/ec clean apply|r  Auto-resolve conflicts (blacklist > deleteList > whitelist)")
+        PrintNice("|cffffff00/ec clean upgrades|r  Report stale 'Upgrade'-tagged Blacklist entries no longer above equipped")
+        PrintNice("|cffffff00/ec clean upgrades apply|r  Remove the stale 'Upgrade' entries (with confirmation)")
         PrintNice("|cffffff00/ec bugreport|r  Generate a diagnostic report for bug reports")
         PrintNice("|cffffff00/ecdebug|r  Show debug info and bag scan")
         return
@@ -7369,6 +7530,77 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
 
     if cmd == "clean" then
         EnsureDB()
+        -- v2.12.0: subcommand fork. "/ec clean upgrades [apply]" walks the
+        -- DB.blacklistAuto entries with tag "upgrade" and reports / removes
+        -- ones that are no longer upgrades vs current gear (cleans up the
+        -- spurious entries the v2.11.0 empty-slot bug left on user lists).
+        -- Existing "/ec clean [apply]" cross-list conflict resolver is
+        -- unchanged.
+        if rest == "upgrades" or rest == "upgrades apply" then
+            local report = EC_compCache.buildStaleUpgradeReport()
+            local nStale = #report.stale
+            local nDeferred = #report.deferred
+            local nSkipped = #report.skipped
+            if nStale == 0 and nDeferred == 0 and nSkipped == 0 then
+                PrintNice("|cffaaaaaaNo 'Upgrade'-tagged entries on your Blacklist.|r")
+                return
+            end
+            PrintNicef(
+                "|cffffff00%d|r stale 'Upgrade' entr%s found (no longer above your equipped iLvl).",
+                nStale,
+                nStale == 1 and "y" or "ies"
+            )
+            if nStale > 0 then
+                local cap = math.min(nStale, 10)
+                for i = 1, cap do
+                    local s = report.stale[i]
+                    PrintNicef(
+                        "  |cffaaaaaa[%d]|r %s |cffaaaaaa(iLvl %d, equipped %d)|r",
+                        s.id,
+                        s.name,
+                        s.iLvl,
+                        s.lowestEquipped
+                    )
+                end
+                if nStale > cap then
+                    PrintNicef("  |cffaaaaaa... and %d more.|r", nStale - cap)
+                end
+            end
+            if nDeferred > 0 then
+                PrintNicef(
+                    "|cffaaaaaaDeferred %d entr%s (item info not loaded; rerun the command later).|r",
+                    nDeferred,
+                    nDeferred == 1 and "y" or "ies"
+                )
+            end
+            if nSkipped > 0 then
+                PrintNicef(
+                    "|cffaaaaaaSkipped %d entr%s (no candidate slot populated to compare against).|r",
+                    nSkipped,
+                    nSkipped == 1 and "y" or "ies"
+                )
+            end
+            if rest == "upgrades apply" and nStale > 0 then
+                local dialog = StaticPopup_Show("EC_CONFIRM_CLEAN_UPGRADES", nStale)
+                if dialog then
+                    dialog.data = function()
+                        local removed = EC_compCache.applyStaleUpgradeCleanup(report)
+                        PrintNicef(
+                            "Removed |cffffff00%d|r stale 'Upgrade' entr%s from the Blacklist.",
+                            removed,
+                            removed == 1 and "y" or "ies"
+                        )
+                        local bp = _G["EbonClearanceOptionsBlacklist"]
+                        if bp and bp.listUI then
+                            bp.listUI:Refresh()
+                        end
+                    end
+                end
+            elseif nStale > 0 then
+                PrintNice("Run |cffffff00/ec clean upgrades apply|r to remove them.")
+            end
+            return
+        end
         local conflicts = EC_ScanListConflicts()
         EC_PrintConflictReport(conflicts)
         if rest == "apply" and #conflicts > 0 then
@@ -7691,7 +7923,30 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     if event == "PLAYER_LOGIN" then
         EC_Delay(1, function()
-            PrintNice("Enabled. Use |cff00ff00/ec|r to configure.")
+            -- v2.12.0: branch on first-run state. Fresh installs see the
+            -- expanded welcome explaining defaults + a setup popup.
+            -- Existing characters keep the unchanged single-line welcome.
+            if DB and DB._needsWelcome then
+                DB._needsWelcome = nil
+                PrintNice("|cffffff00Welcome to EbonClearance!|r Out of the box:")
+                PrintNice("  |cffaaaaaa-|r Greys auto-sell at any merchant.")
+                PrintNice(
+                    "  |cffaaaaaa-|r Whites and greens with iLvl below your equipped gear "
+                        .. "auto-sell on next merchant visit."
+                )
+                PrintNice(
+                    "  |cffaaaaaa-|r Equipped gear and looted upgrades are auto-added to "
+                        .. "your Keep list (never sold)."
+                )
+                PrintNice(
+                    "Type |cff00ff00/ec|r to customise, or pick a setup mode in the popup."
+                )
+                EC_Delay(0.5, function()
+                    StaticPopup_Show("EC_WELCOME")
+                end)
+            else
+                PrintNice("Enabled. Use |cff00ff00/ec|r to configure.")
+            end
             -- v2.10.0: surface the one-time companion-name migration after
             -- the welcome line so the user sees both. The flag is set in
             -- EnsureDB only on the migration run that actually touched

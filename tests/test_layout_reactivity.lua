@@ -194,6 +194,48 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 6: panels with meaningful vertical content must be scroll-wrapped
+-- via EC_WrapPanelInScrollFrame so a short Interface Options frame
+-- doesn't bury the bottom widgets behind the OK/Cancel button strip.
+-- The Main panel was originally not wrapped; v2.12.0 fixed that after
+-- the user reported the Slash Commands block overlapping the buttons
+-- on a narrow window. List-style panels (Whitelist*, Blacklist,
+-- Deletion, Character Settings) self-stretch via list anchoring and
+-- don't need scroll wrap.
+-- ---------------------------------------------------------------------------
+do
+    local panelsNeedingWrap = {
+        { name = "MainOptions",      onShowMarker = "MainOptions:SetScript%(\"OnShow\"" },
+        { name = "ScavengerPanel",   onShowMarker = "ScavengerPanel:SetScript%(\"OnShow\"" },
+        { name = "MerchantPanel",    onShowMarker = "MerchantPanel:SetScript%(\"OnShow\"" },
+        { name = "ProfilesPanel",    onShowMarker = "ProfilesPanel:SetScript%(\"OnShow\"" },
+        { name = "ImportExportPanel",onShowMarker = "ImportExportPanel:SetScript%(\"OnShow\"" },
+    }
+    local missing = {}
+    for _, p in ipairs(panelsNeedingWrap) do
+        local startIdx = src:find(p.onShowMarker)
+        if not startIdx then
+            missing[#missing + 1] = p.name .. " (OnShow handler not found)"
+        else
+            -- Take everything from the OnShow until the next "InterfaceOptions_AddCategory"
+            -- or end of the next ~15000 chars, whichever comes first. The Build*
+            -- helpers called from OnShow are also in scope for wrap detection.
+            local endIdx = src:find("InterfaceOptions_AddCategory", startIdx + 1) or (startIdx + 15000)
+            local block = src:sub(startIdx, endIdx)
+            if not block:find("EC_WrapPanelInScrollFrame") then
+                missing[#missing + 1] = p.name
+            end
+        end
+    end
+    local detail
+    if #missing > 0 then
+        detail = "missing scroll wrap on: " .. table.concat(missing, ", ")
+    end
+    check("major content panels are scroll-wrapped via EC_WrapPanelInScrollFrame",
+        #missing == 0, detail)
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

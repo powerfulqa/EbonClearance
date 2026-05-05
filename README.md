@@ -8,7 +8,11 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 ## What It Does
 
-**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also set per-rarity quality thresholds (under Merchant Settings) with an optional max item level for each rarity, so you can say "sell all whites and greens below iLvl 150 but never sell blues or epics" or "sell every equippable item under iLvl 170 regardless of colour, including purples". Four tiers: White (Common), Green (Uncommon), Blue (Rare), Purple (Epic). Works with the Goblin Merchant, normal vendors, or both. Items with no vendor value are automatically skipped. Your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
+**Whitelist-based auto-vendoring** - Add items to your whitelist by their item ID and they will be automatically sold when you visit a merchant. You can also set per-rarity quality thresholds (under Merchant Settings) with two cap modes: tick **Use equipped iLvl** for a dynamic cap that follows the iLvl of whatever you currently have equipped in the same slot (default ON for whites and greens on fresh installs - so anything you loot below your current gear auto-sells without ever putting your real gear at risk), or untick to set a fixed max iLvl per rarity for "sell anything below this absolute number". Four tiers: White (Common), Green (Uncommon), Blue (Rare), Purple (Epic). Works with the Goblin Merchant, normal vendors, or both. Items with no vendor value are automatically skipped. Your equipped gear is safe, and every item is double-checked against its bag slot before anything gets sold.
+
+**Auto-protect equipped gear** - Optional toggle on the Blacklist (Keep) panel (default ON for fresh installs). Adds your currently-equipped gear to the Keep list on toggle-on, then auto-adds anything you equip later via `PLAYER_EQUIPMENT_CHANGED`, so a replaced upgrade sliding into bags can never be auto-vendored. Tooltip annotation marks these `[EC] Auto-Protected (Worn)`.
+
+**Auto-protect looted upgrades** - Optional toggle on the Blacklist (Keep) panel (default OFF). Watches new bag items and auto-adds any whose iLvl exceeds your currently-equipped gear in the same slot. Tooltip annotation marks these `[EC] Auto-Protected (Upgrade)`. Mostly redundant when the per-rarity quality threshold uses `Use equipped iLvl` (the dynamic cap already excludes upgrades from auto-sell); useful when you switch a rarity to a fixed max iLvl above your equipped iLvl.
 
 **Character and account whitelists** - Keep a per-character whitelist for things only that character sells, plus an account-wide whitelist for shared trash (reagents, seasonal items) that gets sold on every alt. Both lists are consulted when vendoring; either one listing an item is enough.
 
@@ -28,13 +32,19 @@ A World of Warcraft addon built for **Project Ebonhold**, designed to take the f
 
 **Right-click bag-item menu** - Alt+Right-Click any item in your bags to add it to a whitelist (character or account), blacklist, or deletion list, or to sell it immediately. Saves a trip to the settings panel for one-off list edits. A small grey "Alt+Right-Click for EbonClearance menu" hint on bag-item tooltips makes the shortcut discoverable.
 
-**Greedy Scavenger management** - EbonClearance can mute the Scavenger's chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck on terrain. If you manually unsummon the Scavenger, the addon respects that and won't re-summon it. Other companions (bank mule, mailbox) are never replaced.
+**Greedy Scavenger management** - EbonClearance can mute the Scavenger's chat messages and speech bubbles, auto-summon it when you log in, dismiss it when you mount up, and re-summon it if it despawns or gets stuck on terrain. If you manually unsummon the Scavenger, the addon respects that and won't re-summon it. Other companions (bank mule, mailbox) are never replaced. Optional `Only summon Greedy Scavenger when out of combat` toggle defers summons during combat for users who prefer not to see the pet pop in mid-pull.
 
-**Auto-loot cycle** - When enabled, the addon watches your free bag slots while the Greedy Scavenger is looting. When bags hit your threshold it dismisses the pet, summons the Goblin Merchant and notifies you. Just right-click to sell, and the Scavenger is re-summoned to carry on looting. If you have more than 80 items to sell, selling continues in batches automatically. Configurable bag threshold in Scavenger Settings.
+**Auto-loot cycle** - Default ON for fresh installs. The addon watches your free bag slots while the Greedy Scavenger is looting. When bags hit your threshold (default 2 free slots, with a 1.5 s confirm window so transient bag fluctuations don't trip the cycle) it dismisses the pet, summons the Goblin Merchant and notifies you. Just right-click to sell, and the Scavenger is re-summoned to carry on looting. If you have more than 80 items to sell, selling continues in batches automatically. Heavy-combat resilient: GCD-aware busy gate, profession-cast loot-silence guard, and a retry-nudge if the Goblin Merchant summon bounces off back-to-back GCDs. Configurable bag threshold in Scavenger Settings.
 
 **Auto-repair** - Your gear gets repaired automatically whenever you visit a vendor, and the cost is tracked over time.
 
-**Keep bags open** - Optionally prevents the game from closing your bag windows when you leave a merchant or the Goblin Merchant despawns.
+**Keep bags open** - Optional toggle (default OFF) that prevents the game from closing your bag windows when you leave a merchant or the Goblin Merchant despawns.
+
+**Reactive panel layout** - The settings panels resize with the Interface Options frame. Drag the resize handle and labels re-wrap, scroll content re-fits, list rows stretch. Layout invariants are protected by static-pattern regression tests in CI.
+
+**First-run welcome** - Brand-new installs see a brief chat summary of the active defaults at first login, plus a small popup with `Keep Defaults` / `Open Settings`. Existing characters never see this; they keep the unchanged single-line welcome.
+
+**Tooltip annotations on bag items** - Hover any bag item to see what EbonClearance will do with it: `Will Sell` (with reason), `Protected - Blacklisted`, `Auto-Protected (Worn)`, `Auto-Protected (Upgrade)`, `Will Delete - Deletion List`, `Whitelisted - No Vendor Price (cannot sell)`, etc. The annotation respects the live rule chain so what you see at hover time is what happens at the merchant.
 
 **Session and lifetime statistics** - Keeps a running tally of gold earned, items sold, items deleted, repair costs and average inventory value. Session deltas are shown inline next to each lifetime figure so you can see at a glance what the current play session added. Lifetime and session counters reset independently.
 
@@ -48,7 +58,9 @@ EbonClearance started life as a fork of [EbonholdStuff](https://github.com/Badut
 |---------|:---:|:---:|
 | **Selling approach** | Blacklist (sells everything, you protect items) | Whitelist (only sells what you list) |
 | **Grey junk auto-sell** | Yes | Yes |
-| **Quality filtering** | Fixed (protects green and above) | Configurable per-rarity threshold (White, Green, Blue, Purple) with optional max iLvl |
+| **Quality filtering** | Fixed (protects green and above) | Configurable per-rarity threshold (White, Green, Blue, Purple) with `Use equipped iLvl` dynamic cap or fixed max iLvl, plus per-rarity bind-type filter (Any / BoE only / BoP only) |
+| **Auto-protect equipped gear** | No | Yes - on equip, gear lands on the Keep list automatically |
+| **Auto-protect looted upgrades** | No | Optional - bag drops above your equipped iLvl auto-Kept |
 | **Blacklist (do not sell)** | No | Yes - protect items from being sold |
 | **Scan bags to whitelist** | No | Yes - bulk add by quality (White/Green/Blue) |
 | **Whitelist/Blacklist profiles** | No | Yes - save, load, clear and rename profiles |
@@ -90,7 +102,8 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - Scan bags to bulk-add items by quality (White, Green, Blue) on either whitelist panel
 - Add items matching a name substring in one go via the "Add matching in bags" field on any list panel
 - Save and load profiles with different whitelist and blacklist combinations
-- Set per-rarity quality thresholds with optional max item levels (e.g. "sell all whites under iLvl 150, all greens under iLvl 170, no blues") on Merchant Settings
+- Set per-rarity quality thresholds with either a dynamic cap (`Use equipped iLvl` - the cap follows your gear) or a fixed max iLvl, with an optional bind-type filter (Any / BoE only / BoP only) on Merchant Settings
+- Auto-protect equipped gear and looted upgrades on the Blacklist (Keep) panel - tickbox to opt in
 - Choose which merchants the addon works with (Goblin Merchant, normal vendors, or both)
 - Toggle auto-vendoring, deletion, repairs, Greedy Scavenger, and auto-opening of lootable containers on or off
 - Keep bags open when leaving a merchant
@@ -114,7 +127,10 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 | `/ec profile delete <name>` | Delete a saved profile |
 | `/ec clean` | Report any item IDs present in more than one list |
 | `/ec clean apply` | Auto-resolve list conflicts using precedence blacklist > delete-list > whitelist |
+| `/ec clean upgrades` | Report stale `Auto-Protected (Upgrade)` Blacklist entries that are no longer above your equipped iLvl |
+| `/ec clean upgrades apply` | Remove the stale `Auto-Protected (Upgrade)` entries (with confirmation) |
 | `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report |
+| `/ec help` | Print the full slash-command reference in chat |
 | `/ecdebug` | Show debug info and run a bag scan |
 
 ## Requirements

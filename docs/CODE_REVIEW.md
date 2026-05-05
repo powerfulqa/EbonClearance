@@ -3,21 +3,26 @@
 A curated backlog of known follow-ups not yet actioned. Each item is
 scoped to be a single-session change unless flagged otherwise.
 
-> **Last refresh:** post-v2.11.0 on 2026-05-04.
+> **Last refresh:** post-v2.12.0 on 2026-05-05.
 > Statuses below verified against the current `EbonClearance.lua`.
-> None of items 1-5 below were resolved in v2.8.0 - v2.11.0; those
+> None of items 1-5 below were resolved in v2.8.0 - v2.12.0; those
 > releases shipped feature work (per-rarity Purple row, smarter stuck
 > detection, manual-sell attribution, guild-bank repair, auto-protect
-> equipped, bind-type filter, auto-protect upgrades, bag-full
-> hysteresis, combat-only summon, reactive panel layout) plus
-> targeted reliability fixes. **Item 4 (extract panel OnShow
-> boilerplate) is now elevated**: v2.10.0 added a tenth panel onto
-> the same boilerplate, and v2.11.0's reactive-layout handler
+> equipped + auto-protect upgrades + per-rarity bind-type filter,
+> bag-full hysteresis, combat-only summon, reactive panel layout,
+> per-rarity `Use equipped iLvl` dynamic-cap mode, auto-protect
+> origin tags `(Worn)` / `(Upgrade)`, fresh-install detection +
+> first-run welcome popup, `/ec clean upgrades` cleanup command)
+> plus targeted reliability fixes. **Item 4 (extract panel OnShow
+> boilerplate) remains elevated**: v2.12.0 scroll-wrapped the Main
+> panel to fix vertical overflow, bringing the count of scroll-
+> wrapped content panels to five (Main / Scavenger / Merchant /
+> Profiles / Import-Export). The reactive-layout handler
 > ([EC_compCache.refreshLayouts](../EbonClearance.lua)) registers
-> width-snapshot widgets via helper hooks rather than per-panel hand-
-> coding. When item 4 is actioned, the future `EC_InitPanel(self,
-> refresh, build)` helper should also internalise the registry
-> registration so panel authors don't have to remember to call it.
+> width-snapshot widgets via helper hooks; when item 4 is actioned,
+> the future `EC_InitPanel(self, refresh, build)` helper should
+> internalise both the scroll-wrap and the registry registration so
+> panel authors don't have to remember to call them.
 
 ---
 

@@ -237,6 +237,13 @@ local EC_compCache = {
     -- so it just defers a bit longer.
     lastPlayerCastAt = 0,
     GCD_WINDOW_S = 1.5,
+    -- Auto-open containers combat-deferred announce flag. The driver bails
+    -- early on InCombatLockdown() because UseContainerItem on a lockbox
+    -- triggers an "Opening" cast that gets interrupted by damage. Without a
+    -- signal, deferral looks identical to the addon being broken. This flag
+    -- gates a one-shot "[EC] Deferred N container(s) until out of combat."
+    -- chat line per combat instance and is cleared on PLAYER_REGEN_ENABLED.
+    combatDeferredAnnounced = false,
 }
 -- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
 -- movement accumulator (only counts while the pet is out) and the
@@ -1851,6 +1858,26 @@ local function EC_HandleAutoOpenContainers()
         return
     end
     if InCombatLockdown() then
+        -- One-shot deferral announce per combat instance. Walk bags only on
+        -- the first BAG_UPDATE-during-combat that finds the queue non-empty;
+        -- subsequent BAG_UPDATEs in the same combat skip the scan entirely.
+        -- The flag clears on PLAYER_REGEN_ENABLED so the next combat
+        -- announces fresh.
+        if not EC_compCache.combatDeferredAnnounced then
+            local count = 0
+            for bag = 0, 4 do
+                local slots = GetContainerNumSlots(bag)
+                for slot = 1, slots do
+                    if EC_IsOpenable(bag, slot) then
+                        count = count + 1
+                    end
+                end
+            end
+            if count > 0 then
+                PrintNicef("Deferred %d container(s) until out of combat.", count)
+            end
+            EC_compCache.combatDeferredAnnounced = true
+        end
         return
     end
     if EC_autoOpenInFlight then
@@ -7747,6 +7774,11 @@ end
 -- EC_AutoProtectEquippedSlot which short-circuits when the toggle is off,
 -- so users not opted in pay one early-return per swap.
 f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+-- Wakes the auto-open-containers driver when combat ends. Without this the
+-- combat-deferred queue could sit indefinitely if no further BAG_UPDATE
+-- arrives. Handler self-gates on DB.autoOpenContainers, so users with the
+-- toggle off pay one early-return per combat exit.
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -7788,6 +7820,13 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
             EC_scavStateBootstrapped = true
         end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended: clear the deferred-announce gate and re-fire the
+        -- open driver. If the toggle is off or the queue is empty the
+        -- driver early-returns; cost on combat exit for opted-out users is
+        -- one branch.
+        EC_compCache.combatDeferredAnnounced = false
+        EC_HandleAutoOpenContainers()
     elseif event == "BAG_UPDATE" then
         -- Bag-full handler runs first; the open driver yields via the `running`
         -- guard if the vendor cycle is already active.

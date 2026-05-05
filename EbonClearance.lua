@@ -822,6 +822,19 @@ local function EnsureDB()
                 DB.qualityRules[q].enabled = true
             end
         end
+        -- v2.12.0: fresh installs default to dynamic-cap mode for whites
+        -- and greens so brand-new players get useful auto-vendoring out
+        -- of the box without risk - the cap follows their equipped iLvl
+        -- in the same slot, so anything they're already wearing stays
+        -- safe and any quest reward they haven't equipped yet would
+        -- have to be a strict downgrade vs current gear to vendor.
+        -- Blues and purples stay disabled - whitelist territory.
+        if isFreshInstall then
+            DB.qualityRules[1].enabled = true
+            DB.qualityRules[1].useEquippedILvl = true
+            DB.qualityRules[2].enabled = true
+            DB.qualityRules[2].useEquippedILvl = true
+        end
     end
     for q = 1, 4 do
         if type(DB.qualityRules[q]) ~= "table" then
@@ -855,6 +868,15 @@ local function EnsureDB()
             and DB.qualityRules[q].bindFilter ~= "bop"
         then
             DB.qualityRules[q].bindFilter = "any"
+        end
+        -- v2.12.0: per-rarity dynamic-cap mode. When true, the maxILvl
+        -- input is ignored at runtime and the cap is the equipped item's
+        -- iLvl in the same slot (per-item lookup via
+        -- EC_compCache.isDowngradeVsEquipped). Existing users default
+        -- to false (fixed-cap mode preserved); fresh installs flip
+        -- whites and greens to true via the table-init branch above.
+        if type(DB.qualityRules[q].useEquippedILvl) ~= "boolean" then
+            DB.qualityRules[q].useEquippedILvl = false
         end
     end
     if type(DB.minimapButtonAngle) ~= "number" then
@@ -1970,10 +1992,25 @@ function EC_compCache.protectEquipSlot(slot)
     -- "vendor everything I'm wearing the moment I swap to anything else".
     -- Blacklist is the protected list; that's the correct semantic for
     -- "remember what I'm wearing and don't auto-sell it".
+    DB.blacklistAuto = DB.blacklistAuto or {}
     if EC_AddItemToList("blacklist", id, "Blacklist (Keep)", true) then
-        DB.blacklistAuto = DB.blacklistAuto or {}
-        DB.blacklistAuto[id] = true
+        -- v2.12.0: tag the entry with its origin so the tooltip can
+        -- show "(Worn)" vs "(Upgrade)" instead of a generic
+        -- Auto-Protected label. Legacy boolean-true entries from
+        -- v2.10.0 / v2.11.0 fall back to the generic label at hover
+        -- time.
+        DB.blacklistAuto[id] = "equipped"
         return true
+    elseif DB.blacklistAuto[id] then
+        -- v2.12.0: item was already on the blacklist with an existing
+        -- auto-tag (most commonly "upgrade" from an earlier
+        -- autoProtectUpgrades scan). The user has now explicitly
+        -- equipped it, so the more accurate tag is "equipped" -
+        -- refresh in place. Manual blacklist entries (where
+        -- blacklistAuto[id] is nil) stay untouched - the user added
+        -- those deliberately.
+        DB.blacklistAuto[id] = "equipped"
+        return false
     end
     return false
 end
@@ -2051,6 +2088,62 @@ function EC_compCache.getEquippedILvl(slotID)
     return iLvl or 0
 end
 
+-- v2.12.0 mirror of checkBagsForUpgrades' iLvl-vs-equipped comparison,
+-- inverted: returns true iff a looted item's iLvl is strictly LESS than
+-- the lowest populated equipped iLvl across the item's candidate slots.
+-- Drives the per-rarity "Use equipped iLvl" sell mode in EC_IsSellable.
+--
+-- Multi-slot conservative rule: a ring / trinket / 1H weapon sells only
+-- when worse than EVERY equipped slot - if any slot would treat it as
+-- an upgrade, keep it. Empty slots are skipped entirely (the user might
+-- want to fill that slot with the looted item, so we don't auto-sell).
+--
+-- Trade goods, reagents, consumables, and quest items have no equipLoc
+-- in EC_compCache.INVTYPE_SLOTS, so they're naturally protected by the
+-- early-return below.
+function EC_compCache.isDowngradeVsEquipped(itemID, lootedILvl, equipLoc)
+    -- v2.12.0+ returns (boolean, reason) so the tooltip annotation can
+    -- distinguish "rule fired and decided keep" from "rule short-
+    -- circuited on an empty slot". EC_IsSellable's call site only reads
+    -- the boolean (Lua multi-return is transparent there).
+    -- reason values:
+    --   "not_equippable" - missing itemID / iLvl / equipLoc
+    --   "no_slot_mapping" - equipLoc not in INVTYPE_SLOTS (relics, bags, etc.)
+    --   "empty_slot"      - any candidate slot was empty; rule bailed without
+    --                       comparing iLvls so the looted item could fill it
+    --   "below_lowest"    - looted iLvl is below the lowest populated slot
+    --                       (this is the only reason the boolean is true)
+    --   "at_or_above"     - looted iLvl met or exceeded the lowest populated
+    --                       slot's iLvl - actual iLvl comparison happened
+    if not itemID or not lootedILvl or lootedILvl <= 0 then
+        return false, "not_equippable"
+    end
+    if not equipLoc or equipLoc == "" then
+        return false, "not_equippable"
+    end
+    local slots = EC_compCache.INVTYPE_SLOTS[equipLoc]
+    if not slots then
+        return false, "no_slot_mapping"
+    end
+    local lowestEquipped = nil
+    for _, sid in ipairs(slots) do
+        local eq = EC_compCache.getEquippedILvl(sid)
+        if eq <= 0 then
+            return false, "empty_slot"
+        end
+        if lowestEquipped == nil or eq < lowestEquipped then
+            lowestEquipped = eq
+        end
+    end
+    if lowestEquipped == nil then
+        return false, "no_slot_mapping"
+    end
+    if lootedILvl < lowestEquipped then
+        return true, "below_lowest"
+    end
+    return false, "at_or_above"
+end
+
 function EC_compCache.checkBagsForUpgrades()
     if not DB or not DB.autoProtectUpgrades then
         return
@@ -2077,9 +2170,7 @@ function EC_compCache.checkBagsForUpgrades()
                         -- the populated candidate slots. Empty slots
                         -- are ignored - otherwise an empty ring-2 slot
                         -- (iLvl 0) would suppress upgrade detection
-                        -- against an iLvl-250 ring-1. If every slot is
-                        -- empty (alt with no gear), threshold collapses
-                        -- to 0 and the first-equip case still triggers.
+                        -- against an iLvl-250 ring-1.
                         local lowestEquipped = nil
                         for _, sid in ipairs(slots) do
                             local eq = EC_compCache.getEquippedILvl(sid)
@@ -2087,11 +2178,26 @@ function EC_compCache.checkBagsForUpgrades()
                                 lowestEquipped = eq
                             end
                         end
-                        local threshold = lowestEquipped or 0
-                        if iLvl > threshold then
+                        -- v2.12.0: require at least one populated slot to
+                        -- give us a real baseline. The pre-fix behaviour
+                        -- fell back to threshold = 0 when every candidate
+                        -- slot was empty (e.g. logging in with no weapons),
+                        -- which mass-stamped every iLvl > 0 item in bags
+                        -- as an "upgrade" - polluting the Keep list with
+                        -- dozens of low-iLvl daggers / spare gear that
+                        -- weren't actually upgrades against anything. Now
+                        -- if no slot is populated we skip this iteration
+                        -- entirely; we'll re-check this itemID when
+                        -- upgradeProcessed is reset (a /reload). When the
+                        -- user equips something later, PLAYER_EQUIPMENT_
+                        -- CHANGED + autoAddEquipped covers the equipped
+                        -- side; subsequent BAG_UPDATEs cover the bag side
+                        -- once at least one slot is populated.
+                        if lowestEquipped and iLvl > lowestEquipped then
                             if EC_AddItemToList("blacklist", itemID, "Blacklist (Keep)", true) then
                                 DB.blacklistAuto = DB.blacklistAuto or {}
-                                DB.blacklistAuto[itemID] = true
+                                -- v2.12.0: origin tag for tooltip fork.
+                                DB.blacklistAuto[itemID] = "upgrade"
                                 local name = GetItemInfo(itemID) or ("Item:" .. itemID)
                                 PrintNicef("|cffb6ffb6Auto-protected upgrade %s (added to Keep list).|r", name)
                             end
@@ -3006,12 +3112,24 @@ local function EC_IsSellable(bag, slot, junkOnly)
     if not junkOnly and hasSellPrice and quality and quality >= 1 and quality <= 4 and DB.qualityRules then
         local rule = DB.qualityRules[quality]
         if rule and rule.enabled then
-            local cap = rule.maxILvl or 0
-            local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
-            if cap == 0 then
-                qualityPass = true
-            elseif hasVisibleILvl and ilvl <= cap then
-                qualityPass = true
+            if rule.useEquippedILvl then
+                -- v2.12.0 dynamic-cap mode: per-slot comparison against the
+                -- player's currently-equipped item. The Max-iLvl input is
+                -- ignored entirely while this is checked. Empty-slot guard,
+                -- multi-slot conservative rule, and equipLoc filtering all
+                -- live inside EC_compCache.isDowngradeVsEquipped.
+                if EC_compCache.isDowngradeVsEquipped(itemID, ilvl, equipLoc) then
+                    qualityPass = true
+                end
+            else
+                -- Existing v2.5.0+ fixed-cap mode unchanged.
+                local cap = rule.maxILvl or 0
+                local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
+                if cap == 0 then
+                    qualityPass = true
+                elseif hasVisibleILvl and ilvl <= cap then
+                    qualityPass = true
+                end
             end
             -- v2.10.0: bind-type filter. "any" preserves v2.4.0+ behaviour;
             -- "boe" / "bop" restrict matches to items binding on equip /
@@ -3384,15 +3502,19 @@ local function EC_AnnotateTooltip(tooltip)
         -- to know why the rules are leaving it alone. The override is the
         -- existing Alt+Right-Click context menu's "Remove from Blacklist"
         -- row.
-        local isAutoProtected = DB.blacklistAuto and DB.blacklistAuto[id]
-        if isAutoProtected then
-            -- v2.10.0 introduced a distinct concise label for the auto-
-            -- protected case. v2.11.0 generalised the wording from
-            -- "Equip Auto-Protected" to "Auto-Protected" because the
-            -- auto-protect-upgrades path also stamps DB.blacklistAuto;
-            -- there's no longer a single "this came from equipping"
-            -- origin to call out.
-            statusLine = "|cff66ccff[EC]|r |cffffb84dAuto-Protected|r"
+        local autoTag = DB.blacklistAuto and DB.blacklistAuto[id]
+        if autoTag then
+            -- v2.12.0: origin-aware label. The auto-protect path stamps
+            -- one of two string tags so the tooltip can tell the user
+            -- WHICH rule kept the item. Legacy boolean-true entries from
+            -- v2.10.0 / v2.11.0 fall back to the generic label.
+            if autoTag == "equipped" then
+                statusLine = "|cff66ccff[EC]|r |cffffb84dAuto-Protected (Worn)|r"
+            elseif autoTag == "upgrade" then
+                statusLine = "|cff66ccff[EC]|r |cffffb84dAuto-Protected (Upgrade)|r"
+            else
+                statusLine = "|cff66ccff[EC]|r |cffffb84dAuto-Protected|r"
+            end
         else
             statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Blacklisted|r"
         end
@@ -3418,22 +3540,30 @@ local function EC_AnnotateTooltip(tooltip)
         if quality and quality >= 1 and quality <= 4 and sellPrice and sellPrice > 0 then
             local rule = DB.qualityRules[quality]
             if rule and rule.enabled then
-                local cap = rule.maxILvl or 0
                 local rarityName = (quality == 1) and "White"
                     or (quality == 2) and "Green"
                     or (quality == 3) and "Blue"
                     or "Epic"
                 local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
-                -- iLvl gate first - matches EC_IsSellable's qualityPass logic.
-                local matchesILvl = (cap == 0) or (hasVisibleILvl and ilvl <= cap)
+                -- v2.12.0: split on useEquippedILvl mode. Dynamic-cap mode
+                -- mirrors EC_compCache.isDowngradeVsEquipped semantics so
+                -- the tooltip is honest about what will / won't sell.
+                local matchesILvl = false
+                local matchedAgainstEquipped = false
+                local cap = rule.maxILvl or 0
+                if rule.useEquippedILvl then
+                    matchedAgainstEquipped = true
+                    if hasVisibleILvl and EC_compCache.isDowngradeVsEquipped(id, ilvl, equipLoc) then
+                        matchesILvl = true
+                    end
+                else
+                    matchesILvl = (cap == 0) or (hasVisibleILvl and ilvl <= cap)
+                end
                 if matchesILvl then
                     -- v2.10.0: bind-filter check. EC_IsSellable applies this
                     -- AFTER the iLvl gate; the tooltip annotation has to
                     -- mirror the same chain so users get an accurate read
                     -- of what the rules will do at the next vendor visit.
-                    -- Items the bind filter rejects get a "Protected"
-                    -- annotation explaining which rule caught them and
-                    -- which bind type the rule actually wants.
                     local bindFilter = rule.bindFilter or "any"
                     local bindRejected = false
                     if bindFilter ~= "any" then
@@ -3449,14 +3579,18 @@ local function EC_AnnotateTooltip(tooltip)
                             rarityName,
                             fLabel
                         )
+                    elseif matchedAgainstEquipped then
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffb6ffb6Will Sell - %s iLvl %d below equipped|r",
+                            rarityName,
+                            ilvl
+                        )
                     elseif cap == 0 then
-                        -- No cap on this rarity. All items of this rarity sell.
                         statusLine = string.format(
                             "|cff66ccff[EC]|r |cffb6ffb6Will Sell - %s (no iLvl cap)|r",
                             rarityName
                         )
                     else
-                        -- Cap set; equippable item iLvl in range -> sells.
                         statusLine = string.format(
                             "|cff66ccff[EC]|r |cffb6ffb6Will Sell - %s iLvl %d (cap %d)|r",
                             rarityName,
@@ -3464,16 +3598,39 @@ local function EC_AnnotateTooltip(tooltip)
                             cap
                         )
                     end
+                elseif matchedAgainstEquipped then
+                    -- Dynamic-cap mode and the item didn't qualify. Two
+                    -- distinct cases collapse to one user-facing message:
+                    --   * "empty_slot": rule short-circuited because at least
+                    --     one candidate slot is empty - the looted item could
+                    --     fill it (relevant for dual-wielders).
+                    --   * "at_or_above": actual iLvl compare happened and the
+                    --     looted item met or exceeded the lowest populated
+                    --     slot - could be an upgrade for the weakest slot in
+                    --     a multi-slot equipLoc, or a same-iLvl sidegrade.
+                    -- Both cases mean "kept because this could be useful";
+                    -- "Potential Upgrade" is the user-friendly framing.
+                    if not hasVisibleILvl then
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffffb84dProtected - %s has no iLvl|r",
+                            rarityName
+                        )
+                    else
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffffb84dProtected - %s iLvl %d (Potential Upgrade)|r",
+                            rarityName,
+                            ilvl
+                        )
+                    end
                 elseif not hasVisibleILvl then
-                    -- Cap set; non-equippable (trade good / reagent / consumable)
-                    -- has no visible iLvl on its tooltip -> protected.
+                    -- Fixed-cap mode; non-equippable has no visible iLvl.
                     statusLine = string.format(
                         "|cff66ccff[EC]|r |cffffb84dProtected - %s has no iLvl (cap %d active)|r",
                         rarityName,
                         cap
                     )
                 else
-                    -- Cap set; equippable item iLvl above cap -> protected.
+                    -- Fixed-cap mode; equippable item iLvl above cap.
                     statusLine = string.format(
                         "|cff66ccff[EC]|r |cffffb84dProtected - %s above max iLvl (%d > %d)|r",
                         rarityName,
@@ -4681,7 +4838,7 @@ local function BuildMainPanel(panel, refreshStats)
         descLabel2:SetWordWrap(true)
     end
     descLabel2:SetText(
-        "Grey junk is sold automatically. For everything else: add items to your |cffb6ffb6Whitelist|r (per-character or account-wide) to vendor them, or use the |cffb6ffb6Merchant Settings|r quality threshold to sell by rarity with an optional max iLvl per rarity. Items on the |cffb6ffb6Blacklist|r are never sold. |cff888888Tip: Alt+Right-Click any bag item for a quick-action menu.|r"
+        "Greys auto-sell. Whites and greens with iLvl below your equipped gear in the same slot also auto-sell by default, and upgrades you loot are auto-protected. Use the |cffb6ffb6Whitelist|r (per-character or account-wide) to mark specific items for sale, the |cffb6ffb6Blacklist|r to permanently protect items, and |cffb6ffb6Merchant Settings|r to tune the auto-sell rules per rarity. |cff888888Tip: Alt+Right-Click any bag item for a quick-action menu.|r"
     )
 
     -- Stats fontstrings. Stacked vertically; each attaches its ref to `panel`
@@ -4915,6 +5072,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             local cb = self["qualityRow" .. q .. "CB"]
             local input = self["qualityRow" .. q .. "Input"]
             local dd = self["qualityRow" .. q .. "DD"]
+            local useEqCB = self["qualityRow" .. q .. "UseEq"]
             if cb and DB.qualityRules and DB.qualityRules[q] then
                 cb:SetChecked(DB.qualityRules[q].enabled)
             end
@@ -4923,6 +5081,15 @@ MerchantPanel:SetScript("OnShow", function(self)
             end
             if dd and DB.qualityRules and DB.qualityRules[q] and self._BindFilterText then
                 UIDropDownMenu_SetText(dd, self._BindFilterText(DB.qualityRules[q].bindFilter))
+            end
+            -- v2.12.0: refresh the per-rarity Use-equipped-iLvl tickbox
+            -- and the maxILvl input's enabled state. The applyInputEnabled
+            -- helper was stashed on the row's main checkbox at build time.
+            if useEqCB and DB.qualityRules and DB.qualityRules[q] then
+                useEqCB:SetChecked(DB.qualityRules[q].useEquippedILvl == true)
+            end
+            if cb and cb._applyInputEnabled then
+                cb._applyInputEnabled()
             end
         end
         return
@@ -5100,7 +5267,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         thresholdDesc:SetWordWrap(true)
     end
     thresholdDesc:SetText(
-        "Tick a rarity to auto-sell that rarity. |cffffff00max iLvl 0|r = sell every item of that rarity. Above 0 = sell only equippable gear at or below that iLvl (trade goods/reagents skipped). Whitelist always sells; blacklist always protects."
+        "Auto-sell rules per rarity. Each rarity has its own toggle, an optional cap, and a bind-type filter. Tick |cffffff00Use equipped iLvl|r for a dynamic cap that follows your equipped iLvl in the same slot (recommended; default ON for whites/greens on fresh installs). Untick for a fixed |cffffff00max iLvl|r - 0 = sell every item of that rarity. |cffaaaaaaWhitelist always sells; blacklist always protects.|r"
     )
 
     -- v2.10.0: bind-type filter options shared across all four rarity rows.
@@ -5152,6 +5319,77 @@ MerchantPanel:SetScript("OnShow", function(self)
         local lbl = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         lbl:SetPoint("RIGHT", input, "LEFT", -6, 0)
         lbl:SetText("max iLvl:")
+
+        -- v2.12.0: per-rarity "Use equipped iLvl" tickbox. When checked,
+        -- the maxILvl input is ignored at runtime and the cap is the
+        -- player's currently-equipped iLvl in the same slot (per-item
+        -- via EC_compCache.isDowngradeVsEquipped). The input is visibly
+        -- disabled while this is checked so the user understands the
+        -- maxILvl number isn't being applied.
+        local useEqCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceQualityRow" .. qualityIdx .. "UseEqCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        useEqCB:SetPoint("RIGHT", lbl, "LEFT", -8, 0)
+        useEqCB:SetChecked(DB.qualityRules[qualityIdx].useEquippedILvl == true)
+        -- The InterfaceOptionsCheckButtonTemplate auto-creates a label
+        -- to the RIGHT of the box; that label would extend rightward
+        -- into the "max iLvl:" field on this layout. Blank the
+        -- auto-generated label and place a separate FontString to the
+        -- LEFT of the box instead so the row reads
+        -- "<rarity>  Use equipped iLvl [✓]  max iLvl: [   ]".
+        local autoLabel = _G[useEqCB:GetName() .. "Text"]
+        if autoLabel then
+            autoLabel:SetText("")
+        end
+        local useEqText = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        useEqText:SetPoint("RIGHT", useEqCB, "LEFT", -2, 0)
+        useEqText:SetText("Use equipped iLvl")
+        useEqCB.tooltipText = "Use equipped iLvl"
+        useEqCB.tooltipRequirement =
+            "When checked, the cap for this rarity is your currently-equipped iLvl in the same slot. "
+            .. "Items below auto-sell. Multi-slot items (rings, trinkets, weapons) compare against the "
+            .. "worst equipped slot. Empty slots are skipped."
+
+        local function applyInputEnabled()
+            local on = DB.qualityRules[qualityIdx].useEquippedILvl == true
+            if on then
+                -- 3.3.5a EditBox doesn't expose Enable/Disable - use
+                -- SetEditable + EnableMouse to actually block input,
+                -- and grey both the field text and the "max iLvl:" label
+                -- so the disabled state is obvious.
+                if input.SetEditable then
+                    input:SetEditable(false)
+                end
+                input:EnableMouse(false)
+                if input.HasFocus and input:HasFocus() then
+                    input:ClearFocus()
+                end
+                input:SetTextColor(0.5, 0.5, 0.5)
+                if lbl.SetTextColor then
+                    lbl:SetTextColor(0.5, 0.5, 0.5)
+                end
+            else
+                if input.SetEditable then
+                    input:SetEditable(true)
+                end
+                input:EnableMouse(true)
+                input:SetTextColor(1, 1, 1)
+                if lbl.SetTextColor then
+                    lbl:SetTextColor(1, 0.82, 0)
+                end
+            end
+        end
+        applyInputEnabled()
+
+        useEqCB:SetScript("OnClick", function(self_)
+            DB.qualityRules[qualityIdx].useEquippedILvl = self_:GetChecked() and true or false
+            applyInputEnabled()
+            PlaySound("igMainMenuOptionCheckBoxOn")
+        end)
+        cb._applyInputEnabled = applyInputEnabled
 
         local function commit()
             local v = tonumber(input:GetText() or "0") or 0
@@ -5206,7 +5444,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         UIDropDownMenu_SetText(bindDD, EC_BindFilterText(DB.qualityRules[qualityIdx].bindFilter))
         UIDropDownMenu_Initialize(bindDD, BindFilterInit)
 
-        return cb, input, bindDD
+        return cb, input, bindDD, useEqCB
     end
 
     -- All four rarity rows anchor their checkbox to the threshold description,
@@ -5220,15 +5458,19 @@ MerchantPanel:SetScript("OnShow", function(self)
     -- dropdown frame + ~10 px gap to next row = ~74 px. -78 leaves a small
     -- breathing margin between rows without overlapping the dropdown's
     -- bottom shadow.
-    local row1CB, row1Input, row1DD = MakeQualityRow(thresholdDesc, 1, EC_WHITELIST_QUALITIES[1].text, -10)
-    local row2CB, row2Input, row2DD = MakeQualityRow(thresholdDesc, 2, EC_WHITELIST_QUALITIES[2].text, -88)
-    local row3CB, row3Input, row3DD = MakeQualityRow(thresholdDesc, 3, EC_WHITELIST_QUALITIES[3].text, -166)
-    local row4CB, row4Input, row4DD = MakeQualityRow(thresholdDesc, 4, EC_WHITELIST_QUALITIES[4].text, -244)
+    local row1CB, row1Input, row1DD, row1UseEq = MakeQualityRow(thresholdDesc, 1, EC_WHITELIST_QUALITIES[1].text, -10)
+    local row2CB, row2Input, row2DD, row2UseEq = MakeQualityRow(thresholdDesc, 2, EC_WHITELIST_QUALITIES[2].text, -88)
+    local row3CB, row3Input, row3DD, row3UseEq = MakeQualityRow(thresholdDesc, 3, EC_WHITELIST_QUALITIES[3].text, -166)
+    local row4CB, row4Input, row4DD, row4UseEq = MakeQualityRow(thresholdDesc, 4, EC_WHITELIST_QUALITIES[4].text, -244)
 
-    self.qualityRow1CB, self.qualityRow1Input, self.qualityRow1DD = row1CB, row1Input, row1DD
-    self.qualityRow2CB, self.qualityRow2Input, self.qualityRow2DD = row2CB, row2Input, row2DD
-    self.qualityRow3CB, self.qualityRow3Input, self.qualityRow3DD = row3CB, row3Input, row3DD
-    self.qualityRow4CB, self.qualityRow4Input, self.qualityRow4DD = row4CB, row4Input, row4DD
+    self.qualityRow1CB, self.qualityRow1Input, self.qualityRow1DD, self.qualityRow1UseEq =
+        row1CB, row1Input, row1DD, row1UseEq
+    self.qualityRow2CB, self.qualityRow2Input, self.qualityRow2DD, self.qualityRow2UseEq =
+        row2CB, row2Input, row2DD, row2UseEq
+    self.qualityRow3CB, self.qualityRow3Input, self.qualityRow3DD, self.qualityRow3UseEq =
+        row3CB, row3Input, row3DD, row3UseEq
+    self.qualityRow4CB, self.qualityRow4Input, self.qualityRow4DD, self.qualityRow4UseEq =
+        row4CB, row4Input, row4DD, row4UseEq
 
     -- Stash the BindFilterText helper on the panel so the inited refresh
     -- block can update each dropdown's display text without re-defining
@@ -5336,7 +5578,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
     -- repeating the same explanation on every list page.
     local descLabel = MakeLabel(
         self,
-        "Items below are sold on this character. They're saved and restored by profiles. For items you want sold on every alt, use |cffb6ffb6Whitelist - Account|r instead.",
+        "Specific items to always auto-sell on this character, regardless of rarity rules. Use the |cffb6ffb6Add from bags|r buttons below to bulk-add by colour, or shift-click / type IDs to add manually. |cffaaaaaaItems are saved and restored by profiles. For items you want sold on every alt, use |cffb6ffb6Whitelist - Account|r |cffaaaaaainstead.|r",
         16,
         -44
     )
@@ -6524,7 +6766,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
     MakeHeader(self, "Blacklist (Do Not Sell)", -16)
     local blDesc = MakeLabel(
         self,
-        "Items on this list will never be sold, even if they match the whitelist or quality threshold. Use this to protect valuable items you want to sell at the auction house.",
+        "Specific items to permanently protect from auto-sell. Use this for valuable items you'd rather list at the auction house. |cffaaaaaaThe auto-protect toggles below extend this list automatically with items you equip and upgrades you loot.|r",
         16,
         -44
     )
@@ -6664,7 +6906,7 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
     MakeHeader(self, "Account Whitelist", -16)
     local descLabel = MakeLabel(
         self,
-        "Items here are sold on every character on this account, in addition to each character's personal whitelist. Useful for shared trash like reagents or seasonal items. |cffaaaaaaThis list is not part of profiles - it stays the same when you switch profiles.|r",
+        "Specific items to always auto-sell on |cffffff00every|r character on this account. Useful for shared trash like reagents or seasonal items. |cffaaaaaaThis list is not part of profiles - it stays the same when you switch profiles.|r",
         16,
         -44
     )

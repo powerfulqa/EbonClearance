@@ -160,17 +160,25 @@ four groups:
   / `EC_EffectiveMaxItemsPerRun`, never read it directly on hot paths.
   `qualityRules` (v2.5.0+) is a table indexed by quality (1=White,
   2=Green, 3=Blue, 4=Epic added in v2.8.0) with
-  `{ enabled = bool, maxILvl = number }` per rarity; `maxILvl == 0`
-  means no cap. When `maxILvl > 0` the cap only filters items with a
-  non-empty `equipLoc` (i.e. items that display "Item Level: N" on
-  their tooltip); trade goods, reagents, and consumables - even if
+  `{ enabled = bool, maxILvl = number, bindFilter = "any"|"boe"|"bop",
+  useEquippedILvl = bool }` per rarity. `maxILvl == 0` means no cap.
+  When `maxILvl > 0` the cap only filters items with a non-empty
+  `equipLoc` (i.e. items that display "Item Level: N" on their
+  tooltip); trade goods, reagents, and consumables - even if
   `GetItemInfo` returns a non-zero internal itemLevel - are protected.
-  Replaces the v2.3.x `whitelistMinQuality` / `whitelistQualityEnabled`
-  pair (kept on the table for one release for rollback). If you ever
-  add a fifth tier (Legendary), extend the loop in `EnsureDB` plus the
-  three `quality >= 1 and quality <= 4` checks in `EC_IsSellable`,
-  `EC_AnnotateTooltip`, and the `/ecdebug` bag scan, plus the
-  per-rarity row builder in the Merchant Settings panel.
+  **`useEquippedILvl == true` (v2.12.0+) makes `maxILvl` irrelevant at
+  runtime** - the rule fires when the looted iLvl is below the
+  player's currently-equipped iLvl in the same slot, via
+  `EC_compCache.isDowngradeVsEquipped`. The helper requires every
+  candidate slot from `EC_compCache.INVTYPE_SLOTS` to be populated;
+  any empty slot returns false (don't auto-sell when the user might
+  want to fill the slot). Replaces the v2.3.x `whitelistMinQuality` /
+  `whitelistQualityEnabled` pair (kept on the table for one release
+  for rollback). If you ever add a fifth tier (Legendary), extend the
+  loop in `EnsureDB` plus the three `quality >= 1 and quality <= 4`
+  checks in `EC_IsSellable`, `EC_AnnotateTooltip`, and the `/ecdebug`
+  bag scan, plus the per-rarity row builder in the Merchant Settings
+  panel.
 - **Stats**: `totalCopper`, `totalItemsSold`, `totalItemsDeleted`,
   `totalRepairs`, `totalRepairCopper`, `soldItemCounts`,
   `deletedItemCounts`, `inventoryWorthTotal`, `inventoryWorthCount`.

@@ -3117,6 +3117,25 @@ local EC_batchTotalGold = 0
 local worker = CreateFrame("Frame")
 worker:Hide()
 
+-- v2.13.0 quest-item safety net. Returns true iff GetItemInfo classifies
+-- the item as itemClass "Quest". Used by EC_IsSellable and BuildQueue's
+-- delete branch to refuse auto-vendor / auto-delete on quest items even
+-- when they're explicitly on the whitelist or delete list. Catches the
+-- failure mode where a user added an item to a list months ago and then
+-- later picked it up for a quest. Manual paths (Alt+Right-Click → Sell
+-- Now / Delete Now) are NOT gated by this - those represent explicit
+-- user intent. GetItemInfo's 6th return is the top-level item class
+-- ("Armor", "Weapon", "Quest", "Consumable", etc.); "Quest" is the
+-- enUS string and is what the localised client also returns here in
+-- 3.3.5a (it's a category key, not display text).
+function EC_compCache.isQuestItem(itemID)
+    if not itemID then
+        return false
+    end
+    local _, _, _, _, _, itemType = GetItemInfo(itemID)
+    return itemType == "Quest"
+end
+
 -- Shared sell predicate. Used by BuildQueue to build the vendor queue and by
 -- EC_PreviewSellable to drive the minimap mouse-over preview. Returns:
 --   sellable (bool), link, sellPrice, itemCount.
@@ -3137,6 +3156,14 @@ local function EC_IsSellable(bag, slot, junkOnly)
     end
     local _, itemCount, locked = GetContainerItemInfo(bag, slot)
     if not itemCount or itemCount <= 0 or locked then
+        return false
+    end
+    -- v2.13.0 quest-item safety net. Refuses auto-sell on quest-class
+    -- items even if the user has the item on a whitelist. The failure
+    -- mode this catches: user adds X to whitelist months ago, later
+    -- picks X up for a new quest, auto-vendor would destroy progress.
+    -- Manual Alt+Right-Click → Sell Now still works (explicit intent).
+    if EC_compCache.isQuestItem(itemID) then
         return false
     end
     local _, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
@@ -3236,7 +3263,12 @@ local function BuildQueue(junkOnly)
                 end
             elseif deletionOn then
                 local id = GetContainerItemID(bag, slot)
-                if id and IsInSet(DB.deleteList, id) and not IsEquippedItem(id) then
+                -- v2.13.0: quest-item safety net also gates the auto-delete
+                -- path. Mirrors the EC_IsSellable check above so a stale
+                -- delete-list entry that later turns into a quest item is
+                -- preserved. Manual delete still works.
+                if id and IsInSet(DB.deleteList, id) and not IsEquippedItem(id)
+                   and not EC_compCache.isQuestItem(id) then
                     local _, count, locked = GetContainerItemInfo(bag, slot)
                     if count and count > 0 and not locked then
                         queue[#queue + 1] = {

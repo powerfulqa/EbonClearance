@@ -1992,6 +1992,215 @@ local function EC_AddItemToList(setName, itemID, label, quiet)
     return true
 end
 
+-- v2.13.0 ElvUI bag buttons: cursor-drop helper. Called by the bag-frame
+-- buttons' OnReceiveDrag handler. Reads the cursor item via GetCursorInfo
+-- (returns "item", itemID, itemLink for items), clears the cursor, and
+-- routes through EC_AddItemToList so cross-list conflict guards and
+-- duplicate checks apply. The label is the human-readable list name used
+-- in the chat reply ("Whitelist", "Blacklist (Keep)", "Delete List").
+-- Hung off EC_compCache (rather than a file-scope local) to stay under
+-- Lua 5.1's 200-locals-per-main-chunk cap.
+function EC_compCache.handleItemDrop(setName, label)
+    local cursorType, cursorID, cursorLink = GetCursorInfo()
+    if cursorType ~= "item" then
+        ClearCursor()
+        return
+    end
+    local id = (type(cursorID) == "number") and cursorID
+        or (cursorLink and tonumber(cursorLink:match("item:(%d+)")))
+    ClearCursor()
+    if not id then
+        return
+    end
+    EC_AddItemToList(setName, id, label)
+    -- Refresh the relevant options-panel list if it's currently open so
+    -- the user sees the new entry without closing/reopening.
+    local panelName = EC_CTX_PANEL_FOR and EC_CTX_PANEL_FOR[setName]
+    if panelName then
+        local panel = _G[panelName]
+        if panel and panel.listUI then
+            panel.listUI:Refresh()
+        end
+    end
+end
+
+-- v2.13.0 ElvUI bag buttons: opens the EC options frame and jumps straight
+-- to the panel that owns the requested list. Mirrors the slash-command's
+-- double-call pattern (3.3.5a quirk: the first call only registers the
+-- category, the second actually focuses it). Hung off EC_compCache so it
+-- doesn't consume a main-chunk local slot.
+function EC_compCache.openPanelToList(setName)
+    local panelName = EC_CTX_PANEL_FOR and EC_CTX_PANEL_FOR[setName]
+    if not panelName then
+        return
+    end
+    local panel = _G[panelName]
+    if not panel then
+        return
+    end
+    InterfaceOptionsFrame_OpenToCategory(panel)
+    InterfaceOptionsFrame_OpenToCategory(panel)
+end
+
+-- v2.13.0 ElvUI bag buttons. Three small icon buttons attached to the
+-- top-right of ElvUI's main bag frame in Sell | Keep | Delete order.
+-- Each button:
+--   - Drag-drop: adds the cursor item to the corresponding EC list,
+--     routed through EC_compCache.handleItemDrop -> EC_AddItemToList so cross-list
+--     conflicts and dedupe checks apply.
+--   - Right-click: jumps the EC options frame to the relevant list panel.
+--   - Sell button only: left-click at a merchant fires a manual sell run
+--     via the existing EbonClearance_ForceSell entry point.
+-- Audience: ElvUI users on Project Ebonhold (a meaningful slice of the
+-- player base). Non-ElvUI users see no change; the gate is the existence
+-- of _G.ElvUI_ContainerFrame at call time. Idempotent: a guard on
+-- EC_compCache.elvuiButtonsBuilt makes a second call cheap if anything
+-- ever calls this twice.
+function EC_compCache.buildElvUIBagButtons()
+    if EC_compCache.elvuiButtonsBuilt then
+        return
+    end
+    local bagFrame = _G.ElvUI_ContainerFrame
+    if not bagFrame then
+        return
+    end
+    EC_compCache.elvuiButtonsBuilt = true
+
+    -- Shared backdrop for the three buttons. Subtle dark fill with a 1px
+    -- mid-grey edge that brightens on hover; matches AutoDelete's bag
+    -- buttons so users running both addons get a consistent visual.
+    local function applyBackdrop(btn)
+        btn:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            tile = false,
+            tileSize = 16,
+            edgeSize = 1,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
+        })
+        btn:SetBackdropColor(0, 0, 0, 0.6)
+        btn:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    end
+
+    -- Mints a button with shared chrome. iconHover is the (r,g,b) the icon
+    -- texture vertex-tints to on hover; matches EC's tooltip color scheme
+    -- (green for sell, orange for keep, red for delete).
+    local function makeButton(name, parent, iconTexture, hoverR, hoverG, hoverB)
+        local btn = CreateFrame("Button", name, parent)
+        btn:SetSize(20, 20)
+        applyBackdrop(btn)
+        local icon = btn:CreateTexture(nil, "ARTWORK")
+        icon:SetPoint("TOPLEFT", 2, -2)
+        icon:SetPoint("BOTTOMRIGHT", -2, 2)
+        icon:SetTexture(iconTexture)
+        if iconTexture:find("Icons\\") then
+            -- Icon textures need the 0.07/0.93 inset to crop the default
+            -- Blizzard border; UI-GroupLoot textures don't.
+            icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        end
+        btn._icon = icon
+        btn._hoverR, btn._hoverG, btn._hoverB = hoverR, hoverG, hoverB
+        btn:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+            self:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+            self._icon:SetVertexColor(1, 1, 1)
+        end)
+        return btn
+    end
+
+    -- Sell button (whitelist) - leftmost. Gold coin icon. Drag adds to
+    -- whitelist; right-click opens Whitelist panel; left-click at a
+    -- merchant triggers EbonClearance_ForceSell.
+    local sellBtn = makeButton("EbonClearance_ElvUISellBtn", bagFrame,
+        "Interface\\Icons\\INV_Misc_Coin_01", 0.71, 1.0, 0.71)
+    sellBtn:SetPoint("TOPRIGHT", bagFrame, "TOPRIGHT", -98, -4)
+    sellBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
+        GameTooltip:AddLine("|cff66ccff[EC]|r |cffb6ffb6Sell|r", 0.71, 1, 0.71)
+        GameTooltip:AddLine("Drop item to add to Whitelist (sell list).", 1, 1, 1)
+        GameTooltip:AddLine("Click at a vendor to start selling now.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Right-click to open the Whitelist panel.", 0.7, 0.7, 0.7)
+        if not (MerchantFrame and MerchantFrame:IsShown()) then
+            GameTooltip:AddLine("Not at a vendor.", 1, 0.4, 0.4)
+        end
+        GameTooltip:Show()
+        self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        self._icon:SetVertexColor(self._hoverR, self._hoverG, self._hoverB)
+    end)
+    sellBtn:RegisterForDrag("LeftButton")
+    sellBtn:RegisterForClicks("AnyUp")
+    sellBtn:SetScript("OnReceiveDrag", function()
+        EC_compCache.handleItemDrop("whitelist", "Whitelist")
+    end)
+    sellBtn:SetScript("OnMouseUp", function(_, button)
+        if button == "RightButton" then
+            EC_compCache.openPanelToList("whitelist")
+        elseif CursorHasItem() then
+            EC_compCache.handleItemDrop("whitelist", "Whitelist")
+        elseif EbonClearance_ForceSell then
+            EbonClearance_ForceSell()
+        end
+    end)
+
+    -- Keep button (blacklist) - middle. Shield icon (semantically clearer
+    -- than AutoDelete's chocolate box for "protected"). Drag adds to
+    -- Blacklist (Keep); right-click opens the Blacklist panel.
+    local keepBtn = makeButton("EbonClearance_ElvUIKeepBtn", bagFrame,
+        "Interface\\Icons\\INV_Shield_06", 1.0, 0.78, 0.30)
+    keepBtn:SetPoint("LEFT", sellBtn, "RIGHT", 4, 0)
+    keepBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
+        GameTooltip:AddLine("|cff66ccff[EC]|r |cffffb84dKeep|r", 1, 0.78, 0.30)
+        GameTooltip:AddLine("Drop item to add to Blacklist (Keep list).", 1, 1, 1)
+        GameTooltip:AddLine("Items here are never auto-sold or auto-deleted.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Right-click to open the Blacklist panel.", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+        self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        self._icon:SetVertexColor(self._hoverR, self._hoverG, self._hoverB)
+    end)
+    keepBtn:RegisterForDrag("LeftButton")
+    keepBtn:RegisterForClicks("AnyUp")
+    keepBtn:SetScript("OnReceiveDrag", function()
+        EC_compCache.handleItemDrop("blacklist", "Blacklist (Keep)")
+    end)
+    keepBtn:SetScript("OnMouseUp", function(_, button)
+        if button == "RightButton" then
+            EC_compCache.openPanelToList("blacklist")
+        elseif CursorHasItem() then
+            EC_compCache.handleItemDrop("blacklist", "Blacklist (Keep)")
+        end
+    end)
+
+    -- Delete button - rightmost. Red X icon (Blizzard's loot-pass texture,
+    -- no icon-inset crop needed). Drag adds to delete list; right-click
+    -- opens the Delete List panel.
+    local delBtn = makeButton("EbonClearance_ElvUIDeleteBtn", bagFrame,
+        "Interface\\Buttons\\UI-GroupLoot-Pass-Up", 1.0, 0.30, 0.30)
+    delBtn:SetPoint("LEFT", keepBtn, "RIGHT", 4, 0)
+    delBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
+        GameTooltip:AddLine("|cff66ccff[EC]|r |cffff4444Delete|r", 1, 0.3, 0.3)
+        GameTooltip:AddLine("Drop item to add to Delete List.", 1, 1, 1)
+        GameTooltip:AddLine("Items here are auto-destroyed at any merchant visit.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Right-click to open the Delete List panel.", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+        self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        self._icon:SetVertexColor(self._hoverR, self._hoverG, self._hoverB)
+    end)
+    delBtn:RegisterForDrag("LeftButton")
+    delBtn:RegisterForClicks("AnyUp")
+    delBtn:SetScript("OnReceiveDrag", function()
+        EC_compCache.handleItemDrop("deleteList", "Delete List")
+    end)
+    delBtn:SetScript("OnMouseUp", function(_, button)
+        if button == "RightButton" then
+            EC_compCache.openPanelToList("deleteList")
+        elseif CursorHasItem() then
+            EC_compCache.handleItemDrop("deleteList", "Delete List")
+        end
+    end)
+end
+
 local function EC_RemoveItemFromList(setName, itemID, label)
     if not itemID then
         return
@@ -8206,6 +8415,17 @@ f:SetScript("OnEvent", function(self, event, ...)
                     end
                 end)
             end
+            -- v2.13.0 ElvUI bag buttons. ElvUI's container frame is
+            -- constructed lazily during its own load sequence; the 2 s
+            -- defer (on top of the 1 s PLAYER_LOGIN delay) is borrowed
+            -- from AutoDelete's matching feature and is enough on every
+            -- realm we've seen. Self-gates on _G.ElvUI_ContainerFrame at
+            -- call time, so non-ElvUI users pay one nil-check per login.
+            EC_Delay(2, function()
+                if EC_compCache.buildElvUIBagButtons then
+                    EC_compCache.buildElvUIBagButtons()
+                end
+            end)
         end)
     end
 end)

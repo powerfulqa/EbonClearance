@@ -690,7 +690,13 @@ local function EnsureDB()
         DB.autoOpenContainers = false
     end
     if DB.merchantMode ~= "goblin" and DB.merchantMode ~= "any" and DB.merchantMode ~= "both" then
-        DB.merchantMode = "goblin"
+        -- v2.13.x: default flipped from "goblin" to "both" so brand-new users
+        -- who haven't unlocked the Goblin Merchant pet yet still get useful
+        -- auto-vendor behaviour at any normal merchant out of the box.
+        -- Existing users with a saved valid value (including "goblin") keep
+        -- their choice; this branch only fires when DB.merchantMode is nil
+        -- or has somehow corrupted to a non-string value.
+        DB.merchantMode = "both"
     end
 
     -- v2.9.0: companion display names are now user-editable. Defaults are the
@@ -3738,15 +3744,22 @@ local function ShouldRunNow()
 end
 
 EC_IsMerchantAllowed = function()
-    local mode = DB and DB.merchantMode or "goblin"
+    -- Defensive fallback when DB hasn't loaded yet. Matches the v2.13.x
+    -- EnsureDB default of "both" (All Merchants) so a missing-DB call here
+    -- gives the same answer as a freshly-initialised DB.
+    local mode = DB and DB.merchantMode or "both"
     if mode == "any" then
-        -- Only normal merchants (not Goblin Merchant)
+        -- "any": only normal merchants (not the Goblin Merchant pet).
         local targetName = UnitExists("target") and UnitName("target") or ""
         return targetName ~= TARGET_NAME
     elseif mode == "both" then
+        -- "both" (default since v2.13.x): any merchant. Renamed in the
+        -- dropdown to "All Merchants" for clarity.
         return true
     else
-        -- "goblin" (default): only the Goblin Merchant
+        -- "goblin": only the Goblin Merchant pet (was the default through
+        -- v2.13.0; flipped to "both" in v2.13.x to support new players who
+        -- haven't unlocked the pet yet).
         return UnitExists("target") and UnitName("target") == TARGET_NAME
     end
 end
@@ -5516,7 +5529,10 @@ MerchantPanel.parent = "EbonClearance"
 local EC_MERCHANT_MODES = {
     { text = "|cffb6ffb6Goblin Merchant|r Only", value = "goblin" },
     { text = "Normal Merchants Only", value = "any" },
-    { text = "Both (All Merchants)", value = "both" },
+    -- v2.13.x: renamed from "Both (All Merchants)" and made the new default
+    -- in EnsureDB so brand-new users without the Goblin Merchant pet still
+    -- get useful auto-vendor behaviour at normal merchants out of the box.
+    { text = "All Merchants", value = "both" },
 }
 
 MerchantPanel:SetScript("OnShow", function(self)

@@ -3456,14 +3456,6 @@ local function EC_IsSellable(bag, slot, junkOnly)
     if not itemCount or itemCount <= 0 or locked then
         return false
     end
-    -- v2.13.0 quest-item safety net. Refuses auto-sell on quest-class
-    -- items even if the user has the item on a whitelist. The failure
-    -- mode this catches: user adds X to whitelist months ago, later
-    -- picks X up for a new quest, auto-vendor would destroy progress.
-    -- Manual Alt+Right-Click → Sell Now still works (explicit intent).
-    if EC_compCache.isQuestItem(itemID) then
-        return false
-    end
     local _, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
     local hasSellPrice = sellPrice and sellPrice > 0
     local isJunk = (quality ~= nil) and (quality == 0) and hasSellPrice
@@ -3522,6 +3514,24 @@ local function EC_IsSellable(bag, slot, junkOnly)
             end
         end
     end
+    -- v2.13.x quest-item safety net narrowing. v2.13.0 originally vetoed
+    -- ALL auto-actions on quest-class items via an early return at the
+    -- top of EC_IsSellable, which broke the explicit-list-as-user-intent
+    -- invariant: a user with quest-class items deliberately whitelisted
+    -- for vendoring (e.g. Gorilla Fang itemID 2799 on PE, vendor 67c)
+    -- saw "[EC] Will Sell - Whitelisted" in the tooltip but the merchant
+    -- cycle silently skipped them. Mirror AutoDelete v3.14's design:
+    -- explicit user lists override the safety net; the auto-rule sweep
+    -- (qualityPass) keeps it. The original protection against "rule
+    -- sweeps up an unanticipated quest item" is preserved; the original
+    -- protection against "stale whitelist entry catches a fresh quest
+    -- item" is now relegated to the user's awareness of their own list -
+    -- which is the right tradeoff since the whitelist IS the
+    -- authoritative "items I want to sell" list, and making it
+    -- conditional broke that invariant.
+    if qualityPass and EC_compCache.isQuestItem(itemID) then
+        qualityPass = false
+    end
     local blacklisted = IsInSet(DB.blacklist, itemID)
     if not (isJunk or qualityPass or whitelistPass) then
         return false
@@ -3561,12 +3571,15 @@ local function BuildQueue(junkOnly)
                 end
             elseif deletionOn then
                 local id = GetContainerItemID(bag, slot)
-                -- v2.13.0: quest-item safety net also gates the auto-delete
-                -- path. Mirrors the EC_IsSellable check above so a stale
-                -- delete-list entry that later turns into a quest item is
-                -- preserved. Manual delete still works.
-                if id and IsInSet(DB.deleteList, id) and not IsEquippedItem(id)
-                   and not EC_compCache.isQuestItem(id) then
+                -- v2.13.x: quest-item safety net no longer gates the
+                -- delete-list path. Mirror the sell-side narrowing:
+                -- explicit user lists override the safety net (the
+                -- delete-list entry IS explicit user intent). Catches
+                -- the same complaint pattern as the Gorilla Fang fix:
+                -- deliberately listed quest-class trash that the user
+                -- wants destroyed was being silently kept. IsEquippedItem
+                -- still vetoes destructively-significant cases.
+                if id and IsInSet(DB.deleteList, id) and not IsEquippedItem(id) then
                     local _, count, locked = GetContainerItemInfo(bag, slot)
                     if count and count > 0 and not locked then
                         queue[#queue + 1] = {
@@ -3945,7 +3958,16 @@ local function EC_AnnotateTooltip(tooltip)
                 else
                     matchesILvl = (cap == 0) or (hasVisibleILvl and ilvl <= cap)
                 end
-                if matchesILvl then
+                if matchesILvl and EC_compCache.isQuestItem(id) then
+                    -- v2.13.x: quest-item safety-net honesty. After the
+                    -- v2.13.x narrowing, EC_IsSellable returns false when
+                    -- a qualityPass auto-rule would catch a quest-class
+                    -- item. Reflect that here so the tooltip doesn't
+                    -- claim "Will Sell" when the merchant cycle will
+                    -- silently skip. The whitelist match path above is
+                    -- unaffected (whitelist overrides safety net).
+                    statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Quest item|r"
+                elseif matchesILvl then
                     -- v2.10.0: bind-filter check. EC_IsSellable applies this
                     -- AFTER the iLvl gate; the tooltip annotation has to
                     -- mirror the same chain so users get an accurate read

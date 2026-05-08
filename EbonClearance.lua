@@ -1037,8 +1037,36 @@ local function EC_IsCharacterAllowed()
     if not DB or not DB.enableOnlyListedChars then
         return true
     end
+    if not DB.allowedChars then
+        return false
+    end
     local name = EC_GetPlayerName()
-    return DB.allowedChars and DB.allowedChars[name] == true
+    -- Fast path: exact-case match (the common case for entries added via
+    -- the Add Me button or typed identically).
+    if DB.allowedChars[name] == true then
+        return true
+    end
+    -- v2.13.1 robustness: case-insensitive + invisible-whitespace-stripped
+    -- fallback. Catches entries added with different capitalisation
+    -- (user typed "zittla" but UnitName returns "Zittla"), entries
+    -- pasted from chat / web with embedded non-breaking space (U+00A0)
+    -- or zero-width joiner (U+200B), and similar look-alike strings the
+    -- v2.13.0 add-time trim missed. On a single PE-style private server
+    -- character names are unique by case, so a lowercase match cannot
+    -- collide with another player's name.
+    local function strip(s)
+        return (s or ""):lower():gsub("[%s\194\160\226\128\139]+", "")
+    end
+    local target = strip(name)
+    if target == "" then
+        return false
+    end
+    for key, val in pairs(DB.allowedChars) do
+        if val == true and type(key) == "string" and strip(key) == target then
+            return true
+        end
+    end
+    return false
 end
 
 EC_IsAddonEnabledForChar = function()
@@ -7158,7 +7186,15 @@ local function CreateNameListUI(parent, titleText, setTableName, x, y)
     end
 
     addBtn:SetScript("OnClick", function()
-        local v = (input:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        -- v2.13.1: permissive trim. Strips ASCII whitespace plus the two
+        -- most common invisible characters that survive Discord/web copy-
+        -- paste: non-breaking space (\194\160 = U+00A0) and zero-width
+        -- joiner (\226\128\139 = U+200B). Without this, an entry that
+        -- looks identical to the player's character name in the UI can
+        -- still mismatch the EC_IsCharacterAllowed lookup.
+        local v = (input:GetText() or "")
+            :gsub("^[%s\194\160\226\128\139]+", "")
+            :gsub("[%s\194\160\226\128\139]+$", "")
         if v == "" then
             PlaySound("igMainMenuOptionCheckBoxOff")
             return
@@ -7527,34 +7563,106 @@ local function EC_BuildBugReport()
     local player = UnitName("player") or "Unknown"
     local realm = GetRealmName() or "Unknown"
     local dateStr = date("%Y-%m-%d %H:%M")
+    local className = UnitClass and UnitClass("player") or "Unknown"
+    local level = UnitLevel and UnitLevel("player") or 0
+    local locale = GetLocale and GetLocale() or "Unknown"
 
     add("=== EbonClearance Bug Report ===")
     add("Version: " .. version)
     add("Character: " .. player .. " - " .. realm)
+    add("Class / Level: " .. className .. " / " .. tostring(level))
+    add("Locale: " .. tostring(locale))
     add("Date: " .. dateStr)
+    add("")
+
+    -- v2.13.1 Live State section. Captures the runtime context at the
+    -- exact moment of report. Useful for diagnosing merchant-mode
+    -- target-vs-npc mismatches, combat-deferral cases, and "addon not
+    -- doing anything" reports where the cause is a live unit / frame
+    -- state the static settings can't show.
+    add("--- Live State ---")
+    add("In Combat: " .. tostring(InCombatLockdown and InCombatLockdown() or false))
+    add("Mounted: " .. tostring(IsMounted and IsMounted() or false))
+    local targetExists = UnitExists and UnitExists("target")
+    add("Target: " .. ((targetExists and UnitName("target")) or "(none)"))
+    local npcExists = UnitExists and UnitExists("npc")
+    add("NPC (interact): " .. ((npcExists and UnitName("npc")) or "(none)"))
+    local merchantOpen = MerchantFrame and MerchantFrame:IsShown() or false
+    add("Merchant Open: " .. tostring(merchantOpen))
+    local totalBagSlots = 0
+    for bag = 0, 4 do
+        totalBagSlots = totalBagSlots + (GetContainerNumSlots(bag) or 0)
+    end
+    add("Free Bags: " .. tostring(EC_GetFreeBagSlots()) .. " / " .. tostring(totalBagSlots))
     add("")
 
     add("--- Settings ---")
     add("Enabled: " .. tostring(DB.enabled))
     add("Merchant Mode: " .. tostring(DB.merchantMode))
     add("Repair Gear: " .. tostring(DB.repairGear))
+    add("Repair via Guild Bank: " .. tostring(DB.repairUseGuildBank))
     add("Keep Bags Open: " .. tostring(DB.keepBagsOpen))
     add("Enable Deletion: " .. tostring(DB.enableDeletion))
     add("Vendor Interval: " .. tostring(DB.vendorInterval))
     add("Max Items Per Run: " .. tostring(DB.maxItemsPerRun))
     add("Fast Mode: " .. tostring(DB.fastMode))
+    -- v2.10.0 / v2.11.0 / v2.13.0 auto-protect family - omitting these
+    -- left a blind spot in earlier reports for "why is X being kept?"
+    -- diagnostics where the auto-protect path was the answer.
+    add("Auto-Add Equipped: " .. tostring(DB.autoAddEquipped))
+    add("Auto-Protect Upgrades: " .. tostring(DB.autoProtectUpgrades))
+    add("Auto-Protect Equipment Sets: " .. tostring(DB.autoProtectEquipmentSets))
     add("Enable Only Listed Chars: " .. tostring(DB.enableOnlyListedChars))
+    if DB.enableOnlyListedChars then
+        local allowed = {}
+        if type(DB.allowedChars) == "table" then
+            for k, v in pairs(DB.allowedChars) do
+                if v == true and type(k) == "string" then
+                    allowed[#allowed + 1] = k
+                end
+            end
+        end
+        table.sort(allowed)
+        add("Allowed Characters: " .. (#allowed > 0 and table.concat(allowed, ", ") or "(none)"))
+    end
     add("")
 
     add("--- Scavenger ---")
     add("Summon Greedy: " .. tostring(DB.summonGreedy))
     add("Summon Delay: " .. tostring(DB.summonDelay))
+    add("Summon Only Out Of Combat: " .. tostring(DB.summonOnlyOutOfCombat))
     add("Mute Greedy: " .. tostring(DB.muteGreedy))
     add("Hide Chat: " .. tostring(DB.hideGreedyChat))
     add("Hide Bubbles: " .. tostring(DB.hideGreedyBubbles))
     add("Auto-Loot Cycle: " .. tostring(DB.autoLootCycle))
     add("Bag Full Threshold: " .. tostring(DB.bagFullThreshold))
     add("Auto-Open Containers: " .. tostring(DB.autoOpenContainers))
+    -- Companion-name overrides. Most users leave these as defaults; when a
+    -- user has customised one and then reports a "addon doesn't recognise
+    -- my Goblin Merchant" issue, the override is usually the cause.
+    if DB.petName and DB.petName ~= "" then
+        add("Pet Name (override): " .. tostring(DB.petName))
+    end
+    if DB.merchantName and DB.merchantName ~= "" then
+        add("Merchant Name (override): " .. tostring(DB.merchantName))
+    end
+    add("")
+
+    -- v2.13.1 Runtime State section. Snapshots the in-flight loot-cycle
+    -- and stuck-detection signals so a Discord report can pinpoint
+    -- "why isn't the cycle progressing" cases without requiring a /reload
+    -- or chat-log scrape.
+    add("--- Runtime State ---")
+    add("Loot Cycle State: " .. tostring(EC_lootCycleState or "?"))
+    add("Scavenger Out: " .. tostring(EC_lastScavengerOut))
+    add("Addon-Dismissed: " .. tostring(EC_addonDismissed))
+    add("Scav Speech Heard This Session: " .. tostring(EC_compCache.scavSpeechEverHeard))
+    if EC_compCache.bagFullSince and EC_compCache.bagFullSince > 0 then
+        local elapsed = (GetTime and GetTime() or 0) - EC_compCache.bagFullSince
+        add(string.format("Bag-Full Threshold Hit: %.1fs ago", elapsed))
+    else
+        add("Bag-Full Threshold Hit: -")
+    end
     add("")
 
     add("--- Whitelist ---")
@@ -7566,7 +7674,15 @@ local function EC_BuildBugReport()
             or (q == 3) and "Blue"
             or "Epic"
         local capStr = (r.maxILvl and r.maxILvl > 0) and tostring(r.maxILvl) or "no cap"
-        add(string.format("  %s: enabled=%s, max iLvl=%s", rarityName, tostring(r.enabled), capStr))
+        local bindStr = tostring(r.bindFilter or "any")
+        add(string.format(
+            "  %s: enabled=%s, max iLvl=%s, useEquipped=%s, bind=%s",
+            rarityName,
+            tostring(r.enabled),
+            capStr,
+            tostring(r.useEquippedILvl),
+            bindStr
+        ))
     end
     add("Active Profile: " .. tostring(DB.activeProfileName))
     add("Whitelist Items: " .. tostring(EC_CountItems(DB.whitelist)))
@@ -7574,6 +7690,39 @@ local function EC_BuildBugReport()
     add("Blacklist Items: " .. tostring(EC_CountItems(DB.blacklist)))
     add("Delete List Items: " .. tostring(EC_CountItems(DB.deleteList)))
     add("")
+
+    -- v2.13.1 Auto-Protected Breakdown. Walks DB.blacklistAuto and groups
+    -- entries by origin tag so a user reporting "my Keep list is huge,
+    -- why?" can see at a glance which auto-protect path is responsible.
+    -- Legacy entries (v2.10.0 / v2.11.0 stamped a boolean true rather
+    -- than a string tag) bucket separately so they're visible for the
+    -- /ec clean upgrades workflow.
+    if type(DB.blacklistAuto) == "table" then
+        local cWorn, cUpgrade, cSet, cLegacy = 0, 0, 0, 0
+        for _, tag in pairs(DB.blacklistAuto) do
+            if tag == "equipped" then
+                cWorn = cWorn + 1
+            elseif tag == "upgrade" then
+                cUpgrade = cUpgrade + 1
+            elseif tag == "set" then
+                cSet = cSet + 1
+            elseif tag == true then
+                cLegacy = cLegacy + 1
+            end
+        end
+        local total = cWorn + cUpgrade + cSet + cLegacy
+        if total > 0 then
+            add("--- Auto-Protected Breakdown ---")
+            add("Equipped (Worn): " .. cWorn)
+            add("Upgrade: " .. cUpgrade)
+            add("Set: " .. cSet)
+            if cLegacy > 0 then
+                add("Legacy (untagged): " .. cLegacy)
+            end
+            add("Total auto-tagged: " .. total)
+            add("")
+        end
+    end
 
     add("--- Profiles ---")
     local names = {}
@@ -7601,6 +7750,18 @@ local function EC_BuildBugReport()
     add("Total Repair Cost: " .. EC_CopperToPlainText(DB.totalRepairCopper or 0))
     add("")
 
+    -- v2.13.1 UI mod detection. The PE addon ecosystem has a handful of
+    -- bag/inventory mods that interact (or fail to interact) with EC's
+    -- ContainerFrame hooks; capturing which the user runs disambiguates
+    -- "ElvUI bag buttons not appearing" / "Bagnon hides EC tooltips" /
+    -- "ArkInventory replaces my bag frame" reports without a follow-up.
+    add("--- UI Mods Detected ---")
+    add("ElvUI: " .. ((_G.ElvUI ~= nil) and "yes" or "no"))
+    add("Bagnon: " .. ((_G.Bagnon ~= nil or _G.BagnonFrame ~= nil) and "yes" or "no"))
+    add("ArkInventory: " .. ((_G.ArkInventory ~= nil) and "yes" or "no"))
+    add("Auctionator: " .. ((_G.Atr_GetAuctionBuyout ~= nil or _G.Auctionator ~= nil) and "yes" or "no"))
+
+    add("")
     add("--- Bags ---")
     add("Free Slots: " .. tostring(EC_GetFreeBagSlots()))
 

@@ -7513,12 +7513,23 @@ local function EC_BuildBugReport()
     add("Auto-Open Containers: " .. tostring(DB.autoOpenContainers))
     -- Companion-name overrides. Most users leave these as defaults; when a
     -- user has customised one and then reports a "addon doesn't recognise
-    -- my Goblin Merchant" issue, the override is usually the cause.
+    -- my Goblin Merchant" / "Scavenger isn't being detected" issue, the
+    -- override is usually the cause.
     -- v2.13.3: dropped the DB.petName branch (field had no setter, copy-
     -- paste artifact of the v2.9.0 scavengerName rename); the real pet
-    -- field is DB.scavengerName, exposed elsewhere in the report.
-    if DB.merchantName and DB.merchantName ~= "" then
+    -- field is DB.scavengerName.
+    -- v2.13.5: only show these lines when the value actually differs
+    -- from the default that EnsureDB seeds. The previous "non-empty"
+    -- check matched every install because EnsureDB always seeds these
+    -- fields with default strings, so the "(override)" label was
+    -- displayed even when no override was set. Also added the scavenger
+    -- field which had a comment claiming it was "exposed elsewhere"
+    -- but in fact wasn't surfaced in the report at all.
+    if DB.merchantName and DB.merchantName ~= "" and DB.merchantName ~= "Goblin Merchant" then
         add("Merchant Name (override): " .. tostring(DB.merchantName))
+    end
+    if DB.scavengerName and DB.scavengerName ~= "" and DB.scavengerName ~= "Greedy scavenger" then
+        add("Scavenger Name (override): " .. tostring(DB.scavengerName))
     end
     add("")
 

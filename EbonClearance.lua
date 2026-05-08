@@ -711,39 +711,18 @@ local function EnsureDB()
     -- EbonClearanceDB.merchantName = ...`) but the typical case is now
     -- "fixed at default". One-time migration below resets clearly-broken
     -- values from the v2.9.0 UI session: any name that does not contain
-    -- the expected substring ("scavenger" / "merchant", case-insensitive)
-    -- is reset to its default. Catches truncations like "Gob" without
-    -- clobbering legitimate overrides like "Greedy Scavenger Custom".
-    -- Marked done via DB._v210NameReset so a power user who later
-    -- overrides via /run isn't second-guessed on every load.
+    -- v2.13.3: dropped the v2.10.0 name-reset migration block. Once
+    -- DB._v210NameReset became true on every existing user, the inner
+    -- string.find guards short-circuited unconditionally; on fresh
+    -- installs the EnsureDB defaults assigned just above already
+    -- contain "scavenger" / "merchant", so the find checks always
+    -- pass and the migration never altered anything. The cluster was
+    -- write-only across all reachable code paths post-v2.10.0.
     if type(DB.scavengerName) ~= "string" or DB.scavengerName == "" then
         DB.scavengerName = "Greedy scavenger"
     end
     if type(DB.merchantName) ~= "string" or DB.merchantName == "" then
         DB.merchantName = "Goblin Merchant"
-    end
-    if not DB._v210NameReset then
-        local notified = false
-        local sn = DB.scavengerName or ""
-        if not string.find(string.lower(sn), "scavenger", 1, true) then
-            DB.scavengerName = "Greedy scavenger"
-            notified = true
-        end
-        local mn = DB.merchantName or ""
-        if not string.find(string.lower(mn), "merchant", 1, true) then
-            DB.merchantName = "Goblin Merchant"
-            notified = true
-        end
-        DB._v210NameReset = true
-        if notified then
-            -- Defer the chat notice so PrintNice is loaded by the time
-            -- it fires (EnsureDB runs at ADDON_LOADED, before chat is
-            -- ready on some clients). EC_Delay isn't yet defined here;
-            -- the message lands at PLAYER_LOGIN naturally because the
-            -- second EnsureDB pass at PLAYER_LOGIN goes through the
-            -- DB._v210NameReset = true short-circuit above.
-            DB._v210NameResetNotice = true
-        end
     end
 
     if type(DB.muteGreedy) ~= "boolean" then
@@ -931,9 +910,10 @@ local function EnsureDB()
         -- if they want bags closing again. New installs default off.
         DB.keepBagsOpen = false
     end
-    if type(DB.vendorBtnShown) ~= "boolean" then
-        DB.vendorBtnShown = false
-    end
+    -- v2.13.3: dropped the DB.vendorBtnShown defaulter alongside the
+    -- vendor-button cluster removal. The field had no readers in any
+    -- live code path post-v2.13.0 (the only consumer was
+    -- EC_UpdateVendorButtonVisibility which itself was orphaned).
     if type(DB.blacklist) ~= "table" then
         DB.blacklist = {}
     end
@@ -967,14 +947,11 @@ local function EnsureDB()
         DB.blacklistProfiles = {}
     end
 
-    -- _seededLists is kept as a one-shot guard so future first-install seeds
-    -- can be added without re-seeding existing users. Earlier builds seeded
-    -- two legacy item IDs (300581, 300574) that returned nil from GetItemInfo
-    -- and were removed in the v2.0.13 quality pass. New installs now start
-    -- with an empty delete list; users add IDs via the Deletion panel.
-    if not DB._seededLists then
-        DB._seededLists = true
-    end
+    -- v2.13.3: dropped the DB._seededLists write-only guard. The seed body
+    -- it once gated (item IDs 300581 / 300574, removed in the v2.0.13
+    -- quality pass) hasn't existed for many releases; the flag was being
+    -- written but never read. New first-install seeding, if ever needed,
+    -- should use a feature-specific guard rather than reviving this one.
 
     -- Mirror name fields into PET_NAME / TARGET_NAME / PET_NAME_LC. Done in
     -- EnsureDB rather than in a separate helper so every caller (event hub,
@@ -2046,16 +2023,10 @@ function EC_compCache.handleItemDrop(setName, label)
     if not id then
         return
     end
+    -- v2.13.3: removed redundant panel refresh - EC_AddItemToList already
+    -- refreshes the panel via the same EC_CTX_PANEL_FOR lookup. The label
+    -- arg is what the user sees in the chat reply.
     EC_AddItemToList(setName, id, label)
-    -- Refresh the relevant options-panel list if it's currently open so
-    -- the user sees the new entry without closing/reopening.
-    local panelName = EC_CTX_PANEL_FOR and EC_CTX_PANEL_FOR[setName]
-    if panelName then
-        local panel = _G[panelName]
-        if panel and panel.listUI then
-            panel.listUI:Refresh()
-        end
-    end
 end
 
 -- v2.13.0 ElvUI bag buttons: opens the EC options frame and jumps straight
@@ -3668,12 +3639,13 @@ local function FinishRun()
                     EC_batchTotalSold,
                     CopperToColoredText(EC_batchTotalGold)
                 )
+                -- v2.13.3: hoisted EC_SummonGreedyWithDelay out of an
+                -- if/else where both branches called it unconditionally.
+                -- Only the lootCycleState transition was branch-specific.
                 if DB and DB.autoLootCycle then
                     EC_lootCycleState = STATE.IDLE
-                    EC_SummonGreedyWithDelay()
-                else
-                    EC_SummonGreedyWithDelay()
                 end
+                EC_SummonGreedyWithDelay()
             end
         end)
         return
@@ -3688,10 +3660,8 @@ local function FinishRun()
 
     if DB and DB.autoLootCycle then
         EC_lootCycleState = STATE.IDLE
-        EC_SummonGreedyWithDelay()
-    else
-        EC_SummonGreedyWithDelay()
     end
+    EC_SummonGreedyWithDelay()
 end
 
 local function DoNextAction()
@@ -3765,12 +3735,6 @@ worker:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
-local function ShouldRunNow()
-    -- Called from MERCHANT_SHOW so the merchant is always open at this point.
-    -- DoNextAction has its own MerchantFrame:IsShown() guard for mid-sell safety.
-    return true
-end
-
 EC_IsMerchantAllowed = function()
     -- Defensive fallback when DB hasn't loaded yet. Matches the v2.13.x
     -- EnsureDB default of "both" (All Merchants) so a missing-DB call here
@@ -3825,9 +3789,6 @@ local function StartRun()
         return
     end
     if running then
-        return
-    end
-    if not ShouldRunNow() then
         return
     end
 
@@ -5079,108 +5040,13 @@ local function EC_CreateLDBLauncher()
     })
 end
 
--- DORMANT: on-screen vendor button. The user-facing toggle is intentionally
--- not wired up right now (held as a future opt-in); the helpers below are
--- kept intact so the option can be re-introduced later by adding a checkbox
--- that calls EC_UpdateVendorButtonVisibility(). The DB.vendorBtnShown saved
--- variable is preserved for the same reason.
--- SecureActionButtonTemplate that runs `/target`, so it only sets a target;
--- the player still presses their Interact-With-Target keybind to open the
--- vendor. This keeps the flow combat-safe.
-local EC_vendorButton
-
-local function EC_SaveVendorButtonPos(btn)
-    if not DB then
-        return
-    end
-    local point, _, relPoint, x, y = btn:GetPoint(1)
-    DB.vendorBtnPoint = point or "CENTER"
-    DB.vendorBtnRelPoint = relPoint or "CENTER"
-    DB.vendorBtnX = x or 0
-    DB.vendorBtnY = y or -200
-end
-
-local function EC_CreateVendorButton()
-    if EC_vendorButton then
-        return EC_vendorButton
-    end
-    local btn = CreateFrame("Button", "EbonClearanceVendorButton", UIParent, "SecureActionButtonTemplate")
-    btn:SetSize(48, 48)
-    btn:SetFrameStrata("MEDIUM")
-    btn:SetAttribute("type", "macro")
-    btn:SetAttribute("macrotext", "/target " .. TARGET_NAME)
-
-    local point = (DB and DB.vendorBtnPoint) or "CENTER"
-    local relPoint = (DB and DB.vendorBtnRelPoint) or "CENTER"
-    local px = (DB and DB.vendorBtnX) or 0
-    local py = (DB and DB.vendorBtnY) or -200
-    btn:ClearAllPoints()
-    btn:SetPoint(point, UIParent, relPoint, px, py)
-
-    local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_02")
-    icon:SetAllPoints(btn)
-    btn.icon = icon
-
-    btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square")
-    local hl = btn:GetHighlightTexture()
-    if hl then
-        hl:SetBlendMode("ADD")
-    end
-
-    local border = btn:CreateTexture(nil, "OVERLAY")
-    border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-    border:SetBlendMode("ADD")
-    border:SetVertexColor(1, 0.85, 0.3, 1)
-    border:SetPoint("TOPLEFT", btn, "TOPLEFT", -6, 6)
-    border:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 6, -6)
-
-    btn:SetMovable(true)
-    btn:EnableMouse(true)
-    btn:RegisterForDrag("LeftButton")
-    btn:SetScript("OnDragStart", function(self)
-        if IsAltKeyDown() then
-            self:StartMoving()
-        end
-    end)
-    btn:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        EC_SaveVendorButtonPos(self)
-    end)
-
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("EbonClearance Vendor")
-        GameTooltip:AddLine("Click: target " .. TARGET_NAME .. ".", 1, 1, 1, true)
-        GameTooltip:AddLine("Alt+Drag to reposition.", 0.7, 0.7, 0.7, true)
-        GameTooltip:AddLine(
-            "In combat: click, then press your Interact-With-Target keybind to open the vendor.",
-            1,
-            0.82,
-            0.4,
-            true
-        )
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
-    EC_vendorButton = btn
-    return btn
-end
-
--- luacheck: ignore EC_UpdateVendorButtonVisibility
-local function EC_UpdateVendorButtonVisibility()
-    if DB and DB.vendorBtnShown then
-        local btn = EC_CreateVendorButton()
-        if not InCombatLockdown() then
-            btn:Show()
-        end
-    elseif EC_vendorButton and not InCombatLockdown() then
-        EC_vendorButton:Hide()
-    end
-end
+-- v2.13.3: removed the dormant vendor-button cluster (EC_vendorButton,
+-- EC_CreateVendorButton, EC_SaveVendorButtonPos, EC_UpdateVendorButtonVisibility,
+-- and the vendorBtn{X,Y,Point,RelPoint,Shown} DB fields). The cluster had
+-- carried a luacheck:ignore suppression because no caller existed since
+-- before v2.13.0. If a future opt-in vendor button is desired, build it
+-- fresh on top of EC_CreateTargetMerchantButton (the existing combat-safe
+-- SecureActionButton helper) rather than reviving this dead surface.
 
 StaticPopupDialogs["EC_CONFIRM_RESET_LIFETIME"] = {
     text = "Reset |cffb6ffb6EbonClearance|r lifetime stats?\n|cffaaaaaaThis clears money earned, items sold, items deleted, repair totals, and per-item counters. Session stats are not affected.|r",
@@ -5283,7 +5149,7 @@ StaticPopupDialogs["EC_CONFIRM_CLEAN_UPGRADES"] = {
 }
 
 -- v2.12.0 first-run welcome popup. Fired once on PLAYER_LOGIN when EnsureDB
--- detected a fresh install (EC_compCache.pendingWelcome). Two-button choice:
+-- detected a fresh install (DB._needsWelcome). Two-button choice:
 -- Keep Defaults (closes silently after a chat ack) or Open Settings (jumps
 -- the Interface Options frame to the EbonClearance main panel). The double
 -- InterfaceOptionsFrame_OpenToCategory call is a known 3.3.5a workaround
@@ -7640,9 +7506,9 @@ local function EC_BuildBugReport()
     -- Companion-name overrides. Most users leave these as defaults; when a
     -- user has customised one and then reports a "addon doesn't recognise
     -- my Goblin Merchant" issue, the override is usually the cause.
-    if DB.petName and DB.petName ~= "" then
-        add("Pet Name (override): " .. tostring(DB.petName))
-    end
+    -- v2.13.3: dropped the DB.petName branch (field had no setter, copy-
+    -- paste artifact of the v2.9.0 scavengerName rename); the real pet
+    -- field is DB.scavengerName, exposed elsewhere in the report.
     if DB.merchantName and DB.merchantName ~= "" then
         add("Merchant Name (override): " .. tostring(DB.merchantName))
     end
@@ -8586,20 +8452,6 @@ f:SetScript("OnEvent", function(self, event, ...)
                 end)
             else
                 PrintNice("Enabled. Use |cff00ff00/ec|r to configure.")
-            end
-            -- v2.10.0: surface the one-time companion-name migration after
-            -- the welcome line so the user sees both. The flag is set in
-            -- EnsureDB only on the migration run that actually touched
-            -- something; subsequent loads short-circuit and never raise it.
-            if DB and DB._v210NameResetNotice then
-                DB._v210NameResetNotice = nil
-                PrintNice(
-                    "|cffffb84dCompanion-name override reset to defaults.|r "
-                        .. "|cff888888The v2.9.0 name input was removed in v2.10.0; "
-                        .. "an outdated value from that UI was preventing the "
-                        .. "Goblin Merchant cycle from running. Power-users can "
-                        .. "still override via /run EbonClearanceDB.merchantName = ...|r"
-                )
             end
             -- Fresh-install one-shot equipped sync. Set in EnsureDB only
             -- when the SavedVariable was nil at first ADDON_LOADED, so

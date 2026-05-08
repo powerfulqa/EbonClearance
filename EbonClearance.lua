@@ -4659,19 +4659,17 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             PlaySound("igMainMenuOptionCheckBoxOff")
             return
         end
-        local conflictName = EC_FindAddConflict(v, setTableName)
-        if conflictName then
-            PrintNicef("|cffff8888Item %d is already on %s. Remove it from there first.|r", v, conflictName)
-            PlaySound("igMainMenuOptionCheckBoxOff")
-            input:SetText("")
-            return
-        end
-        local t = EC_GetListTable(setTableName)
-        if t then
-            t[v] = true
-        end
+        -- v2.13.4: route through EC_AddItemToList for canonical add
+        -- semantics (cross-list conflict guard, dedupe check, panel
+        -- refresh, future origin-tag support). The previous inline
+        -- code reimplemented the conflict guard + write, bypassing
+        -- the canonical path and missing any future improvements to
+        -- it. EC_AddItemToList prints its own conflict / dedupe /
+        -- success chat lines using item names rather than raw IDs,
+        -- which is a slight upgrade over the previous "Item NNN is
+        -- already on..." format.
+        EC_AddItemToList(setTableName, v, titleText)
         input:SetText("")
-        Refresh()
         PlaySound("igMainMenuOptionCheckBoxOn")
     end)
 
@@ -4708,6 +4706,12 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         end
         local needle = substr:lower()
         local added, skipped = 0, 0
+        -- v2.13.4: route adds through EC_AddItemToList(quiet=true) so
+        -- this bulk path picks up the canonical conflict guard, dedupe,
+        -- and any future origin-tag support. The pre-check on `t[itemID]`
+        -- preserves the existing semantic where already-present items
+        -- silently do not increment either counter; only cross-list
+        -- conflicts count as skipped.
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             for slot = 1, slots do
@@ -4715,11 +4719,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 if itemID and not t[itemID] then
                     local name = GetItemInfo(itemID)
                     if name and name:lower():find(needle, 1, true) then
-                        if EC_FindAddConflict(itemID, setTableName) then
-                            skipped = skipped + 1
-                        else
-                            t[itemID] = true
+                        if EC_AddItemToList(setTableName, itemID, titleText, true) then
                             added = added + 1
+                        else
+                            skipped = skipped + 1
                         end
                     end
                 end
@@ -5882,6 +5885,12 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
             return 0, 0
         end
         local added, skipped = 0, 0
+        -- v2.13.4: route adds through EC_AddItemToList(quiet=true) so
+        -- this bulk path picks up the canonical conflict guard, dedupe,
+        -- and any future origin-tag support. The pre-check on `t[itemID]`
+        -- preserves the existing semantic where already-present items
+        -- silently do not increment either counter; only cross-list
+        -- conflicts count as skipped.
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             for slot = 1, slots do
@@ -5889,11 +5898,10 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
                 if itemID then
                     local _, _, q, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
                     if q == quality and sellPrice and sellPrice > 0 and not t[itemID] then
-                        if EC_FindAddConflict(itemID, setTableName) then
-                            skipped = skipped + 1
-                        else
-                            t[itemID] = true
+                        if EC_AddItemToList(setTableName, itemID, listLabel, true) then
                             added = added + 1
+                        else
+                            skipped = skipped + 1
                         end
                     end
                 end
@@ -8135,52 +8143,44 @@ SlashCmdList["ECDEBUG"] = function()
         PrintNice("  (whitelist is empty)")
     end
 
-    -- Scan bags and check which items would be sold
+    -- Scan bags and check which items would be sold. v2.13.4: routes
+    -- through EC_IsSellable so the debug output reflects every check
+    -- the live merchant cycle applies. The previous inline predicate
+    -- was missing v2.10.0+ rules (bind filter, Use equipped iLvl,
+    -- quest-item safety net, blacklist veto, IsEquippedItem veto)
+    -- and silently produced wrong "would sell" answers for items
+    -- those checks cover. The breakdown columns (junk/wp/qp) are now
+    -- inferred from EC_IsSellable's authoritative outcome plus the
+    -- two cheap stable predicates (isJunk and whitelistPass) computed
+    -- locally.
     PrintNice("|cffffff00--- Bag scan ---|r")
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
             local itemID = GetContainerItemID(bag, slot)
             if itemID then
-                local _, itemCount, locked = GetContainerItemInfo(bag, slot)
-                if itemCount and itemCount > 0 and not locked then
-                    local name, _, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
+                local sellable, _, _, _, _ = EC_IsSellable(bag, slot, false)
+                if sellable then
+                    local name, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
                     local junk = (quality ~= nil) and (quality == 0) and sellPrice and sellPrice > 0
                     local wp = IsInSet(DB.whitelist, itemID)
-                    local qp = false
-                    if
-                        quality
-                        and quality >= 1
-                        and quality <= 4
-                        and sellPrice
-                        and sellPrice > 0
-                        and DB.qualityRules
-                    then
-                        local rule = DB.qualityRules[quality]
-                        if rule and rule.enabled then
-                            local cap = rule.maxILvl or 0
-                            local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
-                            if cap == 0 then
-                                qp = true
-                            elseif hasVisibleILvl and ilvl <= cap then
-                                qp = true
-                            end
-                        end
-                    end
-                    if junk or wp or qp then
-                        PrintNicef(
-                            "|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s junk=%s wp=%s qp=%s sp=%s name=%s",
-                            bag,
-                            slot,
-                            itemID,
-                            tostring(quality),
-                            tostring(junk),
-                            tostring(wp),
-                            tostring(qp),
-                            tostring(sellPrice),
-                            tostring(name)
-                        )
-                    end
+                        or (ADB and IsInSet(ADB.whitelist, itemID))
+                    -- Quality-rule path is whatever's left when the
+                    -- authoritative EC_IsSellable says yes but neither
+                    -- of the explicit list/junk paths matched.
+                    local qp = sellable and not junk and not wp
+                    PrintNicef(
+                        "|cff00ff00SELL|r bag=%d slot=%d id=%d q=%s junk=%s wp=%s qp=%s sp=%s name=%s",
+                        bag,
+                        slot,
+                        itemID,
+                        tostring(quality),
+                        tostring(junk),
+                        tostring(wp),
+                        tostring(qp),
+                        tostring(sellPrice),
+                        tostring(name)
+                    )
                 end
             end
         end

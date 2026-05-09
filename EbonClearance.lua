@@ -3388,22 +3388,8 @@ local function HookDeletePopupOnce()
         end
         popupElapsed = 0
 
-        -- v2.13.6: accept all four DELETE_* popup variants Blizzard
-        -- can show, not just the simple yes/no DELETE_ITEM. Soulbound
-        -- rare/epic items (e.g. Tabard of Conquest itemID 49054 - BoP
-        -- + Blue quality) trigger DELETE_GOOD_ITEM which requires
-        -- typing "DELETE" into a confirmation edit box; the edit-box
-        -- text-population already lived in the handler body, but the
-        -- outer gate was checking for the wrong popup.which value, so
-        -- the auto-confirm never ran for soulbound items and they
-        -- silently failed to delete. The startswith check covers
-        -- DELETE_ITEM, DELETE_GOOD_ITEM, DELETE_QUEST_ITEM, and
-        -- DELETE_GOOD_QUEST_ITEM in one expression and would catch any
-        -- future Blizzard-added DELETE_* variant on its own.
         local popup = StaticPopup1
-        local which = popup and popup.which
-        local isDeletePopup = which and which:find("^DELETE_") ~= nil
-        if popup and popup:IsShown() and isDeletePopup then
+        if popup and popup:IsShown() and popup.which == "DELETE_ITEM" then
             local id = pendingDelete.itemID
             if id and IsInSet(DB.deleteList, id) then
                 local editBox = StaticPopup1EditBox
@@ -5324,9 +5310,7 @@ local function BuildMainPanel(panel, content, refreshStats)
             .. "|cffffff00/ec profile [list|save|load|delete <name>]|r  Manage saved profiles\n"
             .. "|cffffff00/ec clean [apply]|r  Find and resolve list conflicts\n"
             .. "|cffffff00/ec clean upgrades [apply]|r  Clean stale 'Upgrade'-tagged Blacklist entries\n"
-            .. "|cffffff00/ec bugreport|r  Generate a diagnostic report\n"
-            .. "|cffffff00/ec help|r  Print full slash-command reference in chat\n"
-            .. "|cffffff00/ecdebug|r  Show debug info and bag scan"
+            .. "Type |cffffff00/ec help|r in chat for the full reference."
     )
 
     -- v2.12.0: size the scroll content to fit the bottom-most widget so

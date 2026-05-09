@@ -1423,16 +1423,34 @@ local function SummonGreedyScavenger()
         -- A subsequent out -> not-out transition within EC_compCache.USER_WINDOW_S
         -- of this timestamp is treated as "the user clicked the portrait off".
         EC_compCache.lastSummonAt = GetTime()
-        -- v2.11.0: do NOT clear EC_addonDismissed or pendingAnnounce here.
-        -- A combat keypress that lands in the same client tick as
-        -- CallCompanion can take the cast slot and silently reject the
-        -- summon; if we'd already cleared EC_addonDismissed the pet-tick
-        -- retry path (the only thing that would catch the rejection) is
+        -- v2.13.8: print the recovery acknowledgement line on this happy
+        -- path too, not just in EC_TryResummonScavenger's busy-gate-
+        -- recovery branch. Historically the line was firing only when
+        -- the cycle was slow enough that SummonGreedyScavenger got
+        -- busy-gated and the pet-tick had to take over via
+        -- EC_TryResummonScavenger; on the happy path
+        -- (CallCompanion succeeds directly) the pet-tick observed the
+        -- false->true transition and silently cleared pendingAnnounce
+        -- without printing. The user expected the line as a close-out
+        -- on every bag-full cycle. Print it here so the close-out fires
+        -- regardless of which path actually completed the summon.
+        if EC_compCache.pendingAnnounce then
+            PrintNice("|cff00ff00Greedy Scavenger resummoned.|r")
+            EC_compCache.pendingAnnounce = false
+        end
+        -- v2.11.0: do NOT clear EC_addonDismissed here. A combat
+        -- keypress that lands in the same client tick as CallCompanion
+        -- can take the cast slot and silently reject the summon; if
+        -- we'd already cleared EC_addonDismissed the pet-tick retry
+        -- path (the only thing that would catch the rejection) is
         -- disarmed and the Scavenger stays gone for the rest of the
-        -- session. The pet-tick at the EC_PetCheckTick transition handler
-        -- is the canonical "summon confirmed" signal and clears both
-        -- flags after observing scavengerOut=true. Same model v2.6.1
-        -- applied to EC_TryResummonScavenger.
+        -- session. The pet-tick at the EC_PetCheckTick transition
+        -- handler is the canonical "summon confirmed" signal and
+        -- clears EC_addonDismissed after observing scavengerOut=true.
+        -- Same model v2.6.1 applied to EC_TryResummonScavenger. The
+        -- pendingAnnounce flag IS cleared above because the print
+        -- has already fired; the retry path's silent-on-retry
+        -- behaviour is preserved by the cleared flag.
     else
         -- Already out on entry: CallCompanion is a no-op, safe to clear
         -- both flags here (no rejection window to worry about).
@@ -3388,8 +3406,20 @@ local function HookDeletePopupOnce()
         end
         popupElapsed = 0
 
+        -- v2.13.8: accept all four DELETE_* popup variants, not just the
+        -- simple yes/no DELETE_ITEM. Soulbound rare/epic items (e.g.
+        -- Tabard of Conquest itemID 49054 - BoP + Blue) trigger
+        -- DELETE_GOOD_ITEM which requires typing "DELETE" into a
+        -- confirmation edit box; the edit-box population already lived
+        -- in the handler body, but the outer gate was checking for the
+        -- wrong popup.which. The startswith check covers DELETE_ITEM,
+        -- DELETE_GOOD_ITEM, DELETE_QUEST_ITEM, DELETE_GOOD_QUEST_ITEM
+        -- in one expression and would accept any future Blizzard-added
+        -- DELETE_* variant.
         local popup = StaticPopup1
-        if popup and popup:IsShown() and popup.which == "DELETE_ITEM" then
+        local which = popup and popup.which
+        local isDeletePopup = which and which:find("^DELETE_") ~= nil
+        if popup and popup:IsShown() and isDeletePopup then
             local id = pendingDelete.itemID
             if id and IsInSet(DB.deleteList, id) then
                 local editBox = StaticPopup1EditBox
@@ -3576,15 +3606,25 @@ local function BuildQueue(junkOnly)
                 end
             elseif deletionOn then
                 local id = GetContainerItemID(bag, slot)
-                -- v2.13.x: quest-item safety net no longer gates the
-                -- delete-list path. Mirror the sell-side narrowing:
-                -- explicit user lists override the safety net (the
-                -- delete-list entry IS explicit user intent). Catches
-                -- the same complaint pattern as the Gorilla Fang fix:
-                -- deliberately listed quest-class trash that the user
-                -- wants destroyed was being silently kept. IsEquippedItem
-                -- still vetoes destructively-significant cases.
-                if id and IsInSet(DB.deleteList, id) and not IsEquippedItem(id) then
+                -- v2.13.8: dropped the IsEquippedItem(id) guard from
+                -- this path. The original intent was "don't auto-
+                -- destroy items currently worn," but IsEquippedItem
+                -- checks by item ID, not by slot - so for any item
+                -- where the user has one copy equipped AND has
+                -- duplicates in bags (e.g. tabards, off-spec armor,
+                -- BoE accessories with multiple copies), all the bag
+                -- duplicates were silently kept. The iteration only
+                -- visits bag slots; equipped items live in inventory
+                -- slots 1-19 by definition, so a bag-slot copy is by
+                -- definition NOT the worn instance. The check was
+                -- never actually protecting the right thing - it was
+                -- conflating "this item ID is worn" with "this
+                -- specific bag copy is the worn instance." Following
+                -- the same principle as v2.13.x's quest-item safety-
+                -- net narrowing: explicit user lists override safety
+                -- nets. Delete-list entries are explicit user intent;
+                -- respect them.
+                if id and IsInSet(DB.deleteList, id) then
                     local _, count, locked = GetContainerItemInfo(bag, slot)
                     if count and count > 0 and not locked then
                         queue[#queue + 1] = {

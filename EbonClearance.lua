@@ -5598,7 +5598,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     repairCB:SetChecked(DB.repairGear)
     local rt = _G[repairCB:GetName() .. "Text"]
     if rt then
-        rt:SetText("Repair Gear while Vendoring")
+        rt:SetText("Repair gear while vendoring")
         rt:SetWidth(420)
         rt:SetJustifyH("LEFT")
     end
@@ -6704,7 +6704,7 @@ DeletePanel:SetScript("OnShow", function(self)
     delCB:SetChecked(DB.enableDeletion)
     local dt = _G[delCB:GetName() .. "Text"]
     if dt then
-        dt:SetText("Enable Item Deletion")
+        dt:SetText("Enable item deletion")
         dt:SetWidth(420)
         dt:SetJustifyH("LEFT")
     end
@@ -6782,7 +6782,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
     sumCB:SetChecked(DB.summonGreedy)
     local st = _G[sumCB:GetName() .. "Text"]
     if st then
-        st:SetText("Summon |cffff7f7fGreedy Scavenger|r after Vendoring")
+        st:SetText("Summon |cffff7f7fGreedy Scavenger|r after vendoring")
         st:SetWidth(420)
         st:SetJustifyH("LEFT")
     end
@@ -7173,7 +7173,7 @@ CharPanel:SetScript("OnShow", function(self)
 
     local t = _G[cb:GetName() .. "Text"]
     if t then
-        t:SetText("Enable Only for Listed Characters")
+        t:SetText("Enable only for listed characters")
         EC_compCache.setPanelWidth(t, 60)
         t:SetJustifyH("LEFT")
     end
@@ -7205,15 +7205,6 @@ BlacklistPanel:SetScript("OnShow", function(self)
     EnsureDB()
     EC_UpdatePanelWidth()
     if self.inited then
-        if self.autoEquipCB then
-            self.autoEquipCB:SetChecked(DB.autoAddEquipped)
-        end
-        if self.autoUpgradeCB then
-            self.autoUpgradeCB:SetChecked(DB.autoProtectUpgrades)
-        end
-        if self.autoSetCB then
-            self.autoSetCB:SetChecked(DB.autoProtectEquipmentSets)
-        end
         if self.listUI then
             self.listUI:Refresh()
         end
@@ -7221,10 +7212,18 @@ BlacklistPanel:SetScript("OnShow", function(self)
     end
     self.inited = true
 
+    -- v2.15.0: the auto-protect toggles (autoAddEquipped, autoProtectUpgrades,
+    -- autoProtectEquipmentSets) plus their explanatory notes used to live on
+    -- this panel and dominated it visually - 3 checkboxes + 3 multi-line notes
+    -- stacked above the actual list. They moved to the new `Keep List Settings`
+    -- sub-panel so this panel matches the Sell List / Delete List / Account
+    -- Sell List rhythm (header + description + hint + list). DB field names
+    -- unchanged so all event handlers, tooltip annotations, and slash commands
+    -- continue to work without modification.
     MakeHeader(self, "Keep List (Do Not Sell)", -16)
     local blDesc = MakeLabel(
         self,
-        "Specific items to permanently protect from auto-sell. Use this for valuable items you'd rather list at the auction house. |cffaaaaaaThe auto-protect toggles below extend this list automatically with items you equip and upgrades you loot.|r",
+        "Specific items to permanently protect from auto-sell. Use this for valuable items you'd rather list at the auction house. |cffaaaaaaAuto-protect rules (equipped gear, looted upgrades, Blizzard equipment sets) live on the |r|cffffb84dKeep List Settings|r|cffaaaaaa panel.|r",
         16,
         -44
     )
@@ -7241,22 +7240,85 @@ BlacklistPanel:SetScript("OnShow", function(self)
     end
     blHint:SetText("Add items by Shift-Clicking, dragging, or typing the Item ID below.")
 
+    self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -130)
+    self.listUI:ClearAllPoints()
+    self.listUI:SetPoint("TOPLEFT", blHint, "BOTTOMLEFT", 0, -16)
+    self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
+    self.listUI:Refresh()
+end)
+
+-- ============================================================
+-- v2.15.0 Keep List Settings sub-panel
+-- ============================================================
+-- Holds the auto-protect toggles + explanatory notes that previously
+-- cluttered the Keep List panel. Schema and behaviour are identical to the
+-- pre-v2.15.0 surfacing; this is purely a visual split for consistency with
+-- the other list panels' rhythm. The toggles still write to the same DB
+-- fields (DB.autoAddEquipped, DB.autoProtectUpgrades, DB.autoProtectEquipmentSets)
+-- and still call the same sync helpers (EC_compCache.syncEquipped /
+-- checkBagsForUpgrades / syncEquipmentSets), so the PLAYER_EQUIPMENT_CHANGED
+-- and EQUIPMENT_SETS_CHANGED reactive paths in the event hub continue to
+-- drive the same protection without any wiring changes.
+local BlacklistSettingsPanel =
+    CreateFrame("Frame", "EbonClearanceOptionsBlacklistSettings", InterfaceOptionsFramePanelContainer)
+BlacklistSettingsPanel.name = "Keep List Settings"
+BlacklistSettingsPanel.parent = "EbonClearance"
+
+BlacklistSettingsPanel:SetScript("OnShow", function(self)
+    EnsureDB()
+    EC_UpdatePanelWidth()
+    if self.inited then
+        if self.autoEquipCB then
+            self.autoEquipCB:SetChecked(DB.autoAddEquipped)
+        end
+        if self.autoUpgradeCB then
+            self.autoUpgradeCB:SetChecked(DB.autoProtectUpgrades)
+        end
+        if self.autoSetCB then
+            self.autoSetCB:SetChecked(DB.autoProtectEquipmentSets)
+        end
+        return
+    end
+    self.inited = true
+
+    -- Scroll-wrap: three toggles plus three multi-line notes can overflow at
+    -- narrow Interface Options widths. Same wrapper used by Scavenger and
+    -- Merchant Settings.
+    local content = EC_WrapPanelInScrollFrame(self)
+
+    -- Auto-protect handlers used to refresh `self.listUI` directly because
+    -- the list lived on the same frame. Now the list lives on the Keep List
+    -- panel, so toggles refresh that panel's list if it's been initialized.
+    local function refreshKeepListUI()
+        local blPanel = _G["EbonClearanceOptionsBlacklist"]
+        if blPanel and blPanel.listUI then
+            blPanel.listUI:Refresh()
+        end
+    end
+
+    MakeHeader(content, "Keep List Settings", -16)
+    local desc = MakeLabel(
+        content,
+        "Automatic protection rules. Items matched by any rule below are added to your Keep List automatically and excluded from auto-sell.",
+        16,
+        -44
+    )
+
     -- v2.10.0: auto-protect equipped gear. Toggling on runs a one-shot sync
-    -- of every currently equipped slot into THIS list (Blacklist - Keep),
-    -- then a reactive PLAYER_EQUIPMENT_CHANGED handler keeps the list in
-    -- step with future gear swaps. The blacklist veto in EC_IsSellable
-    -- prevents auto-rules from touching anything on this list, so a
-    -- replaced upgrade sliding into bags is automatically protected. The
-    -- tooltip annotation surfaces "(auto-protected: equipped)" so users
-    -- who decide they want an auto-added item sold can see why it's being
-    -- kept and Alt+Right-Click to remove it.
+    -- of every currently equipped slot into the Keep List, then a reactive
+    -- PLAYER_EQUIPMENT_CHANGED handler keeps the list in step with future
+    -- gear swaps. The blacklist veto in EC_IsSellable prevents auto-rules
+    -- from touching anything on this list, so a replaced upgrade sliding
+    -- into bags is automatically protected. Tooltip annotation surfaces
+    -- "(auto-protected: equipped)" so users who decide they want an
+    -- auto-added item sold can see why it's being kept.
     local autoEquipCB = CreateFrame(
         "CheckButton",
         "EbonClearanceAutoProtectEquippedCB",
-        self,
+        content,
         "InterfaceOptionsCheckButtonTemplate"
     )
-    autoEquipCB:SetPoint("TOPLEFT", blHint, "BOTTOMLEFT", 0, -10)
+    autoEquipCB:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -10)
     autoEquipCB:SetChecked(DB.autoAddEquipped)
     local aeText = _G[autoEquipCB:GetName() .. "Text"]
     if aeText then
@@ -7271,14 +7333,12 @@ BlacklistPanel:SetScript("OnShow", function(self)
         PlaySound("igMainMenuOptionCheckBoxOn")
         if on and wasOff then
             EC_compCache.syncEquipped()
-            if self.listUI then
-                self.listUI:Refresh()
-            end
+            refreshKeepListUI()
         end
     end)
     self.autoEquipCB = autoEquipCB
 
-    local autoEquipNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local autoEquipNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     autoEquipNote:SetPoint("TOPLEFT", autoEquipCB, "BOTTOMLEFT", 26, -2)
     EC_compCache.setPanelWidth(autoEquipNote, 60)
     autoEquipNote:SetJustifyH("LEFT")
@@ -7286,7 +7346,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
         autoEquipNote:SetWordWrap(true)
     end
     autoEquipNote:SetText(
-        "|cff888888Adds your currently equipped gear to this Keep list on toggle, then auto-adds anything you equip later so replaced upgrades sliding into bags are automatically protected from auto-sell rules. The bag tooltip explains why each item is kept; Alt+Right-Click an item to remove it if you want it sold.|r"
+        "|cff888888Adds your currently equipped gear to the Keep list on toggle, then auto-adds anything you equip later so replaced upgrades sliding into bags are automatically protected from auto-sell rules. The bag tooltip explains why each item is kept; Alt+Right-Click an item to remove it if you want it sold.|r"
     )
 
     -- v2.11.0 auto-protect upgrades. The companion to v2.10.0's auto-
@@ -7294,12 +7354,12 @@ BlacklistPanel:SetScript("OnShow", function(self)
     -- exceeds the equipped item in any of their candidate slots (rings,
     -- trinkets, weapons compare against the lower of the two equipped
     -- slots so any genuine upgrade triggers). Looted upgrades sitting in
-    -- bags are stamped on this Keep list before any iLvl-cap rule on
+    -- bags are stamped on the Keep list before any iLvl-cap rule on
     -- Merchant Settings can sweep them up. Default off; opt-in.
     local autoUpgradeCB = CreateFrame(
         "CheckButton",
         "EbonClearanceAutoProtectUpgradesCB",
-        self,
+        content,
         "InterfaceOptionsCheckButtonTemplate"
     )
     autoUpgradeCB:SetPoint("TOPLEFT", autoEquipNote, "BOTTOMLEFT", -26, -10)
@@ -7317,14 +7377,12 @@ BlacklistPanel:SetScript("OnShow", function(self)
             -- Re-check on toggle so existing bag contents are evaluated
             -- immediately rather than waiting for the next BAG_UPDATE.
             EC_compCache.checkBagsForUpgrades()
-            if self.listUI then
-                self.listUI:Refresh()
-            end
+            refreshKeepListUI()
         end
     end)
     self.autoUpgradeCB = autoUpgradeCB
 
-    local autoUpgradeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local autoUpgradeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     autoUpgradeNote:SetPoint("TOPLEFT", autoUpgradeCB, "BOTTOMLEFT", 26, -2)
     EC_compCache.setPanelWidth(autoUpgradeNote, 60)
     autoUpgradeNote:SetJustifyH("LEFT")
@@ -7348,7 +7406,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
     local autoSetCB = CreateFrame(
         "CheckButton",
         "EbonClearanceAutoProtectSetsCB",
-        self,
+        content,
         "InterfaceOptionsCheckButtonTemplate"
     )
     autoSetCB:SetPoint("TOPLEFT", autoUpgradeNote, "BOTTOMLEFT", -26, -10)
@@ -7366,14 +7424,12 @@ BlacklistPanel:SetScript("OnShow", function(self)
         PlaySound("igMainMenuOptionCheckBoxOn")
         if on and wasOff then
             EC_compCache.syncEquipmentSets(false)
-            if self.listUI then
-                self.listUI:Refresh()
-            end
+            refreshKeepListUI()
         end
     end)
     self.autoSetCB = autoSetCB
 
-    local autoSetNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local autoSetNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     autoSetNote:SetPoint("TOPLEFT", autoSetCB, "BOTTOMLEFT", 26, -2)
     EC_compCache.setPanelWidth(autoSetNote, 60)
     autoSetNote:SetJustifyH("LEFT")
@@ -7381,19 +7437,12 @@ BlacklistPanel:SetScript("OnShow", function(self)
         autoSetNote:SetWordWrap(true)
     end
     autoSetNote:SetText(
-        "|cff888888Adds every item in your saved Blizzard equipment-manager sets to this Keep list, and re-syncs whenever you save or modify a set. "
+        "|cff888888Adds every item in your saved Blizzard equipment-manager sets to the Keep list, and re-syncs whenever you save or modify a set. "
             .. "Useful for hybrids and dual-spec players whose off-set gear sits in bags between swaps. "
             .. "Tooltip shows |cffffb84dAuto-Protected (Set)|r|cff888888 on items kept by this rule. Removing a set later does not auto-clean items it added; use Alt+Right-Click to drop unwanted entries.|r"
     )
 
-    -- Cascade-anchor the list UI to the auto-set note's BOTTOMLEFT so
-    -- the manual-add list always sits below the toggle stack regardless
-    -- of how many lines the notes wrap to.
-    self.listUI = CreateListUI(self, "Protected Items", "blacklist", 16, -200)
-    self.listUI:ClearAllPoints()
-    self.listUI:SetPoint("TOPLEFT", autoSetNote, "BOTTOMLEFT", -26, -16)
-    self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
-    self.listUI:Refresh()
+    EC_FitScrollContent(content, autoSetNote)
 end)
 
 local AccountWhitelistPanel =
@@ -7446,6 +7495,7 @@ InterfaceOptions_AddCategory(ProfilesPanel)
 InterfaceOptions_AddCategory(ImportExportPanel)
 InterfaceOptions_AddCategory(DeletePanel)
 InterfaceOptions_AddCategory(BlacklistPanel)
+InterfaceOptions_AddCategory(BlacklistSettingsPanel)
 InterfaceOptions_AddCategory(WhitelistPanel)
 InterfaceOptions_AddCategory(AccountWhitelistPanel)
 

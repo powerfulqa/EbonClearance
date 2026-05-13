@@ -103,7 +103,7 @@ All settings live under `/ec`, which opens a scrollable config panel. From there
 - Add items matching a name substring in one go via the "Add matching in bags" field on any list panel
 - Save and load profiles with different Sell List and Keep List combinations
 - Set per-rarity quality thresholds with either a dynamic cap (`Use equipped iLvl` - the cap follows your gear) or a fixed max iLvl, with an optional bind-type filter (Any / BoE only / BoP only) on Merchant Settings
-- Auto-protect equipped gear and looted upgrades on the Keep List panel - tickbox to opt in
+- Auto-protect equipped gear, looted upgrades, and Blizzard equipment-manager set items on the Keep List Settings panel - tickbox to opt in
 - Choose which merchants the addon works with (Goblin Merchant, normal vendors, or both)
 - Toggle auto-vendoring, deletion, repairs, Greedy Scavenger, and auto-opening of lootable containers on or off
 - Keep bags open when leaving a merchant
@@ -148,6 +148,12 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
 
 ## Changelog
+
+### v2.15.0
+
+- **Keep List panel decluttered; auto-protect toggles moved to a dedicated `Keep List Settings` sub-panel.** Previously the Keep List screen mixed the actual list of protected items with three auto-protect toggles (Auto-protect equipped gear, Auto-protect upgraded gear in bags, Auto-protect items in Blizzard equipment sets) and their multi-paragraph explanatory notes, totalling eight stacked widget groups above the list. The list now sits directly under the header, description, and Shift-click hint - matching the visual rhythm of Sell List, Account Sell List, and Delete List. A new `Keep List Settings` sidebar entry holds the three toggles + their notes, parented under the addon root like the existing Scavenger Settings / Merchant Settings panels.
+- **Design-language pass: checkbox labels standardized to Sentence case across all panels.** Four Title Case outliers updated to match the prevailing Sentence case convention used by the auto-protect labels and most newer additions: `Repair Gear while Vendoring` -> `Repair gear while vendoring`, `Enable Item Deletion` -> `Enable item deletion`, `Summon Greedy Scavenger after Vendoring` -> `Summon Greedy Scavenger after vendoring` (proper noun preserved), `Enable Only for Listed Characters` -> `Enable only for listed characters`. Audit of all other panel text (panel headers, descriptions, hints, sub-section headers, explanatory notes, button text, color codes) confirmed the rest of the addon was already consistent: `MakeHeader` everywhere for panel titles, `MakeLabel` with terminal period for descriptions, `GameFontHighlight` (yellow) for instructional hints, `GameFontNormalSmall |cff888888` for explanatory notes under controls, `GameFontNormal` for sub-section headers, Title Case verb phrases for buttons.
+- **Zero schema change.** `DB.autoAddEquipped`, `DB.autoProtectUpgrades`, and `DB.autoProtectEquipmentSets` field names are unchanged; the `PLAYER_EQUIPMENT_CHANGED` and `EQUIPMENT_SETS_CHANGED` reactive handlers, the `BAG_UPDATE`-driven upgrade scan, the tooltip annotations (`Auto-Protected (Worn/Upgrade/Set)`), and the `/ec clean upgrades` slash command all continue to work without modification. Existing user settings carry forward exactly as-is.
 
 ### v2.14.0
 

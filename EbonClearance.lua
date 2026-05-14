@@ -720,6 +720,17 @@ local function EnsureDB()
     if type(DB.protectAffixedRareItems) ~= "boolean" then
         DB.protectAffixedRareItems = true
     end
+    -- v2.23.0: Exact-rank duplicate gate on the affix protection.
+    -- When ON, an affixed bag item that matches the player's already-
+    -- known (affixName, rank) pair via PE's PerkService is allowed to
+    -- fall through to the normal sell / DE rules. Different ranks of
+    -- the same affix stay protected so the player can still collect
+    -- all four. Defaults OFF so v2.22.0 upgraders see no behaviour
+    -- change. Inert when Project Ebonhold isn't loaded (the per-rank
+    -- known-set is empty so nothing matches).
+    if type(DB.affixAllowExactDupes) ~= "boolean" then
+        DB.affixAllowExactDupes = false
+    end
     -- v2.20.0: Chance-on-hit protection. PE lets players EXTRACT proc
     -- spells from weapons (the green `Chance on hit:` tooltip line)
     -- and apply them to other items, so an item with a Chance-on-hit
@@ -2026,57 +2037,328 @@ end
 -- linkHasAffix is retained as a diagnostic helper (it still correctly
 -- reports whether the suffix-DBC field is non-zero) but is no longer
 -- consulted in the protection decision.
-function EC_compCache.bagSlotHasAffix(bag, slot)
+-- v2.23.0: roman-numeral parser used by parseAffixFromTitle. Covers
+-- I-V which is sufficient for PE (current cap is rank IV). Returns
+-- the integer rank or nil if the input doesn't look like roman. The
+-- value table lives on EC_compCache instead of as a file-scope local
+-- to stay under Lua 5.1's 200-locals-per-main-chunk cap.
+EC_compCache.ROMAN_VALUES = { I = 1, V = 5, X = 10, L = 50, C = 100, D = 500, M = 1000 }
+function EC_compCache.romanToInt(s)
+    if not s or s == "" then
+        return nil
+    end
+    local total = 0
+    local prev = 0
+    for i = #s, 1, -1 do
+        local ch = s:sub(i, i)
+        local v = EC_compCache.ROMAN_VALUES[ch]
+        if not v then
+            return nil
+        end
+        if v < prev then
+            total = total - v
+        else
+            total = total + v
+        end
+        prev = v
+    end
+    return total > 0 and total or nil
+end
+
+-- v2.23.0: pull the affix name + rank out of a tooltip title.
+-- Returns { name = "of Inner Light", rank = 2 } for a title like
+-- "Helm of Inner Light II" against baseName "Helm". Returns nil for
+-- anything that doesn't match the PE rank-suffix discriminator.
+function EC_compCache.parseAffixFromTitle(liveName, baseName)
+    if not liveName or liveName == "" or not baseName then
+        return nil
+    end
+    if liveName == baseName then
+        return nil
+    end
+    -- The roman-numeral rank-suffix discriminator (see v2.20.0 fix in
+    -- bagSlotHasAffix above).
+    local rankStr = liveName:match(" ([IVXLCDM]+)$")
+    if not rankStr then
+        return nil
+    end
+    local rank = EC_compCache.romanToInt(rankStr)
+    if not rank then
+        return nil
+    end
+    -- Strip the baseName prefix + the trailing " <rank>". What's left
+    -- is the affix name as it appears in tooltip / PerkService.
+    -- e.g. "Helm of Inner Light II" - "Helm " - " II" -> "of Inner Light"
+    if liveName:sub(1, #baseName + 1) ~= (baseName .. " ") then
+        -- Title doesn't start with base name + space - unexpected
+        -- shape (PE might prepend something one day). Fall back to
+        -- "everything before the rank" which is still useful as the
+        -- name for dupe matching.
+        local trimmed = liveName:sub(1, #liveName - #rankStr - 1)
+        return { name = trimmed, rank = rank }
+    end
+    local affixName = liveName:sub(#baseName + 2, #liveName - #rankStr - 1)
+    if affixName == "" then
+        return nil
+    end
+    return { name = affixName, rank = rank }
+end
+
+-- v2.23.0: PE affix lines are delimited by literal `@affix@` markers
+-- in the raw tooltip text. EC's private scan tooltip sees the raw
+-- text; PE's tooltip post-processing strips the markers from the
+-- live GameTooltip before display. Two-path scan handles both:
+--   1. Look for a `@affix@...@affix@` wrapped line - hits on our
+--      private scan tooltip with raw markers intact.
+--   2. Fall back to: any line that, after normalisation, matches an
+--      entry in knownAffixDescriptions. Handles the live GameTooltip
+--      after PE has cleaned the markers off.
+-- Returns the description text or nil.
+function EC_compCache.scanTooltipForAffixDesc(tooltipName)
+    if not tooltipName then
+        return nil
+    end
+    -- Path 1: raw @affix@-wrapped line.
+    for i = 1, 30 do
+        local fs = _G[tooltipName .. "TextLeft" .. i]
+        if fs and fs.GetText then
+            local txt = fs:GetText()
+            if txt then
+                local desc = txt:match("@affix@%s*(.-)%s*@affix@")
+                if desc and desc ~= "" then
+                    return desc
+                end
+            end
+        end
+    end
+    -- Path 2: PE-stripped tooltip. Match any line against the known
+    -- set; if a line's normalised text is in the set, that line is
+    -- the affix description. Returns the raw line text so the caller
+    -- can re-normalise for the dupe lookup (idempotent).
+    --
+    -- Stat affixes have a "Stacks with other ranks." disclaimer
+    -- appended in the bag tooltip that isn't on the engraving-spell
+    -- side. If a full-line match fails, try matching against just
+    -- the first sentence (up to the first ". " separator) so the
+    -- disclaimer suffix is ignored. Proc affixes with embedded
+    -- mid-sentence periods still match via the full-line path
+    -- because their first-sentence trim won't appear in the set.
+    local known = EC_compCache.knownAffixDescriptions
+    if known then
+        for i = 1, 30 do
+            local fs = _G[tooltipName .. "TextLeft" .. i]
+            if fs and fs.GetText then
+                local txt = fs:GetText()
+                if txt and txt ~= "" then
+                    local norm = EC_compCache.normaliseAffixDesc(txt)
+                    if norm and norm ~= "" and known[norm] then
+                        return txt
+                    end
+                    -- First-sentence fallback for stat affixes.
+                    local first = txt:match("^(.-)%.%s")
+                    if first and first ~= "" then
+                        local firstNorm = EC_compCache.normaliseAffixDesc(first)
+                        if firstNorm and firstNorm ~= "" and known[firstNorm] then
+                            return txt
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- v2.23.0: normalise an affix description for cross-source matching.
+-- Item tooltip's @affix@ block may carry trailing punctuation that
+-- the engraving spell tooltip's description omits (or vice versa).
+-- Strip whitespace + trailing sentence punctuation so both ends of
+-- the lookup compare equal.
+function EC_compCache.normaliseAffixDesc(s)
+    if type(s) ~= "string" then
+        return nil
+    end
+    -- Strip WoW colour escapes so a purple-formatted live tooltip
+    -- line matches a plain-text spell tooltip description.
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", "")
+    s = s:gsub("|r", "")
+    -- Strip lingering @affix@ markers in case any survived.
+    s = s:gsub("@affix@", "")
+    s = s:gsub("^%s+", ""):gsub("%s+$", "")
+    s = s:gsub("[%.%!%?]+$", "")
+    return s
+end
+
+-- v2.23.0: structured affix lookup for a bag slot. Returns
+-- { name, rank, description } or nil.
+--   - name + rank come from the title's roman-numeral suffix (the
+--     v2.19.0+ presence discriminator; what triggers protection).
+--   - description is the engraved-effect string from the @affix@
+--     line; matches against the player's known-affix set so we can
+--     decide whether to allow the item through as an exact dupe.
+-- bagSlotHasAffix is a thin boolean wrapper so existing call sites
+-- (EC_IsSellable, BuildQueue, buildProcessSummary) keep working
+-- unchanged.
+function EC_compCache.bagSlotAffixData(bag, slot)
     if not bag or not slot then
-        return false
+        return nil
     end
     local itemID = GetContainerItemID(bag, slot)
     if not itemID then
-        return false
+        return nil
     end
     local baseName = GetItemInfo(itemID)
     if not baseName then
-        return false
+        return nil
     end
     EC_scanTooltip:ClearLines()
     EC_scanTooltip:SetBagItem(bag, slot)
     local titleFS = _G["EbonClearanceScanTooltipTextLeft1"]
     if not titleFS or not titleFS.GetText then
-        return false
+        return nil
     end
-    local liveName = titleFS:GetText()
-    if not liveName or liveName == "" or liveName == baseName then
-        return false
+    local data = EC_compCache.parseAffixFromTitle(titleFS:GetText(), baseName)
+    if not data then
+        return nil
     end
-    -- Rank suffix: roman-numeral pattern at end (I, II, III, IV, V,
-    -- VI, ..., M). PE goes I-IV today; the broader pattern leaves room.
-    return liveName:find(" [IVXLCDM]+$") ~= nil
+    data.description = EC_compCache.scanTooltipForAffixDesc("EbonClearanceScanTooltip")
+    return data
+end
+
+function EC_compCache.bagSlotHasAffix(bag, slot)
+    return EC_compCache.bagSlotAffixData(bag, slot) ~= nil
+end
+
+-- v2.23.0: structured affix lookup for a live tooltip + itemID.
+-- Same shape as bagSlotAffixData but reads the FontString off the
+-- live tooltip frame (used by the bag-item tooltip annotation path).
+function EC_compCache.liveTooltipAffixData(tooltip, itemID)
+    if not tooltip or not tooltip.GetName or not itemID then
+        return nil
+    end
+    local baseName = GetItemInfo(itemID)
+    if not baseName then
+        return nil
+    end
+    local tname = tooltip:GetName()
+    if not tname then
+        return nil
+    end
+    local titleFS = _G[tname .. "TextLeft1"]
+    if not titleFS or not titleFS.GetText then
+        return nil
+    end
+    local data = EC_compCache.parseAffixFromTitle(titleFS:GetText(), baseName)
+    if not data then
+        return nil
+    end
+    data.description = EC_compCache.scanTooltipForAffixDesc(tname)
+    return data
 end
 
 function EC_compCache.liveTooltipHasAffix(tooltip, link, itemID)
     -- link arg retained for backwards-compat with the v2.19.0 signature
     -- but no longer used (the discriminator is now the tooltip title's
     -- rank suffix, not the link's suffix-DBC field).
-    if not tooltip or not tooltip.GetName or not itemID then
+    return EC_compCache.liveTooltipAffixData(tooltip, itemID) ~= nil
+end
+
+-- ---------------------------------------------------------------------------
+-- v2.23.0: PE engraving / affix integration
+-- ---------------------------------------------------------------------------
+-- PE affixes (the rank-suffixed "of Inner Light II"-style names on
+-- Rare/Epic items) are backed by engraving spells in the player's
+-- spellbook. After extracting an affix, the engraving spell is
+-- learned; its tooltip reads "Allows you to engrave this affix on
+-- any equippable item: <effect text>".
+--
+-- The matchable identifier is the EFFECT TEXT (e.g. "Increases your
+-- total Spirit by 6%."), which appears verbatim:
+--
+--   * On the bag item's tooltip, wrapped in literal `@affix@`
+--     markers on one of the lines below the item stats.
+--   * On the engraving spell's tooltip, after the "Allows you to
+--     engrave this affix on any equippable item: " prefix.
+--
+-- Rank is naturally encoded in the description ("by 3%" vs "by 6%"),
+-- so a description-match implicitly does an exact-rank dupe check -
+-- exactly the semantics the user wanted.
+--
+-- This indirection is necessary because the item-suffix name
+-- ("of Inner Light") and the engraving-spell name ("Spirit Surge")
+-- are unrelated strings in PE's data model.
+--
+-- We do not use ProjectEbonhold.PerkService.GetGrantedPerks() - that
+-- returns RUN-PERK echoes ("Agility Boost", "Warm-Blooded", etc.),
+-- a different system from item affixes.
+EC_compCache.knownAffixDescriptions = {}
+
+function EC_compCache.peDetected()
+    return _G.ProjectEbonhold ~= nil
+end
+
+-- Engraving-spell tooltip prefix that identifies an affix in the
+-- player's spellbook. Other PE spells (run perks, racials, profession
+-- skills) don't carry this prefix.
+EC_compCache.AFFIX_SPELL_PREFIX = "engrave this affix"
+
+function EC_compCache.refreshKnownAffixes()
+    local map = {}
+    -- Walk the player's spellbook; for each spell whose tooltip
+    -- includes the engrave-affix prefix, pull the description text
+    -- after the colon and store it (normalised) in the map.
+    if GetNumSpellTabs and GetSpellTabInfo and GetSpellLink and EC_scanTooltip then
+        for tab = 1, GetNumSpellTabs() do
+            local _, _, offset, numSpells = GetSpellTabInfo(tab)
+            if offset and numSpells then
+                for i = offset + 1, offset + numSpells do
+                    local link = GetSpellLink(i, BOOKTYPE_SPELL)
+                    local spellId = link and tonumber(link:match("spell:(%d+)"))
+                    if spellId then
+                        EC_scanTooltip:ClearLines()
+                        EC_scanTooltip:SetHyperlink("spell:" .. spellId)
+                        for j = 1, EC_scanTooltip:NumLines() do
+                            local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                            if fs and fs.GetText then
+                                local txt = fs:GetText()
+                                if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
+                                    local desc = txt:match(":%s*(.+)$")
+                                    desc = EC_compCache.normaliseAffixDesc(desc)
+                                    if desc and desc ~= "" then
+                                        map[desc] = true
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    EC_compCache.knownAffixDescriptions = map
+end
+
+function EC_compCache.playerHasAffixDescription(desc)
+    if type(desc) ~= "string" then
         return false
     end
-    local baseName = GetItemInfo(itemID)
-    if not baseName then
-        return false
+    local norm = EC_compCache.normaliseAffixDesc(desc)
+    if norm and norm ~= "" and EC_compCache.knownAffixDescriptions[norm] then
+        return true
     end
-    local tname = tooltip:GetName()
-    if not tname then
-        return false
+    -- First-sentence fallback for stat affixes whose bag tooltip
+    -- carries a "Stacks with other ranks." disclaimer not present on
+    -- the engraving-spell side. Matches the same trim the live-tooltip
+    -- scanner already uses.
+    local first = desc:match("^(.-)%.%s")
+    if first and first ~= "" then
+        local firstNorm = EC_compCache.normaliseAffixDesc(first)
+        if firstNorm and firstNorm ~= "" and EC_compCache.knownAffixDescriptions[firstNorm] then
+            return true
+        end
     end
-    local titleFS = _G[tname .. "TextLeft1"]
-    if not titleFS or not titleFS.GetText then
-        return false
-    end
-    local liveName = titleFS:GetText()
-    if not liveName or liveName == "" or liveName == baseName then
-        return false
-    end
-    return liveName:find(" [IVXLCDM]+$") ~= nil
+    return false
 end
 
 -- ---------------------------------------------------------------------------
@@ -2362,11 +2644,21 @@ function EC_compCache.buildProcessSummary()
                     local mode, spellName, perCast
                     if EC_compCache.canDisenchant(itemID) then
                         local _, _, quality = GetItemInfo(itemID)
-                        local affixGuarded = quality
-                            and quality >= 3
-                            and DB.protectAffixedRareItems
-                            and EC_compCache.bagSlotHasAffix
-                            and EC_compCache.bagSlotHasAffix(bag, slot)
+                        -- v2.23.0: same exact-rank dupe gate as the
+                        -- sell / delete chain. An affixed Rare/Epic
+                        -- DE candidate stays out of the list unless
+                        -- the player has the same (affix, rank) pair
+                        -- AND has opted in via DB.affixAllowExactDupes.
+                        local affixGuarded = false
+                        if quality and quality >= 3 and DB.protectAffixedRareItems then
+                            local affix = EC_compCache.bagSlotAffixData
+                                and EC_compCache.bagSlotAffixData(bag, slot)
+                            if affix then
+                                local isDupe = DB.affixAllowExactDupes
+                                    and EC_compCache.playerHasAffixDescription(affix.description)
+                                affixGuarded = not isDupe
+                            end
+                        end
                         if quality and quality <= maxQ and not affixGuarded then
                             if includeSB or not EC_compCache.processIsSoulbound(bag, slot) then
                                 mode = "Disenchant"
@@ -4218,14 +4510,25 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- (per user scope), so per-rarity sweep rules still vendor them.
     -- v2.20.0: narrowed detection requires rank-suffix in name to
     -- avoid misfiring on standard ItemRandomSuffix.dbc entries.
+    -- v2.23.0: exact-rank duplicate gate. When the player already
+    -- has the SAME (affixName, rank) pair via PE's PerkService,
+    -- DB.affixAllowExactDupes ON lets the item fall through to the
+    -- existing sell / delete rules. Different ranks of the same
+    -- affix stay protected so the player can still collect all four.
     if
         (whitelistPass or qualityPass)
         and DB.protectAffixedRareItems
         and quality
         and quality >= 3
-        and EC_compCache.bagSlotHasAffix(bag, slot)
     then
-        return false
+        local affix = EC_compCache.bagSlotAffixData(bag, slot)
+        if affix then
+            local isDupe = DB.affixAllowExactDupes
+                and EC_compCache.playerHasAffixDescription(affix.description)
+            if not isDupe then
+                return false
+            end
+        end
     end
     -- v2.20.0: PE Chance-on-hit protection. Skip items with a "Chance
     -- on hit:" proc line in their tooltip - on Project Ebonhold these
@@ -4319,11 +4622,20 @@ local function BuildQueue(junkOnly)
                         -- because affixed-instance detection is per-
                         -- link and the user can't anticipate which
                         -- specific bag copy will roll an affix.
+                        -- v2.23.0: same exact-rank dupe gate as the
+                        -- sell path. When the user opted in AND owns
+                        -- the same (affix, rank) pair, the affix
+                        -- protection releases the item to be deleted.
                         local _, _, quality = GetItemInfo(id)
-                        local affixProtected = DB.protectAffixedRareItems
-                            and quality
-                            and quality >= 3
-                            and EC_compCache.bagSlotHasAffix(bag, slot)
+                        local affixProtected = false
+                        if DB.protectAffixedRareItems and quality and quality >= 3 then
+                            local affix = EC_compCache.bagSlotAffixData(bag, slot)
+                            if affix then
+                                local isDupe = DB.affixAllowExactDupes
+                                    and EC_compCache.playerHasAffixDescription(affix.description)
+                                affixProtected = not isDupe
+                            end
+                        end
                         if not affixProtected then
                             queue[#queue + 1] = {
                                 type = "delete",
@@ -4814,12 +5126,31 @@ local function EC_AnnotateTooltip(tooltip)
     -- pattern in the title, narrowing the check so standard
     -- ItemRandomSuffix.dbc entries (`of the Bear`, `of the Sorcerer`)
     -- don't get protected as PE roguelite affixes.
+    -- v2.23.0: when the exact-dupe gate releases an affixed item back
+    -- to the sell / delete chain, the status line shows "Allowed -
+    -- affix already known" instead of "Protected - Random affix". The
+    -- match is by description text scraped from the item's @affix@
+    -- line vs the descriptions on engraving spells in the player's
+    -- spellbook (see EC_compCache.refreshKnownAffixes).
     if statusLine and DB.protectAffixedRareItems then
         local _, _, quality = GetItemInfo(id)
         if quality and quality >= 3 then
             local wouldVendor = statusLine:find("Will Sell") or statusLine:find("Will Delete")
-            if wouldVendor and EC_compCache.liveTooltipHasAffix(tooltip, link, id) then
-                statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Random affix|r"
+            if wouldVendor then
+                local affix = EC_compCache.liveTooltipAffixData(tooltip, id)
+                if affix then
+                    local isDupe = DB.affixAllowExactDupes
+                        and EC_compCache.playerHasAffixDescription(affix.description)
+                    if isDupe then
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffb6ffb6Allowed - %s %s already known|r",
+                            affix.name or "affix",
+                            (affix.rank and ("rank " .. affix.rank)) or ""
+                        )
+                    else
+                        statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Random affix|r"
+                    end
+                end
             end
         end
     end
@@ -8193,6 +8524,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.autoAffixCB then
             self.autoAffixCB:SetChecked(DB.protectAffixedRareItems)
         end
+        if self.dupeAffixCB then
+            self.dupeAffixCB:SetChecked(DB.affixAllowExactDupes)
+        end
+        if self.UpdateDupeAffixEnabled then
+            self:UpdateDupeAffixEnabled()
+        end
         if self.procCB then
             self.procCB:SetChecked(DB.protectChanceOnHitItems)
         end
@@ -8386,6 +8723,86 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         "|cff888888Blue/Purple items with a random affix (e.g. |cffffb84d'of Fortified by Pain IV'|r|cff888888) are never sold or deleted, even when their itemID is listed.|r"
     )
 
+    -- v2.23.0 child toggle: exact-rank duplicate gate on the affix
+    -- protection. Reads PE's PerkService.GetGrantedPerks /
+    -- GetLockedPerks (`_G.ProjectEbonhold`) to know which
+    -- (affixName, rank) pairs the player owns. When ON AND a bag
+    -- item's affix matches exact rank, the protection releases the
+    -- item to the normal sell / DE rules. Inert without PE.
+    local dupeAffixCB = CreateFrame(
+        "CheckButton",
+        "EbonClearanceAffixAllowExactDupesCB",
+        content,
+        "InterfaceOptionsCheckButtonTemplate"
+    )
+    -- Indent further right than the parent toggle: anchor under the
+    -- parent's note (which already has +26 indent) with no horizontal
+    -- offset, so the child sits a column to the right.
+    dupeAffixCB:SetPoint("TOPLEFT", autoAffixNote, "BOTTOMLEFT", 0, -8)
+    dupeAffixCB:SetChecked(DB.affixAllowExactDupes)
+    local daText = _G[dupeAffixCB:GetName() .. "Text"]
+    if daText then
+        daText:SetText("Allow exact-rank duplicates to be sold / disenchanted")
+        EC_compCache.setPanelWidth(daText, 86)
+        daText:SetJustifyH("LEFT")
+    end
+    dupeAffixCB:SetScript("OnClick", function(cb)
+        DB.affixAllowExactDupes = cb:GetChecked() and true or false
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    self.dupeAffixCB = dupeAffixCB
+
+    local dupeAffixNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dupeAffixNote:SetPoint("TOPLEFT", dupeAffixCB, "BOTTOMLEFT", 26, -2)
+    EC_compCache.setPanelWidth(dupeAffixNote, 86)
+    dupeAffixNote:SetJustifyH("LEFT")
+    if dupeAffixNote.SetWordWrap then
+        dupeAffixNote:SetWordWrap(true)
+    end
+    self.dupeAffixNote = dupeAffixNote
+
+    -- Greys-out the child CB when the parent toggle is off OR when PE
+    -- isn't detected, and swaps the explanatory note for a "PE not
+    -- detected" status line in that case. Called on init, on the
+    -- parent CB's OnClick, and on every refresh-callback fire.
+    local function UpdateDupeAffixEnabled()
+        local peOn = EC_compCache.peDetected and EC_compCache.peDetected()
+        local parentOn = DB.protectAffixedRareItems == true
+        if peOn and parentOn then
+            dupeAffixCB:Enable()
+            if daText then
+                daText:SetTextColor(1, 1, 1)
+            end
+            dupeAffixNote:SetText(
+                "|cff888888Drops you already have at the same rank fall through to your sell rules. Different ranks of the same affix stay protected so you can still collect them all.|r"
+            )
+        else
+            dupeAffixCB:Disable()
+            if daText then
+                daText:SetTextColor(0.5, 0.5, 0.5)
+            end
+            if not peOn then
+                dupeAffixNote:SetText(
+                    "|cff888888Project Ebonhold addon not detected. This feature needs PE's perk service to know which affixes you have.|r"
+                )
+            else
+                dupeAffixNote:SetText(
+                    "|cff888888Enable the affix protection above to use this option.|r"
+                )
+            end
+        end
+    end
+    self.UpdateDupeAffixEnabled = UpdateDupeAffixEnabled
+    UpdateDupeAffixEnabled()
+
+    -- Wire parent CB's OnClick to keep the child's enabled state in
+    -- sync. (Replaces the simpler OnClick the parent had above.)
+    autoAffixCB:SetScript("OnClick", function(cb)
+        DB.protectAffixedRareItems = cb:GetChecked() and true or false
+        PlaySound("igMainMenuOptionCheckBoxOn")
+        UpdateDupeAffixEnabled()
+    end)
+
     -- v2.20.0 Chance-on-hit protection. Sibling toggle to the affix
     -- check above: Project Ebonhold lets players extract a weapon's
     -- "Chance on hit:" proc spell and apply it to another item, so an
@@ -8399,7 +8816,10 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         content,
         "InterfaceOptionsCheckButtonTemplate"
     )
-    procCB:SetPoint("TOPLEFT", autoAffixNote, "BOTTOMLEFT", -26, -10)
+    -- v2.23.0: anchor moved from autoAffixNote to dupeAffixNote so the
+    -- new child toggle sits between the affix toggle and the chance-
+    -- on-hit toggle visually.
+    procCB:SetPoint("TOPLEFT", dupeAffixNote, "BOTTOMLEFT", -26, -10)
     procCB:SetChecked(DB.protectChanceOnHitItems)
     local pcText = _G[procCB:GetName() .. "Text"]
     if pcText then
@@ -9591,7 +10011,72 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
     cmd = (cmd or ""):lower()
     rest = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
 
-    if cmd == "profile" or cmd == "profiles" then
+    if cmd == "affixfind" then
+        local needle = rest:lower()
+        if needle == "" then
+            PrintNice("usage: /ec affixfind <text>")
+            return
+        end
+        local set = EC_compCache.knownAffixDescriptions or {}
+        local hits = 0
+        for k in pairs(set) do
+            if k:lower():find(needle, 1, true) then
+                hits = hits + 1
+                PrintNicef("  [%s]", k)
+            end
+        end
+        PrintNicef("affixfind: %d match(es)", hits)
+        return
+    elseif cmd == "affixdump" then
+        -- v2.23.0 debug: re-runs the known-affix spellbook scan, then
+        -- prints diagnostic info for tracking down dupe-gate misfires.
+        -- Intended as a one-shot inspector; safe to leave in but not
+        -- documented in /ec help.
+        if EC_compCache.refreshKnownAffixes then
+            EC_compCache.refreshKnownAffixes()
+        end
+        local set = EC_compCache.knownAffixDescriptions or {}
+        local count = 0
+        local sample = {}
+        for k in pairs(set) do
+            count = count + 1
+            if #sample < 5 then
+                sample[#sample + 1] = k
+            end
+        end
+        PrintNicef("affixdump: %d known descriptions in set", count)
+        for _, s in ipairs(sample) do
+            PrintNicef("  - [%s]", s)
+        end
+        -- Scan bags for the first affixed item and dump its data.
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag)
+            for slot = 1, slots do
+                local link = GetContainerItemLink(bag, slot)
+                if link then
+                    local affix = EC_compCache.bagSlotAffixData(bag, slot)
+                    if affix then
+                        PrintNicef(
+                            "bag (%d,%d) %s: name=[%s] rank=[%s] desc=[%s]",
+                            bag, slot, link,
+                            tostring(affix.name),
+                            tostring(affix.rank),
+                            tostring(affix.description)
+                        )
+                        local norm = EC_compCache.normaliseAffixDesc(affix.description)
+                        PrintNicef("  norm=[%s]", tostring(norm))
+                        PrintNicef(
+                            "  match? %s",
+                            tostring(EC_compCache.playerHasAffixDescription(affix.description))
+                        )
+                        return
+                    end
+                end
+            end
+        end
+        PrintNice("affixdump: no affixed bag items found")
+        return
+    elseif cmd == "profile" or cmd == "profiles" then
         local sub, arg = rest:match("^(%S+)%s*(.*)")
         sub = (sub or ""):lower()
         arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -9875,6 +10360,13 @@ f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 -- Equipment Manager. Handler is gated on DB.autoProtectEquipmentSets so
 -- users without the toggle on pay one early-return per set save.
 f:RegisterEvent("EQUIPMENT_SETS_CHANGED")
+-- v2.23.0: drives the known-affix refresh for the exact-dupe gate.
+-- LEARNED_SPELL_IN_TAB fires when a new spell is added to the
+-- spellbook (covers PE affix extraction). SPELLS_CHANGED fires after
+-- the spellbook is fully populated post-login and on bulk updates.
+-- Both handlers re-scan and rebuild the description map.
+f:RegisterEvent("LEARNED_SPELL_IN_TAB")
+f:RegisterEvent("SPELLS_CHANGED")
 -- Wakes the auto-open-containers driver when combat ends. Without this the
 -- combat-deferred queue could sit indefinitely if no further BAG_UPDATE
 -- arrives. Handler self-gates on DB.autoOpenContainers, so users with the
@@ -9947,6 +10439,14 @@ f:SetScript("OnEvent", function(self, event, ...)
             if bp and bp.listUI then
                 bp.listUI:Refresh()
             end
+        end
+    elseif event == "LEARNED_SPELL_IN_TAB" or event == "SPELLS_CHANGED" then
+        -- v2.23.0: refresh the known-affix description set when the
+        -- spellbook changes. LEARNED_SPELL_IN_TAB covers extracting a
+        -- new affix; SPELLS_CHANGED covers initial bulk-populate and
+        -- bulk updates. Both routes hit the same rebuild path.
+        if EC_compCache.refreshKnownAffixes then
+            EC_compCache.refreshKnownAffixes()
         end
     elseif event == "BAG_UPDATE" then
         -- Bag-full handler runs first; the open driver yields via the `running`
@@ -10143,6 +10643,16 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_Delay(2, function()
                 if EC_compCache.buildElvUIBagButtons then
                     EC_compCache.buildElvUIBagButtons()
+                end
+            end)
+            -- v2.23.0: initial spellbook scan for known affixes. The
+            -- 2 s defer (same logic as the ElvUI bind above) gives the
+            -- spellbook time to fully populate after login. Subsequent
+            -- updates are driven by the LEARNED_SPELL_IN_TAB and
+            -- SPELLS_CHANGED events registered below.
+            EC_Delay(2, function()
+                if EC_compCache.refreshKnownAffixes then
+                    EC_compCache.refreshKnownAffixes()
                 end
             end)
         end)

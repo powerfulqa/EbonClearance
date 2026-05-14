@@ -901,6 +901,72 @@ reagents that happen to be blue quality. This matches user mental model
 ("sell BoE blues only" should not touch reagents) and is the reason the
 filter check is INSIDE the `qualityPass` branch, not outside it.
 
+### PE affix detection uses three sources, not one (v2.23.0+)
+
+The affix-protection system (`protectAffixedRareItems`) and the v2.23.0
+exact-rank dupe gate (`affixAllowExactDupes`) lean on three independent
+signals:
+
+1. **Item title rank-suffix** - `parseAffixFromTitle` checks whether the
+   live tooltip title ends with a roman-numeral suffix (` I` / ` II` /
+   ` III` / ` IV`) and differs from `GetItemInfo`'s base name. This is
+   the presence discriminator; it gates the protection rule. Standard
+   `ItemRandomSuffix.dbc` entries (`of the Bear`, etc.) don't end with
+   roman numerals, so they aren't false-positive protected. (v2.20.0
+   narrowing.)
+
+2. **`@affix@`-wrapped tooltip line** - PE wraps each affix's effect
+   text with literal `@affix@` sentinel markers in the raw tooltip
+   text. EC's private `EC_scanTooltip` sees the markers intact;
+   `scanTooltipForAffixDesc` strips them on Path 1. The live
+   GameTooltip has these markers replaced by PE's tooltip
+   post-processor (purple coloured text instead), so the same parser
+   needs a Path 2 fallback.
+
+3. **Player's spellbook (the "Affixes" tab)** - extracting an affix
+   adds an engraving spell (e.g. `Spirit Surge II`) to the player's
+   spellbook. `refreshKnownAffixes` walks every tab via
+   `GetSpellTabInfo`, scans each spell's tooltip for the
+   `engrave this affix on any equippable item:` prefix, and stores the
+   description text after the colon (normalised) as the canonical
+   match key. Refresh fires on `LEARNED_SPELL_IN_TAB` and
+   `SPELLS_CHANGED`.
+
+The three sources do NOT share names. The item-suffix name
+(`of Inner Light`) and the engraving-spell name (`Spirit Surge II`)
+are different strings - PE uses cosmetic suffixes that don't map to
+the spell. The bridge is the EFFECT TEXT, which appears verbatim on
+both sides:
+
+- Bag tooltip: `@affix@ Increases your total Spirit by 6%.@affix@`
+- Spell tooltip: `Allows you to engrave this affix on any equippable item: Increases your total Spirit by 6%`
+
+Both normalise to `Increases your total Spirit by 6%`. Rank semantics
+are organic: rank I says `3%`, rank II says `6%`, etc., so a
+description match implies an exact-rank match.
+
+**Do NOT use `ProjectEbonhold.PerkService.GetGrantedPerks()`** for
+affix lookup. That returns RUN PERKS (run-time roguelite ability
+selections like "Agility Boost", "Warm-Blooded") - a different system
+from item-engraving affixes. v2.23.0 development burned a cycle on
+this; the diff is recorded in commit history.
+
+**Two normalisation hazards** future contributors should know:
+
+- **Color codes**: the live GameTooltip's affix line carries
+  `|cff...|r` purple formatting. `normaliseAffixDesc` strips them.
+- **`Stacks with other ranks.` disclaimer**: stat affixes (Spirit,
+  Armor, Strength, ...) have this disclaimer sentence appended to
+  their bag-tooltip line that isn't on the engraving-spell side. Both
+  `scanTooltipForAffixDesc` Path 2 and `playerHasAffixDescription`
+  fall back to a first-sentence trim (`txt:match("^(.-)%.%s")`) to
+  match against the set. Proc affixes (`Your X may...`) with embedded
+  mid-sentence periods rely on the full-line match.
+
+Diagnostic commands `/ec affixdump` and `/ec affixfind <text>` are
+undocumented but useful for inspecting the known set when chasing
+match failures.
+
 ### Index of magic numbers
 
 | Value | Location | Meaning |

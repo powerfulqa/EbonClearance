@@ -401,6 +401,120 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 14 (v2.26.0): two-phrasing chance-on-hit detector.
+-- ---------------------------------------------------------------------------
+-- Background: items with chance-on-hit procs use two tooltip
+-- phrasings - the classic `Chance on hit: <text>` (Bloodpike) and the
+-- older PPM-style `Equip: Chance to <verb>... <text>` (Quillshooter).
+-- v2.26.0 routes both through the same protection. If the detector
+-- regresses to one phrasing, the other style slips past the v2.20.0
+-- auto-rule gate and ends up in the Will Sell sweep.
+do
+    local hasHelper = src:find("function EC_compCache%.lineLooksLikeChanceProc%(") ~= nil
+    -- Must scan for ITEM_SPELL_TRIGGER_ONPROC (or its enUS fallback) AND
+    -- the Equip-Chance pattern.
+    local hasClassicNeedle = src:find("ITEM_SPELL_TRIGGER_ONPROC") ~= nil
+    local hasEquipPattern = src:find('"%^Equip:%%s%*Chance to') ~= nil
+    check("EC_compCache.lineLooksLikeChanceProc helper is defined",
+          hasHelper,
+          "the shared chance-proc line detector must exist so both bag- and live-tooltip scans use the same rules")
+    check("detector still matches the classic Chance on hit needle",
+          hasClassicNeedle,
+          "ITEM_SPELL_TRIGGER_ONPROC is the locale-safe constant for Chance on hit:")
+    check("detector also matches the Equip: Chance to <verb> pattern",
+          hasEquipPattern,
+          "v2.26.0: Quillshooter-style PPM procs use Equip: Chance to <verb>; without this pattern they slip past protection")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 15 (v2.26.0): EC_IsSellable chance-on-hit branch gates on
+-- ADB.allowedProcs.
+-- ---------------------------------------------------------------------------
+-- Background: the central sell-decision gate must consult the
+-- allow list before letting a chance-on-hit item through the
+-- quality-rule sweep. Without this branch the v2.26.0 schema field
+-- exists but no code reads it, and items stay protected forever.
+do
+    local fnStart = src:find("local function EC_IsSellable%(", 1)
+    if not fnStart then
+        check("EC_IsSellable references ADB.allowedProcs in the chance-on-hit branch",
+              false, "EC_IsSellable not found")
+    else
+        local fnEnd = src:find("\nend", fnStart) or fnStart + 8000
+        local body = src:sub(fnStart, fnEnd)
+        local gateOK = body:find("allowedProcs") ~= nil
+            and body:find("itemHasChanceOnHit") ~= nil
+        check("EC_IsSellable chance-on-hit branch consults ADB.allowedProcs",
+              gateOK,
+              "the chance-on-hit gate must release qualityPass when the itemID is in the allow list")
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 16 (v2.26.0): tooltip annotation has Protected and Allowed
+-- states, replaces the v2.25.x single-state label.
+-- ---------------------------------------------------------------------------
+do
+    local hasProtectedLabel = src:find("Protected %- Chance on hit") ~= nil
+    local hasAllowedLabel = src:find("Allowed %- Proc") ~= nil
+    check("tooltip annotation emits 'Protected - Chance on hit' for unmarked items",
+          hasProtectedLabel)
+    check("tooltip annotation emits 'Allowed - Proc' for marked items",
+          hasAllowedLabel,
+          "v2.26.0: marked items get the green 'Allowed - Proc' label so the user can see the override took effect")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 17 (v2.26.0): context menu invariants.
+-- ---------------------------------------------------------------------------
+-- The menu MUST:
+--   1. Hide list rows while a chance-on-hit item is unmarked.
+--   2. Show "Allow Sell" / "Remove from Allowed Procs" in the
+--      sellNow row slot for chance-on-hit items.
+--   3. NOT show "Sell Now" anywhere any more (dropped in v2.26.0).
+--   4. NOT carry "Add to" prefix on list row labels.
+do
+    local hasProtectedGate = src:find("rowHidden = true") ~= nil
+        and src:find("procProtected") ~= nil
+    local hasAllowText = src:find('btn:SetText%("Allow Sell"%)') ~= nil
+    local hasRemoveText = src:find("Remove from Allowed Procs") ~= nil
+    local sellNowGone = src:find('btn:SetText%("Sell Now"%)') == nil
+    local addToPrefixGone = src:find('btn:SetText%("Add to "') == nil
+    check("menu hides list rows while chance-on-hit item is unmarked",
+          hasProtectedGate,
+          "the procProtected gate is what forces the user to acknowledge the proc before list options open up")
+    check("menu shows 'Allow Sell' for unmarked chance-on-hit items",
+          hasAllowText)
+    check("menu shows 'Remove from Allowed Procs' for marked items",
+          hasRemoveText)
+    check("'Sell Now' is no longer in the menu",
+          sellNowGone,
+          "v2.26.0 removed the one-shot Sell Now path; explicit sells go through the Sell List")
+    check("'Add to' prefix is no longer on list row labels",
+          addToPrefixGone,
+          "v2.26.0 dropped the prefix; the labels are self-evident and orange 'Remove from' rows provide the contrast")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 18 (v2.26.0): EC_CTX_ROWS no longer contains the abandoned
+-- forceSell row kind, and the legacy sellNow kind survived (now
+-- repurposed as the Allow toggle slot).
+-- ---------------------------------------------------------------------------
+do
+    -- forceSell was an interim design that got collapsed into a single
+    -- Allow toggle. If it sneaks back in we'll see a duplicate menu
+    -- row alongside the Allow Sell entry.
+    local hasForceSell = src:find('kind = "forceSell"') ~= nil
+    local hasSellNow = src:find('kind = "sellNow"') ~= nil
+    check("EC_CTX_ROWS does NOT contain the abandoned forceSell row kind",
+          not hasForceSell,
+          "forceSell was collapsed into the single Allow toggle in v2.26.0; if it re-appears the menu shows two redundant rows")
+    check("EC_CTX_ROWS still contains the sellNow row kind (used as Allow toggle slot)",
+          hasSellNow,
+          "the Allow Sell toggle reuses the legacy sellNow row position; removing the kind would drop the toggle entirely")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

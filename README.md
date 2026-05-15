@@ -18,7 +18,7 @@ EbonClearance is organised around five concerns: **looting** (what enters bags),
 
 **Delete List.** For unsellable trash. Items on this list are destroyed on the next bag scan. Per-itemID, with bag-slot verification before each destroy.
 
-**Process Bags (disenchant / mill / prospect).** Dedicated panel that lists every bag item your character can disenchant, mill, or prospect via known profession spells. One `Process Next` button drives the casts; the secure macrotext rewrites between casts so each click targets the selected bag slot. Left-click any row to pick it, the `>` arrow cycles, right-click adds the itemID to a per-character ignore list (`Clear Ignored` restores). Bind the action under Key Bindings and hold the key to drain a stack on the GCD. Honours every protection rule below.
+**Process Bags (disenchant / mill / prospect / pick lock).** Dedicated panel that lists every bag item your character can disenchant, mill, prospect, or (rogues) pick-lock via known profession spells. One `Process Next` button drives the casts; the secure macrotext rewrites between casts so each click targets the selected bag slot. Left-click any row to pick it, the `>` arrow cycles, right-click adds the itemID to a per-character ignore list (`Clear Ignored` restores). Bind the action under Key Bindings and hold the key to drain a stack on the GCD. Honours every protection rule below.
 
 **Auto-repair.** Repairs gear at each vendor visit, optionally drawing from guild bank funds. Cost tracked over time.
 
@@ -128,6 +128,18 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
 
 ## Changelog
+
+### v2.25.0
+
+- **New: Lockpick mode in Process Bags.** Rogues with Pick Lock (spell 1804) now see a `LOCKPICK (N)` section in the Process Bags panel listing every locked container in their bags. The existing `Process Next` button drives the cast via the same secure-button macrotext flow as Disenchant / Mill / Prospect (`/cast Pick Lock` + `/use bag slot`). Each cast opens one box; the existing auto-open driver picks up the unlocked container on the next BAG_UPDATE.
+- **Hold-key-to-drain works the same way.** Bind a key to `Process Next` under WoW Key Bindings and the OS keyboard auto-repeat drains a stack of lockboxes on the GCD, same as for mill / prospect stacks.
+- **Optional combat-exit nudge** (`DB.lockpickNotifyOnCombatExit`, default OFF). When the player exits combat with lockable containers in bags, prints a one-line `N lockbox(es) available. Click Process Next in Process Bags to open.` chat hint.
+- **Engineering Lockpick items and consumable lockpicks not supported in v1.** They need a different interaction model (right-click the lockpick first, then click the box) that doesn't fit the secure-button workflow. Rogues only this release.
+- **Skill check is not surfaced.** Pick Lock has a per-box lockpicking-skill requirement; the cast fails with the standard Blizzard `Lock is too difficult` error if the player's skill is short. EC doesn't pre-filter on skill (would require Blizzard's `GetSkillLineInfo` walk + per-box skill-required lookup table that doesn't exist in 3.3.5a).
+- **Collapsible sections in Process Bags.** Each section header (Disenchant / Mill / Prospect / Lockpick) is now a clickable button with a `v`/`>` indicator. Click to collapse the section's rows; the header stays so you can re-expand. State persists via `DB.processCollapsedModes` so collapsed sections stay collapsed across `/reload` and login.
+- **Cursor skips collapsed sections.** When a cast finishes and the cursor moves forward, collapsed-section entries are skipped. The skip-arrow (`>`) cycles past them too. If you collapse the section the cursor is on, the cursor jumps out to the next non-collapsed entry. Yellow row highlight still tracks the armed entry across all of this.
+- **Pick Lock completion fires the panel refresh via `UNIT_SPELLCAST_SUCCEEDED`.** `BAG_UPDATE` doesn't fire for a lockbox's lock-state change (slot contents unchanged) and `ITEM_LOCK_CHANGED` doesn't reliably fire either, so the cast-name match is the most reliable trigger. Routed through the existing BAG_UPDATE debounce frame so the panel refresh + auto-open driver runs once within ~120 ms of the cast completing.
+- **Schema:** 3 new DB fields (`DB.lockpickEnabled` boolean, default true; `DB.lockpickNotifyOnCombatExit` boolean, default false; `DB.processCollapsedModes` table, default empty). All additive; no existing field changes.
 
 ### v2.24.0
 

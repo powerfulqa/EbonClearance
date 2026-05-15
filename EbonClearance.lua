@@ -756,6 +756,29 @@ local function EnsureDB()
     if type(DB.processIgnored) ~= "table" then
         DB.processIgnored = {}
     end
+    -- v2.25.0: Lockpick mode in Process Bags. Adds a fourth mode (DE /
+    -- Mill / Prospect / Lockpick) for rogues, listing locked containers
+    -- in bags and driving Pick Lock via the existing SecureActionButton
+    -- workflow. Inert on non-rogues (IsSpellKnown(1804) is false).
+    -- Enabled by default since the entry point is the panel itself.
+    if type(DB.lockpickEnabled) ~= "boolean" then
+        DB.lockpickEnabled = true
+    end
+    -- Optional combat-exit chat hint: "N lockbox(es) available. Click
+    -- Process Next to open." Default off (one extra line on every
+    -- combat exit gets noisy for opted-in users with many lockboxes).
+    if type(DB.lockpickNotifyOnCombatExit) ~= "boolean" then
+        DB.lockpickNotifyOnCombatExit = false
+    end
+    -- v2.25.0: per-mode collapsed state for the Process Bags panel.
+    -- Each key (Disenchant / Mill / Prospect / Lockpick) maps to true
+    -- when the player has collapsed that section. Persisted so the
+    -- preference survives /reload and login. Default empty (all
+    -- expanded). Cursor logic in rearmProcessButton skips entries
+    -- whose mode is in this set.
+    if type(DB.processCollapsedModes) ~= "table" then
+        DB.processCollapsedModes = {}
+    end
     -- v2.16.0: Fast Loot. When on AND Blizzard's auto-loot CVar is
     -- effectively enabled, EC_HandleLootReady queues every slot in the
     -- loot window for draining, so the loot frame flashes briefly or
@@ -2559,6 +2582,23 @@ end
 EC_compCache.SPELL_DISENCHANT = 13262
 EC_compCache.SPELL_MILLING = 51005
 EC_compCache.SPELL_PROSPECTING = 31252
+-- v2.25.0: rogue Pick Lock. One spell handles every lockable
+-- container; the cast may still fail if the lockbox's required
+-- lockpicking skill exceeds the player's. We don't gate on skill
+-- here - just on knowing the spell - and let the standard Blizzard
+-- "Lock is too difficult" error surface if the skill is short.
+-- Engineering Lockpick items / consumable lockpicks are deliberately
+-- out of scope; they need a different interaction model (right-click
+-- the item, then click the box) that doesn't fit the secure-button
+-- macrotext workflow.
+EC_compCache.SPELL_PICK_LOCK = 1804
+-- v2.25.0: cached spell name for UNIT_SPELLCAST_SUCCEEDED matching.
+-- arg2 of that event is a localised spell name string, not an ID, so
+-- we resolve once at load and compare strings on each cast event.
+-- GetSpellInfo may return nil if called before the spell DB is ready;
+-- the handler also defensively re-resolves on first nil. Cached on
+-- EC_compCache to stay under Lua 5.1's 200-locals cap.
+EC_compCache.PICK_LOCK_NAME = (GetSpellInfo and GetSpellInfo(1804)) or "Pick Lock"
 
 function EC_compCache.canDisenchant(itemID)
     if not itemID then
@@ -2638,6 +2678,46 @@ function EC_compCache.canProspect(bag, slot, itemID)
     end
     local marker = ITEM_PROSPECTABLE or "Prospectable"
     return EC_compCache.processTooltipHasLine(bag, slot, itemID, marker, "Prospect")
+end
+
+-- v2.25.0: lockpick eligibility. Unlike Mill/Prospect/DE eligibility,
+-- the "is this lockable" state is per-INSTANCE (a container is either
+-- currently locked or already opened), so we don't cache. The LOCKED
+-- tooltip marker is the same locale string EC_IsOpenable uses to
+-- exclude locked containers from the auto-open driver, so an item
+-- that fails EC_IsOpenable's LOCKED gate is exactly the one that
+-- belongs in Lockpick mode.
+function EC_compCache.canPickLock(bag, slot)
+    if not IsSpellKnown or not IsSpellKnown(EC_compCache.SPELL_PICK_LOCK) then
+        return false
+    end
+    if not bag or not slot then
+        return false
+    end
+    local _, count, locked = GetContainerItemInfo(bag, slot)
+    if not count or count <= 0 then
+        return false
+    end
+    -- Skip slots the engine has flagged locked (mid-pickup, mid-cast).
+    -- The Pick Lock cast would fail against a locked-state slot anyway,
+    -- and including them would cause the cursor to jitter during the
+    -- cast resolution window (same locked-slot story as Mill/Prospect).
+    if locked then
+        return false
+    end
+    EC_scanTooltip:ClearLines()
+    EC_scanTooltip:SetBagItem(bag, slot)
+    for i = 1, 30 do
+        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        if not line then
+            break
+        end
+        local txt = line:GetText()
+        if txt == LOCKED then
+            return true
+        end
+    end
+    return false
 end
 
 -- Tooltip-scan to check Soulbound status. The DE quality cap and
@@ -2739,6 +2819,15 @@ function EC_compCache.buildProcessSummary()
                             spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_PROSPECTING) or "Prospecting"
                             perCast = 5
                         end
+                    elseif DB.lockpickEnabled and EC_compCache.canPickLock(bag, slot) then
+                        -- v2.25.0: rogue Pick Lock. perCast = 1 (one
+                        -- cast unlocks one container; the container
+                        -- itself stays in the bag with a Right Click
+                        -- to Open state that the existing auto-open
+                        -- driver picks up on the next BAG_UPDATE).
+                        mode = "Lockpick"
+                        spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_PICK_LOCK) or "Pick Lock"
+                        perCast = 1
                     end
                     if mode then
                         local _, _, quality = GetItemInfo(itemID)
@@ -2760,10 +2849,11 @@ function EC_compCache.buildProcessSummary()
             end
         end
     end
-    -- Sort: Disenchant first, then Mill, then Prospect. Within mode:
-    -- DE by quality desc (Epic before Rare before Uncommon), Mill /
-    -- Prospect alphabetically by item name.
-    local modeOrder = { Disenchant = 1, Mill = 2, Prospect = 3 }
+    -- Sort: Disenchant first, then Mill, then Prospect, then
+    -- Lockpick. Within mode: DE by quality desc (Epic before Rare
+    -- before Uncommon), Mill / Prospect / Lockpick alphabetically by
+    -- item name.
+    local modeOrder = { Disenchant = 1, Mill = 2, Prospect = 3, Lockpick = 4 }
     table.sort(results, function(a, b)
         if a.mode ~= b.mode then
             return modeOrder[a.mode] < modeOrder[b.mode]
@@ -9004,19 +9094,36 @@ function EC_compCache.rearmProcessButton()
     --      cursor state.
     local list = EC_compCache.buildProcessSummary()
     local entry
+    -- v2.25.0: cursor must skip entries in collapsed sections. A
+    -- collapsed section's items aren't visible, so the user can't
+    -- audit before clicking; auto-arming on one would be a footgun.
+    -- The header above the section stays visible so the player can
+    -- re-expand and continue.
+    local collapsed = DB.processCollapsedModes or {}
+    local function isCollapsed(e)
+        return e and collapsed[e.mode] == true
+    end
     if #list > 0 then
         local idx
+        -- Step 1: exact (bag, slot) match - but skip if the matched
+        -- entry's section is collapsed. The user's prior arm pointed
+        -- at this row, but they've since hidden the section, so
+        -- treat as "no specific cursor" and fall through.
         if EC_compCache.armedBag and EC_compCache.armedSlot then
             for i = 1, #list do
                 if list[i].bag == EC_compCache.armedBag and list[i].slot == EC_compCache.armedSlot then
-                    idx = i
+                    if not isCollapsed(list[i]) then
+                        idx = i
+                    end
                     break
                 end
             end
         end
-        if not idx and EC_compCache.armedMode then
+        -- Step 2: armedMode sticky preference - only if the mode
+        -- itself isn't collapsed.
+        if not idx and EC_compCache.armedMode and not (collapsed[EC_compCache.armedMode] == true) then
             for i = 1, #list do
-                if list[i].mode == EC_compCache.armedMode then
+                if list[i].mode == EC_compCache.armedMode and not isCollapsed(list[i]) then
                     idx = i
                     break
                 end
@@ -9025,16 +9132,36 @@ function EC_compCache.rearmProcessButton()
                 EC_compCache.armedMode = nil
             end
         end
+        -- Step 3: armedIndex fallback, walking forward to the first
+        -- non-collapsed entry. If everything is collapsed, idx stays
+        -- nil and entry stays nil (button shows "Nothing eligible").
         if not idx then
-            idx = EC_compCache.armedIndex or 1
-            if idx < 1 or idx > #list then
-                idx = 1
+            local start = EC_compCache.armedIndex or 1
+            if start < 1 or start > #list then
+                start = 1
+            end
+            for i = start, #list do
+                if not isCollapsed(list[i]) then
+                    idx = i
+                    break
+                end
+            end
+            -- Wrap to the start if forward walk found nothing.
+            if not idx then
+                for i = 1, start - 1 do
+                    if not isCollapsed(list[i]) then
+                        idx = i
+                        break
+                    end
+                end
             end
         end
-        entry = list[idx]
-        EC_compCache.armedIndex = idx
-        EC_compCache.armedBag = entry.bag
-        EC_compCache.armedSlot = entry.slot
+        if idx then
+            entry = list[idx]
+            EC_compCache.armedIndex = idx
+            EC_compCache.armedBag = entry.bag
+            EC_compCache.armedSlot = entry.slot
+        end
     end
     if entry then
         panel.castBtn:SetAttribute(
@@ -9097,9 +9224,32 @@ function EC_compCache.skipProcessTarget()
     if #list == 0 then
         return
     end
-    local idx = (EC_compCache.armedIndex or 1) + 1
-    if idx > #list then
-        idx = 1
+    -- v2.25.0: cycle past collapsed-section entries. Try forward from
+    -- current+1, wrap to start. If every entry is collapsed, no-op
+    -- (the cast button is already disabled by rearmProcessButton in
+    -- that case).
+    local collapsed = DB.processCollapsedModes or {}
+    local start = (EC_compCache.armedIndex or 1) + 1
+    if start > #list then
+        start = 1
+    end
+    local idx
+    for i = start, #list do
+        if not (collapsed[list[i].mode] == true) then
+            idx = i
+            break
+        end
+    end
+    if not idx then
+        for i = 1, start - 1 do
+            if not (collapsed[list[i].mode] == true) then
+                idx = i
+                break
+            end
+        end
+    end
+    if not idx then
+        return  -- everything collapsed, leave cursor as-is
     end
     EC_compCache.armedIndex = idx
     EC_compCache.armedMode = list[idx].mode
@@ -9158,25 +9308,59 @@ function EC_compCache.refreshProcessPanel()
     for i = 1, #list do
         modeCounts[list[i].mode] = (modeCounts[list[i].mode] or 0) + 1
     end
+    local collapsedModes = DB.processCollapsedModes or {}
     for i = 1, #list do
         local entry = list[i]
         if entry.mode ~= lastMode then
             headerIdx = headerIdx + 1
             local header = panel.headers and panel.headers[headerIdx]
             if not header then
-                header = panel.content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-                EC_compCache.setPanelWidth(header, 16)
-                header:SetJustifyH("LEFT")
+                -- v2.25.0: section headers are Buttons (not bare
+                -- FontStrings) so the player can click to collapse /
+                -- expand. The button spans the panel width; the
+                -- FontString child holds the text + ▼/▶ indicator.
+                header = CreateFrame("Button", nil, panel.content)
+                header:SetHeight(16)
+                header:EnableMouse(true)
+                header:RegisterForClicks("LeftButtonUp")
+                local txt = header:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+                txt:SetPoint("LEFT", header, "LEFT", 0, 0)
+                txt:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+                txt:SetJustifyH("LEFT")
+                header.text = txt
+                header:SetScript("OnClick", function(self)
+                    if not self.mode then return end
+                    DB.processCollapsedModes = DB.processCollapsedModes or {}
+                    DB.processCollapsedModes[self.mode] =
+                        not (DB.processCollapsedModes[self.mode] == true)
+                    PlaySound("igMainMenuOptionCheckBoxOn")
+                    EC_compCache.refreshProcessPanel()
+                end)
                 panel.headers = panel.headers or {}
                 panel.headers[headerIdx] = header
             end
             header:ClearAllPoints()
             header:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, rowY)
-            header:SetText(string.format("|cffffb84d%s|r |cffaaaaaa(%d)|r", entry.mode:upper(), modeCounts[entry.mode]))
+            header:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", 0, rowY)
+            header.mode = entry.mode
+            local isCollapsed = collapsedModes[entry.mode] == true
+            local indicator = isCollapsed and "|cffaaaaaa>|r" or "|cffaaaaaav|r"
+            header.text:SetText(string.format(
+                "%s |cffffb84d%s|r |cffaaaaaa(%d)|r",
+                indicator,
+                entry.mode:upper(),
+                modeCounts[entry.mode]
+            ))
             header:Show()
             rowY = rowY - 18
             lastMode = entry.mode
         end
+        -- v2.25.0: skip rendering rows in collapsed sections. The
+        -- section header above is still shown so the player can
+        -- click to expand. rowY stays where the header left it, so
+        -- the next section's header anchors directly below the
+        -- collapsed-section header.
+        if not (collapsedModes[entry.mode] == true) then
         rowIdx = rowIdx + 1
         local row = panel.rows[rowIdx]
         if not row then
@@ -9247,7 +9431,12 @@ function EC_compCache.refreshProcessPanel()
         row.itemID = entry.itemID
         row.itemString = entry.itemString
         row.itemLink = entry.link
-        row.entryIndex = rowIdx
+        -- v2.25.0: entryIndex tracks the list[] position (which spans
+        -- both visible and collapsed entries), not the visible-row
+        -- counter. armedIndex is also a list[] index, so this keeps
+        -- the selection-paint comparison correct after some sections
+        -- are collapsed.
+        row.entryIndex = i
         row.entryMode = entry.mode
         if entry.perCast and entry.perCast > 1 then
             row.text:SetText(
@@ -9264,6 +9453,7 @@ function EC_compCache.refreshProcessPanel()
         end
         row:Show()
         rowY = rowY - 20
+        end  -- end "if not collapsed" wrap (v2.25.0)
     end
     -- Grow content so rows fit below rowAnchor. The cast/refresh
     -- buttons live on the panel itself (outside the scroll), so the
@@ -9294,7 +9484,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         MakeHeader(content, "Process Bags", -16)
         local desc = MakeLabel(
             content,
-            "Disenchant, mill, or prospect bag items via your known profession spells. |cffffd870Left-click|r a row to select it as the next cast. |cffffd870Right-click|r a row to hide it from this list (use |cffffb84dClear Ignored|r to restore). The |cffffb84d>|r arrow cycles through the queue. Click |cffffb84dProcess Next|r to cast on the selected row.",
+            "Disenchant, mill, prospect, or pick lock bag items via your known profession spells. |cffffd870Left-click|r a row to select it as the next cast. |cffffd870Right-click|r a row to hide it from this list (use |cffffb84dClear Ignored|r to restore). The |cffffb84d>|r arrow cycles through the queue. Click |cffffb84dProcess Next|r to cast on the selected row.",
             16,
             -44
         )
@@ -9414,7 +9604,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             empty:SetWordWrap(true)
         end
         empty:SetText(
-            "|cff888888No eligible items. Learn Disenchant, Milling, or Prospecting and pick up some loot to fill this list.|r"
+            "|cff888888No eligible items. Learn Disenchant, Milling, Prospecting, or Pick Lock and pick up some loot to fill this list.|r"
         )
         empty:Hide()
         self.emptyState = empty
@@ -10406,6 +10596,15 @@ f:RegisterEvent("MERCHANT_CLOSED")
 -- BAG_UPDATE drives auto-loot-cycle bag-full detection. Cheap handler;
 -- early-returns unless STATE.LOOTING + cycle enabled. See EC_HandleBagFullForCycle.
 f:RegisterEvent("BAG_UPDATE")
+-- v2.25.0: ITEM_LOCK_CHANGED fires when a bag slot's `locked` flag
+-- transitions - either a transient mid-pickup lock or a Pick Lock /
+-- key-use unlock. BAG_UPDATE does NOT fire for lock-state changes
+-- because the slot's contents haven't changed, so Pick Lock leaves
+-- the Process Bags panel showing a stale row + the auto-open driver
+-- unaware that the box is now openable. Routing this event through
+-- the same debounce frame as BAG_UPDATE refreshes the panel, fires
+-- the auto-open driver, and re-arms the cast button.
+f:RegisterEvent("ITEM_LOCK_CHANGED")
 -- LOOT_CLOSED feeds the loot-silence stuck signal in EC_IsLootSilenceStuck.
 -- Pushes one timestamp per corpse looted; pruned lazily on the 5 s pet tick.
 -- Only accumulates while DB.autoLootCycle is on, so cycle-off users pay nothing.
@@ -10507,6 +10706,30 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- during combat, so any re-arm attempts from BAG_UPDATE bail and
         -- this combat-exit catch-up restores a current macrotext.
         EC_compCache.rearmProcessButton()
+        -- v2.25.0: optional one-line nudge when combat ends with
+        -- lockable containers in bags. Off by default (one extra line
+        -- per combat exit is noisy for rogues farming heavy zones).
+        -- Only counts containers, not casts available; the user picks
+        -- which one to open via the panel / hold-key-to-drain.
+        if DB.lockpickEnabled and DB.lockpickNotifyOnCombatExit
+            and IsSpellKnown and IsSpellKnown(EC_compCache.SPELL_PICK_LOCK)
+        then
+            local n = 0
+            for bag = 0, 4 do
+                local slots = GetContainerNumSlots(bag) or 0
+                for slot = 1, slots do
+                    if EC_compCache.canPickLock(bag, slot) then
+                        n = n + 1
+                    end
+                end
+            end
+            if n > 0 then
+                PrintNicef(
+                    "|cffaaaaaa%d lockbox(es) available.|r Click |cffffb84dProcess Next|r in Process Bags to open.",
+                    n
+                )
+            end
+        end
     elseif event == "EQUIPMENT_SETS_CHANGED" then
         -- v2.13.0: live re-sync of Blizzard equipment-manager sets onto
         -- the Keep list. Silent variant suppresses the chat summary so
@@ -10526,7 +10749,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         if EC_compCache.refreshKnownAffixes then
             EC_compCache.refreshKnownAffixes()
         end
-    elseif event == "BAG_UPDATE" then
+    elseif event == "BAG_UPDATE" or event == "ITEM_LOCK_CHANGED" then
         -- v2.24.0 perf: bag-full handler stays synchronous so the
         -- cycle's responsiveness across the free-slot threshold is
         -- unchanged (its internal 1.5 s hysteresis already debounces
@@ -10534,7 +10757,14 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- EC_compCache.bagUpdateFrame's 120 ms debounce - pet AOE
         -- looting fires one BAG_UPDATE per slot filled, and doing the
         -- full deferred-work chain per-event caused 1.5 s freezes.
-        EC_HandleBagFullForCycle()
+        -- v2.25.0: ITEM_LOCK_CHANGED routes through the same debounce
+        -- so a Pick Lock completion refreshes the panel + fires the
+        -- auto-open driver (which picks up the now-`Right Click to
+        -- Open` box). The bag-full handler skips for lock-state
+        -- changes (no slot count change so it'd be a no-op anyway).
+        if event == "BAG_UPDATE" then
+            EC_HandleBagFullForCycle()
+        end
         EC_compCache.bagUpdatePending = true
         EC_compCache.bagUpdateAccum = 0
         EC_compCache.bagUpdateFrame:Show()
@@ -10584,6 +10814,18 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_compCache.lastProfLootCastAt = GetTime()
         end
         EC_compCache.lastPlayerCastAt = GetTime()
+        -- v2.25.0: Pick Lock completion - BAG_UPDATE doesn't fire for a
+        -- lockbox's lock-state change (slot contents unchanged), and
+        -- ITEM_LOCK_CHANGED doesn't reliably fire either. UNIT_SPELLCAST_SUCCEEDED
+        -- with the Pick Lock spell name is the most reliable trigger.
+        -- Route through the same debounce frame as BAG_UPDATE so the
+        -- panel refreshes (drops the now-unlocked row) and the auto-
+        -- open driver fires (opens the now-`Right Click to Open` box).
+        if spellName and EC_compCache.PICK_LOCK_NAME and spellName == EC_compCache.PICK_LOCK_NAME then
+            EC_compCache.bagUpdatePending = true
+            EC_compCache.bagUpdateAccum = 0
+            EC_compCache.bagUpdateFrame:Show()
+        end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         -- v2.10.0: auto-protect equipped gear. arg1 is the slot id (1-19);
         -- empty slots fire too (the player just un-equipped). The helper

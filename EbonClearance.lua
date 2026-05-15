@@ -595,15 +595,53 @@ local function EnsureAccountDB()
         ADB.whitelist = {}
     end
     EC_ExtraListTables["accountWhitelist"] = ADB.whitelist
-    -- v2.26.0: account-wide override list for chance-on-hit
-    -- protection. Marking an itemID releases the v2.20.0 safety net
-    -- so future drops auto-sell via the normal quality rules and
+    -- v2.26.0 / v2.27.0: account-wide override list for the v2.20.0
+    -- chance-on-hit protection AND the v2.23.0 random-affix
+    -- protection. Marking an itemID releases the safety net so
+    -- future drops auto-sell via the normal quality rules and
     -- become eligible for Process Bags. Account-wide because both
-    -- (a) PE's affix / proc extractions are themselves account-wide
-    -- and (b) whether a vanilla proc is "worth keeping" is a
-    -- per-item decision, not a per-character one.
-    if type(ADB.allowedProcs) ~= "table" then
-        ADB.allowedProcs = {}
+    -- PE's affix / proc extractions are themselves account-wide and
+    -- whether to keep / sell a protected item is an item-property
+    -- decision, not a per-character one.
+    --
+    -- Migrated from the v2.26.0 `allowedProcs` field. New name
+    -- (`allowedItems`) reflects that the list now covers both
+    -- protection mechanisms; the old name was misleading for
+    -- affixed items. One-shot migration: contents move across,
+    -- the old field clears.
+    if type(ADB.allowedItems) ~= "table" then
+        ADB.allowedItems = {}
+    end
+    -- v2.27.0: affix-keyed allow list. Random-affix items carry their
+    -- identity in the affix description (per-instance roll), so a
+    -- per-itemID mark is too coarse - it'd let every base-itemID drop
+    -- through regardless of which affix rolled. This list is keyed by
+    -- the normalised affix description (same key the v2.23.0
+    -- knownAffixDescriptions set uses), so marking one drop allows
+    -- every future drop rolling the same affix even across different
+    -- base items.
+    if type(ADB.allowedAffixes) ~= "table" then
+        ADB.allowedAffixes = {}
+    end
+    -- v2.27.0: side meta marking which Sell/Keep/Delete list entries
+    -- came in via an affixed-item menu add. Lets the list panels
+    -- render an "(affix-gated)" tag on those rows so the user knows
+    -- the entry doesn't blanket-sell every drop of that itemID -
+    -- the affix protection still filters per-drop. Account-scoped
+    -- because the affix-ness of an itemID is an item property
+    -- (random-suffix DBC field), not a per-character thing.
+    if type(ADB.affixedListedItems) ~= "table" then
+        ADB.affixedListedItems = {}
+    end
+    -- One-shot migration from the v2.26.0 field `allowedProcs`.
+    -- rawget avoids the EnsureDefaults pattern's auto-create when
+    -- the legacy field has already been migrated away.
+    local legacy = rawget(ADB, "allowedProcs")
+    if type(legacy) == "table" then
+        for k, v in pairs(legacy) do
+            ADB.allowedItems[k] = v
+        end
+        ADB.allowedProcs = nil
     end
 end
 
@@ -2848,6 +2886,11 @@ function EC_compCache.processTooltipHasLine(bag, slot, itemID, marker, modeName)
             return true
         end
     end
+    -- Negative cache. canMill / canProspect both early-return on
+    -- `cached == "none"`; without writing the sentinel here every
+    -- non-millable / non-prospectable item gets a fresh 30-line
+    -- tooltip scan on each BAG_UPDATE debounce-frame rearm.
+    EC_compCache.processCache[itemID] = "none"
     return false
 end
 
@@ -3000,7 +3043,7 @@ function EC_compCache.buildProcessSummary()
                 if not skip
                     and DB.protectChanceOnHitItems
                     and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
-                    and not (ADB.allowedProcs and ADB.allowedProcs[itemID])
+                    and not (ADB.allowedItems and ADB.allowedItems[itemID])
                 then
                     skip = true
                 end
@@ -3008,19 +3051,22 @@ function EC_compCache.buildProcessSummary()
                     local mode, spellName, perCast
                     if EC_compCache.canDisenchant(itemID) then
                         local _, _, quality = GetItemInfo(itemID)
-                        -- v2.23.0: same exact-rank dupe gate as the
-                        -- sell / delete chain. An affixed Rare/Epic
-                        -- DE candidate stays out of the list unless
-                        -- the player has the same (affix, rank) pair
-                        -- AND has opted in via DB.affixAllowExactDupes.
+                        -- v2.23.0: same dupe gate as the sell / delete
+                        -- chain. v2.27.0: also honour the unified
+                        -- ADB.allowedItems override so a user-marked
+                        -- affix item is DE-eligible from Process Bags.
                         local affixGuarded = false
                         if quality and quality >= 3 and DB.protectAffixedRareItems then
                             local affix = EC_compCache.bagSlotAffixData
                                 and EC_compCache.bagSlotAffixData(bag, slot)
                             if affix then
-                                local isDupe = DB.affixAllowExactDupes
+                                local affixKey = affix.description
+                                    and EC_compCache.normaliseAffixDesc(affix.description)
+                                local manualAllow = affixKey
+                                    and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
+                                local autoDupe = DB.affixAllowExactDupes
                                     and EC_compCache.playerHasAffixDescription(affix.description)
-                                affixGuarded = not isDupe
+                                affixGuarded = not (manualAllow or autoDupe)
                             end
                         end
                         if quality and quality <= maxQ and not affixGuarded then
@@ -3076,6 +3122,14 @@ function EC_compCache.buildProcessSummary()
     -- Lockpick. Within mode: DE by quality desc (Epic before Rare
     -- before Uncommon), Mill / Prospect / Lockpick alphabetically by
     -- item name.
+    --
+    -- Pre-compute names onto each entry so the comparator runs O(1)
+    -- per compare. Without the cache, table.sort calls the comparator
+    -- O(N log N) times and each call would hit GetItemInfo twice -
+    -- compounding overhead per BAG_UPDATE-driven rebuild.
+    for _, e in ipairs(results) do
+        e.name = (GetItemInfo(e.itemID)) or ""
+    end
     local modeOrder = { Disenchant = 1, Mill = 2, Prospect = 3, Lockpick = 4 }
     table.sort(results, function(a, b)
         if a.mode ~= b.mode then
@@ -3086,18 +3140,9 @@ function EC_compCache.buildProcessSummary()
                 return a.quality > b.quality
             end
         end
-        local na = (GetItemInfo(a.itemID)) or ""
-        local nb = (GetItemInfo(b.itemID)) or ""
-        return na < nb
+        return a.name < b.name
     end)
     return results
-end
-
--- Returns the first entry from buildProcessSummary, or nil. Used by
--- the secure cast button to find the next thing to arm.
-function EC_compCache.findNextProcessable()
-    local list = EC_compCache.buildProcessSummary()
-    return list[1]
 end
 
 -- Driver. Walks bags, opens the first openable item, and recurses via
@@ -4033,18 +4078,53 @@ local function EC_ShowItemContextMenu(button)
     local cacheKnown = (name ~= nil)
     local noVendorValue = cacheKnown and (not sellPrice or sellPrice == 0)
 
-    -- v2.26.0: chance-on-hit items show a single "Allow Sell" option
-    -- in place of Sell Now while unmarked. Picking it releases the
-    -- v2.20.0 protection - future drops auto-sell via the normal
+    -- v2.26.0 / v2.27.0: protected items (chance-on-hit OR
+    -- random-affix) show a single "Allow Sell" option in place of
+    -- Sell Now while unmarked. Picking it releases the v2.20.0 /
+    -- v2.23.0 safety net - future drops auto-sell via the normal
     -- quality rules and the item becomes available to Process Bags.
     -- While unmarked, the Sell List / Keep List / Delete List rows
-    -- are hidden so the user must consciously acknowledge the proc
-    -- before adding it to a sell rule. Once marked, the full menu
-    -- opens up and the sellNow row shows "Remove from Allowed Procs"
-    -- as the toggle.
+    -- are hidden so the user must consciously acknowledge the
+    -- protection before adding it to a sell rule. Once marked, the
+    -- full menu opens up and the sellNow row shows "Remove from
+    -- Allow List" as the toggle.
     local hasProc = EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
-    local procAllowed = ADB.allowedProcs and ADB.allowedProcs[itemID] == true
-    local procProtected = hasProc and not procAllowed
+    -- For random-affix items the identity-bearing field is the affix
+    -- description, NOT the base itemID. Capture both the protection
+    -- flag and the normalised description so the Allow Sell row can
+    -- mark by affix when relevant.
+    local affixData
+    if DB.protectAffixedRareItems then
+        local _, _, q = GetItemInfo(itemID)
+        if q and q >= 3 and EC_compCache.bagSlotAffixData then
+            affixData = EC_compCache.bagSlotAffixData(bag, slot)
+        end
+    end
+    local hasAffix = affixData ~= nil
+    local affixKey = affixData
+        and affixData.description
+        and EC_compCache.normaliseAffixDesc
+        and EC_compCache.normaliseAffixDesc(affixData.description)
+    local hasProtection = hasProc or hasAffix
+    -- Allowance has three sources:
+    --   1. Manual itemID mark for chance-on-hit (allowedItems).
+    --   2. Manual affix-description mark for random affix
+    --      (allowedAffixes).
+    --   3. Auto-dupe gate for random affix: when
+    --      DB.affixAllowExactDupes is ON, an affix the player has
+    --      already extracted is implicitly allowed - no manual mark
+    --      needed. This is the "if exact-rank dupes is enabled then
+    --      Allow Sell isn't required" rule from the user spec.
+    local procAllowed = hasProc and ADB.allowedItems and ADB.allowedItems[itemID] == true
+    local affixManualAllowed = hasAffix and affixKey
+        and ADB.allowedAffixes and ADB.allowedAffixes[affixKey] == true
+    local affixAutoAllowed = hasAffix and affixData and affixData.description
+        and DB.affixAllowExactDupes
+        and EC_compCache.playerHasAffixDescription
+        and EC_compCache.playerHasAffixDescription(affixData.description)
+    local affixAllowed = affixManualAllowed or affixAutoAllowed
+    local itemAllowed = procAllowed or affixAllowed
+    local procProtected = hasProtection and not itemAllowed
 
     local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
     local visibleSlot = 0
@@ -4052,9 +4132,9 @@ local function EC_ShowItemContextMenu(button)
         local btn = frame.buttons[i]
         local rowHidden = false
         if row.kind == "list" and procProtected then
-            -- v2.26.0: hide all list rows while the proc is protected.
-            -- User must click "Mark Proc as Known" first to unlock the
-            -- normal Sell/Keep/Delete actions on this item.
+            -- v2.26.0: hide all list rows while protected. User must
+            -- click "Allow Sell" first to unlock the normal
+            -- Sell/Keep/Delete actions on this item.
             rowHidden = true
         elseif row.kind == "list" then
             local t = EC_GetListTable(row.setName)
@@ -4090,34 +4170,66 @@ local function EC_ShowItemContextMenu(button)
                     btn:SetText(row.label)
                     btn:SetScript("OnClick", function()
                         EC_AddItemToList(row.setName, itemID, row.label)
+                        -- v2.27.0: stamp the affix-meta flag so the
+                        -- list panel renders "(affix-gated)" on this
+                        -- entry. Reminds the user that the affix
+                        -- protection still filters per-drop even
+                        -- though the base itemID is on the list.
+                        if hasAffix then
+                            ADB.affixedListedItems = ADB.affixedListedItems or {}
+                            ADB.affixedListedItems[itemID] = true
+                        end
                         frame:Hide()
                     end)
                     btn:Enable()
                 end
             end
         elseif row.kind == "sellNow" then
-            -- v2.26.0: this row slot is now exclusively the chance-
-            -- on-hit "Allow Sell" toggle. The legacy Sell Now path
-            -- has been dropped - explicit user intent goes through
-            -- the Sell List rows above (Will Sell tooltip + merchant
-            -- visit), not a one-shot vendor command.
-            if hasProc and procAllowed then
-                btn:SetText("|cffff8000Remove from Allowed Procs|r")
+            -- v2.26.0 / v2.27.0: unified "Allow Sell" toggle for any
+            -- protected item (chance-on-hit or random affix). Marks
+            -- the right list automatically: itemID for chance-on-hit
+            -- (proc carried by the item), affix description for
+            -- random affix (so all future drops with the same affix
+            -- pass, not just the same base item).
+            --
+            -- When the affix auto-dupe gate is allowing the item
+            -- (DB.affixAllowExactDupes is ON and the affix is one the
+            -- player has extracted), there's no manual mark to
+            -- toggle - hide the row. The full list menu is already
+            -- visible because itemAllowed is true.
+            local hasManualMark = procAllowed or affixManualAllowed
+            if hasManualMark then
+                btn:SetText("|cffff8000Remove from Allow List|r")
                 btn:SetScript("OnClick", function()
-                    if ADB.allowedProcs then
-                        ADB.allowedProcs[itemID] = nil
+                    if procAllowed and ADB.allowedItems then
+                        ADB.allowedItems[itemID] = nil
+                    end
+                    if affixManualAllowed and affixKey and ADB.allowedAffixes then
+                        ADB.allowedAffixes[affixKey] = nil
                     end
                     frame:Hide()
-                    PrintNicef("Removed %s from Allowed Procs.", itemName)
+                    PrintNicef("Removed %s from Allow List.", itemName)
                 end)
                 btn:Enable()
-            elseif hasProc then
+            elseif itemAllowed then
+                -- Auto-allowed (affix dupe gate); no manual state.
+                rowHidden = true
+            elseif hasProtection then
                 btn:SetText("Allow Sell")
                 btn:SetScript("OnClick", function()
-                    ADB.allowedProcs = ADB.allowedProcs or {}
-                    ADB.allowedProcs[itemID] = true
+                    if hasAffix and affixKey then
+                        ADB.allowedAffixes = ADB.allowedAffixes or {}
+                        ADB.allowedAffixes[affixKey] = true
+                        PrintNicef(
+                            "Marked affix %s as allowed. Future drops with this affix will auto-sell.",
+                            tostring(affixData.name or affixKey)
+                        )
+                    elseif hasProc then
+                        ADB.allowedItems = ADB.allowedItems or {}
+                        ADB.allowedItems[itemID] = true
+                        PrintNicef("Marked %s as allowed. Future drops will auto-sell.", itemName)
+                    end
                     frame:Hide()
-                    PrintNicef("Marked %s proc as allowed. Future drops will auto-sell.", itemName)
                 end)
                 btn:Enable()
             else
@@ -4922,9 +5034,17 @@ local function EC_IsSellable(bag, slot, junkOnly)
     then
         local affix = EC_compCache.bagSlotAffixData(bag, slot)
         if affix then
-            local isDupe = DB.affixAllowExactDupes
+            -- v2.27.0: affix-keyed Allow Sell. Marking via Alt+Right-
+            -- Click stores the affix description (not the itemID) so
+            -- every future drop rolling that affix passes through the
+            -- gate, regardless of base item.
+            local affixKey = affix.description
+                and EC_compCache.normaliseAffixDesc(affix.description)
+            local manualAllow = affixKey
+                and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
+            local autoDupe = DB.affixAllowExactDupes
                 and EC_compCache.playerHasAffixDescription(affix.description)
-            if not isDupe then
+            if not (manualAllow or autoDupe) then
                 return false
             end
         end
@@ -4947,7 +5067,7 @@ local function EC_IsSellable(bag, slot, junkOnly)
         -- marked via Alt+Right-Click -> "Allow Sell" fall through to
         -- the normal sell / DE rules. Unmarked items stay protected.
         -- Account-wide because extraction state is account-wide.
-        if not (ADB.allowedProcs and ADB.allowedProcs[itemID]) then
+        if not (ADB.allowedItems and ADB.allowedItems[itemID]) then
             qualityPass = false
         end
     end
@@ -5537,24 +5657,62 @@ local function EC_AnnotateTooltip(tooltip)
     -- match is by description text scraped from the item's @affix@
     -- line vs the descriptions on engraving spells in the player's
     -- spellbook (see EC_compCache.refreshKnownAffixes).
-    if statusLine and DB.protectAffixedRareItems then
+    -- v2.27.0: always surface the affix state when the item has one
+    -- (not only when the would-vendor chain produced a label). Mirrors
+    -- the v2.26.0 chance-on-hit tooltip pass so Epic items with
+    -- affixes also show their state.
+    if DB.protectAffixedRareItems then
         local _, _, quality = GetItemInfo(id)
         if quality and quality >= 3 then
-            local wouldVendor = statusLine:find("Will Sell") or statusLine:find("Will Delete")
-            if wouldVendor then
-                local affix = EC_compCache.liveTooltipAffixData(tooltip, id)
-                if affix then
-                    local isDupe = DB.affixAllowExactDupes
-                        and EC_compCache.playerHasAffixDescription(affix.description)
-                    if isDupe then
+            local affix = EC_compCache.liveTooltipAffixData(tooltip, id)
+            if affix then
+                -- v2.27.0: backfill the affix-meta flag for itemIDs
+                -- already on a list. Pre-v2.27 entries didn't get
+                -- stamped at add time; hovering the item now after
+                -- /reload fills in the flag so the panel renders the
+                -- (affix-gated) tag.
+                local onAnyList = IsInSet(DB.whitelist, id)
+                    or (ADB and IsInSet(ADB.whitelist, id))
+                    or IsInSet(DB.blacklist, id)
+                    or IsInSet(DB.deleteList, id)
+                if onAnyList and ADB then
+                    ADB.affixedListedItems = ADB.affixedListedItems or {}
+                    ADB.affixedListedItems[id] = true
+                end
+                local affixKey = affix.description
+                    and EC_compCache.normaliseAffixDesc(affix.description)
+                local manualAllow = affixKey
+                    and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
+                local autoDupe = DB.affixAllowExactDupes
+                    and EC_compCache.playerHasAffixDescription(affix.description)
+                if manualAllow or autoDupe then
+                    -- v2.27.0: list-destination label wins over the
+                    -- auto-dupe info text. The destination tells the
+                    -- user what's going to happen with this item; the
+                    -- auto-dupe info only fills in when no list has
+                    -- claimed it.
+                    if IsInSet(DB.blacklist, id) then
+                        -- Keep wins; leave the Protected / Auto-
+                        -- Protected label alone.
+                    elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
+                        statusLine = "|cff66ccff[EC]|r |cffff4444Allowed - Delete|r"
+                    elseif ADB and ADB.whitelist and IsInSet(ADB.whitelist, id) then
+                        statusLine = "|cff66ccff[EC]|r |cffb6ffb6Allowed - Account Sell|r"
+                    elseif IsInSet(DB.whitelist, id) then
+                        statusLine = "|cff66ccff[EC]|r |cffb6ffb6Allowed - Character Sell|r"
+                    elseif manualAllow then
+                        statusLine = "|cff66ccff[EC]|r |cffffea80Allowed - Choose List|r"
+                    else
+                        -- autoDupe only, not on any list - keep the
+                        -- v2.23.0 informational label.
                         statusLine = string.format(
                             "|cff66ccff[EC]|r |cffb6ffb6Allowed - %s %s already known|r",
                             affix.name or "affix",
                             (affix.rank and ("rank " .. affix.rank)) or ""
                         )
-                    else
-                        statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Random affix|r"
                     end
+                else
+                    statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Random affix|r"
                 end
             end
         end
@@ -5588,7 +5746,7 @@ local function EC_AnnotateTooltip(tooltip)
     -- label is plain "Allowed - Sell". Keep List membership wins
     -- everything else; we don't override the Kept label.
     if DB.protectChanceOnHitItems and EC_compCache.liveTooltipHasChanceOnHit(tooltip, id) then
-        if ADB.allowedProcs and ADB.allowedProcs[id] then
+        if ADB.allowedItems and ADB.allowedItems[id] then
             if IsInSet(DB.blacklist, id) then
                 -- Kept wins; leave the earlier Protected / Auto-
                 -- Protected label alone.
@@ -6346,7 +6504,17 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 -- stretches with the (resizable) content frame.
                 row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, rowY)
                 row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, rowY)
-                row.text:SetText(string.format("|cffb6ffb6%d|r  %s", id, name))
+                -- v2.27.0: append "(affix-gated)" tag when the entry
+                -- was added because the item carries a random affix.
+                -- Tells the user that the affix protection still
+                -- filters per-drop (only drops with allowed affixes
+                -- actually sell), so the list entry isn't a blanket
+                -- "sell every drop of this itemID" rule.
+                local affixTag = ""
+                if ADB and ADB.affixedListedItems and ADB.affixedListedItems[id] then
+                    affixTag = " |cffaaaaaa(affix-gated)|r"
+                end
+                row.text:SetText(string.format("|cffb6ffb6%d|r  %s%s", id, name, affixTag))
                 row.rm:SetScript("OnClick", function()
                     local t = EC_GetListTable(setTableName)
                     if t then
@@ -9512,7 +9680,6 @@ function EC_compCache.rearmProcessButton()
         )
         panel.castBtn:Enable()
         if panel.castBtnLabel then
-            local short = (GetItemInfo(entry.itemID)) or "item"
             -- Mode label only; the dynamic item name lives on the
             -- separate label below the button so a long item name
             -- can't overflow the fixed button width.
@@ -10706,7 +10873,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         end
         PrintNicef("procdump: %d learned weaponOnly procs in catalog", learnedProcs)
         local allowedCount = 0
-        for _ in pairs(ADB and ADB.allowedProcs or {}) do
+        for _ in pairs(ADB and ADB.allowedItems or {}) do
             allowedCount = allowedCount + 1
         end
         PrintNicef("procdump: %d Allowed Proc itemIDs (account-wide)", allowedCount)

@@ -335,19 +335,29 @@ end
 -- become available to Process Bags. Account-wide because PE's
 -- extraction state itself is account-wide.
 do
-    local hasDefault = src:find("ADB%.allowedProcs%s*=%s*{}") ~= nil
-    check("EnsureAccountDB defaults ADB.allowedProcs to an empty table",
+    local hasDefault = src:find("ADB%.allowedItems%s*=%s*{}") ~= nil
+    check("EnsureAccountDB defaults ADB.allowedItems to an empty table",
           hasDefault,
-          "the account-wide chance-on-hit allow list is the v2.26.0 load-bearing schema field")
+          "the account-wide allow list is the load-bearing v2.26+ schema field for both chance-on-hit AND random-affix overrides")
 
-    -- buildProcessSummary must gate on allowedProcs.
+    -- buildProcessSummary must gate on allowedItems for both
+    -- chance-on-hit and random-affix branches.
     local pbStart = src:find("function EC_compCache%.buildProcessSummary%(", 1)
     local pbEnd = pbStart and src:find("\nend", pbStart) or nil
     local pbBody = pbStart and pbEnd and src:sub(pbStart, pbEnd) or ""
-    local processGate = pbBody:find("allowedProcs") ~= nil
-    check("buildProcessSummary gates chance-on-hit items on ADB.allowedProcs",
+    local processGate = pbBody:find("allowedItems") ~= nil
+    check("buildProcessSummary gates protected items on ADB.allowedItems",
           processGate,
-          "Process Bags must hide chance-on-hit items until the user marks them via Allow Sell")
+          "Process Bags must hide protected items until the user marks them via Allow Sell")
+
+    -- Migration: an older field name was `allowedProcs`. New code
+    -- must still migrate that data forward so v2.26.x users don't
+    -- lose their decisions.
+    local hasMigration = src:find('rawget%(ADB,%s*"allowedProcs"%)') ~= nil
+        or src:find("ADB%.allowedProcs") ~= nil
+    check("ADB.allowedProcs -> allowedItems migration is in EnsureAccountDB",
+          hasMigration,
+          "renaming the schema field requires a one-shot copy so existing decisions survive upgrade")
 end
 
 -- ---------------------------------------------------------------------------
@@ -428,7 +438,7 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Test 15 (v2.26.0): EC_IsSellable chance-on-hit branch gates on
--- ADB.allowedProcs.
+-- ADB.allowedItems.
 -- ---------------------------------------------------------------------------
 -- Background: the central sell-decision gate must consult the
 -- allow list before letting a chance-on-hit item through the
@@ -437,14 +447,14 @@ end
 do
     local fnStart = src:find("local function EC_IsSellable%(", 1)
     if not fnStart then
-        check("EC_IsSellable references ADB.allowedProcs in the chance-on-hit branch",
+        check("EC_IsSellable references ADB.allowedItems in the chance-on-hit branch",
               false, "EC_IsSellable not found")
     else
         local fnEnd = src:find("\nend", fnStart) or fnStart + 8000
         local body = src:sub(fnStart, fnEnd)
-        local gateOK = body:find("allowedProcs") ~= nil
+        local gateOK = body:find("allowedItems") ~= nil
             and body:find("itemHasChanceOnHit") ~= nil
-        check("EC_IsSellable chance-on-hit branch consults ADB.allowedProcs",
+        check("EC_IsSellable chance-on-hit branch consults ADB.allowedItems",
               gateOK,
               "the chance-on-hit gate must release qualityPass when the itemID is in the allow list")
     end
@@ -489,7 +499,7 @@ do
     local hasProtectedGate = src:find("rowHidden = true") ~= nil
         and src:find("procProtected") ~= nil
     local hasAllowText = src:find('btn:SetText%("Allow Sell"%)') ~= nil
-    local hasRemoveText = src:find("Remove from Allowed Procs") ~= nil
+    local hasRemoveText = src:find("Remove from Allow List") ~= nil
     local sellNowGone = src:find('btn:SetText%("Sell Now"%)') == nil
     local addToPrefixGone = src:find('btn:SetText%("Add to "') == nil
     check("menu hides list rows while chance-on-hit item is unmarked",
@@ -497,7 +507,7 @@ do
           "the procProtected gate is what forces the user to acknowledge the proc before list options open up")
     check("menu shows 'Allow Sell' for unmarked chance-on-hit items",
           hasAllowText)
-    check("menu shows 'Remove from Allowed Procs' for marked items",
+    check("menu shows 'Remove from Allow List' for marked items",
           hasRemoveText)
     check("'Sell Now' is no longer in the menu",
           sellNowGone,
@@ -524,6 +534,125 @@ do
     check("EC_CTX_ROWS still contains the sellNow row kind (used as Allow toggle slot)",
           hasSellNow,
           "the Allow Sell toggle reuses the legacy sellNow row position; removing the kind would drop the toggle entirely")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 19a (v2.27.0): random-affix protection uses the same Allow Sell
+-- gate as chance-on-hit.
+-- ---------------------------------------------------------------------------
+-- Background: v2.26.0 introduced the Allow Sell context-menu workflow
+-- (hide list rows -> show "Allow Sell" -> after marking, full menu
+-- opens up) but only for chance-on-hit items. v2.27.0 extends the
+-- same gate to v2.23.0 random-affix protected items so the user
+-- workflow is consistent across both protection mechanisms.
+do
+    -- The menu-gate detection must consider BOTH protections. Look
+    -- for a hasAffix branch alongside hasProc in the context menu.
+    local fnStart = src:find("local function EC_ShowItemContextMenu%(", 1)
+    local fnEnd = fnStart and src:find("\nend", fnStart + 100) or nil
+    local body = fnStart and fnEnd and src:sub(fnStart, fnEnd) or ""
+    local readsHasAffix = body:find("hasAffix") ~= nil
+        and body:find("bagSlotAffixData") ~= nil
+    local unifiedFlag = body:find("hasProtection") ~= nil
+    check("context menu detects random-affix protection via bagSlotAffixData",
+          readsHasAffix,
+          "without this branch, protected affix items show the full Sell/Keep/Delete menu instead of the Allow Sell gate")
+    check("context menu uses a unified hasProtection flag",
+          unifiedFlag,
+          "the unified flag is what lets the sellNow row and the list-row hiding share the same gate")
+
+    -- EC_IsSellable affix branch must read allowedAffixes (the
+    -- affix-keyed list, NOT allowedItems) as a manual override path
+    -- alongside the v2.23.0 affixAllowExactDupes auto-detect.
+    local sellStart = src:find("local function EC_IsSellable%(", 1)
+    local sellEnd = sellStart and src:find("\nend", sellStart + 100) or nil
+    local sellBody = sellStart and sellEnd and src:sub(sellStart, sellEnd) or ""
+    local affixBranchReadsAllow = sellBody:find("protectAffixedRareItems") ~= nil
+        and sellBody:find("allowedAffixes") ~= nil
+    check("EC_IsSellable affix branch consults ADB.allowedAffixes (affix-keyed)",
+          affixBranchReadsAllow,
+          "marking by affix description (not base itemID) is what lets every drop with the same affix pass")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 19b (v2.27.0): affix-keyed allow list schema + marking path.
+-- ---------------------------------------------------------------------------
+-- Background: random-affix items carry their identity in the affix
+-- description (per-instance roll). A per-itemID mark would let every
+-- base-itemID drop through regardless of which affix rolled - too
+-- coarse. The affix-keyed list is what gives the user "I have this
+-- affix extracted; pass any drop rolling it" semantics.
+do
+    local hasDefault = src:find("ADB%.allowedAffixes%s*=%s*{}") ~= nil
+    check("EnsureAccountDB defaults ADB.allowedAffixes to an empty table",
+          hasDefault,
+          "the affix-keyed allow list is what gives per-affix granularity for v2.23.0 random-affix items")
+
+    -- The Allow Sell click path for an affixed item must write to
+    -- ADB.allowedAffixes keyed by the normalised description, not to
+    -- ADB.allowedItems keyed by itemID.
+    local fnStart = src:find("local function EC_ShowItemContextMenu%(", 1)
+    local fnEnd = fnStart and src:find("\nend", fnStart + 100) or nil
+    local body = fnStart and fnEnd and src:sub(fnStart, fnEnd) or ""
+    local marksByDescription = body:find("allowedAffixes%[affixKey%]") ~= nil
+    check("Allow Sell click writes the affix description to allowedAffixes",
+          marksByDescription,
+          "marking by itemID would be too coarse - rolling a different affix on the same base would also pass")
+
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 19c (v2.27.0): affix-sourced Sell List entries get an
+-- "(affix-gated)" tag in the panel.
+-- ---------------------------------------------------------------------------
+-- Background: adding an affixed-item-instance to the Sell List adds
+-- the BASE itemID, which is coarser than the per-drop filtering the
+-- affix protection actually applies. The (affix-gated) tag makes
+-- this honest in the panel so the user doesn't read "Orb of
+-- Mistmantle" on the list and assume every drop of that itemID
+-- will sell.
+do
+    local hasDefault = src:find("ADB%.affixedListedItems%s*=%s*{}") ~= nil
+    local hasStamp = src:find("ADB%.affixedListedItems%[itemID%]%s*=%s*true") ~= nil
+    local hasTag = src:find('%(affix%-gated%)') ~= nil
+    check("EnsureAccountDB defaults ADB.affixedListedItems to an empty table",
+          hasDefault,
+          "the side meta table lets the list panel mark affix-sourced entries without changing the core list shape")
+    check("menu stamps ADB.affixedListedItems[itemID] when adding an affixed item",
+          hasStamp,
+          "without the stamp at add time, the panel can't tell which entries came in via an affixed drop")
+    check("list panel row text appends an '(affix-gated)' tag",
+          hasTag,
+          "the tag is what makes the list honest - 'Will Sell every drop of this itemID' isn't actually what happens for affix items")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 19 (post-v2.26.1 cleanup): processTooltipHasLine writes the
+-- "none" negative-cache sentinel on scan miss.
+-- ---------------------------------------------------------------------------
+-- Background: canMill and canProspect both early-return on
+-- `processCache[itemID] == "none"`. Without the negative-write,
+-- every non-millable / non-prospectable item gets a fresh 30-line
+-- tooltip scan on each BAG_UPDATE-driven rearm (the panel/keybind-
+-- gated rearm path that fires after the 120 ms debounce). Bag-heavy
+-- characters paid this on every burst. Lock the sentinel write so
+-- the regression doesn't sneak back in.
+do
+    local fnStart = src:find("function EC_compCache%.processTooltipHasLine%(")
+    if not fnStart then
+        check("processTooltipHasLine writes the 'none' negative-cache sentinel",
+              false, "processTooltipHasLine not found in source")
+    else
+        local fnEnd = src:find("\nend", fnStart)
+        local body = fnEnd and src:sub(fnStart, fnEnd) or src:sub(fnStart, fnStart + 2000)
+        -- Look for an assignment of "none" to processCache inside the
+        -- function body. The exact form is:
+        --     EC_compCache.processCache[itemID] = "none"
+        local writesNone = body:find('processCache%[itemID%]%s*=%s*"none"') ~= nil
+        check("processTooltipHasLine writes the 'none' negative-cache sentinel",
+              writesNone,
+              "without this, canMill/canProspect rescan every non-eligible item on each BAG_UPDATE-driven rearm")
+    end
 end
 
 -- ---------------------------------------------------------------------------

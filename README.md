@@ -31,7 +31,7 @@ The protection chain runs before any sell / delete / process decision. Order of 
 - **Auto-protect looted upgrades** (default OFF) - bag drops above your equipped iLvl get auto-Kept. Mostly redundant when quality rules use `Use equipped iLvl`.
 - **Auto-protect equipment-manager sets** - items used in any Blizzard equipment manager set get auto-Kept.
 - **Affix protection (Rare/Epic)** - Project Ebonhold's per-instance roguelite affix items (those with a roman-numeral rank suffix) are detected via tooltip-title comparison and protected even when their base itemID is on a sell rule, since you can't anticipate which copy will roll the affix. Also extends to the Process Bags Disenchant list. Optional **exact-rank duplicate gate** (off by default): when on, EC reads the player's currently-owned (affix, rank) pairs from PE's perk service and lets drops of an exact-rank match fall through to your sell / DE rules. Different ranks of the same affix stay protected so you can still collect all four. Inert when the Project Ebonhold addon isn't loaded.
-- **Chance-on-hit protection** - items with extractable proc spells (Project Ebonhold's tooltip-line system) are skipped by the auto-rule sweep, but pass through if you explicitly list them (you've usually extracted the spell already and want to vendor the base).
+- **Chance-on-hit protection** - items with extractable proc spells (Project Ebonhold's tooltip-line system) are skipped by the auto-rule sweep, but pass through if you explicitly list them (you've usually extracted the spell already and want to vendor the base). Optional **exact-proc duplicate gate** (off by default): when on, EC reads the player's already-extracted procs from PE's Extraction Service and lets drops carrying a proc you already own fall through to your sell rules. Procs you haven't extracted yet stay protected.
 - **Tooltip annotations** on bag items show what the rule chain decided: `Will Sell` (with reason), `Protected`, `Auto-Protected (Worn)`, `Auto-Protected (Upgrade)`, `Will Delete`, `Won't Sell - Currently Equipped`, `Protected - Random affix`, `Protected - Chance on hit`, etc.
 
 ### Looting
@@ -128,6 +128,17 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
 
 ## Changelog
+
+### v2.26.0
+
+- **New: "Allow Sell" override for chance-on-hit items.** Right-click any bag item with a `Chance on hit:` proc and pick `Allow Sell`. That itemID drops out of v2.20.0's chance-on-hit safety net account-wide; future drops on any character auto-sell via your normal quality rules and become eligible for Process Bags. To undo, right-click again and pick `Remove from Allowed Procs`.
+- **Protected-state menu is intentionally narrow.** While a chance-on-hit item is unmarked, the Alt+Right-Click menu hides the Sell List / Keep List / Delete List rows so you can't accidentally add a still-protected item to a sell rule. Once you've picked Allow Sell, the full menu opens up.
+- **Tooltip annotation states.** `Protected - Chance on hit` (unmarked) or `Allowed - Proc` (marked). Always surfaced when the item has a chance-on-hit line, even on Epic-rarity items the quality-rule sweep wouldn't touch.
+- **Account-wide list.** PE's extraction state is itself account-wide on Project Ebonhold, and whether a vanilla proc is worth keeping is a per-item decision regardless of which alt is holding it. The list lives in `EbonClearanceAccountDB.allowedProcs`.
+- **ExtractionService merged into the known-affix refresh.** `refreshKnownAffixes` now also reads `_G.ExtractionService.learnedAffixes` (the catalog PE's Anvil uses) alongside the v2.23.0 spellbook walk, so the v2.23.0 affix dupe gate sees newly-extracted affixes without `/reload`. Cheap dirty-check (`refreshExtractionIfDirty`) wired into the 120 ms BAG_UPDATE debounce frame and `PLAYER_REGEN_ENABLED`.
+- **Why manual, not automatic.** Vanilla chance-on-hit items (Bloodpike, Dark Iron Sunderer, etc.) carry built-in procs with no client-side bridge to PE's ExtractionService catalog. PE's own Anvil only knows about them via a server roundtrip. A manual mark-once-per-itemID workflow gives the user the decision and keeps the addon honest about what it knows and doesn't.
+- **List row labels lost the "Add to" prefix.** Plain `Sell List (Character)`, `Keep List (Do Not Sell)`, etc. for the add rows; `Remove from X` stays for the remove rows so the contrast is still clear.
+- **Schema:** one new field (`ADB.allowedProcs`, account-wide table of `[itemID] = true`). Additive; no existing field changes.
 
 ### v2.25.1
 

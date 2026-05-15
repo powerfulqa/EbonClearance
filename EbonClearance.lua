@@ -595,6 +595,16 @@ local function EnsureAccountDB()
         ADB.whitelist = {}
     end
     EC_ExtraListTables["accountWhitelist"] = ADB.whitelist
+    -- v2.26.0: account-wide override list for chance-on-hit
+    -- protection. Marking an itemID releases the v2.20.0 safety net
+    -- so future drops auto-sell via the normal quality rules and
+    -- become eligible for Process Bags. Account-wide because both
+    -- (a) PE's affix / proc extractions are themselves account-wide
+    -- and (b) whether a vanilla proc is "worth keeping" is a
+    -- per-item decision, not a per-character one.
+    if type(ADB.allowedProcs) ~= "table" then
+        ADB.allowedProcs = {}
+    end
 end
 
 local function EnsureDB()
@@ -1929,6 +1939,14 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     if EC_compCache.rearmProcessButton then
         EC_compCache.rearmProcessButton()
     end
+    -- v2.26.0: cheap dirty-check rebuild of the known-affix /
+    -- known-proc description map. Skips the rebuild when the player's
+    -- learned-record count hasn't changed since the last fire. Picks
+    -- up post-extraction state from the Enchanted Anvil without
+    -- needing a /reload.
+    if EC_compCache.refreshExtractionIfDirty then
+        EC_compCache.refreshExtractionIfDirty()
+    end
     local pbp = _G["EbonClearanceOptionsProcessBags"]
     if pbp and pbp:IsShown() and EC_compCache.refreshProcessPanel then
         EC_compCache.refreshProcessPanel()
@@ -2395,11 +2413,28 @@ end
 -- skills) don't carry this prefix.
 EC_compCache.AFFIX_SPELL_PREFIX = "engrave this affix"
 
+-- v2.26.0: dirty-check counter for the ExtractionService merge step.
+-- Bumps when the count of `learned==true` records in
+-- _G.ExtractionService.learnedAffixes changes; lets the BAG_UPDATE
+-- and PLAYER_REGEN_ENABLED handlers skip the (more expensive)
+-- description-scan loop when nothing has changed since the last
+-- refresh.
+EC_compCache.knownExtractionVersion = 0
+-- Per-spell description cache. Populated lazily on first scan; never
+-- invalidated because the engraving spell's description text is
+-- immutable for a given spell ID (the same DBC record across all
+-- characters). /reload wipes this naturally (EC_compCache is not
+-- persisted).
+EC_compCache.procIdToDescription = {}
+
 function EC_compCache.refreshKnownAffixes()
     local map = {}
     -- Walk the player's spellbook; for each spell whose tooltip
     -- includes the engrave-affix prefix, pull the description text
-    -- after the colon and store it (normalised) in the map.
+    -- after the colon and store it (normalised) in the map. This is
+    -- the v2.23.0 path; covers stat affixes (which always live in the
+    -- spellbook once extracted) and any chance-on-hit procs that PE
+    -- also routes through the spellbook.
     if GetNumSpellTabs and GetSpellTabInfo and GetSpellLink and EC_scanTooltip then
         for tab = 1, GetNumSpellTabs() do
             local _, _, offset, numSpells = GetSpellTabInfo(tab)
@@ -2429,7 +2464,72 @@ function EC_compCache.refreshKnownAffixes()
             end
         end
     end
+    -- v2.26.0 merge: walk _G.ExtractionService.learnedAffixes for
+    -- entries with learned == true and merge their engraving-spell
+    -- descriptions into the same map. This catches procs that PE
+    -- keeps in the extraction catalog but not in the spellbook (and
+    -- is robust against the spellbook walk missing procs whose
+    -- engraving-spell tab isn't iterated by GetSpellTabInfo). Same
+    -- prefix scan; same normalisation.
+    local svc = _G.ExtractionService
+    if svc and type(svc.learnedAffixes) == "table" and EC_scanTooltip then
+        for _, r in ipairs(svc.learnedAffixes) do
+            if r and r.learned and r.id then
+                local desc = EC_compCache.procIdToDescription[r.id]
+                if desc == nil then
+                    desc = false
+                    EC_scanTooltip:ClearLines()
+                    EC_scanTooltip:SetHyperlink("spell:" .. r.id)
+                    for j = 1, EC_scanTooltip:NumLines() do
+                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                        if fs and fs.GetText then
+                            local txt = fs:GetText()
+                            if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
+                                local d = txt:match(":%s*(.+)$")
+                                d = EC_compCache.normaliseAffixDesc(d)
+                                if d and d ~= "" then
+                                    desc = d
+                                end
+                                break
+                            end
+                        end
+                    end
+                    EC_compCache.procIdToDescription[r.id] = desc
+                end
+                if desc then
+                    map[desc] = true
+                end
+            end
+        end
+    end
     EC_compCache.knownAffixDescriptions = map
+end
+
+-- v2.26.0: cheap dirty-check rebuild. Counts learned-true records in
+-- _G.ExtractionService.learnedAffixes and skips the rebuild if the
+-- count hasn't changed since the last call. Wired into the 120 ms
+-- BAG_UPDATE debounce frame and PLAYER_REGEN_ENABLED so the player's
+-- post-extraction state (new proc learned at the Enchanted Anvil)
+-- propagates without a manual /ec refresh.
+function EC_compCache.refreshExtractionIfDirty()
+    local svc = _G.ExtractionService
+    if not svc or type(svc.learnedAffixes) ~= "table" then
+        return false
+    end
+    local learnedCount = 0
+    for _, r in ipairs(svc.learnedAffixes) do
+        if r and r.learned then
+            learnedCount = learnedCount + 1
+        end
+    end
+    if learnedCount == EC_compCache.knownExtractionVersion then
+        return false
+    end
+    EC_compCache.knownExtractionVersion = learnedCount
+    if EC_compCache.refreshKnownAffixes then
+        EC_compCache.refreshKnownAffixes()
+    end
+    return true
 end
 
 function EC_compCache.playerHasAffixDescription(desc)
@@ -2471,6 +2571,29 @@ end
 -- and efficient. EC_compCache.chanceOnHitCache holds the result; it
 -- resets naturally on /reload because EC_compCache itself isn't
 -- persisted across sessions.
+-- v2.26.0: two-phrasing match. PE items carry chance-on-hit procs in
+-- two flavours: the classic `Chance on hit: ...` (Bloodpike-style)
+-- and the older PPM-style `Equip: Chance to <verb>... ...`
+-- (Quillshooter-style). Both should land under the same protection,
+-- so the detector scans for either pattern.
+-- Hung on EC_compCache (not a file-scope local) to stay under Lua
+-- 5.1's 200-locals cap.
+function EC_compCache.lineLooksLikeChanceProc(txt)
+    if type(txt) ~= "string" then
+        return false
+    end
+    local needle = ITEM_SPELL_TRIGGER_ONPROC or "Chance on hit:"
+    if txt:find(needle, 1, true) then
+        return true
+    end
+    -- Lua pattern: "Equip: Chance to <word>" - leading literal anchor
+    -- + a verb word covers "strike", "deal", "wound", etc.
+    if txt:find("^Equip:%s*Chance to%s+%a") then
+        return true
+    end
+    return false
+end
+
 function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     if not itemID then
         return false
@@ -2481,10 +2604,6 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     if not bag or not slot then
         return false
     end
-    -- ITEM_SPELL_TRIGGER_ONPROC is the Blizzard localized constant for
-    -- the "Chance on hit:" tooltip line. Fall back to the enUS literal
-    -- if it's missing (defensive; PE is enUS).
-    local needle = ITEM_SPELL_TRIGGER_ONPROC or "Chance on hit:"
     EC_scanTooltip:ClearLines()
     EC_scanTooltip:SetBagItem(bag, slot)
     local result = false
@@ -2493,8 +2612,7 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
         if not line then
             break
         end
-        local txt = line:GetText()
-        if txt and txt:find(needle, 1, true) then
+        if EC_compCache.lineLooksLikeChanceProc(line:GetText()) then
             result = true
             break
         end
@@ -2514,7 +2632,6 @@ function EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)
     if not tname then
         return false
     end
-    local needle = ITEM_SPELL_TRIGGER_ONPROC or "Chance on hit:"
     local n = tooltip:NumLines() or 0
     local result = false
     -- Start at line 2: line 1 is the item name; chance-on-hit lines
@@ -2522,8 +2639,7 @@ function EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)
     for i = 2, n do
         local fs = _G[tname .. "TextLeft" .. i]
         if fs and fs.GetText then
-            local txt = fs:GetText()
-            if txt and txt:find(needle, 1, true) then
+            if EC_compCache.lineLooksLikeChanceProc(fs:GetText()) then
                 result = true
                 break
             end
@@ -2533,6 +2649,89 @@ function EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)
         EC_compCache.chanceOnHitCache[itemID] = result
     end
     return result
+end
+
+-- v2.26.0: bag-item -> ExtractionService record lookup. PE's own
+-- Enchanted Anvil uses `FindItemAffix(link)` (in
+-- ProjectEbonhold/modules/extraction/extraction.lua) to decide whether
+-- to display "You already know this affix"; we re-implement that same
+-- algorithm here so the dupe gate matches the Anvil's verdict exactly.
+--
+-- The bridge does NOT use description-text matching - the engraving
+-- spell's tooltip describes the TRIGGER ("Your physical abilities have
+-- a chance to..."), while the bag item's `Chance on hit:` line carries
+-- the EFFECT spell's description ("Wounds the target..."). Different
+-- sentences. Instead, PE encodes the affix NAME (e.g. "Hemorrhage")
+-- inside the item's random-suffix DBC entry; `SetHyperlink(link)`
+-- resolves that suffix and renders an extra tooltip line we can scan
+-- for the name. SetBagItem doesn't always render that line, hence
+-- the SetHyperlink-on-the-link approach.
+--
+-- Cached per itemLink (NOT per itemID) because the affix is per-
+-- instance: two Bloodpikes with different random suffix rolls map to
+-- different proc records.
+EC_compCache.itemAffixLookupCache = {}
+
+function EC_compCache.findLearnedAffixForItem(link)
+    if not link then
+        return nil
+    end
+    -- HasRandomProperty is the same gate PE uses. Items without a
+    -- random-suffix DBC entry can't carry an extractable affix.
+    if not HasRandomProperty or not HasRandomProperty(link) then
+        return nil
+    end
+    local cached = EC_compCache.itemAffixLookupCache[link]
+    if cached ~= nil then
+        return cached or nil  -- `false` cached "scanned, no match"
+    end
+    local svc = _G.ExtractionService
+    if not svc or type(svc.learnedAffixes) ~= "table" then
+        return nil
+    end
+    local affixes = svc.learnedAffixes
+    if #affixes == 0 then
+        return nil
+    end
+    -- Build lowercase name -> record lookup. Cheap; ~140 records.
+    local nameToAffix = {}
+    for _, affix in ipairs(affixes) do
+        if affix and affix.name then
+            nameToAffix[affix.name:lower()] = affix
+        end
+    end
+    EC_scanTooltip:ClearLines()
+    EC_scanTooltip:SetHyperlink(link)
+    local found = nil
+    for j = 1, EC_scanTooltip:NumLines() do
+        local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+        if fs and fs.GetText then
+            local text = fs:GetText()
+            if text then
+                local lower = text:lower()
+                for name, affix in pairs(nameToAffix) do
+                    local startPos, endPos = lower:find(name, 1, true)
+                    if startPos then
+                        -- Word-boundary check mirrors PE: the affix
+                        -- name must be a standalone token, not a
+                        -- substring inside a longer word. Without this
+                        -- "ire" would match every word containing it.
+                        local before = startPos > 1 and lower:sub(startPos - 1, startPos - 1) or ""
+                        local after = lower:sub(endPos + 1, endPos + 1)
+                        if (before == "" or not before:match("%w"))
+                            and (after == "" or not after:match("%w"))
+                        then
+                            found = affix
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        if found then break end
+    end
+    EC_compCache.itemAffixLookupCache[link] = found or false
+    return found
 end
 
 -- v2.21.0: pre-flight bag-space check used by the Fast Loot queue
@@ -2788,6 +2987,21 @@ function EC_compCache.buildProcessSummary()
                     skip = true
                 end
                 if not skip and IsEquippedItem and IsEquippedItem(itemID) then
+                    skip = true
+                end
+                -- v2.26.0: chance-on-hit protection extends to Process
+                -- Bags. An item carrying a `Chance on hit:` proc is
+                -- hidden from the DE / Mill / Prospect list until the
+                -- player marks its itemID via Alt+Right-Click ->
+                -- "Allow Sell". Same gate the auto-rule sell sweep
+                -- uses, applied here too so the user can't
+                -- accidentally DE / mill a weapon whose proc they
+                -- might still want to extract.
+                if not skip
+                    and DB.protectChanceOnHitItems
+                    and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+                    and not (ADB.allowedProcs and ADB.allowedProcs[itemID])
+                then
                     skip = true
                 end
                 if not skip then
@@ -3819,12 +4033,30 @@ local function EC_ShowItemContextMenu(button)
     local cacheKnown = (name ~= nil)
     local noVendorValue = cacheKnown and (not sellPrice or sellPrice == 0)
 
+    -- v2.26.0: chance-on-hit items show a single "Allow Sell" option
+    -- in place of Sell Now while unmarked. Picking it releases the
+    -- v2.20.0 protection - future drops auto-sell via the normal
+    -- quality rules and the item becomes available to Process Bags.
+    -- While unmarked, the Sell List / Keep List / Delete List rows
+    -- are hidden so the user must consciously acknowledge the proc
+    -- before adding it to a sell rule. Once marked, the full menu
+    -- opens up and the sellNow row shows "Remove from Allowed Procs"
+    -- as the toggle.
+    local hasProc = EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+    local procAllowed = ADB.allowedProcs and ADB.allowedProcs[itemID] == true
+    local procProtected = hasProc and not procAllowed
+
     local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
     local visibleSlot = 0
     for i, row in ipairs(EC_CTX_ROWS) do
         local btn = frame.buttons[i]
         local rowHidden = false
-        if row.kind == "list" then
+        if row.kind == "list" and procProtected then
+            -- v2.26.0: hide all list rows while the proc is protected.
+            -- User must click "Mark Proc as Known" first to unlock the
+            -- normal Sell/Keep/Delete actions on this item.
+            rowHidden = true
+        elseif row.kind == "list" then
             local t = EC_GetListTable(row.setName)
             local onList = t and t[itemID] == true
             if onList then
@@ -3841,26 +4073,21 @@ local function EC_ShowItemContextMenu(button)
                 btn:Enable()
             elseif noVendorValue and row.setName ~= "deleteList" then
                 -- Hide whitelist/account-whitelist/blacklist Add rows for
-                -- items the auto-rules can't act on anyway. Add-to-Deletion
-                -- stays visible because that's the actually-useful action.
+                -- items the auto-rules can't act on anyway. The Delete
+                -- List row stays visible because that's the actually-
+                -- useful action.
                 rowHidden = true
             else
-                -- If a different-intent list already holds the item, grey
-                -- out the row so the user can see the option exists but
-                -- can't currently take it (mirrors how Sell Now disables
-                -- itself when no merchant is open). The which-list-holds-it
-                -- info is already visually announced by the highlighted
-                -- "Remove from X" row above, so we don't repeat it here
-                -- (the parenthetical version overflowed the 220-px button).
-                -- Same-intent scopes (per-character + account whitelist)
-                -- do not trip this.
+                -- v2.26.0: dropped the "Add to" prefix on add rows -
+                -- the label alone is self-evident and orange
+                -- "Remove from" rows provide the contrast.
                 local conflictName = EC_FindAddConflict(itemID, row.setName)
                 if conflictName then
-                    btn:SetText("Add to " .. row.label)
+                    btn:SetText(row.label)
                     btn:SetScript("OnClick", function() end)
                     btn:Disable()
                 else
-                    btn:SetText("Add to " .. row.label)
+                    btn:SetText(row.label)
                     btn:SetScript("OnClick", function()
                         EC_AddItemToList(row.setName, itemID, row.label)
                         frame:Hide()
@@ -3869,22 +4096,32 @@ local function EC_ShowItemContextMenu(button)
                 end
             end
         elseif row.kind == "sellNow" then
-            if noVendorValue then
-                -- No vendor will buy it - row is meaningless. Hide rather
-                -- than disable so the menu collapses to what's actually
-                -- useful.
-                rowHidden = true
-            else
-                btn:SetText("Sell Now")
+            -- v2.26.0: this row slot is now exclusively the chance-
+            -- on-hit "Allow Sell" toggle. The legacy Sell Now path
+            -- has been dropped - explicit user intent goes through
+            -- the Sell List rows above (Will Sell tooltip + merchant
+            -- visit), not a one-shot vendor command.
+            if hasProc and procAllowed then
+                btn:SetText("|cffff8000Remove from Allowed Procs|r")
                 btn:SetScript("OnClick", function()
-                    EC_SellNowAt(frame.bag, frame.slot)
+                    if ADB.allowedProcs then
+                        ADB.allowedProcs[itemID] = nil
+                    end
                     frame:Hide()
+                    PrintNicef("Removed %s from Allowed Procs.", itemName)
                 end)
-                if merchantOpen then
-                    btn:Enable()
-                else
-                    btn:Disable()
-                end
+                btn:Enable()
+            elseif hasProc then
+                btn:SetText("Allow Sell")
+                btn:SetScript("OnClick", function()
+                    ADB.allowedProcs = ADB.allowedProcs or {}
+                    ADB.allowedProcs[itemID] = true
+                    frame:Hide()
+                    PrintNicef("Marked %s proc as allowed. Future drops will auto-sell.", itemName)
+                end)
+                btn:Enable()
+            else
+                rowHidden = true
             end
         elseif row.kind == "cancel" then
             btn:SetText("Cancel")
@@ -4706,7 +4943,13 @@ local function EC_IsSellable(bag, slot, junkOnly)
         and DB.protectChanceOnHitItems
         and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     then
-        qualityPass = false
+        -- v2.26.0: chance-on-hit allow list. Items the user has
+        -- marked via Alt+Right-Click -> "Allow Sell" fall through to
+        -- the normal sell / DE rules. Unmarked items stay protected.
+        -- Account-wide because extraction state is account-wide.
+        if not (ADB.allowedProcs and ADB.allowedProcs[itemID]) then
+            qualityPass = false
+        end
     end
     -- After the chance-on-hit downgrade, if no positive sell signal
     -- remains (isJunk / qualityPass / whitelistPass), the item is no
@@ -5330,9 +5573,17 @@ local function EC_AnnotateTooltip(tooltip)
     -- The plain whitelist label is just "Will Sell" with no separator.
     -- Lua pattern "Will Sell %- " (escaped dash) matches only the
     -- quality-rule variant.
-    if statusLine and DB.protectChanceOnHitItems then
-        local autoRuleSell = statusLine:find("Will Sell %- ")
-        if autoRuleSell and EC_compCache.liveTooltipHasChanceOnHit(tooltip, id) then
+    -- v2.26.0: chance-on-hit state is always surfaced when the item
+    -- has the proc, regardless of whether the auto-rule sweep would
+    -- fire. Epic items (default quality rule off) still show the
+    -- protection state. Two states: unmarked (Protected) or marked
+    -- Allowed (account-wide ADB.allowedProcs override). The state
+    -- replaces any prior statusLine since it's the load-bearing
+    -- decision for whether the item will auto-sell.
+    if DB.protectChanceOnHitItems and EC_compCache.liveTooltipHasChanceOnHit(tooltip, id) then
+        if ADB.allowedProcs and ADB.allowedProcs[id] then
+            statusLine = "|cff66ccff[EC]|r |cffb6ffb6Allowed - Proc|r"
+        else
             statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Chance on hit|r"
         end
     end
@@ -9016,7 +9267,11 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
     -- v2.23.0: anchor moved from autoAffixNote to dupeAffixNote so the
     -- new child toggle sits between the affix toggle and the chance-
     -- on-hit toggle visually.
-    procCB:SetPoint("TOPLEFT", dupeAffixNote, "BOTTOMLEFT", -26, -10)
+    -- v2.26.0: x-offset corrected to -52 so procCB returns to the
+    -- parent toggle's indent column (dupeAffixNote sits at +52 from
+    -- the parent toggle column: +26 for the dupeAffixCB indent, +26
+    -- for the note's indent under that). -26 only un-did one of those.
+    procCB:SetPoint("TOPLEFT", dupeAffixNote, "BOTTOMLEFT", -52, -10)
     procCB:SetChecked(DB.protectChanceOnHitItems)
     local pcText = _G[procCB:GetName() .. "Text"]
     if pcText then
@@ -9024,10 +9279,6 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         EC_compCache.setPanelWidth(pcText, 60)
         pcText:SetJustifyH("LEFT")
     end
-    procCB:SetScript("OnClick", function(cb)
-        DB.protectChanceOnHitItems = cb:GetChecked() and true or false
-        PlaySound("igMainMenuOptionCheckBoxOn")
-    end)
     self.procCB = procCB
 
     local procNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -9040,6 +9291,17 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
     procNote:SetText(
         "|cff888888Items with a |cffffb84d'Chance on hit:'|r|cff888888 proc are skipped by the quality-threshold sweep. Explicitly listing them on the Sell or Delete List still works.|r"
     )
+
+    -- v2.26.0 child toggle: exact-proc duplicate gate on the chance-
+    -- on-hit protection. When ON AND a bag item's proc description
+    -- matches an engraving spell the player has already extracted (via
+    -- PE's Extraction Service / spellbook), the protection releases
+    -- the item to the normal sell / DE rules. Inert without any
+    -- learned procs.
+    procCB:SetScript("OnClick", function(cb)
+        DB.protectChanceOnHitItems = cb:GetChecked() and true or false
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
 
         EC_FitScrollContent(content, procNote)
     end, true)
@@ -10401,6 +10663,73 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         end
         PrintNice("affixdump: no affixed bag items found")
         return
+    elseif cmd == "procdump" then
+        -- v2.26.0 debug: dump the per-link affix lookup for the first
+        -- Chance-on-hit bag item, plus the HasRandomProperty gate
+        -- result and a hyperlink-tooltip-line dump so we can see what
+        -- SetHyperlink(link) renders. Use this when the chance-on-hit
+        -- dupe gate misfires (item stays "Protected" when the player
+        -- expects "Allowed").
+        local svc = _G.ExtractionService
+        local catalogSize = (svc and type(svc.learnedAffixes) == "table") and #svc.learnedAffixes or 0
+        PrintNicef("procdump: ExtractionService.learnedAffixes has %d records", catalogSize)
+        local learnedProcs = 0
+        if svc and type(svc.learnedAffixes) == "table" then
+            for _, r in ipairs(svc.learnedAffixes) do
+                if r and r.learned and r.weaponOnly then
+                    learnedProcs = learnedProcs + 1
+                end
+            end
+        end
+        PrintNicef("procdump: %d learned weaponOnly procs in catalog", learnedProcs)
+        local allowedCount = 0
+        for _ in pairs(ADB and ADB.allowedProcs or {}) do
+            allowedCount = allowedCount + 1
+        end
+        PrintNicef("procdump: %d Allowed Proc itemIDs (account-wide)", allowedCount)
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag) or 0
+            for slot = 1, slots do
+                local link = GetContainerItemLink(bag, slot)
+                local itemID = GetContainerItemID(bag, slot)
+                if link and itemID
+                    and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+                then
+                    PrintNicef("procdump: scanning (%d,%d) %s", bag, slot, link)
+                    local hrp = HasRandomProperty and HasRandomProperty(link)
+                    PrintNicef("  HasRandomProperty=%s", tostring(hrp))
+                    local rec = EC_compCache.findLearnedAffixForItem
+                        and EC_compCache.findLearnedAffixForItem(link)
+                    if rec then
+                        PrintNicef(
+                            "  match: name=[%s] id=%s learned=%s weaponOnly=%s",
+                            tostring(rec.name),
+                            tostring(rec.id),
+                            tostring(rec.learned),
+                            tostring(rec.weaponOnly)
+                        )
+                    else
+                        PrintNice("  match: nil (no learnedAffixes name matched the tooltip)")
+                    end
+                    -- Dump the SetHyperlink tooltip lines so we can see
+                    -- what text was searched.
+                    EC_scanTooltip:ClearLines()
+                    EC_scanTooltip:SetHyperlink(link)
+                    for i = 1, EC_scanTooltip:NumLines() do
+                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. i]
+                        if fs and fs.GetText then
+                            local txt = fs:GetText()
+                            if txt then
+                                PrintNicef("  L%d: %s", i, txt)
+                            end
+                        end
+                    end
+                    return
+                end
+            end
+        end
+        PrintNice("procdump: no Chance-on-hit bag items found")
+        return
     elseif cmd == "profile" or cmd == "profiles" then
         local sub, arg = rest:match("^(%S+)%s*(.*)")
         sub = (sub or ""):lower()
@@ -10763,6 +11092,13 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- during combat, so any re-arm attempts from BAG_UPDATE bail and
         -- this combat-exit catch-up restores a current macrotext.
         EC_compCache.rearmProcessButton()
+        -- v2.26.0: cheap dirty-check refresh of the known-extraction
+        -- description map. PE's ExtractionService updates in-place
+        -- after the player extracts at the Anvil; this catches the
+        -- state at combat exit without needing a /reload.
+        if EC_compCache.refreshExtractionIfDirty then
+            EC_compCache.refreshExtractionIfDirty()
+        end
         -- v2.25.0: optional one-line nudge when combat ends with
         -- lockable containers in bags. Off by default (one extra line
         -- per combat exit is noisy for rogues farming heavy zones).

@@ -324,6 +324,83 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 12 (v2.26.0): chance-on-hit "Allow Sell" override list.
+-- ---------------------------------------------------------------------------
+-- Background: v2.26.0 replaces the chance-on-hit protection's auto-
+-- dupe-gate ambition (which failed because engraving descriptions
+-- don't match bag-tooltip effect text) with a single account-wide
+-- manual override list. The user marks itemIDs via the Alt+Right-
+-- Click menu's "Allow Sell" row. Marked items release the v2.20.0
+-- protection so future drops auto-sell via the quality rules and
+-- become available to Process Bags. Account-wide because PE's
+-- extraction state itself is account-wide.
+do
+    local hasDefault = src:find("ADB%.allowedProcs%s*=%s*{}") ~= nil
+    check("EnsureAccountDB defaults ADB.allowedProcs to an empty table",
+          hasDefault,
+          "the account-wide chance-on-hit allow list is the v2.26.0 load-bearing schema field")
+
+    -- buildProcessSummary must gate on allowedProcs.
+    local pbStart = src:find("function EC_compCache%.buildProcessSummary%(", 1)
+    local pbEnd = pbStart and src:find("\nend", pbStart) or nil
+    local pbBody = pbStart and pbEnd and src:sub(pbStart, pbEnd) or ""
+    local processGate = pbBody:find("allowedProcs") ~= nil
+    check("buildProcessSummary gates chance-on-hit items on ADB.allowedProcs",
+          processGate,
+          "Process Bags must hide chance-on-hit items until the user marks them via Allow Sell")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 13 (v2.26.0): ExtractionService merge + dirty-check refresh.
+-- ---------------------------------------------------------------------------
+-- Background: PE's _G.ExtractionService.learnedAffixes is the
+-- authoritative catalog of (id, name, learned, weaponOnly) records.
+-- The refresh path must read from that table (not just walk the
+-- spellbook), and the dirty-check function must be wired into both
+-- the BAG_UPDATE debounce frame and the PLAYER_REGEN_ENABLED handler
+-- so the player's post-extraction state propagates without /reload.
+do
+    local readsExtraction = src:find("_G%.ExtractionService") ~= nil
+        or src:find("svc%.learnedAffixes") ~= nil
+    local hasDirtyFn = src:find("function EC_compCache%.refreshExtractionIfDirty%(") ~= nil
+    local hasVersionCounter = src:find("EC_compCache%.knownExtractionVersion") ~= nil
+    check("refreshKnownAffixes reads from _G.ExtractionService.learnedAffixes",
+          readsExtraction,
+          "expected the affix-refresh path to merge entries from PE's ExtractionService catalog")
+    check("EC_compCache.refreshExtractionIfDirty exists",
+          hasDirtyFn,
+          "expected a cheap dirty-check helper that skips the rebuild when learnedCount is unchanged")
+    check("EC_compCache.knownExtractionVersion counter is declared",
+          hasVersionCounter,
+          "expected a learnedCount counter used by refreshExtractionIfDirty for the dirty check")
+
+    -- The PLAYER_REGEN_ENABLED handler must call refreshExtractionIfDirty
+    -- so combat exit picks up freshly-extracted procs.
+    local startIdx = src:find('event == "PLAYER_REGEN_ENABLED"', 1, true)
+    local body
+    if startIdx then
+        local endIdx = src:find('elseif event ==', startIdx + 1, true)
+        body = endIdx and src:sub(startIdx, endIdx - 1) or src:sub(startIdx, startIdx + 3000)
+    end
+    local wiredCombat = body and body:find("refreshExtractionIfDirty") ~= nil
+    check("PLAYER_REGEN_ENABLED branch calls refreshExtractionIfDirty",
+          wiredCombat == true,
+          "combat exit is the cheap, periodic dirty-check tick for post-extraction state")
+
+    -- The 120 ms BAG_UPDATE debounce frame must also call it.
+    local frameStart = src:find('bagUpdateFrame:SetScript%("OnUpdate"', 1)
+    local frameBody
+    if frameStart then
+        local endIdx = src:find("end%)", frameStart)
+        frameBody = endIdx and src:sub(frameStart, endIdx) or src:sub(frameStart, frameStart + 4000)
+    end
+    local wiredFrame = frameBody and frameBody:find("refreshExtractionIfDirty") ~= nil
+    check("bagUpdateFrame OnUpdate calls refreshExtractionIfDirty",
+          wiredFrame == true,
+          "the debounce frame is the post-anvil-close tick when bags update after extraction")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

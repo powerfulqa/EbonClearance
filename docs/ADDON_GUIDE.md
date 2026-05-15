@@ -969,6 +969,21 @@ signals:
    match key. Refresh fires on `LEARNED_SPELL_IN_TAB` and
    `SPELLS_CHANGED`.
 
+4. **`_G.ExtractionService.learnedAffixes` (v2.26.0+)** - PE exposes a
+   global catalog of every extractable affix and chance-on-hit proc as
+   an array of `{id, name, learned, weaponOnly, ...}` records.
+   `refreshKnownAffixes` merges entries where `learned == true` into
+   the same description map, using a per-spell-ID tooltip cache
+   (`procIdToDescription`) so each engraving description is scanned at
+   most once per session. The dirty-check helper
+   `refreshExtractionIfDirty` is wired into the 120 ms BAG_UPDATE
+   debounce frame and `PLAYER_REGEN_ENABLED`; it counts learned
+   records and skips the rebuild when the count is unchanged. This
+   catches procs PE keeps outside the spellbook and is the source
+   that drives the v2.26.0 chance-on-hit dupe gate
+   (`chanceOnHitAllowExactDupes`). The catalog is global, not under
+   `_G.ProjectEbonhold`.
+
 The three sources do NOT share names. The item-suffix name
 (`of Inner Light`) and the engraving-spell name (`Spirit Surge II`)
 are different strings - PE uses cosmetic suffixes that don't map to

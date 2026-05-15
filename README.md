@@ -4,7 +4,7 @@
 [![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/powerfulqa/EbonClearance/badge-data/downloads.json&style=for-the-badge&cacheSeconds=3600)](https://github.com/powerfulqa/EbonClearance/releases)
 [![Licence](https://img.shields.io/badge/Licence-Source--Available-blue?style=for-the-badge)](LICENSE)
 
-A bag manager for **Project Ebonhold**. EbonClearance automates the busywork around items entering and leaving your bags - vendoring, deletion, looting, protection rules, and profession processing - so you can spend less time sorting and more time playing. Single file, no external libraries, all stock Blizzard 3.3.5a APIs.
+A **Project Ebonhold-aware** bag manager. EbonClearance reads your account's affix-extraction and chance-on-hit-proc state from PE's own services and bridges that into every sell, delete, and process decision - so two identical-itemID drops can land on different sides of "sell this" or "keep this" depending on which specific affix rolled and which procs you've already extracted, not just the base item. Around that core, the standard bag-management loop: vendoring, deletion, looting, protection rules, and profession processing (disenchant, mill, prospect, lockpick). Single file, no external libraries, all stock Blizzard 3.3.5a APIs.
 
 ## What It Does
 
@@ -43,7 +43,7 @@ The protection chain runs before any sell / delete / process decision. Order of 
 
 **Fast Loot.** Optional. Drives **manual** looting (corpses you click, fishing, gift bags, dungeon / raid loot, profession openables) via a throttled queue (~110 ms between slots) rather than a tight loop, which keeps anti-flood disconnect protection on busy private servers from triggering. Bag-space pre-check skips items that wouldn't fit. BoP-bind popups auto-confirm while on. Doesn't affect the Scavenger (which bypasses the player loot pipeline server-side).
 
-**Auto-open lootable containers.** Optional. Opens `Right Click to Open` containers (gift bags, treasure pouches, freebie pouches) as they land in bags. Locked / keyed lockboxes are skipped. Combat-paused.
+**Auto-open lootable containers.** Optional. Opens `Right Click to Open` containers (gift bags, treasure pouches, freebie pouches) as they land in bags. Locked / keyed lockboxes are skipped. Combat-paused. Driver dispatches each open via the player's next hardware-event tick so it works inside 3.3.5a's `UseContainerItem` protection rules.
 
 ### List management
 

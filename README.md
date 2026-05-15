@@ -129,6 +129,12 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Changelog
 
+### v2.25.1
+
+- **Fix: auto-open containers stopped firing from the v2.24.0 debounce path.** The new BAG_UPDATE debounce frame's OnUpdate closure was created earlier in the file than `EC_HandleAutoOpenContainers` was declared, so Lua's lexical scoping resolved the name to the (nil) global at closure-creation time and the `if EC_HandleAutoOpenContainers then` check was permanently false. Unlocked `Right Click to Open` containers (including post-Pick-Lock lockboxes) sat untouched in bags. Fixed via a forward declaration. Functions on `EC_compCache.*` were unaffected because table-index lookups resolve at runtime.
+- **Text pass: panel descriptions split into action + side-note on separate lines.** The main panel, Sell List, Keep List, and Account Sell List descriptions had embedded grey side-notes inside the white action paragraph. They're now two FontStrings stacked vertically so the white "what this does" reads cleanly and the grey "side info" sits on its own. Main panel also got a paragraph break and the Alt+Right-Click tip lifted to its own line.
+- **Text pass: implementation jargon trimmed across player-facing copy.** Removed "vendoring" / "per-item counters" / "saved and restored by profiles" / "live on the panel" / "cycles through the queue" / "GCD hardware-event rule" and similar from panel descriptions and tip lines. Player-facing copy now answers "what does this do, when does it apply, how do I override it" and nothing else.
+
 ### v2.25.0
 
 - **New: Lockpick mode in Process Bags.** Rogues with Pick Lock (spell 1804) now see a `LOCKPICK (N)` section in the Process Bags panel listing every locked container in their bags. The existing `Process Next` button drives the cast via the same secure-button macrotext flow as Disenchant / Mill / Prospect (`/cast Pick Lock` + `/use bag slot`). Each cast opens one box; the existing auto-open driver picks up the unlocked container on the next BAG_UPDATE.

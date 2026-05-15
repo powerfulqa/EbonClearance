@@ -1888,6 +1888,15 @@ end
 local EC_scanTooltip = CreateFrame("GameTooltip", "EbonClearanceScanTooltip", UIParent, "GameTooltipTemplate")
 EC_scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
 
+-- Forward declaration so the debounce frame's OnUpdate closure below
+-- can resolve the name. Without this, Lua's lexical scoping resolves
+-- the reference to the (nil) global at closure-creation time and the
+-- auto-open driver never fires from the debounce path. v2.24.0 perf
+-- regression discovered post-v2.25.0 when locked boxes that the user
+-- opened via Process Bags weren't being auto-opened by the debounce.
+-- Function body still lives at its original spot below.
+local EC_HandleAutoOpenContainers
+
 -- v2.24.0: BAG_UPDATE coalescing frame. The Greedy Scavenger looting
 -- 5 items in <100 ms fires 5 BAG_UPDATE events; running the full
 -- deferred-work chain (auto-open containers, upgrade scan, Process
@@ -2880,7 +2889,9 @@ end
 -- Driver. Walks bags, opens the first openable item, and recurses via
 -- EC_Delay if more remain. EC_autoOpenInFlight coalesces BAG_UPDATE bursts
 -- so we never stack `UseContainerItem` calls within the inter-item delay.
-local function EC_HandleAutoOpenContainers()
+-- Forward-declared at the top of the file so the v2.24.0 debounce
+-- frame's OnUpdate closure can capture this name. Body unchanged.
+function EC_HandleAutoOpenContainers()
     if not DB or not DB.autoOpenContainers then
         return
     end
@@ -6499,7 +6510,7 @@ end
 -- SecureActionButton helper) rather than reviving this dead surface.
 
 StaticPopupDialogs["EC_CONFIRM_RESET_LIFETIME"] = {
-    text = "Reset |cffb6ffb6EbonClearance|r lifetime stats?\n|cffaaaaaaThis clears money earned, items sold, items deleted, repair totals, and per-item counters. Session stats are not affected.|r",
+    text = "Reset |cffb6ffb6EbonClearance|r lifetime stats?\n|cffaaaaaaThis clears money earned, items sold, items deleted, and repair totals. Session stats are not affected.|r",
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -6659,13 +6670,28 @@ local function BuildMainPanel(panel, content, refreshStats)
         descLabel2:SetWordWrap(true)
     end
     descLabel2:SetText(
-        "Greys auto-sell. Whites and greens with iLvl below your equipped gear in the same slot also auto-sell by default, and upgrades you loot are auto-protected. Use the |cffb6ffb6Sell List|r (per-character or account-wide) to mark specific items for sale, the |cffb6ffb6Keep List|r to permanently protect items, |cffb6ffb6Merchant Settings|r to tune the auto-sell rules per rarity, and |cffb6ffb6Process Bags|r to disenchant, mill, or prospect bag items from one button. |cff888888Tip: Alt+Right-Click any bag item for a quick-action menu.|r"
+        "Greys auto-sell. Whites and greens below your equipped iLvl auto-sell too, and looted upgrades are auto-protected.\n\n"
+            .. "Use |cffb6ffb6Sell List|r (per-character or account-wide) to mark specific items for sale, "
+            .. "|cffb6ffb6Keep List|r to permanently protect items, "
+            .. "|cffb6ffb6Merchant Settings|r to tune the auto-sell rules per rarity, "
+            .. "and |cffb6ffb6Process Bags|r to disenchant, mill, prospect, or pick lock from one button."
     )
+    -- Tip on its own line, in grey, so it reads as a hint rather than
+    -- another sentence in the main description block.
+    local mainTip = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    mainTip:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -10)
+    EC_compCache.setPanelWidth(mainTip, 16)
+    mainTip:SetJustifyH("LEFT")
+    mainTip:SetJustifyV("TOP")
+    if mainTip.SetWordWrap then
+        mainTip:SetWordWrap(true)
+    end
+    mainTip:SetText("|cff888888Tip: Alt+Right-Click any bag item for a quick-action menu.|r")
 
     -- Stats fontstrings. Stacked vertically; each attaches its ref to `panel`
     -- so RefreshStats can find them across subsequent OnShow calls.
     local money = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    money:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)
+    money:SetPoint("TOPLEFT", mainTip, "BOTTOMLEFT", 0, -16)
     panel.statsMoney = money
 
     local sold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -6927,7 +6953,7 @@ MerchantPanel:SetScript("OnShow", function(self)
     MakeHeader(content, "Merchant Settings", -16)
     -- Panel-specific intro only. Generic "grey junk auto-sells" cross-cut
     -- removed; it's covered on the Main panel.
-    MakeLabel(content, "These settings control automatic vendoring behaviour.", 16, -44)
+    MakeLabel(content, "Tune which items auto-sell and at which merchants.", 16, -44)
 
     -- Merchant mode dropdown
     local modeLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -7401,17 +7427,25 @@ WhitelistPanel:SetScript("OnShow", function(self)
         -- repeating the same explanation on every list page.
         local descLabel = MakeLabel(
             self,
-            "Specific items to always auto-sell on this character, regardless of rarity rules. Use the |cffb6ffb6Add from bags|r buttons below to bulk-add by colour, or shift-click / type IDs to add manually. |cffaaaaaaItems are saved and restored by profiles. For items you want sold on every alt, use |cffb6ffb6Account Sell List|r |cffaaaaaainstead.|r",
+            "Specific items to always auto-sell on this character, regardless of rarity rules. Use the |cffb6ffb6Add from bags|r buttons below to bulk-add by colour, or shift-click an item to add it manually.",
             16,
             -44
         )
 
-        -- Cascade-anchor the scan row to the description's BOTTOMLEFT so it stays
-        -- below the description regardless of how many lines it wraps to. Then
-        -- the list UI cascades below the scan row and fills the remaining panel
-        -- height via a BOTTOMRIGHT anchor (fixed SetHeight previously caused the
-        -- bottom row to clip past the panel safe area at narrow widths).
-        local scanRow = EC_AddScanByQualityRow(self, descLabel, "whitelist", "the Sell List", function()
+        -- Grey side-note on its own line.
+        local descNote = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        descNote:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
+        EC_compCache.setPanelWidth(descNote, 16)
+        descNote:SetJustifyH("LEFT")
+        descNote:SetJustifyV("TOP")
+        if descNote.SetWordWrap then
+            descNote:SetWordWrap(true)
+        end
+        descNote:SetText("|cffaaaaaaProfiles let you swap between different sell lists. For items you want sold on every alt, use |r|cffb6ffb6Account Sell List|r|cffaaaaaa instead.|r")
+
+        -- Cascade-anchor the scan row to the grey note's BOTTOMLEFT so it stays
+        -- below regardless of how many lines the description / note wrap to.
+        local scanRow = EC_AddScanByQualityRow(self, descNote, "whitelist", "the Sell List", function()
             if self.listUI then
                 self.listUI:Refresh()
             end
@@ -8049,7 +8083,7 @@ DeletePanel:SetScript("OnShow", function(self)
         end
     end, function(self)
         MakeHeader(self, "Deletion Settings", -16)
-        local delDesc = MakeLabel(self, "If enabled, items on this list will be deleted from your bags.", 16, -44)
+        local delDesc = MakeLabel(self, "Items on this list are destroyed automatically on the next bag scan. This cannot be undone.", 16, -44)
         local delHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         delHint:SetPoint("TOPLEFT", delDesc, "BOTTOMLEFT", 0, -4)
         EC_compCache.setPanelWidth(delHint, 16)
@@ -8617,15 +8651,27 @@ BlacklistPanel:SetScript("OnShow", function(self)
         MakeHeader(self, "Keep List (Do Not Sell)", -16)
         local blDesc = MakeLabel(
             self,
-            "Specific items to permanently protect from auto-sell. Use this for valuable items you'd rather list at the auction house. |cffaaaaaaAuto-protect rules (equipped gear, looted upgrades, equipment sets, random affixes, Chance-on-hit procs) live on the |r|cffffb84dProtection Settings|r|cffaaaaaa panel.|r",
+            "Specific items to permanently protect from auto-sell. Use this for valuable items you'd rather list at the auction house.",
             16,
             -44
         )
 
-        -- Anchored to blDesc so the hint stays below even when the description
-        -- wraps to multiple lines (previous absolute y=-80 overlapped the wrap).
+        -- Grey side-note on its own line so it doesn't blend into the
+        -- white action text above.
+        local blNote = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        blNote:SetPoint("TOPLEFT", blDesc, "BOTTOMLEFT", 0, -6)
+        EC_compCache.setPanelWidth(blNote, 16)
+        blNote:SetJustifyH("LEFT")
+        blNote:SetJustifyV("TOP")
+        if blNote.SetWordWrap then
+            blNote:SetWordWrap(true)
+        end
+        blNote:SetText("|cffaaaaaaFor automatic protection rules (equipped gear, looted upgrades, equipment sets, affixes, chance-on-hit), see the |r|cffffb84dProtection Settings|r|cffaaaaaa panel.|r")
+
+        -- Anchored to blNote so the hint stays below even when the
+        -- description wraps to multiple lines.
         local blHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        blHint:SetPoint("TOPLEFT", blDesc, "BOTTOMLEFT", 0, -8)
+        blHint:SetPoint("TOPLEFT", blNote, "BOTTOMLEFT", 0, -8)
         EC_compCache.setPanelWidth(blHint, 16)
         blHint:SetJustifyH("LEFT")
         blHint:SetJustifyV("TOP")
@@ -9013,15 +9059,26 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
         MakeHeader(self, "Account Sell List", -16)
         local descLabel = MakeLabel(
             self,
-            "Specific items to always auto-sell on |cffffff00every|r character on this account. Useful for shared trash like reagents or seasonal items. |cffaaaaaaThis list is not part of profiles - it stays the same when you switch profiles.|r",
+            "Specific items to always auto-sell on |cffffff00every|r character on this account. Useful for shared trash like reagents or seasonal items.",
             16,
             -44
         )
 
-        -- Cascade-anchor the scan row to the description's BOTTOMLEFT so it stays
-        -- below the description regardless of how many lines it wraps to. Then the
-        -- list UI cascades below the scan row. Mirrors WhitelistPanel.
-        local scanRow = EC_AddScanByQualityRow(self, descLabel, "accountWhitelist", "the Account Sell List", function()
+        -- Grey side-note on its own line so the action text and the
+        -- side info stay visually separate.
+        local descNote = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        descNote:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
+        EC_compCache.setPanelWidth(descNote, 16)
+        descNote:SetJustifyH("LEFT")
+        descNote:SetJustifyV("TOP")
+        if descNote.SetWordWrap then
+            descNote:SetWordWrap(true)
+        end
+        descNote:SetText("|cffaaaaaaThis list is not part of profiles - it stays the same when you switch profiles.|r")
+
+        -- Cascade-anchor the scan row to the grey note's BOTTOMLEFT so it stays
+        -- below regardless of how many lines the description / note wrap to.
+        local scanRow = EC_AddScanByQualityRow(self, descNote, "accountWhitelist", "the Account Sell List", function()
             if self.listUI then
                 self.listUI:Refresh()
             end
@@ -9484,14 +9541,14 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         MakeHeader(content, "Process Bags", -16)
         local desc = MakeLabel(
             content,
-            "Disenchant, mill, prospect, or pick lock bag items via your known profession spells. |cffffd870Left-click|r a row to select it as the next cast. |cffffd870Right-click|r a row to hide it from this list (use |cffffb84dClear Ignored|r to restore). The |cffffb84d>|r arrow cycles through the queue. Click |cffffb84dProcess Next|r to cast on the selected row.",
+            "Disenchant, mill, prospect, or pick lock bag items. |cffffd870Left-click|r a row to select it. |cffffd870Right-click|r a row to hide it (use |cffffb84dClear Ignored|r to bring hidden items back). The |cffffb84d>|r arrow moves to the next item. Click |cffffb84dProcess Next|r to cast on the selected row.",
             16,
             -44
         )
 
         local tip = MakeLabel(
             content,
-            "|cff888888Tip: bind a key to Process Next under Key Bindings and hold it to drain a stack on the GCD - 3.3.5a's per-cast hardware-event rule + the 1.5 s profession GCD mean one click per cast is the fastest path.|r",
+            "|cff888888Tip: bind a key to Process Next under Key Bindings, then hold it to drain a stack hands-free.|r",
             16,
             -44
         )

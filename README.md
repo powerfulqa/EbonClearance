@@ -130,6 +130,16 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Changelog
 
+### v2.28.0
+
+- **Sell / Keep / Delete List panels load fast at 1000+ items.** The hot path (`CreateListUI.Refresh()`) was doing thousands of redundant `GetItemInfo` calls and re-running the full refresh on every search keystroke. Now:
+  - **Search input debounced** 250 ms. Typing a multi-character query triggers one refresh after you stop typing, not one per keystroke.
+  - **Name-sort pre-computes the names** before sorting. A 1000-item name-sort dropped from ~20,000 `GetItemInfo` calls inside the comparator to ~1,000 one-pass lookups.
+  - **`SetOwner` hoisted** out of the uncached-item prime loop. Set once per refresh instead of once per uncached row.
+  - **`(affix-gated)` tag lookup** hoisted out of the per-row loop. Three table dereferences per row collapsed to one.
+- **Dead `EC_SellNowAt` removed.** Was orphaned by v2.27.0 dropping the `Sell Now` context-menu row. 19 LOC, zero call sites.
+- **No schema, no UI, no behaviour change.** Pure perf refactor. Same lists, same protections, same workflow.
+
 ### v2.27.0
 
 - **Allow Sell now covers random-affix items.** The v2.26.0 chance-on-hit Allow Sell workflow extends to v2.23.0 random-affix protected items. Hovering an affixed Rare/Epic always shows the protection state (`Protected - Random affix`); Alt+Right-Click on a protected item shows only `Allow Sell` and `Cancel` until you acknowledge it. Same gate, same call-to-action.

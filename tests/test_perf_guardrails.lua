@@ -754,6 +754,117 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 24 (v2.29.0): normaliseAffixDesc case-folds at the end.
+-- ---------------------------------------------------------------------------
+-- The affix dupe gate fails (and Allow Sell entries become orphaned)
+-- if the normaliser stops case-folding while the EnsureAccountDB
+-- migration still lowercases existing keys. The two are a load-bearing
+-- pair: both must case-fold or neither.
+do
+    local hasLower = src:find("function EC_compCache%.normaliseAffixDesc%([^)]*%).-:lower%(%)%s*\n%s*end") ~= nil
+    check("normaliseAffixDesc case-folds via :lower()",
+          hasLower,
+          "the function must return a lowercased string so source-side casing differences (rank-I lowercase vs rank-II capital) compare equal; see docs/ADDON_GUIDE.md Affix description normalisation case-folds")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 25 (v2.29.0): EnsureAccountDB migrates allowedAffixes keys to lowercase.
+-- ---------------------------------------------------------------------------
+-- The one-shot migration in EnsureAccountDB lowercases pre-existing
+-- ADB.allowedAffixes keys so Allow Sell entries set under the old
+-- (mixed-case) normaliser keep matching. Pair-locked with test 24.
+do
+    local startIdx = src:find("local function EnsureAccountDB%(")
+    local endIdx = startIdx and src:find("\nlocal function ", startIdx + 1) or nil
+    local body = startIdx and src:sub(startIdx, endIdx or (startIdx + 6000)) or ""
+    local hasLowercasePass = body:find("ADB%.allowedAffixes") and body:find("k:lower%(%)") ~= nil
+    check("EnsureAccountDB lowercases ADB.allowedAffixes keys",
+          hasLowercasePass,
+          "the one-shot migration must lowercase existing keys; removing it without also removing the normaliser's :lower() orphans pre-fix Allow Sell entries")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 26 (v2.29.0): list-mutation sites call EC_RefreshSellBorders.
+-- ---------------------------------------------------------------------------
+-- Any DB.whitelist / DB.blacklist / DB.deleteList / ADB.allowed* mutation
+-- must be followed by EC_RefreshSellBorders so the slot-border ring
+-- doesn't go stale. Verifies the documented contract in
+-- docs/ADDON_GUIDE.md "List-mutation must call EC_RefreshSellBorders".
+do
+    local function bodyHasRefresh(funcSig)
+        local startIdx = src:find(funcSig)
+        if not startIdx then
+            return nil
+        end
+        local nextLocal = src:find("\nlocal function ", startIdx + 1) or #src
+        local nextTbl = src:find("\nfunction [A-Za-z_]+%.", startIdx + 1) or #src
+        local endIdx = math.min(nextLocal, nextTbl)
+        local body = src:sub(startIdx, endIdx)
+        return body:find("EC_RefreshSellBorders%(%)") ~= nil
+    end
+
+    local addOk = bodyHasRefresh("local function EC_AddItemToList%(")
+    check("EC_AddItemToList calls EC_RefreshSellBorders",
+          addOk,
+          "list adds must refresh slot-border tints so rings draw on newly-added items immediately")
+
+    local removeOk = bodyHasRefresh("local function EC_RemoveItemFromList%(")
+    check("EC_RemoveItemFromList calls EC_RefreshSellBorders",
+          removeOk,
+          "list removes must refresh slot-border tints so rings clear on freshly-removed items immediately")
+
+    -- Allow Sell click handlers live inline in the context-menu builder;
+    -- look for the "Allow Sell" / "Remove from Allow List" string literals
+    -- followed (within a reasonable window) by an EC_RefreshSellBorders call.
+    local allowSellRegion = src:match('Allow Sell".-EC_RefreshSellBorders')
+    local removeAllowRegion = src:match("Remove from Allow List|r.-EC_RefreshSellBorders")
+    check("Allow Sell click handler calls EC_RefreshSellBorders",
+          allowSellRegion ~= nil,
+          "marking an item as Allow Sell can flip its sellability verdict; the slot border must repaint")
+    check("Remove from Allow List click handler calls EC_RefreshSellBorders",
+          removeAllowRegion ~= nil,
+          "removing an Allow Sell mark restores chance-on-hit / affix protection; the slot border must repaint")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 27 (v2.29.0): sell-border helpers live on EC_compCache, not module-level.
+-- ---------------------------------------------------------------------------
+-- Adding these as module-level `local function` would trip Lua 5.1's
+-- 200-locals cap in the main chunk. Keep them on EC_compCache so the
+-- main chunk stays under the limit.
+do
+    local helpers = {
+        "applySellBorder",
+        "bagSlotWillSell",
+        "updateSellBordersForBagFrame",
+        "installHostBagBorderHook",
+        "sellBorderButtons",
+        "describeSellability",
+        "printSellabilityTrace",
+        "bagSlotFromButton",
+        "exportFullPack",
+        "importFullPack",
+        "qualityNames",
+        "PACK_PREFIX",
+    }
+    for _, name in ipairs(helpers) do
+        -- Pinned check: plain-mode find for the literal "EC_compCache.<name>"
+        -- string. Using plain mode so the dot is literal, not a pattern char.
+        local pinned = src:find("EC_compCache." .. name, 1, true) ~= nil
+        -- Leaked check: pattern-mode find for module-level local definitions.
+        -- `local function NAME(` or `\nlocal NAME =` at file scope - both
+        -- patterns escape literal parens / equals via Lua's pattern syntax.
+        local leakedFn = src:find("local function " .. name .. "%(") ~= nil
+        local leakedAssign = src:find("\nlocal " .. name .. "%s*=") ~= nil
+        check(
+            name .. " is namespaced under EC_compCache",
+            pinned and not (leakedFn or leakedAssign),
+            "the v2.29.0 helpers must live on EC_compCache (Lua 5.1 200-locals cap); if moved to a module local the main chunk overflows"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

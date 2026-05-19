@@ -28,3 +28,6 @@ jobs:
 
       - name: Perf guardrail regression tests
         run: lua5.1 tests/test_perf_guardrails.lua
+
+      - name: No third-party addon references regression test
+        run: lua5.1 tests/test_no_addon_references.lua

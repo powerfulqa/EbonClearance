@@ -3,7 +3,37 @@
 A curated backlog of known follow-ups not yet actioned. Each item is
 scoped to be a single-session change unless flagged otherwise.
 
-> **Last refresh:** post-v2.27.0 on 2026-05-16.
+> **Last refresh:** post-v2.29.0 on 2026-05-19.
+>
+> v2.29.0 shipped the Release 1 cut: bag-slot sell-border tint
+> (default Blizzard + host bag-UI adapter), `/ec sellinfo` predicate-
+> trace inspector (`/ec sellinfo [bag slot]` + Alt+Shift+Right-Click),
+> full settings pack export/import (`EC_PACK_V1` marker with
+> auto-detect on import), plus the supporting fixes (combat-deferred
+> minimap open, list-mutation refresh, allow-list mutation refresh,
+> deep-bag tracking fix, affix dupe gate case-fold + one-shot
+> migration, `/ec bugreport` refactor to neutral capability flags,
+> Merchant Settings narrow-width fix, import/export box backdrop
+> chrome). New gotchas documented in `docs/ADDON_GUIDE.md` between
+> the magic-numbers table and the Fingerprint section: sell-border
+> three invariants, affix case-fold load-bearing pair, list-mutation
+> refresh rule, no-third-party-references rule.
+>
+> **EC_compCache namespace observation.** The 200-locals cap kept
+> pushing new helpers onto `EC_compCache`; v2.29.0 added 12 more
+> entries to that table (`applySellBorder`, `bagSlotWillSell`,
+> `updateSellBordersForBagFrame`, `installHostBagBorderHook`,
+> `sellBorderButtons`, `describeSellability`, `printSellabilityTrace`,
+> `bagSlotFromButton`, `exportFullPack`, `importFullPack`,
+> `qualityNames`, `PACK_PREFIX`). The table is now the de-facto module
+> namespace for everything that doesn't fit in the 200-locals budget.
+> Not a refactor task in itself; observation worth surfacing because
+> any future file split (when the file finally crosses the ~8000 LOC
+> threshold per `docs/ADDON_GUIDE.md` "When to split the file")
+> should treat `EC_compCache` as a candidate seed for the shared
+> namespace rather than reinventing the structure. The single-file
+> threshold is currently sitting around 11,800 LOC; the original 8K
+> bump may need re-evaluation soon.
 >
 > v2.27.0 ran a perf + cleanup review of the v2.22.0-v2.26.1 batch
 > (Process Bags, BAG_UPDATE coalescing, affix dupe gate, Lockpick

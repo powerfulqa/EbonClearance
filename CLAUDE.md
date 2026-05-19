@@ -15,7 +15,12 @@ If you're an AI agent or a new contributor, **read [docs/ADDON_GUIDE.md](docs/AD
 - This is a WoW 3.3.5a addon for Project Ebonhold, one file: [EbonClearance.lua](EbonClearance.lua)
 - No external libraries. All Blizzard APIs.
 - Run `stylua EbonClearance.lua && luacheck EbonClearance.lua` before committing. Luacheck sits at **0 warnings** (cleaned post-v2.6.0); keep it at zero. If a new warning appears, fix the cause or extend [`.luacheckrc`](.luacheckrc) - do not silence with blanket directives.
-- Run `lua tests/test_layout_reactivity.lua` to confirm the v2.11.0 reactive-panel-layout invariants still hold. CI runs the same test on every push via [.github/workflows/test.yml](.github/workflows/test.yml). Any new widget that snapshots `EC_PANEL_WIDTH` MUST go through `EC_compCache.setPanelWidth(widget, x)` or `EC_compCache.registerWidth(widget, x)` - otherwise it'll silently freeze at build-time width on resize.
+- Run all three invariant tests before committing:
+  - `lua tests/test_layout_reactivity.lua` - the v2.11.0 reactive-panel-layout invariants. Any new widget that snapshots `EC_PANEL_WIDTH` MUST go through `EC_compCache.setPanelWidth(widget, x)` or `EC_compCache.registerWidth(widget, x)` - otherwise it'll silently freeze at build-time width on resize.
+  - `lua tests/test_perf_guardrails.lua` - the v2.24.0 perf invariants (BAG_UPDATE coalescing, name-sort pre-compute, search debounce, affix-data cache by itemString) plus v2.29.0 invariants (normaliseAffixDesc case-fold, EnsureAccountDB allowedAffixes migration, list-mutation refresh call sites, sell-border helpers pinned to EC_compCache).
+  - `lua tests/test_no_addon_references.lua` - the v2.29.0 no-third-party-references regression test. Counts comment-line occurrences of forbidden patterns and fails if any count exceeds the v2.29.0 baseline.
+  - CI runs all three on every push via [.github/workflows/test.yml](.github/workflows/test.yml).
+- **No third-party addon references in new EC artefacts** - the v2.29.0 implementation constraint. Code comments, commit messages, `CHANGELOG.md`, `README.md`, `docs/`, slash command help, `/ec bugreport` output, settings labels, and tooltip annotations MUST NOT name other addons. Detection code may still call specific globals (necessary), but the comment uses neutral framing ("host bag UI", "third-party bag UI adapter"). Existing mentions stay. Full statement in `docs/ADDON_GUIDE.md` "No third-party addon references in new EC artefacts".
 - Known deferred refactors are tracked in [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md). Don't repeat items that are already there - cite them by number if you touch adjacent code.
 
 ## Conventions at a glance

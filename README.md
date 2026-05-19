@@ -63,6 +63,10 @@ The protection chain runs before any sell / delete / process decision. Order of 
 
 **Reactive panel layout.** Settings panels resize with the Interface Options frame - labels re-wrap, scroll content re-fits, list rows stretch. Layout invariants protected by CI regression tests.
 
+**Bag-slot sell-border tint.** Optional coloured ring around bag slot frames whose items the rule chain would sell at the next vendor visit. Off by default; enable from the Character Settings panel and pick your own colour. The ring lives on the slot frame, never on the icon itself, and repaints instantly when rules or list state change.
+
+**Per-item sellability inspector.** Alt+Shift+Right-Click any bag item (or `/ec sellinfo`) for a chat trace walking the entire decision chain - junk / sell list / quality rule / quest safety net / equipped-veto / Keep List / affix protection / chance-on-hit protection - so the answer to "why isn't this selling?" is always one click away.
+
 **Keep bags open.** Optional. Prevents the bag windows from closing when you leave a merchant or the Goblin Merchant despawns.
 
 **First-run welcome.** Brand-new installs get a brief chat summary of active defaults plus a popup (`Keep Defaults` / `Open Settings`). Existing characters keep the unchanged single-line welcome.
@@ -91,7 +95,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 - **Scavenger Settings.** Summon controls, chat / speech-bubble mute, auto-loot cycle threshold, auto-open containers, Fast Loot.
 - **Process Bags.** Disenchant / mill / prospect from your bags; configurable DE rarity cap, Soulbound inclusion toggle, per-character ignore list.
 - **Import / Export.** Sell List sharing strings, per-section source/target.
-- **Character Settings.** Restrict which characters the addon runs on.
+- **Character Settings.** Restrict which characters the addon runs on. Toggle the bag-slot sell-border tint and pick its colour through the standard colour-picker dialog.
 - **Statistics.** Lifetime + session counters side-by-side, reset independently.
 - **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, Process Next.
 - **Minimap button.** Left: options, Middle: Process Bags, Right: toggle.
@@ -111,6 +115,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec clean upgrades` | Report stale `Auto-Protected (Upgrade)` Keep List entries that are no longer above your equipped iLvl |
 | `/ec clean upgrades apply` | Remove the stale `Auto-Protected (Upgrade)` entries (with confirmation) |
 | `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report |
+| `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell — per-predicate chain trace (also available via Alt+Shift+Right-Click on the item) |
 | `/ec help` | Print the full slash-command reference in chat |
 | `/ecdebug` | Show debug info and run a bag scan |
 
@@ -129,6 +134,21 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check EbonClearance.lua` and `luacheck EbonClearance.lua` before opening a PR.
 
 ## Changelog
+
+### v2.29.0
+
+- **New: bag-slot sell-border tint.** Optional coloured ring around bag slot frames whose items the current rule chain would sell at the next vendor visit. Off by default; enable in Character Settings and pick your own colour through the standard colour-picker dialog. The ring lives on the slot frame, never on the icon itself, so the icon canvas stays untouched. Repaints instantly when toggled, when the colour changes, when items are added or removed from any list, when the Allow Sell override is toggled, and when a settings pack import changes verdicts.
+- **New: `/ec sellinfo` predicate-trace inspector.** `/ec sellinfo [bag slot]` (defaults to the first non-empty bag slot) walks the same decision chain that drives the merchant cycle and prints a per-step trace (`+` / `-` markers) explaining which predicates passed and which failed for that slot. Alt+Shift+Right-Click a bag item for the same trace. Closes the diagnostic loop on "why isn't this selling?" questions without needing a `/ec bugreport` cycle.
+- **New: full settings pack export / import.** The Import / Export panel gains a `Full settings pack` checkbox. When ticked, Export produces one fingerprint-suffixed string covering quality rules + Sell List + Account Sell List + Keep List + Delete List. Import auto-detects the format (`EC_PACK_V1` marker) and routes appropriately; the existing single-list export workflow is unchanged when the checkbox is off. Merge / Replace modes apply per list within the pack.
+- **Combat-deferred settings open.** Minimap left/middle click during combat now queues the panel open and fires it the moment combat ends, with a one-line chat note so the silent block isn't mistaken for a broken button. Right-click (toggle enabled) is unaffected.
+- **Affix dupe gate fix: case-fold normalisation.** Rank-I affix descriptions that shipped with a lowercase opening letter would miss the match against rank-II / rank-III entries that use a capital. The normaliser now case-folds at the end so both ends of the comparison agree regardless of source-side casing. One-shot migration on the account-wide allow list (`ADB.allowedAffixes`) lowercases existing keys so previously-allowed affixes keep matching after the change.
+- **List mutations and Allow Sell mutations now refresh the slot-border tints immediately.** Previously the ring would persist after Alt+Right-Click → "Remove from Sell List" or after toggling Allow Sell, until the bag was closed and reopened. Now every list / allow-list write is followed by a repaint of every decorated slot button.
+- **Deep-bag tracking fix.** The slot-border registry tracks every button the hook has ever touched, not just buttons that previously had a ring drawn. Without this, items deep in bags whose first paint was `won't sell` couldn't be found by the refresh helper when their verdict later flipped; moving the item to a new slot would "unlock" them by routing through a fresh `:Update`. The new tracking puts every button in the registry on the first paint, fixing the case.
+- **`/ec bugreport` neutral capability flags.** The old `UI Mods Detected` block listed specific third-party addons; replaced with an `Environment Capabilities` block reporting generic flags (`host bag UI detected`, `host bag-UI category API available`, `LibItemSearch present`, `auction pricing source detected`, `Project Ebonhold extraction catalog exposed`). New `Bag Display` block surfaces the sell-border state, colour, decorated-button count, and host-hook installation flag. New `Allow Lists` block surfaces the chance-on-hit / random-affix allow-list counts, the known-affix session set size, and the exact-rank-duplicates toggle.
+- **Merchant Settings narrow-width fix.** At narrow Interface Options panel widths the per-rarity row labels (`White (Common)`, `Green (Uncommon)`, etc.) overflowed into the right-anchored `Use equipped iLvl` + `max iLvl` controls. The label now anchors against the `Use equipped iLvl` text's left edge instead of using a fixed 420 px width, so the rarity name truncates cleanly when the panel narrows.
+- **Import / Export panel: backdrop chrome on the output / input boxes.** Both EditBox scrolls now sit in a dark tooltip-style backdrop frame with a thin beveled border, so they're visually distinct as text areas instead of rendering as a transparent void. Clicking anywhere in the box focuses the EditBox (previously you had to click on the glyph row inside).
+- **`/ec sellinfo` listed on the main settings panel's Slash Commands block.** Was previously only in `/ec help` chat output.
+- **Schema:** two new fields on `EbonClearanceDB`. `sellBorderEnabled` (boolean, default false) and `sellBorderColor` (table `{r,g,b,a}`, default gold). Additive; no existing field changes. One-shot migration on `ADB.allowedAffixes` keys (case-fold) is also additive and idempotent.
 
 ### v2.28.0
 

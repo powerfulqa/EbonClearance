@@ -1082,6 +1082,54 @@ algorithm from `extraction.lua`).
 
 If you change any of these, update this table and the nearest comment.
 
+### Bag display: sell-border tint (v2.29.0+)
+
+The opt-in slot-border tint draws an additive ring around bag slot frames whose items the rule chain would sell. Three invariants every contributor touching this code must preserve:
+
+1. **Every button that goes through `EC_compCache.applySellBorder` MUST be added to `EC_compCache.sellBorderButtons`**, regardless of the current `willSell` verdict. The registry is the lookup the settings-flip refresh uses; if a button never enters it (e.g. because its first paint was `won't sell`), the refresh can't find it later when the verdict flips. Before v2.29.0 only buttons that received a texture entered the registry; the fix was to track unconditionally. Don't gate the registry insert on `willSell` again.
+
+2. **The host bag-UI adapter MUST install at `ADDON_LOADED` for the host addon, not at `PLAYER_LOGIN` plus a delay.** The host builds its slot class during its own load pass; by the time `PLAYER_LOGIN` plus a 2-second delay fires, the host may already have painted its first set of slots without our hook in place, and those slots stay un-decorated until something else triggers an update. Installing at the host's `ADDON_LOADED` puts our hook in BEFORE the host can build any bag-display frames. The `PLAYER_LOGIN`-deferred install path is kept as an idempotent fallback only.
+
+3. **The ring texture sits on `OVERLAY` sublevel 6 with `BlendMode("ADD")`.** This is deliberately above the host bag-UI's own quality border (sublevel 0) so the two compose additively — a Blue/Rare quality border + an EC sell-border tint read as both colours layered, not one fighting the other. Don't drop the sublevel or change the blend mode without considering how the composition will read.
+
+Anything that mutates the verdict of a bag slot — list adds/removes, allow-list mutations, settings pack imports, colour picks, the master toggle — MUST call `EC_RefreshSellBorders()` after the mutation. The helper is a no-op when the toggle is off, so calling it from a mutation site that isn't gated on the toggle is cheap and correct.
+
+### Affix description normalisation: case-folds (v2.29.0+)
+
+`EC_compCache.normaliseAffixDesc` strips colour codes, `@affix@` markers, leading/trailing whitespace, trailing sentence punctuation — AND case-folds via `:lower()` at the end. The case-fold is load-bearing: at least one rank-I affix description in Project Ebonhold ships with a lowercase opening letter while rank-II / rank-III ship with a capital, and the comparison would miss otherwise.
+
+If you ever remove the `:lower()` you must ALSO revert the one-shot migration in `EnsureAccountDB` that lowercases existing `ADB.allowedAffixes` keys, because the migration assumes the normaliser produces lowercase output. The pair is idempotent on the current normaliser; reverting one side without the other breaks Allow Sell for users who marked affixes under the old (mixed-case) normaliser.
+
+`Stacks with other ranks.` disclaimer hazard from the v2.23.0 design is unchanged; the first-sentence-trim fallback in `scanTooltipForAffixDesc` Path 2 and `playerHasAffixDescription` still handles it.
+
+### List-mutation must call `EC_RefreshSellBorders`
+
+Every site that writes to `DB.whitelist`, `DB.blacklist`, `DB.deleteList`, `ADB.whitelist`, `ADB.allowedItems`, or `ADB.allowedAffixes` MUST follow the write with `EC_RefreshSellBorders()`. The helper is forward-declared as a no-op stub at file head and reassigned with the real body once the F2 hooks land further down; the call is safe at any file position.
+
+Current sites that do this correctly:
+- `EC_AddItemToList` and `EC_RemoveItemFromList` (Sell / Keep / Delete / Account Sell)
+- The Alt+Right-Click `Allow Sell` / `Remove from Allow List` click handlers (chance-on-hit and random-affix)
+- The Character Settings slot-border colour picker (commit callback)
+- The `importFullPack` deserialiser
+
+If you add a new mutation site without calling the refresh helper, the slot-border ring goes stale until the user closes and reopens their bags. The proposed test (`tests/test_no_addon_references.lua` companion check, see CODE_REVIEW.md) catches this at CI time.
+
+### No third-party addon references in new EC artefacts (v2.29.0+)
+
+EC's shipped artefacts MUST NOT name, mention, or compare against any other addon in NEW code or docs. This includes code comments, commit messages, `CHANGELOG.md`, `README.md`, this file, slash command help text, the `/ec bugreport` output, settings-panel labels, and tooltip annotations.
+
+Allowed alternatives when integration code genuinely needs to be discussed:
+- "Host bag UI integration" / "third-party bag UI adapter"
+- "Cross-character inventory data source (when available)"
+- "Optional external data backend"
+- "Detected at runtime via the `_G` lookup; ungated when absent"
+
+The runtime detection still calls the specific global (`_G.Bagnon`, `LibStub("AceAddon-3.0"):GetAddon("AdiBags")`, etc.) — that's necessary for the API to work — but the comment explaining what's happening uses neutral framing.
+
+**Existing mentions stay.** Pre-v2.29.0 comments in `EbonClearance.lua` and entries in `NOTICE.md` / older `README.md` changelog stanzas remain untouched. The rule is forward-only.
+
+Rationale: EC reads as a self-contained piece of engineering, not a synthesis or a port. Comments explain WHY a piece of code exists and HOW it works, never "where the idea came from". Borrowing another addon's terminology in EC comments dilutes that voice and signals derivation where the implementations are EC-native.
+
 ## Fingerprint and watermark
 
 EbonClearance carries a deliberate, visible fingerprint mechanism so

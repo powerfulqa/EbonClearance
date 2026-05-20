@@ -34,15 +34,29 @@
 -- matching only - this file must run under stock lua5.1 with no
 -- external dependencies so it works in CI without a luarocks step.
 
-local SOURCE_PATH = "EbonClearance.lua"
+-- Post-split: concat every shipped .lua source file. The file-split refactor
+-- tracked in docs/CODE_REVIEW.md item 4 moves chunks out of EbonClearance.lua
+-- into per-feature files (Core first, more to follow). Every static-pattern
+-- check below runs against the whole concatenated source, so invariants
+-- expressed as `src:find(...)` continue to hold across the split boundary.
+-- Add new source files to the SOURCE_PATHS list in the order they appear in
+-- the .toc (matches load order).
+local SOURCE_PATHS = {
+    "EbonClearance_Core.lua",
+    "EbonClearance.lua",
+}
 
-local f, err = io.open(SOURCE_PATH, "r")
-if not f then
-    io.stderr:write("FAIL: cannot open " .. SOURCE_PATH .. ": " .. tostring(err) .. "\n")
-    os.exit(1)
+local pieces = {}
+for _, path in ipairs(SOURCE_PATHS) do
+    local f, err = io.open(path, "r")
+    if not f then
+        io.stderr:write("FAIL: cannot open " .. path .. ": " .. tostring(err) .. "\n")
+        os.exit(1)
+    end
+    pieces[#pieces + 1] = f:read("*a")
+    f:close()
 end
-local src = f:read("*a")
-f:close()
+local src = table.concat(pieces, "\n")
 
 local fails = 0
 
@@ -865,54 +879,86 @@ do
 end
 
 -- ---------------------------------------------------------------------------
--- Test 28 (v2.30.0 Stage 1): namespace bootstrap is present and intact.
+-- Test 28 (Stage 1+2): namespace bootstrap + EC_compCache split-safe.
 -- ---------------------------------------------------------------------------
--- The multi-release file split tracked in docs/CODE_REVIEW.md item 4
--- depends on `local addonName, NS = ...` at the top of the file AND
--- on EC_compCache being mirrored onto NS.compCache, so future split
--- files can reach the table via the namespace. Stage 1 is purely
--- additive - no functional change - but it MUST stay in place or
--- every later stage breaks.
+-- The multi-stage file split tracked in docs/CODE_REVIEW.md item 4 depends
+-- on `local NS = select(2, ...)` at the top of every shipped source file
+-- AND on EC_compCache being declared exactly ONCE as a table literal
+-- (in EbonClearance_Core.lua after Stage 2) plus exactly ONCE as a
+-- namespace re-alias (in EbonClearance.lua). The concat-source pattern
+-- the tests use means both of those declarations appear in `src`;
+-- the invariants below count them separately so a shadowing redeclaration
+-- still fails.
 do
-    -- The varargs bootstrap. WoW passes (addonName, namespaceTable) as
-    -- the file-load varargs; we capture only the namespace via
-    -- `select(2, ...)` to stay under Lua 5.1's 200-locals cap (a
-    -- two-name destructuring `local _, NS = ...` would spend 2 slots).
+    -- Every shipped .lua file must declare `local NS = select(2, ...)`
+    -- near its top - that's how each file captures the shared namespace
+    -- table WoW passes as the second file-load vararg. After Stage 2
+    -- both EbonClearance_Core.lua and EbonClearance.lua have one each,
+    -- so the concat source contains AT LEAST 2 occurrences.
+    --
     -- Plain-mode find: pass true as the 3rd arg so `()` are literal
     -- parens and `...` is a literal ellipsis (no pattern escaping).
-    local bootstrap = src:find("local NS = select(2, ...)", 1, true) ~= nil
+    local bootstrapCount = 0
+    local searchStart = 1
+    while true do
+        local s, e = src:find("local NS = select(2, ...)", searchStart, true)
+        if not s then break end
+        bootstrapCount = bootstrapCount + 1
+        searchStart = e + 1
+    end
     check(
-        "namespace varargs bootstrap present",
-        bootstrap,
-        "EbonClearance.lua must declare `local NS = select(2, ...)` near the top; future split files use NS as the shared namespace"
+        "namespace varargs bootstrap present in every source file",
+        bootstrapCount >= #SOURCE_PATHS,
+        string.format(
+            "expected at least %d `local NS = select(2, ...)` occurrences " ..
+            "(one per source file in SOURCE_PATHS); found %d",
+            #SOURCE_PATHS, bootstrapCount
+        )
     )
 
-    -- EC_compCache mirrored onto NS.compCache. Both names point at the
-    -- same table; existing call sites use the EC_compCache upvalue,
-    -- future split files reach the table via NS.compCache.
-    local mirror = src:find("NS%.compCache = EC_compCache", 1) ~= nil
+    -- EC_compCache mirrored onto NS.compCache (Stage 1 invariant). Both
+    -- names point at the same table; existing call sites use the
+    -- EC_compCache upvalue, future split files reach the table via
+    -- NS.compCache. Lives in Core after Stage 2.
+    local mirror = src:find("NS%.compCache = EC_compCache") ~= nil
     check(
         "EC_compCache mirrored onto NS.compCache",
         mirror,
-        "after the EC_compCache table literal closes, `NS.compCache = EC_compCache` must alias the table onto the namespace"
+        "after the EC_compCache table literal closes (in Core post-Stage-2), `NS.compCache = EC_compCache` must alias the table onto the namespace"
     )
 
-    -- Defence-in-depth: no second `local EC_compCache =` exists. A
-    -- shadowing re-declaration further down the file would silently
-    -- break the alias because NS.compCache would still point at the
-    -- ORIGINAL table while EC_compCache writes would land on the new.
-    local count = 0
-    for _ in src:gmatch("\nlocal EC_compCache%s*=") do
-        count = count + 1
+    -- Defence-in-depth: exactly ONE table-literal declaration of
+    -- EC_compCache. A second literal would silently desync from
+    -- NS.compCache (the alias would still point at the first table).
+    -- The re-alias pattern `local EC_compCache = NS.compCache` is
+    -- expected (in EbonClearance.lua) and intentionally NOT counted here.
+    local literalCount = 0
+    for _ in src:gmatch("\nlocal EC_compCache%s*=%s*{") do
+        literalCount = literalCount + 1
     end
-    -- Also include the case where it's the very first line of the file.
-    if src:find("^local EC_compCache%s*=") then
-        count = count + 1
+    if src:find("^local EC_compCache%s*=%s*{") then
+        literalCount = literalCount + 1
     end
     check(
-        "EC_compCache declared exactly once",
-        count == 1,
-        "EC_compCache must have exactly one module-scope declaration; a second `local EC_compCache = ...` would silently desync from NS.compCache. Found " .. tostring(count)
+        "EC_compCache declared as a table literal exactly once",
+        literalCount == 1,
+        "EC_compCache must have exactly one table-literal declaration (`local EC_compCache = { ... }`) across all shipped sources. A second one would silently desync the NS.compCache alias. Found " .. tostring(literalCount)
+    )
+
+    -- Companion invariant: exactly ONE re-alias `local EC_compCache = NS.compCache`.
+    -- This sits in EbonClearance.lua so existing `EC_compCache.foo` upvalue
+    -- call sites resolve through the file-scope local. If the re-alias
+    -- ever appears more than once, two upvalues would shadow each other;
+    -- if it's missing entirely, the table literal is in Core but the call
+    -- sites in EbonClearance.lua would resolve to global EC_compCache (nil).
+    local aliasCount = 0
+    for _ in src:gmatch("\nlocal EC_compCache%s*=%s*NS%.compCache") do
+        aliasCount = aliasCount + 1
+    end
+    check(
+        "EC_compCache re-alias from NS.compCache present exactly once",
+        aliasCount == 1,
+        "expected exactly one `local EC_compCache = NS.compCache` re-alias (in EbonClearance.lua, so call sites can resolve via the file-scope upvalue). Found " .. tostring(aliasCount)
     )
 end
 

@@ -33,21 +33,14 @@ local ADDON_NAME = "EbonClearance"
 local TARGET_NAME = "Goblin Merchant"
 local PET_NAME = "Greedy scavenger"
 
--- Provenance. Mirrored into globals so the origin/author are visible to any
--- /run introspection, addon-management tool, or crash trace. LICENSE section
--- 2(d) requires these globals to be preserved in any derivative. The
--- double-underscore-prefix-with-addon-name form follows a convention shared
--- elsewhere in the 3.3.5a addon ecosystem; see NOTICE.md for the prior-art
--- acknowledgement. EBONCLEARANCE_IDENT is set inline (no local) because the
--- display-name string only appears in this one assignment; ADDON_AUTHOR and
--- ADDON_URL stay as locals because the settings byline reads them too.
-local ADDON_AUTHOR = "Serv"
-local ADDON_URL = "https://github.com/powerfulqa/EbonClearance"
-_G["EBONCLEARANCE_IDENT"] = "EbonClearance"
-_G["EBONCLEARANCE_AUTHOR"] = ADDON_AUTHOR
-_G["EBONCLEARANCE_ORIGIN"] = ADDON_URL
-_G["__EbonClearance_origin"] = ADDON_URL
-_G["__EbonClearance_author"] = ADDON_AUTHOR
+-- Provenance globals (EBONCLEARANCE_* and __EbonClearance_*) plus the
+-- EC_Fingerprint helper now live in EbonClearance_Core.lua per the file
+-- split (Stage 2, see docs/CODE_REVIEW.md item 4). Core writes those
+-- globals on load and exposes the helper as NS.Fingerprint; we re-bind
+-- the byline strings here from the namespace because the settings panel
+-- byline (still defined in this file) reads them as upvalues.
+local ADDON_AUTHOR = NS.ADDON_AUTHOR
+local ADDON_URL = NS.ADDON_URL
 
 -- Build-time version. The release workflow's sed rule rewrites the
 -- `local ADDON_VERSION = "vX.Y.Z"` line on each tag push (anchored
@@ -63,6 +56,8 @@ _G["__EbonClearance_author"] = ADDON_AUTHOR
 -- version lie on a release build. The CI test in
 -- tests/test_layout_reactivity.lua asserts this constant matches the
 -- .toc Version field so any future drift fails CI before shipping.
+-- DO NOT move this constant out of EbonClearance.lua without first
+-- updating the CI workflow's sed rule that targets this file by name.
 local ADDON_VERSION = "v2.29.0"
 local function EC_GetVersion()
     if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then
@@ -71,34 +66,13 @@ local function EC_GetVersion()
     return GetAddOnMetadata("EbonClearance", "Version") or "unknown"
 end
 
--- Salted, deterministic 24-bit hash. Not cryptographic; the goal is trivial
--- verifiability of EbonClearance origin in any derivative work. The salt
--- below is a deliberately visible signature: anyone with our source has it,
--- but to use our fingerprint format they must either (a) carry the salt
--- verbatim - which is the evidence - or (b) re-implement and diverge from
--- the canonical export format, also detectable. Do NOT "clean up" or
--- refactor the salt string away; its presence in code is the point. See
--- docs/ADDON_GUIDE.md "Fingerprint and watermark" for the full convention.
--- The salt lives inside the function body (not at module scope) only so it
--- doesn't consume a main-chunk local slot - Lua 5.1 caps that at 200.
-local function EC_Fingerprint(payload)
-    local SALT = "EbonClearance|Serv|powerfulqa|2026"
-    local s = (payload or "") .. "|" .. SALT
-    local h = 5381
-    for i = 1, #s do
-        -- djb2 step, folded to 24 bits so the printed form fits in 6 hex chars.
-        h = ((h * 33) + string.byte(s, i)) % 16777216
-    end
-    return string.format("%06x", h)
-end
-
 -- Build watermark: a precomputed fingerprint of "EbonClearance@<version>".
 -- Exposed as a global so /run inspection and external auditors can read it.
 -- If this exact 6-char hex value (computed for our version) ever appears in
 -- another addon's source, that addon is a verbatim copy of EbonClearance.
--- Written straight to _G to avoid spending a local slot in the main chunk
--- (Lua 5.1's 200-local cap is real and we sit near it).
-_G["__EbonClearance_watermark"] = EC_Fingerprint("EbonClearance@" .. ADDON_VERSION)
+-- Lives in this file (not Core) because it reads ADDON_VERSION, which
+-- has to stay here for CI sed-rule compatibility.
+_G["__EbonClearance_watermark"] = NS.Fingerprint("EbonClearance@" .. ADDON_VERSION)
 
 local EC_GetPlayerName
 local EC_IsAddonEnabledForChar
@@ -137,150 +111,15 @@ local STATE = {
 }
 local EC_lootCycleState = STATE.IDLE
 local EC_addonDismissed = false
--- Cached companion creature IDs and v2.9.0 dismiss-vs-leash classifier state,
--- colocated on a single table to keep the main-chunk local count down (Lua
--- 5.1 caps that at 200; see docs/ADDON_GUIDE.md).
---
--- scav / merch: the CRITTER companion list is keyed by creature ID at the
--- API level; matching on creatureName alone is brittle against rename /
--- localisation. We learn the ID on first successful name match and prefer
--- it on subsequent lookups, falling back to name + re-cache if the slot
--- reshuffles. Both nil means "not yet resolved this session".
---
--- lastSummonAt / userUntil / USER_WINDOW_S / USER_GRACE_S: classifier for
--- "the user just clicked the portrait off" vs "range-leash failure". When
--- WE summon the Scavenger we write GetTime() to lastSummonAt. When the
--- pet's "summoned" flag flips out -> not-out without our own dismiss flag
--- set, and the transition lands within USER_WINDOW_S of that summon, we
--- treat it as a manual portrait click and suppress restore until userUntil.
--- Range-leash transitions take longer to surface, so the timing
--- distinguishes cleanly without misclassifying stationary casts. Restores
--- the discrimination v2.6.1 removed when it dropped the speed-based
--- classifier without a replacement.
-local EC_compCache = {
-    scav = nil,
-    merch = nil,
-    lastSummonAt = 0,
-    userUntil = 0,
-    USER_WINDOW_S = 5.0,
-    USER_GRACE_S = 30.0,
-    -- v2.9.2 loot-silence false-positive guard. The loot-silence stuck signal
-    -- (EC_IsLootSilenceStuck) trips when 2+ LOOT_CLOSED fire inside its
-    -- 60 s window without the Scavenger speaking. LOOT_CLOSED also fires
-    -- for non-corpse loot sources - disenchanting, milling, prospecting,
-    -- lockpicking, opening engineered containers - which the Scavenger
-    -- never reacts to, so a player crafting in town would dismiss-and-
-    -- resummon the pet every minute. UNIT_SPELLCAST_SUCCEEDED for the
-    -- player updates lastProfLootCastAt; the LOOT_CLOSED handler skips
-    -- the loot-ring push when (now - lastProfLootCastAt) < PROF_LOOT_WINDOW_S
-    -- because the loot frame that just closed was the result of that
-    -- profession cast, not a corpse loot. Fishing is excluded via
-    -- IsFishingLoot() in the same path.
-    lastProfLootCastAt = 0,
-    PROF_LOOT_WINDOW_S = 3.0,
-    PROF_LOOT_SPELLS = {
-        ["Disenchant"] = true,
-        ["Milling"] = true,
-        ["Prospecting"] = true,
-        ["Pick Lock"] = true,
-        ["Opening"] = true, -- lockpick + engineering container open
-    },
-    -- v2.10.0 bind-type cache. Drives the per-rarity bindFilter rule
-    -- ("any" / "boe" / "bop") in EC_IsSellable. Bind type is immutable for
-    -- a given itemID, so a session-scoped { [itemID] = "boe"|"bop"|"any" }
-    -- cache eliminates rescans on every bag walk. The cache is populated
-    -- lazily by EC_compCache.getBindType (defined further down once the
-    -- shared EC_scanTooltip frame exists). Entries are never invalidated;
-    -- the cache resets naturally on /reload because it lives in this
-    -- module-local table and isn't persisted.
-    bindCache = {},
-    -- v2.20.0 Chance-on-hit cache. Same per-itemID caching pattern as
-    -- bindCache: chance-on-hit is a stable property (same itemID
-    -- always either has or doesn't have the proc line), so we cache
-    -- the boolean result keyed by itemID and skip the tooltip scan on
-    -- subsequent lookups. Cache resets naturally on /reload because
-    -- this table lives in the module-local EC_compCache and isn't
-    -- persisted. Filled lazily by EC_compCache.itemHasChanceOnHit.
-    chanceOnHitCache = {},
-    -- v2.22.0 Process-mode cache. Maps itemID to one of
-    -- "Disenchant" | "Mill" | "Prospect" | "none", or nil if not yet
-    -- scanned. Stable property per itemID. Filled lazily by the
-    -- can* helpers below.
-    processCache = {},
-    -- v2.10.0 resummon-print debounce. v2.9.2 added the "Greedy Scavenger
-    -- resummoned." chat line on every successful CallCompanion in the
-    -- recovery path, plus a 2 s post-call cooldown to avoid back-to-back
-    -- prints. Under heavy combat the server can take 4-6 s to flip the
-    -- companion's summoned flag to true, which means the 2 s cooldown
-    -- expires while addonDismissed is still set, the pet-tick re-fires
-    -- CallCompanion, and the user sees 3-5 "resummoned" lines for one
-    -- visible recovery. pendingAnnounce isolates the print from the
-    -- retry: every dismiss path that wants the recovery announced sets
-    -- it to true; EC_TryResummonScavenger prints only if it's true and
-    -- clears it. Subsequent CallCompanion retries within the same cycle
-    -- stay silent. The pet-tick clearing of EC_addonDismissed (false ->
-    -- true scavenger transition) also clears this flag defensively.
-    pendingAnnounce = false,
-    -- v2.10.0 silent-realm guard for the v2.7.0 / v2.8.0 loot-silence
-    -- stuck signal. The signal assumed the Scavenger pet audibly chats
-    -- on every loot pickup, but on Project Ebonhold the pet's chat
-    -- events don't always reach the chat filter (server-side throttling,
-    -- custom pet behaviour, or the pet just doesn't broadcast on this
-    -- realm at all). With the on-summon synthetic refresh of
-    -- EC_lastScavSpokeAt, the signal then fires every ~60 s of farming
-    -- in a feedback loop. This flag tracks "have we ever observed a
-    -- real Scavenger speech event this session" - set to true only by
-    -- the chat filter's actual matches (NOT by the on-summon refresh)
-    -- and read by EC_IsLootSilenceStuck to early-return when false. If
-    -- the pet never speaks on this realm, the flag stays false and the
-    -- signal is permanently disabled for the session. Movement-time
-    -- stuck detection (EC_STUCK_MOVEMENT_THRESHOLD, 180 s) remains the
-    -- primary signal in all cases.
-    scavSpeechEverHeard = false,
-    -- v2.11.0 bag-full hysteresis. Without this, a single transient
-    -- BAG_UPDATE that crosses DB.bagFullThreshold (a vendor opening up,
-    -- an item splitting, an inventory shuffle) immediately fires the
-    -- dismiss-Scav / summon-Goblin cycle even if the next tick puts the
-    -- count back over the threshold. AutoDelete v3.17.x ships a 1.5 s
-    -- confirm window for the same reason. bagFullSince is timestamped at
-    -- the first tick the threshold is crossed and cleared the moment the
-    -- count rises back above it; EC_HandleBagFullForCycle only fires
-    -- when (GetTime() - bagFullSince) >= BAG_FULL_CONFIRM_S.
-    bagFullSince = nil,
-    BAG_FULL_CONFIRM_S = 1.5,
-    -- v2.11.0 GCD-aware busy gate. EC_IsPlayerBusy() can detect cast,
-    -- channel, and movement, but 3.3.5a has no clean GCD query - so a
-    -- heavy instant-cast rotation runs the GCD continuously while every
-    -- check between casts reports "not busy". CallCompanion goes through
-    -- the spell pipeline and is silently rejected by the GCD, the 2 s
-    -- verify reports not-summoned, retry budget exhausts, and the user
-    -- sees "Goblin Merchant failed to summon. Resuming looting." even
-    -- though they were just spamming instants the whole time.
-    --
-    -- Workaround: derive the GCD from UNIT_SPELLCAST_SUCCEEDED. After
-    -- any player cast we treat the next GCD_WINDOW_S as "busy" too. The
-    -- 1.5 s window matches the standard GCD; rotations with shorter
-    -- haste-reduced GCDs will see the gate clear too early occasionally,
-    -- but those CallCompanion attempts that DO fall in a GCD slot now
-    -- just defer (via the busy gate) rather than burning the retry
-    -- budget. The fix is for the goblin summon path; the Scavenger
-    -- resummon path retries indefinitely anyway via EC_addonDismissed,
-    -- so it just defers a bit longer.
-    lastPlayerCastAt = 0,
-    GCD_WINDOW_S = 1.5,
-    -- Auto-open containers combat-deferred announce flag. The driver bails
-    -- early on InCombatLockdown() because UseContainerItem on a lockbox
-    -- triggers an "Opening" cast that gets interrupted by damage. Without a
-    -- signal, deferral looks identical to the addon being broken. This flag
-    -- gates a one-shot "[EC] Deferred N container(s) until out of combat."
-    -- chat line per combat instance and is cleared on PLAYER_REGEN_ENABLED.
-    combatDeferredAnnounced = false,
-}
--- Mirror the junk-drawer table onto the addon namespace. Same table; both
--- names alias the same memory. Existing call sites use the EC_compCache
--- upvalue; future split files will reach the table via NS.compCache.
--- Stage 1 of the multi-release file split (see docs/CODE_REVIEW.md item 4).
-NS.compCache = EC_compCache
+-- Cached companion creature IDs and v2.9.0 dismiss-vs-leash classifier state.
+-- The actual table literal lives in EbonClearance_Core.lua (Stage 2 of the
+-- file split, see docs/CODE_REVIEW.md item 4) and is exposed on the addon
+-- namespace as NS.compCache. We re-bind it to the file-scope upvalue here
+-- so every existing `EC_compCache.foo` reference downstream resolves
+-- correctly without per-site changes. Same table; both names alias the
+-- same memory. Comments documenting individual fields (scav, lastSummonAt,
+-- bindCache, etc.) live next to the declaration in Core.
+local EC_compCache = NS.compCache
 
 -- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
 -- movement accumulator (only counts while the pet is out) and the
@@ -8849,9 +8688,9 @@ local function EC_ExportWhitelist(listName, scope)
     local name = (listName and listName ~= "") and listName or "Unnamed"
     name = name:gsub("[:|]", "_")
     local payload = EC_EXPORT_PREFIX .. name .. ":" .. table.concat(ids, ",")
-    -- Fingerprint suffix flags this export as EbonClearance-produced. See
-    -- EC_FINGERPRINT_SALT and EC_Fingerprint near the top of the file.
-    return payload .. ";fp=" .. EC_Fingerprint(payload)
+    -- Fingerprint suffix flags this export as EbonClearance-produced.
+    -- Helper lives in EbonClearance_Core.lua, exposed as NS.Fingerprint.
+    return payload .. ";fp=" .. NS.Fingerprint(payload)
 end
 
 -- Full settings pack: serialises qualityRules + Sell / Keep / Delete lists +
@@ -8904,7 +8743,7 @@ function EC_compCache.exportFullPack()
     lines[#lines + 1] = formatIDs("KL", DB and DB.blacklist)
     lines[#lines + 1] = formatIDs("DL", DB and DB.deleteList)
     local payload = table.concat(lines, "\n")
-    return payload .. "\n;fp=" .. EC_Fingerprint(payload)
+    return payload .. "\n;fp=" .. NS.Fingerprint(payload)
 end
 
 function EC_compCache.importFullPack(str, mode)

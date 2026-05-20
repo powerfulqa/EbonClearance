@@ -1222,12 +1222,66 @@ churn at existing call sites.
 
 Stage 1 invariants (enforced by `tests/test_perf_guardrails.lua` Test 28):
 
-- The `local NS = select(2, ...)` bootstrap line is present near the
-  top of the file.
+- The `local NS = select(2, ...)` bootstrap line is present at the top
+  of every shipped source file (count >= number of files in the test's
+  `SOURCE_PATHS` list).
 - `NS.compCache = EC_compCache` appears immediately after the
   `EC_compCache` table literal closes.
-- `EC_compCache` has exactly ONE module-scope declaration - a shadowing
-  redeclaration further down the file would silently desync the alias.
+- `EC_compCache` has exactly ONE table-literal declaration AND exactly
+  ONE re-alias declaration across all shipped sources - shadowing
+  literals would silently desync NS.compCache, and a missing re-alias
+  would leave EbonClearance.lua's `EC_compCache.foo` references
+  resolving to global nil.
+
+### Stage 2: extract EbonClearance_Core.lua (commit `<pending>`)
+
+Stage 2 moves the smallest set of chunks that have no dependencies on
+the rest of the file:
+
+- The provenance globals block (`EBONCLEARANCE_*` and `__EbonClearance_*`
+  `_G` writes) and the `ADDON_AUTHOR` / `ADDON_URL` locals that back them.
+  Both are also exposed on the namespace as `NS.ADDON_AUTHOR` /
+  `NS.ADDON_URL` so the settings byline (still in EbonClearance.lua)
+  re-aliases them.
+- The `EC_Fingerprint` helper, exposed as `NS.Fingerprint`. The two
+  export call sites in EbonClearance.lua now call `NS.Fingerprint(payload)`
+  directly (no re-alias - cold-path, only fires when the user clicks
+  Export, so the table-index lookup is free).
+- The `EC_compCache` table literal. Exposed as `NS.compCache`.
+  EbonClearance.lua keeps a file-scope `local EC_compCache = NS.compCache`
+  re-alias so the ~50+ `EC_compCache.foo` call sites resolve to the
+  same table via upvalue.
+
+Things that did NOT move in Stage 2 (deliberate):
+
+- `ADDON_VERSION` - the CI release workflow's `sed` rule targets the
+  `local ADDON_VERSION = "..."` line by file path. Moving it would
+  require a `.github/workflows` change; deferred to a later split stage.
+- `EC_GetVersion` and the watermark `_G` write - both depend on
+  `ADDON_VERSION`, so they stay where `ADDON_VERSION` is.
+- API cached upvalues, `STATE`, forward declarations, `EnsureDB`,
+  `EC_Delay`, session stats - planned for a later stage. Moving them
+  requires either re-aliasing on the EbonClearance.lua side (one local
+  slot each) or rewriting call sites (large diff). Pacing matters more
+  than blast radius here.
+
+Slot accounting on EbonClearance.lua's main chunk:
+
+- Removed: `ADDON_DISPLAY` (already done in Stage 1), `EC_Fingerprint`,
+  `ADDON_AUTHOR` was inline but is now a re-alias from `NS.ADDON_AUTHOR`
+  (still one slot), `ADDON_URL` likewise.
+- Net slot delta: -1 (the `EC_Fingerprint` function definition).
+
+Stage 2 invariants (enforced by `tests/test_perf_guardrails.lua` Test 28):
+
+- Concatenated source contains AT LEAST one `local NS = select(2, ...)`
+  per file listed in `SOURCE_PATHS`.
+- Exactly one `local EC_compCache = { ... }` (the table literal, now
+  in Core).
+- Exactly one `local EC_compCache = NS.compCache` (the re-alias, in
+  EbonClearance.lua).
+- `NS.compCache = EC_compCache` appears exactly once (still in Core,
+  immediately after the table literal).
 
 ### Target architecture (post-split)
 

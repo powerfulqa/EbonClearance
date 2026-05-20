@@ -25,15 +25,25 @@
 -- API calls into specific third-party globals are necessary for the
 -- integrations to work; this test only polices the prose.
 
-local SOURCE_PATH = "EbonClearance.lua"
+-- Post-split: concat every shipped .lua source file. See the matching
+-- comment in tests/test_perf_guardrails.lua for the rationale. List
+-- order matches the .toc load order.
+local SOURCE_PATHS = {
+    "EbonClearance_Core.lua",
+    "EbonClearance.lua",
+}
 
-local f, err = io.open(SOURCE_PATH, "r")
-if not f then
-    io.stderr:write("FAIL: cannot open " .. SOURCE_PATH .. ": " .. tostring(err) .. "\n")
-    os.exit(1)
+local pieces = {}
+for _, path in ipairs(SOURCE_PATHS) do
+    local f, err = io.open(path, "r")
+    if not f then
+        io.stderr:write("FAIL: cannot open " .. path .. ": " .. tostring(err) .. "\n")
+        os.exit(1)
+    end
+    pieces[#pieces + 1] = f:read("*a")
+    f:close()
 end
-local src = f:read("*a")
-f:close()
+local src = table.concat(pieces, "\n")
 
 local fails = 0
 local function check(name, ok, message)

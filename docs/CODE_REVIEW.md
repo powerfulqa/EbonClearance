@@ -205,7 +205,7 @@ feature work into a split stage - keep diffs move-only where possible.
 | Stage | Scope | Status |
 |---|---|---|
 | 1 | Namespace bootstrap (`local NS = select(2, ...)`; `NS.compCache = EC_compCache` alias) | **DONE** (commit `8201442`) |
-| 2 | Extract `EbonClearance_Core.lua` (constants, API caches, EnsureDB, EnsureAccountDB, EC_Delay, EC_compCache, forward decls) | pending |
+| 2 | Extract `EbonClearance_Core.lua` (provenance globals, EC_Fingerprint, EC_compCache table literal) | **DONE** (commit `<pending>`) |
 | 3 | Extract `EbonClearance_Companion.lua` (Scavenger/Goblin lifecycle, chat filters, mount handler, stuck detection) | pending |
 | 4 | Extract `EbonClearance_Protection.lua` (affix detection 3-source, chance-on-hit, bind-type cache, process cache) | pending |
 | 5 | Extract `EbonClearance_Vendor.lua` (EC_IsSellable, BuildQueue, DoNextAction, vendor worker, auto-repair) | pending |

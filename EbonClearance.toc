@@ -7,4 +7,5 @@
 ## SavedVariables: EbonClearanceDB, EbonClearanceAccountDB
 
 Bindings.xml
+EbonClearance_Core.lua
 EbonClearance.lua

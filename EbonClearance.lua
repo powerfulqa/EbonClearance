@@ -142,8 +142,10 @@ local EC_scavStateBootstrapped = false
 -- the window without the Scavenger speaking, the pet is presumed lost
 -- out-of-range and the addon dismisses-then-resummons. Updated only while
 -- DB.autoLootCycle is on, so users not running the cycle pay no extra work
--- on the chat-event path.
-local EC_lastScavSpokeAt = 0
+-- on the chat-event path. Lives on EC_compCache (declared in
+-- EbonClearance_Core.lua) so EbonClearance_Companion.lua's chat filter and
+-- EbonClearance.lua's EC_IsLootSilenceStuck can both access it via the
+-- shared cache table after the file split. See docs/CODE_REVIEW.md item 4.
 -- Ring of GetTime() values pushed on every LOOT_CLOSED (player corpse loot
 -- completed). Pruned in place inside EC_IsLootSilenceStuck on each pet-tick
 -- check, so it cannot grow unboundedly across a session.
@@ -161,8 +163,13 @@ local EC_manualSell = {
 }
 local running = false
 
-local EC_greedyMessages = {}
-local EC_greedyFiltersInstalled = false
+-- The Greedy Scavenger chat filter, the speech-bubble killer, and
+-- the secondary ApplyGreedyChatFilter live in EbonClearance_Companion.lua
+-- (Stage 3 of the file split, see docs/CODE_REVIEW.md item 4). Companion
+-- exposes NS.InstallGreedyMuteOnce and NS.ApplyGreedyChatFilter, which
+-- the event hub + ADDON_LOADED branch + DB toggles further down this
+-- file call by name.
+
 
 -- Forward-declared so EC_AddItemToList (defined below) can call it before the
 -- helper body is reached further down the file. Returns the name of a list
@@ -178,263 +185,14 @@ local EC_FindAddConflict
 -- this name with the real refresh body when they install.
 local EC_RefreshSellBorders = function() end
 
-local function EC_StripCodes(s)
-    if type(s) ~= "string" then
-        return nil
-    end
-    return s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h", ""):gsub("|h", "")
-end
-
 local PET_NAME_LC = PET_NAME:lower()
-local function EC_IsGreedyAuthor(author)
-    if type(author) ~= "string" then
-        return false
-    end
-    author = EC_StripCodes(author)
-    if not author or author == "" then
-        return false
-    end
-    return author:lower() == PET_NAME_LC
-end
-
-local function EC_TrackGreedySpeech(msg)
-    msg = EC_StripCodes(msg)
-    if not msg or msg == "" then
-        return
-    end
-    msg = msg:lower()
-    -- Store the time of speech rather than a boolean; the bubble OnUpdate
-    -- prunes entries older than 8 s each tick (chat bubbles in 3.3.5 are
-    -- visible for ~5-7 s, so an 8 s TTL covers a bubble's lifetime). The
-    -- truthy value still satisfies the existing
-    -- `if EC_greedyMessages[clean] then` match in the bubble walker.
-    EC_greedyMessages[msg] = GetTime()
-end
-
-local function EC_GreedyEventFilter(self, _event, msg, author)
-    local hideChat = true
-    local hideBubbles = true
-    if DB then
-        hideChat = (DB.muteGreedy == true) or (DB.hideGreedyChat == true)
-        hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
-    end
-
-    -- Record the Scavenger's speech timestamp BEFORE the mute-disabled
-    -- early-return below, so the loot-silence stuck signal works even when
-    -- the user has both chat and bubble mute off. Gated on DB.autoLootCycle
-    -- so users not running the cycle don't pay the author-check on every
-    -- chat line.
-    --
-    -- v2.8.0: substring match on author OR body. Strict equality on
-    -- "greedy scavenger" missed Project Ebonhold's customised pet names
-    -- (e.g. "Serv's Scavenger") and emote-style messages whose body
-    -- contains the species name but no "says/yells/whispers" pattern
-    -- ("Greedy Scavenger gnaws on the corpse"). Either source naming the
-    -- pet is enough to refresh the speech baseline. Without this, normal
-    -- farming triggered false positives every time the player looted
-    -- 2 items in 60 s.
-    if DB and DB.autoLootCycle then
-        local lcAuthor = type(author) == "string" and author:lower() or ""
-        if lcAuthor:find("scavenger", 1, true) then
-            EC_lastScavSpokeAt = GetTime()
-            -- v2.10.0: arm the silent-realm guard. Set ONLY by real chat
-            -- matches; the on-summon synthetic refresh further down does
-            -- not touch this flag. Once true, the loot-silence stuck
-            -- signal is allowed to fire for the rest of the session.
-            EC_compCache.scavSpeechEverHeard = true
-        elseif type(msg) == "string" then
-            local lcMsg = EC_StripCodes(msg):lower()
-            if lcMsg:find("scavenger", 1, true) then
-                EC_lastScavSpokeAt = GetTime()
-                EC_compCache.scavSpeechEverHeard = true
-            end
-        end
-    end
-
-    -- Both feature flags off -> filter has no effect; skip the string-op tail.
-    -- Fires on 10 chat events for every line of chat received.
-    if not hideChat and not hideBubbles then
-        return false
-    end
-
-    if EC_IsGreedyAuthor(author) then
-        if hideBubbles and type(msg) == "string" then
-            EC_TrackGreedySpeech(msg)
-        end
-        if hideChat then
-            return true
-        end
-    end
-
-    if type(msg) == "string" then
-        local clean = EC_StripCodes(msg):lower()
-        if
-            clean:find("greedy scavenger", 1, true)
-            and (clean:find(" says", 1, true) or clean:find(" yells", 1, true) or clean:find(" whispers", 1, true))
-        then
-            -- Textual-fallback path. Refresh the speech timestamp here too so
-            -- the loot-silence signal stays accurate when the chat line
-            -- arrives via an event that doesn't set the author field.
-            -- v2.10.0: also arm the silent-realm guard here, on the same
-            -- "real-speech-observed" rule as the author/body matches above.
-            if DB and DB.autoLootCycle then
-                EC_lastScavSpokeAt = GetTime()
-                EC_compCache.scavSpeechEverHeard = true
-            end
-            if hideBubbles then
-                local said = clean:match("greedy scavenger%s*says[:%s]*(.*)")
-                    or clean:match("greedy scavenger%s*yells[:%s]*(.*)")
-                    or clean:match("greedy scavenger%s*whispers[:%s]*(.*)")
-                if said then
-                    EC_TrackGreedySpeech(said)
-                end
-            end
-            if hideChat then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function EC_InstallGreedyMuteOnce()
-    if EC_greedyFiltersInstalled then
-        return
-    end
-    EC_greedyFiltersInstalled = true
-
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_SAY", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_YELL", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_WHISPER", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_EMOTE", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_PARTY", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_TEXT_EMOTE", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_EMOTE", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", EC_GreedyEventFilter)
-end
-
-local EC_bubbleFrame = CreateFrame("Frame")
-local EC_killedBubbles = setmetatable({}, { __mode = "k" })
-
-local function EC_KillBubbleFrame(frame)
-    if not frame or frame.__EC_killed then
-        return
-    end
-    frame.__EC_killed = true
-    EC_killedBubbles[frame] = true
-
-    frame:SetAlpha(0)
-    frame:EnableMouse(false)
-    frame:Hide()
-
-    if frame.HookScript then
-        frame:HookScript("OnShow", function(self)
-            self:SetAlpha(0)
-            self:Hide()
-        end)
-    end
-end
-EC_bubbleFrame.elapsed = 0
-EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
-    local hideBubbles = true
-    if DB then
-        hideBubbles = (DB.muteGreedy == true) or (DB.hideGreedyBubbles == true)
-    end
-    if not hideBubbles then
-        return
-    end
-
-    -- Tick gate. 200 ms is short enough that a fresh bubble dies in 1-2
-    -- ticks of its visibility window (bubbles last ~5-7 s) and long enough
-    -- that the WorldFrame-children walk does not run more than five times
-    -- per second in raids, where the child count is highest. Capping the
-    -- gated work this way is the cheapest defence against a busy world.
-    self.elapsed = (self.elapsed or 0) + elapsed
-    if self.elapsed < 0.20 then
-        return
-    end
-    self.elapsed = 0
-
-    -- Prune expired greedy-speech timestamps (8 s TTL). Without this the
-    -- set never empties on its own and the OnUpdate body keeps walking
-    -- WorldFrame children long after the Scavenger has gone quiet.
-    local now = GetTime()
-    local hasLive = false
-    for k, t in pairs(EC_greedyMessages) do
-        if (now - t) > 8 then
-            EC_greedyMessages[k] = nil
-        else
-            hasLive = true
-        end
-    end
-
-    -- Nothing tracked: no killed frames to re-hide and no live Greedy speech
-    -- to match against. Becomes a constant-time no-op until either set fills.
-    if not next(EC_killedBubbles) and not hasLive then
-        return
-    end
-
-    for bubble in pairs(EC_killedBubbles) do
-        if bubble and bubble.IsShown and bubble:IsShown() then
-            bubble:SetAlpha(0)
-            bubble:Hide()
-        end
-    end
-
-    if not hasLive then
-        return
-    end
-
-    local numChildren = WorldFrame and WorldFrame.GetNumChildren and WorldFrame:GetNumChildren() or 0
-    for i = 1, numChildren do
-        local child = select(i, WorldFrame:GetChildren())
-        if child and child.GetObjectType and child:GetObjectType() == "Frame" and child:IsVisible() then
-            local numRegions = child.GetNumRegions and child:GetNumRegions() or 0
-            for j = 1, numRegions do
-                local region = select(j, child:GetRegions())
-                if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                    local text = region:GetText()
-                    if text then
-                        local clean = EC_StripCodes(text):lower()
-                        if EC_greedyMessages[clean] then
-                            EC_KillBubbleFrame(child)
-                            break
-                        end
-                    end
-                end
-            end
-        end
-    end
-end)
-
-local CHAT_FILTER_EVENTS = {
-    "CHAT_MSG_SAY",
-    "CHAT_MSG_YELL",
-    "CHAT_MSG_EMOTE",
-    "CHAT_MSG_TEXT_EMOTE",
-}
-
-local function GreedyScavengerChatFilter(self, _event, _msg, author)
-    if EC_IsGreedyAuthor(author) then
-        return true
-    end
-    return false
-end
-
-local function ApplyGreedyChatFilter()
-    for i = 1, #CHAT_FILTER_EVENTS do
-        local ev = CHAT_FILTER_EVENTS[i]
-        if ChatFrame_RemoveMessageEventFilter then
-            ChatFrame_RemoveMessageEventFilter(ev, GreedyScavengerChatFilter)
-        end
-        if DB and ((DB.muteGreedy == true) or (DB.hideGreedyChat == true)) and ChatFrame_AddMessageEventFilter then
-            ChatFrame_AddMessageEventFilter(ev, GreedyScavengerChatFilter)
-        end
-    end
-end
+-- Initial namespace exposure (before EnsureDB runs). EnsureDB and
+-- EC_compCache.refreshNames rewrite these once the saved DB names are
+-- known. Split files (Companion) read NS.PET_NAME_LC inline at call time
+-- so they always see the current value.
+NS.PET_NAME = PET_NAME
+NS.TARGET_NAME = TARGET_NAME
+NS.PET_NAME_LC = PET_NAME_LC
 
 local DB
 -- Account-wide SavedVariable. Holds a single `whitelist` table that unions with
@@ -459,6 +217,10 @@ local function EnsureAccountDB()
         EbonClearanceAccountDB = {}
     end
     ADB = EbonClearanceAccountDB
+    -- Mirror the live ADB binding onto the namespace so split files (post-
+    -- Stage 3) can read NS.ADB inline at call time. Same table; both
+    -- names alias the same memory. See docs/CODE_REVIEW.md item 4.
+    NS.ADB = ADB
     if type(ADB.whitelist) ~= "table" then
         ADB.whitelist = {}
     end
@@ -560,6 +322,11 @@ local function EnsureDB()
         EbonClearanceDB = {}
     end
     DB = EbonClearanceDB
+    -- Mirror the live DB binding onto the namespace so split files can
+    -- read NS.DB inline at call time. Same table; both names alias the
+    -- same memory. EnsureAccountDB() below does the same for ADB. See
+    -- docs/CODE_REVIEW.md item 4.
+    NS.DB = DB
     EnsureAccountDB()
 
     if type(DB.deleteList) ~= "table" then
@@ -1040,6 +807,13 @@ local function EnsureDB()
         TARGET_NAME = DB.merchantName
     end
     PET_NAME_LC = PET_NAME:lower()
+    -- Mirror onto NS so split files (the chat filter in
+    -- EbonClearance_Companion.lua, post-Stage-3) can read the live names
+    -- without each owning its own upvalue rebind hook. Refreshed everywhere
+    -- the file-scope names get rebound (EnsureDB here and refreshNames below).
+    NS.PET_NAME = PET_NAME
+    NS.TARGET_NAME = TARGET_NAME
+    NS.PET_NAME_LC = PET_NAME_LC
     EC_compCache.scav = nil
     EC_compCache.merch = nil
 end
@@ -1451,6 +1225,12 @@ function EC_compCache.refreshNames()
         TARGET_NAME = DB.merchantName
     end
     PET_NAME_LC = PET_NAME:lower()
+    -- Mirror the live names onto NS for split files (see EnsureDB above
+    -- for the same writes; refreshNames is the lightweight UI-handler
+    -- variant and must keep the namespace in lockstep).
+    NS.PET_NAME = PET_NAME
+    NS.TARGET_NAME = TARGET_NAME
+    NS.PET_NAME_LC = PET_NAME_LC
     EC_compCache.scav = nil
     EC_compCache.merch = nil
 end
@@ -4380,7 +4160,7 @@ local function EC_IsLootSilenceStuck()
     -- chat events don't reliably reach the chat filter (verified: a
     -- user's heavy-farming chat log shows zero pet-speech messages
     -- across an entire session). Without this guard the on-summon
-    -- synthetic refresh of EC_lastScavSpokeAt resets the silence clock
+    -- synthetic refresh of EC_compCache.lastScavSpokeAt resets the silence clock
     -- at every dismiss-and-resummon cycle, producing a feedback loop
     -- where the signal fires every ~60 s of farming. Gating on
     -- EC_compCache.scavSpeechEverHeard - which only flips true via a
@@ -4405,7 +4185,7 @@ local function EC_IsLootSilenceStuck()
     if #kept < MIN_LOOTS then
         return false
     end
-    return EC_lastScavSpokeAt < kept[1]
+    return EC_compCache.lastScavSpokeAt < kept[1]
 end
 
 -- Stuck-Scavenger handling. Two signals OR'd together:
@@ -4629,7 +4409,7 @@ local function EC_PetCheckTick()
         -- counting from the moment of summon -- the pet hasn't had time
         -- to vacuum anything yet.
         if scavengerOut then
-            EC_lastScavSpokeAt = GetTime()
+            EC_compCache.lastScavSpokeAt = GetTime()
         end
     end
     EC_lastScavengerOut = scavengerOut
@@ -9428,7 +9208,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         end,
         function(v)
             DB.hideGreedyChat = v
-            ApplyGreedyChatFilter()
+            NS.ApplyGreedyChatFilter()
         end,
         -8
     )
@@ -12219,8 +11999,8 @@ f:SetScript("OnEvent", function(self, event, ...)
             _G.EC_summonGoblinTimer = nil
             HookDeletePopupOnce()
             EC_InstallFastLootHookOnce()
-            if ApplyGreedyChatFilter then
-                ApplyGreedyChatFilter()
+            if NS.ApplyGreedyChatFilter then
+                NS.ApplyGreedyChatFilter()
             end
             EC_CreateMinimapButton()
             EC_InstallTooltipHookOnce()
@@ -12244,8 +12024,8 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         EnsureDB()
-        if EC_InstallGreedyMuteOnce then
-            EC_InstallGreedyMuteOnce()
+        if NS.InstallGreedyMuteOnce then
+            NS.InstallGreedyMuteOnce()
         end
         -- One-time companion-state bootstrap so the OnUpdate movement
         -- accumulator can start counting immediately if the Scavenger was
@@ -12452,7 +12232,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         if not EC_IsAddonEnabledForChar() then
             return
         end
-        EC_InstallGreedyMuteOnce()
+        NS.InstallGreedyMuteOnce()
         StartRun()
     elseif event == "UNIT_AURA" then
         local unit = ...

@@ -1278,10 +1278,61 @@ Stage 2 invariants (enforced by `tests/test_perf_guardrails.lua` Test 28):
   per file listed in `SOURCE_PATHS`.
 - Exactly one `local EC_compCache = { ... }` (the table literal, now
   in Core).
-- Exactly one `local EC_compCache = NS.compCache` (the re-alias, in
-  EbonClearance.lua).
+- At least one `local EC_compCache = NS.compCache` re-alias per
+  consumer file (EbonClearance.lua post-Stage-2; EbonClearance_Companion.lua
+  post-Stage-3; more files in later stages).
 - `NS.compCache = EC_compCache` appears exactly once (still in Core,
   immediately after the table literal).
+
+### Stage 3: extract EbonClearance_Companion.lua (commit `<pending>`)
+
+Stage 3 moves the contiguous chat-filter / speech-bubble killer cluster
+out of EbonClearance.lua (previously lines ~164-446):
+
+- `EC_StripCodes`, `EC_IsGreedyAuthor`, `EC_TrackGreedySpeech` (helpers
+  internal to the chat filter).
+- `EC_greedyMessages` table + `EC_greedyFiltersInstalled` boolean
+  (Companion-only session state).
+- `EC_GreedyEventFilter` (per-chat-event mute + Scavenger-speech tracker).
+- `EC_InstallGreedyMuteOnce` (one-shot install on 10 chat events).
+  Exposed as `NS.InstallGreedyMuteOnce`.
+- `EC_bubbleFrame` OnUpdate (200 ms WorldFrame walker + 8 s TTL speech
+  window + weak-table kill set).
+- `CHAT_FILTER_EVENTS`, `GreedyScavengerChatFilter`, `ApplyGreedyChatFilter`
+  (secondary chat-filter system). `ApplyGreedyChatFilter` exposed as
+  `NS.ApplyGreedyChatFilter`.
+
+Cross-file plumbing added in this stage:
+
+- `EC_lastScavSpokeAt` was a file-scope local read by both the chat
+  filter (now in Companion) and `EC_IsLootSilenceStuck` (still in
+  EbonClearance.lua). **Promoted to `EC_compCache.lastScavSpokeAt`**
+  so both files reach it via the shared cache table. Initial value
+  declared next to `scavSpeechEverHeard` in Core.
+- `EnsureAccountDB` now writes `NS.ADB = ADB` and `EnsureDB` writes
+  `NS.DB = DB` so Companion's chat filter can read the live binding
+  inline (`local DB = NS.DB` at function entry).
+- The PET_NAME_LC / PET_NAME / TARGET_NAME refresh sites (initial
+  init in EbonClearance.lua, EnsureDB body, and `EC_compCache.refreshNames`)
+  all mirror onto `NS.PET_NAME_LC` etc. Companion's `EC_IsGreedyAuthor`
+  reads `NS.PET_NAME_LC` inline so localised / renamed pets work.
+
+Four call sites in EbonClearance.lua were updated:
+
+- `ApplyGreedyChatFilter()` -> `NS.ApplyGreedyChatFilter()` (settings
+  toggle in the chat-mute checkbox; ADDON_LOADED branch).
+- `EC_InstallGreedyMuteOnce()` -> `NS.InstallGreedyMuteOnce()`
+  (PLAYER_LOGIN branch; MERCHANT_SHOW branch).
+
+Stage 3 invariants (enforced by `tests/test_perf_guardrails.lua` Test 29):
+
+- `NS.InstallGreedyMuteOnce` and `NS.ApplyGreedyChatFilter` are both
+  published by Companion at file-load time.
+- No bare `EC_InstallGreedyMuteOnce()` or `ApplyGreedyChatFilter()`
+  call sites exist (definition lines in Companion are masked from
+  the scan).
+- `EnsureDB` writes `NS.DB = DB`.
+- Every site that rebinds `PET_NAME_LC` mirrors onto `NS.PET_NAME_LC`.
 
 ### Target architecture (post-split)
 

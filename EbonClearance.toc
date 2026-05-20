@@ -8,4 +8,5 @@
 
 Bindings.xml
 EbonClearance_Core.lua
+EbonClearance_Companion.lua
 EbonClearance.lua

@@ -43,6 +43,7 @@
 -- the .toc (matches load order).
 local SOURCE_PATHS = {
     "EbonClearance_Core.lua",
+    "EbonClearance_Companion.lua",
     "EbonClearance.lua",
 }
 
@@ -945,20 +946,94 @@ do
         "EC_compCache must have exactly one table-literal declaration (`local EC_compCache = { ... }`) across all shipped sources. A second one would silently desync the NS.compCache alias. Found " .. tostring(literalCount)
     )
 
-    -- Companion invariant: exactly ONE re-alias `local EC_compCache = NS.compCache`.
-    -- This sits in EbonClearance.lua so existing `EC_compCache.foo` upvalue
-    -- call sites resolve through the file-scope local. If the re-alias
-    -- ever appears more than once, two upvalues would shadow each other;
-    -- if it's missing entirely, the table literal is in Core but the call
-    -- sites in EbonClearance.lua would resolve to global EC_compCache (nil).
+    -- Companion invariant: AT LEAST ONE re-alias `local EC_compCache = NS.compCache`.
+    -- Every split file that uses the `EC_compCache.foo` upvalue idiom adds
+    -- its own re-alias near the top so call sites resolve through the
+    -- file-scope local. EbonClearance.lua has one; EbonClearance_Companion.lua
+    -- has one; later stages will add more. If the count drops to zero,
+    -- every `EC_compCache.foo` reference would resolve to global nil.
     local aliasCount = 0
     for _ in src:gmatch("\nlocal EC_compCache%s*=%s*NS%.compCache") do
         aliasCount = aliasCount + 1
     end
     check(
-        "EC_compCache re-alias from NS.compCache present exactly once",
-        aliasCount == 1,
-        "expected exactly one `local EC_compCache = NS.compCache` re-alias (in EbonClearance.lua, so call sites can resolve via the file-scope upvalue). Found " .. tostring(aliasCount)
+        "EC_compCache re-alias from NS.compCache present at least once per consumer file",
+        aliasCount >= 1,
+        "expected at least one `local EC_compCache = NS.compCache` re-alias across the shipped sources. Found " .. tostring(aliasCount)
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 29 (Stage 3): Companion module cross-file API surface.
+-- ---------------------------------------------------------------------------
+-- After Stage 3 the chat-filter / bubble-killer cluster lives in
+-- EbonClearance_Companion.lua. The event hub in EbonClearance.lua calls
+-- two entry points by name; both must be exposed on NS by Companion AND
+-- called via NS by EbonClearance.lua. If anyone re-introduces an
+-- unqualified `EC_InstallGreedyMuteOnce()` / `ApplyGreedyChatFilter()`
+-- call (which would resolve to nil), CI catches it here.
+do
+    -- Companion exposes both helpers on NS at file load.
+    check(
+        "NS.InstallGreedyMuteOnce exposed",
+        src:find("NS%.InstallGreedyMuteOnce%s*=%s*EC_InstallGreedyMuteOnce") ~= nil,
+        "Companion must publish `NS.InstallGreedyMuteOnce = EC_InstallGreedyMuteOnce`"
+    )
+    check(
+        "NS.ApplyGreedyChatFilter exposed",
+        src:find("NS%.ApplyGreedyChatFilter%s*=%s*ApplyGreedyChatFilter") ~= nil,
+        "Companion must publish `NS.ApplyGreedyChatFilter = ApplyGreedyChatFilter`"
+    )
+
+    -- No bare-identifier call sites for either helper. After the move,
+    -- every call site MUST be NS-qualified - a bare call would resolve
+    -- to nil because the file-scope local is gone from EbonClearance.lua.
+    -- The function-definition lines in Companion ALSO match `<name>(` so
+    -- we mask them out before scanning. Comment lines are skipped.
+    local function hasBareCall(s, name)
+        -- Mask definition sites so they don't false-positive.
+        local cleaned = s:gsub("local function " .. name .. "%(", "local function _def_" .. name .. "(")
+        for line in cleaned:gmatch("[^\n]+") do
+            local stripped = line:gsub("^%s+", "")
+            if stripped:sub(1, 2) ~= "--" then
+                local commentAt = stripped:find("%-%-", 1, true)
+                local code = commentAt and stripped:sub(1, commentAt - 1) or stripped
+                if code:find("[^.%w_]" .. name .. "%s*%(") then
+                    return stripped
+                end
+                if code:sub(1, #name + 1) == name .. "(" then
+                    return stripped
+                end
+            end
+        end
+        return nil
+    end
+
+    local bareInstall = hasBareCall(src, "EC_InstallGreedyMuteOnce")
+    local bareApply = hasBareCall(src, "ApplyGreedyChatFilter")
+    check(
+        "no bare EC_InstallGreedyMuteOnce() call sites (must be NS.InstallGreedyMuteOnce)",
+        bareInstall == nil,
+        "found bare call: " .. tostring(bareInstall)
+    )
+    check(
+        "no bare ApplyGreedyChatFilter() call sites (must be NS.ApplyGreedyChatFilter)",
+        bareApply == nil,
+        "found bare call: " .. tostring(bareApply)
+    )
+
+    -- Companion captures `NS.DB` and `NS.PET_NAME_LC` inline at call time.
+    -- The mirror sites in EbonClearance.lua MUST keep writing those, so a
+    -- future refactor that drops the NS exposure surfaces here.
+    check(
+        "EnsureDB exposes NS.DB",
+        src:find("NS%.DB%s*=%s*DB", 1) ~= nil,
+        "EnsureDB must write `NS.DB = DB` so split files reading NS.DB see the live binding"
+    )
+    check(
+        "Name refresh exposes NS.PET_NAME_LC",
+        src:find("NS%.PET_NAME_LC%s*=%s*PET_NAME_LC", 1) ~= nil,
+        "Every site that rebinds PET_NAME_LC must mirror onto NS.PET_NAME_LC for the chat filter to see the live value"
     )
 end
 

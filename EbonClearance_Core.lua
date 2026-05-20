@@ -170,6 +170,17 @@ local EC_compCache = {
     -- stuck detection (EC_STUCK_MOVEMENT_THRESHOLD, 180 s) remains the
     -- primary signal in all cases.
     scavSpeechEverHeard = false,
+    -- v2.7.0 / v2.8.0 loot-silence stuck signal: timestamp of the most
+    -- recent observed Scavenger chat speech (set by EC_GreedyEventFilter
+    -- via author + body matches). Read by EC_IsLootSilenceStuck on every
+    -- pet-tick to compare against the LOOT_CLOSED ring; if the last loot
+    -- close postdates the last speech AND the silent-realm guard
+    -- (scavSpeechEverHeard) is true, the signal trips and the pet gets
+    -- a stuck-resummon. Lives on EC_compCache (instead of as a file-
+    -- scope local) so Companion code in EbonClearance_Companion.lua and
+    -- EC_IsLootSilenceStuck in EbonClearance.lua can both update / read
+    -- it via the same shared cache table after the Stage 3 file split.
+    lastScavSpokeAt = 0,
     -- v2.11.0 bag-full hysteresis. Without this, a single transient
     -- BAG_UPDATE that crosses DB.bagFullThreshold (a vendor opening up,
     -- an item splitting, an inventory shuffle) immediately fires the

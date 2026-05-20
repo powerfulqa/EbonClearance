@@ -29,6 +29,7 @@
 -- order matches the .toc load order.
 local SOURCE_PATHS = {
     "EbonClearance_Core.lua",
+    "EbonClearance_Companion.lua",
     "EbonClearance.lua",
 }
 

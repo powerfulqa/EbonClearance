@@ -179,7 +179,7 @@ code.
 
 ---
 
-### 4. File split (in progress) - multi-release refactor
+### 4. File split (in progress) - multi-stage internal refactor
 
 The single-file architecture crossed the documented 8K-LOC trigger
 during v2.22.0 (Process Bags) and reached ~11,800 LOC by v2.29.0. The
@@ -191,21 +191,28 @@ namespacing reasons. `EC_compCache` has grown to 50+ entries, many of
 which are de-facto module-namespace inhabitants. The split crystallises
 what's already happening organically.
 
-The refactor is staged across releases. Each stage is independently
-shippable and bisectable. Do NOT mix feature work into a split-stage
-release - keep diffs move-only where possible.
+The refactor is staged across commits, NOT releases. Stages are
+internal engineering work with no user-facing behaviour change; they
+ship to `master` as soon as the in-game smoke checklist passes but
+do NOT get their own version tags. `ADDON_VERSION` and the `.toc`
+Version stay frozen at whatever the last user-facing release was
+(currently v2.29.0) for the entire duration of the split. The next
+version bump happens whenever the next feature release lands.
 
-| Stage | Version | Scope | Status |
-|---|---|---|---|
-| 1 | v2.30.0 | Namespace bootstrap (`local NS = select(2, ...)`; `NS.compCache = EC_compCache` alias) | **DONE** |
-| 2 | v2.31.0 | Extract `EbonClearance_Core.lua` (constants, API caches, EnsureDB, EnsureAccountDB, EC_Delay, EC_compCache, forward decls) | pending |
-| 3 | v2.32.0 | Extract `EbonClearance_Companion.lua` (Scavenger/Goblin lifecycle, chat filters, mount handler, stuck detection) | pending |
-| 4 | v2.33.0 | Extract `EbonClearance_Protection.lua` (affix detection 3-source, chance-on-hit, bind-type cache, process cache) | pending |
-| 5 | v2.34.0 | Extract `EbonClearance_Vendor.lua` (EC_IsSellable, BuildQueue, DoNextAction, vendor worker, auto-repair) | pending |
-| 6 | v2.35.0 | Extract `EbonClearance_Process.lua` (Process Bags engine, hold-key-to-drain) | pending |
-| 7 | v2.36.0 | Extract `EbonClearance_BagDisplay.lua` (sell-border hooks, /ec sellinfo, auto-open driver, Fast Loot) | pending |
-| 8 | v2.37.0 | Extract `EbonClearance_UI.lua` (CreateListUI + helpers, all Interface Options panels, minimap, LDB, bug-report) | pending |
-| 9 | v2.40.0 | Rename `EbonClearance.lua` -> `EbonClearance_Events.lua`; close out the refactor | pending |
+Each stage is independently shippable and bisectable. Do NOT mix
+feature work into a split stage - keep diffs move-only where possible.
+
+| Stage | Scope | Status |
+|---|---|---|
+| 1 | Namespace bootstrap (`local NS = select(2, ...)`; `NS.compCache = EC_compCache` alias) | **DONE** (commit `8201442`) |
+| 2 | Extract `EbonClearance_Core.lua` (constants, API caches, EnsureDB, EnsureAccountDB, EC_Delay, EC_compCache, forward decls) | pending |
+| 3 | Extract `EbonClearance_Companion.lua` (Scavenger/Goblin lifecycle, chat filters, mount handler, stuck detection) | pending |
+| 4 | Extract `EbonClearance_Protection.lua` (affix detection 3-source, chance-on-hit, bind-type cache, process cache) | pending |
+| 5 | Extract `EbonClearance_Vendor.lua` (EC_IsSellable, BuildQueue, DoNextAction, vendor worker, auto-repair) | pending |
+| 6 | Extract `EbonClearance_Process.lua` (Process Bags engine, hold-key-to-drain) | pending |
+| 7 | Extract `EbonClearance_BagDisplay.lua` (sell-border hooks, /ec sellinfo, auto-open driver, Fast Loot) | pending |
+| 8 | Extract `EbonClearance_UI.lua` (CreateListUI + helpers, all Interface Options panels, minimap, LDB, bug-report) | pending |
+| 9 | Rename `EbonClearance.lua` -> `EbonClearance_Events.lua`; close out the refactor | pending |
 
 Cross-file references resolve at call time via `NS.foo` table-index
 lookup, so load order between feature files doesn't matter (Core must

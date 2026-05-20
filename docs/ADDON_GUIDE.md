@@ -1176,7 +1176,7 @@ The convergent prior-art story for the broader provenance pattern
 [`NOTICE.md`](../NOTICE.md). Read that before assuming we invented
 either pattern.
 
-## File split - in progress (v2.30.0+)
+## File split - in progress
 
 The single-file layout was kept until the 200-locals cap started forcing
 helpers onto `EC_compCache` for the wrong reasons (the table existed to
@@ -1192,11 +1192,14 @@ Triggers that finally crossed the line:
 - `EC_compCache` had grown to 50+ entries, many of them helpers that
   belong as their own file's locals, not table fields.
 
-The split is a multi-release refactor (v2.30.0 -> ~v2.40.0). See
-docs/CODE_REVIEW.md item 4 for the staged schedule. Don't mix feature
-work into a split-stage release.
+The split is a multi-stage internal refactor. Stages are commit-only;
+they do NOT bump `ADDON_VERSION` or get their own version tags, because
+they ship no user-facing behaviour change. `ADDON_VERSION` stays frozen
+at whatever the last feature release was (currently v2.29.0) for the
+duration of the split. See docs/CODE_REVIEW.md item 4 for the staged
+schedule. Don't mix feature work into a split stage.
 
-### Stage 1: namespace bootstrap (v2.30.0)
+### Stage 1: namespace bootstrap (commit `8201442`)
 
 Stage 1 is purely additive. It introduces the shared namespace table
 WoW addons use for cross-file state without moving any code:

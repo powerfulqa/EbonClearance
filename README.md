@@ -135,6 +135,12 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Changelog
 
+### v2.30.0
+
+- **Architecture: namespace bootstrap (file split, stage 1 of 9).** EbonClearance.lua now declares `local NS = select(2, ...)` at the top to capture the WoW shared-namespace table. The existing `EC_compCache` table is mirrored onto `NS.compCache` (same memory; both names alias the same table). No behaviour change in this release - it's the no-risk scaffolding step for the multi-release file-split refactor tracked in `docs/CODE_REVIEW.md` item 4. Subsequent stages (~v2.31.0 through v2.40.0) will extract feature modules into their own `.lua` files (Core, Companion, Protection, Vendor, Process, BagDisplay, UI, Events) and reach the shared state through `NS`. Existing call sites continue to use the `EC_compCache` upvalue verbatim; nothing changes for the player.
+- **Provenance: minor cleanup.** `ADDON_DISPLAY` no longer exists as a module-scope local - the one place it was read (`EBONCLEARANCE_IDENT` global assignment) now inlines the string. `ADDON_AUTHOR` and `ADDON_URL` stay as locals because the settings byline still references them. This frees one slot under the Lua 5.1 200-locals cap so the namespace bootstrap fits without pressing other helpers onto `EC_compCache` for the wrong reasons.
+- **Tests: Stage 1 invariants.** `tests/test_perf_guardrails.lua` Test 28 pins three things: the `local NS = select(2, ...)` bootstrap is present, `NS.compCache = EC_compCache` exists, and `EC_compCache` has exactly one module-scope declaration. A shadowing redeclaration would silently desync the alias and is now caught by CI.
+
 ### v2.29.0
 
 - **New: bag-slot sell-border tint.** Optional coloured ring around bag slot frames whose items the current rule chain would sell at the next vendor visit. Off by default; enable in Character Settings and pick your own colour through the standard colour-picker dialog. The ring lives on the slot frame, never on the icon itself, so the icon canvas stays untouched. Repaints instantly when toggled, when the colour changes, when items are added or removed from any list, when the Allow Sell override is toggled, and when a settings pack import changes verdicts.

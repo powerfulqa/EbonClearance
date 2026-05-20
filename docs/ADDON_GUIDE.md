@@ -1176,20 +1176,89 @@ The convergent prior-art story for the broader provenance pattern
 [`NOTICE.md`](../NOTICE.md). Read that before assuming we invented
 either pattern.
 
-## When to split the file
+## File split - in progress (v2.30.0+)
 
-Keep the single-file layout until one of these is true:
+The single-file layout was kept until the 200-locals cap started forcing
+helpers onto `EC_compCache` for the wrong reasons (the table existed to
+work around the cap; it accreted into the de-facto module namespace).
+Triggers that finally crossed the line:
 
-- File exceeds ~8000 LOC. The original threshold here was ~4000 but
-  was bumped post-v2.6.0 (file was 5561 LOC and the single-file
-  architecture was working well; comprehension and grep latency
-  weren't actually painful at that size). Re-evaluate at the next
-  threshold rather than auto-splitting on growth alone.
-- Two largely-independent features share almost no state. A clean
-  module boundary appears organically; resist forcing one.
-- We adopt Ace3, at which point AceAddon lifecycle encourages modules.
+- File grew past 11,800 LOC (the documented 8K threshold below was
+  conservative and was rebuilt mid-flight to the 12K mark before the
+  split started).
+- The 200-locals cap was hit during v2.29.0 release work twice in a
+  single feature - any further module-level local additions now require
+  an `EC_compCache` placement or another existing slot to be freed.
+- `EC_compCache` had grown to 50+ entries, many of them helpers that
+  belong as their own file's locals, not table fields.
 
-If you do split: introduce a `local EC = {}` namespace table in a new
-`EbonClearance_Core.lua`, loaded first in the `.toc`, and have each
-feature file attach to it. Do **not** split mid-feature - keep bag
-code together, vendor code together, UI together.
+The split is a multi-release refactor (v2.30.0 -> ~v2.40.0). See
+docs/CODE_REVIEW.md item 4 for the staged schedule. Don't mix feature
+work into a split-stage release.
+
+### Stage 1: namespace bootstrap (v2.30.0)
+
+Stage 1 is purely additive. It introduces the shared namespace table
+WoW addons use for cross-file state without moving any code:
+
+```lua
+local NS = select(2, ...)
+```
+
+`select(2, ...)` is used instead of `local addonName, NS = ...` because
+the main chunk is at the 200-locals cap; capturing only the second
+vararg spends one slot instead of two. WoW passes
+`(addonName, namespaceTable)` as the file-load varargs to every `.lua`
+file in an addon; the same table is shared across files.
+
+The first thing the bootstrap does is mirror the existing
+`EC_compCache` table onto `NS.compCache`. Both names alias the same
+memory. Existing call sites continue to use the `EC_compCache` upvalue;
+future split files will reach the table via `NS.compCache` without any
+churn at existing call sites.
+
+Stage 1 invariants (enforced by `tests/test_perf_guardrails.lua` Test 28):
+
+- The `local NS = select(2, ...)` bootstrap line is present near the
+  top of the file.
+- `NS.compCache = EC_compCache` appears immediately after the
+  `EC_compCache` table literal closes.
+- `EC_compCache` has exactly ONE module-scope declaration - a shadowing
+  redeclaration further down the file would silently desync the alias.
+
+### Target architecture (post-split)
+
+Per docs/CODE_REVIEW.md item 4, the planned split shape is:
+
+| File | Responsibility |
+|---|---|
+| `EbonClearance_Core.lua` | Namespace, constants, API caches, forward decls, EnsureDB / EnsureAccountDB, EC_Delay, EC_compCache |
+| `EbonClearance_Companion.lua` | Scavenger / Goblin Merchant lifecycle, chat filters, mount handler, stuck detection |
+| `EbonClearance_Protection.lua` | Affix detection, chance-on-hit detection, bind-type cache, process cache |
+| `EbonClearance_Vendor.lua` | EC_IsSellable, BuildQueue, DoNextAction, vendor worker, auto-repair |
+| `EbonClearance_Process.lua` | Process Bags engine, hold-key-to-drain |
+| `EbonClearance_BagDisplay.lua` | Sell-border hooks, /ec sellinfo, auto-open driver, Fast Loot driver |
+| `EbonClearance_UI.lua` | CreateListUI + helpers, all Interface Options panels, minimap, LDB, bug-report |
+| `EbonClearance_Events.lua` | Event hub, slash commands, Bindings.xml glue handlers |
+
+Stages 2-8 each extract one file from the monolith. Stage 9 renames
+`EbonClearance.lua` -> `EbonClearance_Events.lua` and closes out the
+refactor.
+
+### Rules for future stages
+
+- Each stage is a separate release; no feature work in the same release.
+- Move-only commits where possible; pure mechanical refactor.
+- After each stage, all three invariant tests must still pass. Tests
+  concatenate the split files at test time (see the SOURCE_PATH loop
+  at the top of each test file after Stage 2 ships) so existing
+  invariants apply unchanged.
+- LICENSE §2(b) requires the file-header attribution block: it stays
+  on whichever file is loaded first in the `.toc` (currently
+  `EbonClearance.lua`; will move to `EbonClearance_Core.lua` in Stage 2).
+- Forward declarations move from file-scope `local foo = function() end`
+  stubs to `NS.foo = function() end` table-slot stubs, reassigned in
+  the owning file. Cross-file callers invoke `NS.foo()` - table-index
+  lookup at call time, so load order between feature files doesn't
+  matter (Core must still load first because it owns the namespace
+  shape and the EnsureDB migrations).

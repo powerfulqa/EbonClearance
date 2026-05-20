@@ -865,6 +865,58 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 28 (v2.30.0 Stage 1): namespace bootstrap is present and intact.
+-- ---------------------------------------------------------------------------
+-- The multi-release file split tracked in docs/CODE_REVIEW.md item 4
+-- depends on `local addonName, NS = ...` at the top of the file AND
+-- on EC_compCache being mirrored onto NS.compCache, so future split
+-- files can reach the table via the namespace. Stage 1 is purely
+-- additive - no functional change - but it MUST stay in place or
+-- every later stage breaks.
+do
+    -- The varargs bootstrap. WoW passes (addonName, namespaceTable) as
+    -- the file-load varargs; we capture only the namespace via
+    -- `select(2, ...)` to stay under Lua 5.1's 200-locals cap (a
+    -- two-name destructuring `local _, NS = ...` would spend 2 slots).
+    -- Plain-mode find: pass true as the 3rd arg so `()` are literal
+    -- parens and `...` is a literal ellipsis (no pattern escaping).
+    local bootstrap = src:find("local NS = select(2, ...)", 1, true) ~= nil
+    check(
+        "namespace varargs bootstrap present",
+        bootstrap,
+        "EbonClearance.lua must declare `local NS = select(2, ...)` near the top; future split files use NS as the shared namespace"
+    )
+
+    -- EC_compCache mirrored onto NS.compCache. Both names point at the
+    -- same table; existing call sites use the EC_compCache upvalue,
+    -- future split files reach the table via NS.compCache.
+    local mirror = src:find("NS%.compCache = EC_compCache", 1) ~= nil
+    check(
+        "EC_compCache mirrored onto NS.compCache",
+        mirror,
+        "after the EC_compCache table literal closes, `NS.compCache = EC_compCache` must alias the table onto the namespace"
+    )
+
+    -- Defence-in-depth: no second `local EC_compCache =` exists. A
+    -- shadowing re-declaration further down the file would silently
+    -- break the alias because NS.compCache would still point at the
+    -- ORIGINAL table while EC_compCache writes would land on the new.
+    local count = 0
+    for _ in src:gmatch("\nlocal EC_compCache%s*=") do
+        count = count + 1
+    end
+    -- Also include the case where it's the very first line of the file.
+    if src:find("^local EC_compCache%s*=") then
+        count = count + 1
+    end
+    check(
+        "EC_compCache declared exactly once",
+        count == 1,
+        "EC_compCache must have exactly one module-scope declaration; a second `local EC_compCache = ...` would silently desync from NS.compCache. Found " .. tostring(count)
+    )
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

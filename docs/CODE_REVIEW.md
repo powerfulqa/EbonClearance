@@ -97,7 +97,9 @@ scoped to be a single-session change unless flagged otherwise.
 > actioned in v2.18.0 and v2.17.0 respectively and moved to Resolved.
 > Items 1 (chat-filter consolidation) and 3 (TUNING constants) remain.
 > Item 2 was reused to renumber the former L10n stub item, since it's
-> still parked. Numbering now: 1 chat-filter, 2 L10n stub, 3 TUNING.
+> still parked. Item 4 (file split) was added post-v2.29.0 audit when
+> the 200-locals cap became a recurring active constraint. Numbering
+> now: 1 chat-filter, 2 L10n stub, 3 TUNING, 4 file split.
 
 ### 1. Consolidate the two chat-filter systems - medium impact, medium risk
 
@@ -174,6 +176,56 @@ the entire file in one go).
 This is the smallest qlty-flagged item on the backlog and the
 lowest priority. Action only when already touching tuning-related
 code.
+
+---
+
+### 4. File split (in progress) - multi-release refactor
+
+The single-file architecture crossed the documented 8K-LOC trigger
+during v2.22.0 (Process Bags) and reached ~11,800 LOC by v2.29.0. The
+post-v2.29.0 audit (see the plan file's §16) confirmed the file is in
+good shape internally - no urgent perf or quality findings - but the
+200-locals cap is now an active design constraint: it forced 2 helpers
+onto `EC_compCache` during v2.29.0 alone for cap-relief reasons, not
+namespacing reasons. `EC_compCache` has grown to 50+ entries, many of
+which are de-facto module-namespace inhabitants. The split crystallises
+what's already happening organically.
+
+The refactor is staged across releases. Each stage is independently
+shippable and bisectable. Do NOT mix feature work into a split-stage
+release - keep diffs move-only where possible.
+
+| Stage | Version | Scope | Status |
+|---|---|---|---|
+| 1 | v2.30.0 | Namespace bootstrap (`local NS = select(2, ...)`; `NS.compCache = EC_compCache` alias) | **DONE** |
+| 2 | v2.31.0 | Extract `EbonClearance_Core.lua` (constants, API caches, EnsureDB, EnsureAccountDB, EC_Delay, EC_compCache, forward decls) | pending |
+| 3 | v2.32.0 | Extract `EbonClearance_Companion.lua` (Scavenger/Goblin lifecycle, chat filters, mount handler, stuck detection) | pending |
+| 4 | v2.33.0 | Extract `EbonClearance_Protection.lua` (affix detection 3-source, chance-on-hit, bind-type cache, process cache) | pending |
+| 5 | v2.34.0 | Extract `EbonClearance_Vendor.lua` (EC_IsSellable, BuildQueue, DoNextAction, vendor worker, auto-repair) | pending |
+| 6 | v2.35.0 | Extract `EbonClearance_Process.lua` (Process Bags engine, hold-key-to-drain) | pending |
+| 7 | v2.36.0 | Extract `EbonClearance_BagDisplay.lua` (sell-border hooks, /ec sellinfo, auto-open driver, Fast Loot) | pending |
+| 8 | v2.37.0 | Extract `EbonClearance_UI.lua` (CreateListUI + helpers, all Interface Options panels, minimap, LDB, bug-report) | pending |
+| 9 | v2.40.0 | Rename `EbonClearance.lua` -> `EbonClearance_Events.lua`; close out the refactor | pending |
+
+Cross-file references resolve at call time via `NS.foo` table-index
+lookup, so load order between feature files doesn't matter (Core must
+still load first because it owns the namespace shape and the EnsureDB
+migrations). See docs/ADDON_GUIDE.md "File split - in progress" for
+the full target-architecture table.
+
+Tests stay whole-codebase: the three invariant test files will be
+updated at Stage 2 to concatenate the split files at test time, so
+every existing `src:find` check continues to apply unchanged across
+the split boundary.
+
+LICENSE §2(b) requires the file-header attribution block. It stays
+on whichever file is loaded first in the `.toc` - currently
+`EbonClearance.lua`, will move to `EbonClearance_Core.lua` in Stage 2.
+
+Re-evaluate the stage cadence if a stage proves harder than expected,
+but don't abandon mid-refactor: a half-split codebase (some features
+in `_Companion.lua`, the rest still in the monolith) is genuinely
+worse than either endpoint.
 
 ---
 

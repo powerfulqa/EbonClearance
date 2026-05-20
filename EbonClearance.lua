@@ -4,6 +4,21 @@
 -- Source:  https://github.com/powerfulqa/EbonClearance
 -- License: see LICENSE; attribution preservation is required.
 
+-- Shared namespace for the addon. WoW passes (addonName, namespaceTable) as
+-- the varargs to every .lua file in an addon; the same table is shared
+-- across files. NS exists from the first stage of the multi-release file
+-- split planned in docs/CODE_REVIEW.md item 4 ("File split"). Stage 1
+-- (this commit) bootstraps the namespace without moving any code -
+-- existing file-scope locals stay as upvalue captures, and module-level
+-- helpers that need to be reachable from future split files get mirrored
+-- onto NS as the split progresses. Reading or writing NS.foo from any
+-- future EbonClearance_*.lua file picks up the same table this assignment
+-- creates. `select(2, ...)` is used instead of `local addonName, NS = ...`
+-- because the main chunk is already at Lua 5.1's 200-locals cap; capturing
+-- only the namespace (and not the addon name string, which we don't use)
+-- spends one slot instead of two.
+local NS = select(2, ...)
+
 local ADDON_NAME = "EbonClearance"
 -- TARGET_NAME / PET_NAME hold the live display names of the two Project
 -- Ebonhold companion NPCs. The defaults below are the enUS strings the
@@ -23,11 +38,12 @@ local PET_NAME = "Greedy scavenger"
 -- 2(d) requires these globals to be preserved in any derivative. The
 -- double-underscore-prefix-with-addon-name form follows a convention shared
 -- elsewhere in the 3.3.5a addon ecosystem; see NOTICE.md for the prior-art
--- acknowledgement.
-local ADDON_DISPLAY = "EbonClearance"
+-- acknowledgement. EBONCLEARANCE_IDENT is set inline (no local) because the
+-- display-name string only appears in this one assignment; ADDON_AUTHOR and
+-- ADDON_URL stay as locals because the settings byline reads them too.
 local ADDON_AUTHOR = "Serv"
 local ADDON_URL = "https://github.com/powerfulqa/EbonClearance"
-_G["EBONCLEARANCE_IDENT"] = ADDON_DISPLAY
+_G["EBONCLEARANCE_IDENT"] = "EbonClearance"
 _G["EBONCLEARANCE_AUTHOR"] = ADDON_AUTHOR
 _G["EBONCLEARANCE_ORIGIN"] = ADDON_URL
 _G["__EbonClearance_origin"] = ADDON_URL
@@ -260,6 +276,12 @@ local EC_compCache = {
     -- chat line per combat instance and is cleared on PLAYER_REGEN_ENABLED.
     combatDeferredAnnounced = false,
 }
+-- Mirror the junk-drawer table onto the addon namespace. Same table; both
+-- names alias the same memory. Existing call sites use the EC_compCache
+-- upvalue; future split files will reach the table via NS.compCache.
+-- Stage 1 of the multi-release file split (see docs/CODE_REVIEW.md item 4).
+NS.compCache = EC_compCache
+
 -- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
 -- movement accumulator (only counts while the pet is out) and the
 -- bag-full / mount-cycle paths. Forward-declared here so the closures

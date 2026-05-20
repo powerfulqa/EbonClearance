@@ -1233,7 +1233,7 @@ Stage 1 invariants (enforced by `tests/test_perf_guardrails.lua` Test 28):
   would leave EbonClearance.lua's `EC_compCache.foo` references
   resolving to global nil.
 
-### Stage 2: extract EbonClearance_Core.lua (commit `<pending>`)
+### Stage 2: extract EbonClearance_Core.lua (commit `119eca8`)
 
 Stage 2 moves the smallest set of chunks that have no dependencies on
 the rest of the file:

@@ -414,14 +414,14 @@ EC_compCache.knownExtractionVersion = 0
 -- characters). /reload wipes this naturally (EC_compCache is not
 -- persisted).
 EC_compCache.procIdToDescription = {}
--- v2.28.0: spellbook tooltip cache. Same rationale as procIdToDescription
+-- v2.30.0: spellbook tooltip cache. Same rationale as procIdToDescription
 -- but covers the spellbook walk. Maps spellID -> normalised affix
 -- description string, or false if the spell is not an affix engraving.
 -- Avoids re-scanning hundreds of tooltip SetHyperlink calls on every
 -- refreshKnownAffixes invocation.
 EC_compCache.spellbookAffixCache = {}
 
--- v2.28.0 perf: debounce SPELLS_CHANGED / LEARNED_SPELL_IN_TAB events.
+-- v2.30.0 perf: debounce SPELLS_CHANGED / LEARNED_SPELL_IN_TAB events.
 -- Soul ash tree application and login can fire dozens of spell events in
 -- rapid succession; each triggering a full spellbook walk with tooltip
 -- scans caused 30+ second freezes. Same debounce pattern as BAG_UPDATE:
@@ -443,7 +443,7 @@ EC_compCache.spellUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
--- v2.28.0 perf: chunked spellbook walk. Processes up to
+-- v2.30.0 perf: chunked spellbook walk. Processes up to
 -- SPELLS_PER_CHUNK spells per frame to avoid blocking the UI.
 -- Only uncached spells need a tooltip scan; cached ones are free.
 EC_compCache.SPELLS_PER_CHUNK = 30
@@ -542,6 +542,18 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
     end
 end)
 
+-- v2.30.0 perf: ASYNCHRONOUS. The rebuild was synchronous before PR #2.
+-- Now `refreshKnownAffixes` returns immediately after seeding the chunked-
+-- scan state; the actual `knownAffixDescriptions` map is reassigned by
+-- the `_affixScanFrame` OnUpdate one or more frames later (typically the
+-- next frame on a warm cache; up to ceil(spellbook_size / SPELLS_PER_CHUNK)
+-- frames on a cold cache). During the in-flight window
+-- `knownAffixDescriptions` still holds the PREVIOUS map - that's the
+-- right behaviour (stale data beats no data for the dupe gate) but is
+-- worth noting if a future caller expects "after this returns, the map
+-- reflects the current spellbook." If a SECOND refresh is requested
+-- while one is in flight, the partial map is discarded and the scan
+-- restarts from idx=1; the per-spellID cache makes the restart cheap.
 function EC_compCache.refreshKnownAffixes()
     -- Build a flat list of spellIDs currently in the spellbook.
     local spells = {}

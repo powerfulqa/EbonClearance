@@ -1190,6 +1190,93 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 32 (PR #2): affix-scan freeze fix - debounce + cache + chunked scan.
+-- ---------------------------------------------------------------------------
+-- Sanavesa's PR #2 fixed a ~30 s freeze on login / soul-ash-tree apply by
+-- coalescing rapid SPELLS_CHANGED bursts and amortising tooltip scans
+-- across frames. Three pieces, each must stay in place:
+--
+--   1. Per-spellID cache (EC_compCache.spellbookAffixCache) so each
+--      spell's tooltip is scanned at most once per session. Same
+--      `false` sentinel convention as procIdToDescription.
+--   2. 0.5 s debounce frame (EC_compCache.spellUpdateFrame) so a burst
+--      of LEARNED_SPELL_IN_TAB / SPELLS_CHANGED events coalesces into
+--      one rebuild after the burst settles.
+--   3. Chunked OnUpdate scan (EC_compCache.SPELLS_PER_CHUNK spells per
+--      frame) so even the first cold-cache scan doesn't freeze the UI.
+--
+-- If any of these regresses - e.g. someone reverts to a synchronous
+-- refreshKnownAffixes(), or removes the cache, or hard-codes the
+-- chunk size as a magic literal - CI catches it here.
+do
+    -- 1. Cache table declared at module scope.
+    check(
+        "EC_compCache.spellbookAffixCache declared",
+        src:find("EC_compCache%.spellbookAffixCache%s*=%s*{}") ~= nil,
+        "PR #2 added a per-spellID tooltip cache. Removing it would re-scan every spell on every rebuild."
+    )
+
+    -- 2. Debounce frame + accumulator + named window constant.
+    check(
+        "EC_compCache.spellUpdateFrame declared as a CreateFrame",
+        src:find("EC_compCache%.spellUpdateFrame%s*=%s*CreateFrame") ~= nil,
+        "PR #2 added a debounce frame so spell-event bursts coalesce. It must remain on EC_compCache."
+    )
+    check(
+        "EC_compCache.spellUpdateFrame has an OnUpdate handler",
+        src:find('EC_compCache%.spellUpdateFrame:SetScript%("OnUpdate"') ~= nil,
+        "the debounce frame must drive a coalescing OnUpdate; without it events would fire synchronously again"
+    )
+    check(
+        "EC_compCache.SPELL_UPDATE_DEBOUNCE_S is a named constant",
+        src:find("EC_compCache%.SPELL_UPDATE_DEBOUNCE_S%s*=") ~= nil,
+        "the 0.5 s window must be a named constant for future tuning, not a magic literal scattered through the code"
+    )
+
+    -- 3. Chunked-scan budget constant.
+    check(
+        "EC_compCache.SPELLS_PER_CHUNK is a named constant",
+        src:find("EC_compCache%.SPELLS_PER_CHUNK%s*=") ~= nil,
+        "the per-frame scan budget must be a named constant; tuning would otherwise require scanning the source for a bare 30"
+    )
+
+    -- 4. Event branch triggers the debounce frame and does NOT call
+    --    refreshKnownAffixes directly. The branch lives in EbonClearance.lua's
+    --    event-hub dispatcher; we extract it, strip comments, and assert
+    --    against the resulting code (comments that mention the function
+    --    name by way of explanation are fine).
+    local startIdx = src:find('event == "LEARNED_SPELL_IN_TAB"', 1, true)
+    local branchBody
+    if startIdx then
+        local nextIdx = src:find("elseif event ==", startIdx + 1, true)
+        branchBody = nextIdx and src:sub(startIdx, nextIdx - 1) or src:sub(startIdx)
+    end
+    local branchCodeOnly
+    if branchBody then
+        local codeLines = {}
+        for line in branchBody:gmatch("[^\n]+") do
+            local stripped = line:gsub("^%s+", "")
+            if stripped:sub(1, 2) ~= "--" then
+                local commentAt = stripped:find("%-%-", 1, true)
+                local code = commentAt and stripped:sub(1, commentAt - 1) or stripped
+                codeLines[#codeLines + 1] = code
+            end
+        end
+        branchCodeOnly = table.concat(codeLines, "\n")
+    end
+    check(
+        "LEARNED_SPELL_IN_TAB / SPELLS_CHANGED branch triggers spellUpdateFrame:Show()",
+        branchCodeOnly and branchCodeOnly:find("EC_compCache%.spellUpdateFrame:Show%(%)") ~= nil,
+        "the event branch must :Show() the debounce frame instead of calling refreshKnownAffixes() synchronously"
+    )
+    check(
+        "LEARNED_SPELL_IN_TAB / SPELLS_CHANGED branch does NOT call refreshKnownAffixes() synchronously",
+        branchCodeOnly and branchCodeOnly:find("refreshKnownAffixes") == nil,
+        "the event handler must route through the debounce frame; a direct call would defeat the whole fix (comments mentioning the function are fine; this check is code-only)"
+    )
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

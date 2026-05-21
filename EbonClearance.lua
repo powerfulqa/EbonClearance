@@ -11466,11 +11466,14 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
         end
     elseif event == "LEARNED_SPELL_IN_TAB" or event == "SPELLS_CHANGED" then
-        -- v2.28.0 perf: debounced. Soul ash tree and login can fire
+        -- v2.30.0 perf: debounced. Soul ash tree and login can fire
         -- dozens of spell events in rapid succession; a synchronous
         -- spellbook scan on each one caused 30+ second freezes. Reset
         -- the accumulator on every event so we wait for 0.5 s of quiet
-        -- before doing a single rebuild.
+        -- before doing a single rebuild. The actual rebuild is driven
+        -- by EC_compCache.spellUpdateFrame's OnUpdate in
+        -- EbonClearance_Protection.lua; calling refreshKnownAffixes
+        -- directly here would defeat the debounce.
         EC_compCache.spellUpdatePending = true
         EC_compCache.spellUpdateAccum = 0
         EC_compCache.spellUpdateFrame:Show()

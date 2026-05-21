@@ -443,16 +443,109 @@ EC_compCache.spellUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
-function EC_compCache.refreshKnownAffixes()
-    local map = {}
+-- v2.28.0 perf: chunked spellbook walk. Processes up to
+-- SPELLS_PER_CHUNK spells per frame to avoid blocking the UI.
+-- Only uncached spells need a tooltip scan; cached ones are free.
+EC_compCache.SPELLS_PER_CHUNK = 30
+EC_compCache._affixScanState = nil -- active chunked scan state
+
+-- Internal: frame that drives the chunked spellbook walk.
+EC_compCache._affixScanFrame = CreateFrame("Frame")
+EC_compCache._affixScanFrame:Hide()
+EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
+    local st = EC_compCache._affixScanState
+    if not st then
+        self:Hide()
+        return
+    end
+    local tip = scanTip()
+    if not tip then
+        self:Hide()
+        return
+    end
     local cache = EC_compCache.spellbookAffixCache
-    -- Walk the player's spellbook; for each spell whose tooltip
-    -- includes the engrave-affix prefix, pull the description text
-    -- after the colon and store it (normalised) in the map. This is
-    -- the v2.23.0 path; covers stat affixes (which always live in the
-    -- spellbook once extracted) and any chance-on-hit procs that PE
-    -- also routes through the spellbook.
-    if GetNumSpellTabs and GetSpellTabInfo and GetSpellLink and scanTip() then
+    local map = st.map
+    local spells = st.spells
+    local idx = st.idx
+    local scansLeft = EC_compCache.SPELLS_PER_CHUNK
+
+    while idx <= #spells and scansLeft > 0 do
+        local spellId = spells[idx]
+        local cached = cache[spellId]
+        if cached == nil then
+            -- Uncached: tooltip scan required. Costs budget.
+            cached = false
+            tip:ClearLines()
+            tip:SetHyperlink("spell:" .. spellId)
+            for j = 1, tip:NumLines() do
+                local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                if fs and fs.GetText then
+                    local txt = fs:GetText()
+                    if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
+                        local desc = txt:match(":%s*(.+)$")
+                        desc = EC_compCache.normaliseAffixDesc(desc)
+                        if desc and desc ~= "" then
+                            cached = desc
+                        end
+                        break
+                    end
+                end
+            end
+            cache[spellId] = cached
+            scansLeft = scansLeft - 1
+        end
+        -- Cached hits are free — no budget cost.
+        if cached then
+            map[cached] = true
+        end
+        idx = idx + 1
+    end
+    st.idx = idx
+
+    if idx > #spells then
+        -- Spellbook walk done. Merge ExtractionService (small, always
+        -- synchronous — procIdToDescription cache keeps it cheap).
+        local svc = _G.ExtractionService
+        if svc and type(svc.learnedAffixes) == "table" then
+            for _, r in ipairs(svc.learnedAffixes) do
+                if r and r.learned and r.id then
+                    local desc = EC_compCache.procIdToDescription[r.id]
+                    if desc == nil then
+                        desc = false
+                        tip:ClearLines()
+                        tip:SetHyperlink("spell:" .. r.id)
+                        for j = 1, tip:NumLines() do
+                            local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                            if fs and fs.GetText then
+                                local txt = fs:GetText()
+                                if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
+                                    local d = txt:match(":%s*(.+)$")
+                                    d = EC_compCache.normaliseAffixDesc(d)
+                                    if d and d ~= "" then
+                                        desc = d
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                        EC_compCache.procIdToDescription[r.id] = desc
+                    end
+                    if desc then
+                        map[desc] = true
+                    end
+                end
+            end
+        end
+        EC_compCache.knownAffixDescriptions = map
+        EC_compCache._affixScanState = nil
+        self:Hide()
+    end
+end)
+
+function EC_compCache.refreshKnownAffixes()
+    -- Build a flat list of spellIDs currently in the spellbook.
+    local spells = {}
+    if GetNumSpellTabs and GetSpellTabInfo and GetSpellLink then
         for tab = 1, GetNumSpellTabs() do
             local _, _, offset, numSpells = GetSpellTabInfo(tab)
             if offset and numSpells then
@@ -460,74 +553,20 @@ function EC_compCache.refreshKnownAffixes()
                     local link = GetSpellLink(i, BOOKTYPE_SPELL)
                     local spellId = link and tonumber(link:match("spell:(%d+)"))
                     if spellId then
-                        local cached = cache[spellId]
-                        if cached == nil then
-                            cached = false
-                            scanTip():ClearLines()
-                            scanTip():SetHyperlink("spell:" .. spellId)
-                            for j = 1, scanTip():NumLines() do
-                                local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
-                                if fs and fs.GetText then
-                                    local txt = fs:GetText()
-                                    if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
-                                        local desc = txt:match(":%s*(.+)$")
-                                        desc = EC_compCache.normaliseAffixDesc(desc)
-                                        if desc and desc ~= "" then
-                                            cached = desc
-                                        end
-                                        break
-                                    end
-                                end
-                            end
-                            cache[spellId] = cached
-                        end
-                        if cached then
-                            map[cached] = true
-                        end
+                        spells[#spells + 1] = spellId
                     end
                 end
             end
         end
     end
-    -- v2.26.0 merge: walk _G.ExtractionService.learnedAffixes for
-    -- entries with learned == true and merge their engraving-spell
-    -- descriptions into the same map. This catches procs that PE
-    -- keeps in the extraction catalog but not in the spellbook (and
-    -- is robust against the spellbook walk missing procs whose
-    -- engraving-spell tab isn't iterated by GetSpellTabInfo). Same
-    -- prefix scan; same normalisation.
-    local svc = _G.ExtractionService
-    if svc and type(svc.learnedAffixes) == "table" and scanTip() then
-        for _, r in ipairs(svc.learnedAffixes) do
-            if r and r.learned and r.id then
-                local desc = EC_compCache.procIdToDescription[r.id]
-                if desc == nil then
-                    desc = false
-                    scanTip():ClearLines()
-                    scanTip():SetHyperlink("spell:" .. r.id)
-                    for j = 1, scanTip():NumLines() do
-                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
-                        if fs and fs.GetText then
-                            local txt = fs:GetText()
-                            if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
-                                local d = txt:match(":%s*(.+)$")
-                                d = EC_compCache.normaliseAffixDesc(d)
-                                if d and d ~= "" then
-                                    desc = d
-                                end
-                                break
-                            end
-                        end
-                    end
-                    EC_compCache.procIdToDescription[r.id] = desc
-                end
-                if desc then
-                    map[desc] = true
-                end
-            end
-        end
-    end
-    EC_compCache.knownAffixDescriptions = map
+    -- Start (or restart) the chunked scan. Any in-flight scan is
+    -- abandoned — its partial map is discarded and we start fresh.
+    EC_compCache._affixScanState = {
+        spells = spells,
+        map = {},
+        idx = 1,
+    }
+    EC_compCache._affixScanFrame:Show()
 end
 
 -- v2.26.0: cheap dirty-check rebuild. Counts learned-true records in

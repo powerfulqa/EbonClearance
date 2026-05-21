@@ -1441,7 +1441,7 @@ Stage 5 invariants (enforced by `tests/test_perf_guardrails.lua` Test 31):
   anywhere in the shipped sources (either would silently desync from
   the cache field).
 
-### Stage 6: extract EbonClearance_BagDisplay.lua (commit `<pending>`)
+### Stage 6: extract EbonClearance_BagDisplay.lua (commit `5c9399b`)
 
 Stage 6 moves the Release-1 bag-display layer (sell-border tint +
 sellinfo predicate-trace inspector) out of EbonClearance.lua to a new

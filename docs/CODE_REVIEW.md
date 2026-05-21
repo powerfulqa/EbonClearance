@@ -209,7 +209,7 @@ feature work into a split stage - keep diffs move-only where possible.
 | 3 | Extract `EbonClearance_Companion.lua` (chat filters + speech-bubble killer cluster) | **DONE** (commit `987b5b5`) |
 | 4 | Extract `EbonClearance_Protection.lua` (PE affix + chance-on-hit + Anvil-bridge cluster; bind-type cache stays in EbonClearance.lua for later) | **DONE** (commit `9d65e64`) |
 | 5 | Extract `EbonClearance_Vendor.lua` (narrow scope: just HookDeletePopupOnce + the deletePopupHooked gate; `running` + `pendingDelete` promoted to EC_compCache as Stage 5 prep). EC_IsSellable / BuildQueue / DoNextAction / worker / StartRun / EC_manualSell remain in EbonClearance.lua for future "Stage 5b"+ stages | **DONE** (commit `08c3893`) |
-| 6 | Extract `EbonClearance_BagDisplay.lua` (sell-border tint helpers + sellability-trace inspector + NS.RefreshSellBorders body). Auto-open driver + Fast Loot stay in EbonClearance.lua | **DONE** (commit `<pending>`) |
+| 6 | Extract `EbonClearance_BagDisplay.lua` (sell-border tint helpers + sellability-trace inspector + NS.RefreshSellBorders body). Auto-open driver + Fast Loot stay in EbonClearance.lua | **DONE** (commit `5c9399b`) |
 | 7 | Extract `EbonClearance_Process.lua` (Process Bags engine, hold-key-to-drain). Auto-open driver + Fast Loot extracted alongside if scope allows; otherwise they stay until Stage 9's residual sweep | pending |
 | 8 | Extract `EbonClearance_UI.lua` (CreateListUI + helpers, all Interface Options panels, minimap, LDB, bug-report) | pending |
 | 9 | Rename `EbonClearance.lua` -> `EbonClearance_Events.lua`; close out the refactor (sweep any residuals - auto-open driver, Fast Loot, vendor-cycle remnants from Stage 5's narrow scope - to their target files) | pending |

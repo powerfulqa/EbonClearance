@@ -1500,6 +1500,68 @@ Stage 6 invariants (enforced by `tests/test_perf_guardrails.lua` Test 33):
 - `.toc` loads BagDisplay AFTER EbonClearance.lua.
 - No bare `EC_RefreshSellBorders()` call sites anywhere.
 
+### Stage 7: extract EbonClearance_Process.lua (commit `<pending>`)
+
+Stage 7 moves the Process Bags ENGINE out of EbonClearance.lua. The
+Process Bags PANEL (UI side) stays in EbonClearance.lua for Stage 8
+because it pulls in a dense web of UI-building helpers (`MakeHeader`,
+`AddCheckbox`, `CreateListUI`, `EC_FitScrollContent`,
+`EC_WrapPanelInScrollFrame`, `EC_compCache.initPanel`, etc.) that
+themselves haven't moved yet.
+
+Moved into `EbonClearance_Process.lua` (~390 LOC):
+
+- **Spell ID constants** on `EC_compCache`: `SPELL_DISENCHANT` (13262),
+  `SPELL_MILLING` (51005), `SPELL_PROSPECTING` (31252),
+  `SPELL_PICK_LOCK` (1804), plus `PICK_LOCK_NAME` (resolved at file
+  load via `GetSpellInfo`).
+- **Eligibility predicates** on `EC_compCache`: `canDisenchant`,
+  `canMill`, `canProspect`, `canPickLock`.
+- **Tooltip-scan helper** `processTooltipHasLine` (used by canMill /
+  canProspect to detect the "Mill" / "Prospect" usage line).
+- **BoP check** `processIsSoulbound` (used by buildProcessSummary).
+- **The bag walk** `buildProcessSummary` (the categorisation driver
+  that walks bags 0-4, applies all eligibility + protection gates,
+  and returns the queue table the UI panel renders).
+
+Stays in EbonClearance.lua (Stage 8 target):
+
+- The Process Bags UI panel (`ProcessBagsPanel`, the SecureActionButton,
+  collapsible sections, scroll wiring).
+- `rearmProcessButton`, `updateProcessSelection`, `skipProcessTarget`,
+  `refreshProcessPanel` (UI-driving helpers that read panel widget
+  state).
+
+Cross-file API surface added in this stage:
+
+- **`NS.Delay = EC_Delay`** published right after the EC_Delay body.
+  Process uses it to schedule the `EC_compCache.refreshExtractionIfDirty`
+  follow-up after a Disenchant / Mill / Prospect cast.
+- **`NS.IsAddonEnabledForChar = EC_IsAddonEnabledForChar`** published
+  right after the body. Process gates its operations on per-character
+  enable.
+- Existing `NS.scanTooltip`, `NS.PrintNicef`, `NS.DB`, `NS.ADB` are
+  consumed inline (function-entry capture for DB/ADB, direct read for
+  the others).
+
+`.toc` order: `Core → Companion → Protection → Vendor → Process →
+EbonClearance.lua → BagDisplay`. Process loads BEFORE EbonClearance.lua
+because its function bodies are called from EbonClearance.lua's
+Process UI panel; that panel's code reads `EC_compCache.canDisenchant`
+etc. by the time it runs, but the methods need to exist by file-load
+time so the panel's setup code (e.g. dropdown population) doesn't
+hit nil.
+
+Stage 7 invariants (enforced by `tests/test_perf_guardrails.lua` Test 35):
+
+- 7 eligibility / scan helpers on `EC_compCache`: `canDisenchant`,
+  `canMill`, `canProspect`, `canPickLock`, `processTooltipHasLine`,
+  `processIsSoulbound`, `buildProcessSummary`.
+- 4 spell ID constants on `EC_compCache` with their correct values
+  (13262, 51005, 31252, 1804). Drift would silently break the
+  Process panel's spell-known checks.
+- `NS.Delay = EC_Delay` and `NS.IsAddonEnabledForChar` published.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

@@ -914,6 +914,9 @@ EC_IsAddonEnabledForChar = function()
     end
     return EC_IsCharacterAllowed()
 end
+-- Expose to split files. Process Bags (Stage 7+) gates its operations
+-- on this; any future per-character feature can read it via NS.
+NS.IsAddonEnabledForChar = EC_IsAddonEnabledForChar
 
 local function IsInSet(setTable, itemID)
     if not itemID or not setTable then
@@ -1466,6 +1469,12 @@ EC_delayFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 end)
+-- Expose EC_Delay to split files via NS. Used by post-Stage-7
+-- EbonClearance_Process.lua and any future split file that needs to
+-- schedule a delayed callback. The forward-declared `EC_delayFrame`
+-- and `EC_timers` stay local to this file; only the scheduling helper
+-- is part of the namespace surface.
+NS.Delay = EC_Delay
 
 local function EC_SummonGreedyWithDelay()
     if not DB or not DB.summonGreedy then
@@ -1750,6 +1759,68 @@ local function EC_IsOpenable(bag, slot)
     return false
 end
 
+-- Auto-open driver. Walks bags, opens the first openable item, and recurses
+-- via EC_Delay if more remain. EC_autoOpenInFlight coalesces BAG_UPDATE
+-- bursts so we never stack `UseContainerItem` calls within the inter-item
+-- delay. Reassigns the forward-declared `EC_HandleAutoOpenContainers` local
+-- (declared above near the v2.24.0 BAG_UPDATE debounce frame, so the
+-- frame's OnUpdate closure can capture this name). Body lives in this file
+-- because it references file-scope locals EC_IsOpenable + EC_autoOpenInFlight.
+function EC_HandleAutoOpenContainers()
+    if not DB or not DB.autoOpenContainers then
+        return
+    end
+    if EC_compCache.vendorRunning then
+        return
+    end
+    if InCombatLockdown() then
+        -- One-shot deferral announce per combat instance. Walk bags only on
+        -- the first BAG_UPDATE-during-combat that finds the queue non-empty;
+        -- subsequent BAG_UPDATEs in the same combat skip the scan entirely.
+        -- The flag clears on PLAYER_REGEN_ENABLED so the next combat
+        -- announces fresh.
+        if not EC_compCache.combatDeferredAnnounced then
+            local count = 0
+            for bag = 0, 4 do
+                local slots = GetContainerNumSlots(bag)
+                for slot = 1, slots do
+                    if EC_IsOpenable(bag, slot) then
+                        count = count + 1
+                    end
+                end
+            end
+            if count > 0 then
+                PrintNicef("Deferred %d container(s) until out of combat.", count)
+            end
+            EC_compCache.combatDeferredAnnounced = true
+        end
+        return
+    end
+    if EC_autoOpenInFlight then
+        return
+    end
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            if EC_IsOpenable(bag, slot) then
+                EC_autoOpenInFlight = true
+                UseContainerItem(bag, slot)
+                -- 0.4 s gives the prior open's cast room to finish before we
+                -- trigger the next one. Tunable; lower would feel snappier
+                -- but risks interrupting the previous use.
+                EC_Delay(0.4, function()
+                    EC_autoOpenInFlight = false
+                    EC_HandleAutoOpenContainers()
+                end)
+                return
+            end
+        end
+    end
+end
+
 -- v2.10.0: bind-type detection for the per-rarity bindFilter rule. Returns
 -- "boe", "bop", or "any" by scanning the same hidden EC_scanTooltip frame
 -- the openable-container check uses. Results are cached on
@@ -1896,396 +1967,14 @@ function EC_compCache.canLootItem(link)
     return false
 end
 
--- ---------------------------------------------------------------------------
--- v2.22.0 Process Bags helpers
--- ---------------------------------------------------------------------------
--- Three profession spells let players turn eligible bag items into
--- crafting materials: Disenchant (13262, requires Enchanting),
--- Milling (51005, requires Inscription), Prospecting (31252,
--- requires Jewelcrafting). The Process Bags panel scans bags and
--- offers a secure-button macro to cast the appropriate spell on one
--- queued item at a time. Eligibility caches are per-itemID because
--- the underlying property is stable. Spell IDs and helpers all hung
--- off EC_compCache to stay under Lua 5.1's 200-locals cap.
+-- The Process Bags engine (Disenchant / Mill / Prospect / Lockpick
+-- eligibility predicates + spell IDs + buildProcessSummary bag walk)
+-- lives in EbonClearance_Process.lua after Stage 7 of the file split.
+-- The Process Bags PANEL (rearmProcessButton, refreshProcessPanel,
+-- updateProcessSelection, skipProcessTarget + the SecureActionButton
+-- UI) stays in this file for Stage 8 because it pulls in a dense web
+-- of UI-building helpers. See docs/CODE_REVIEW.md item 4.
 
-EC_compCache.SPELL_DISENCHANT = 13262
-EC_compCache.SPELL_MILLING = 51005
-EC_compCache.SPELL_PROSPECTING = 31252
--- v2.25.0: rogue Pick Lock. One spell handles every lockable
--- container; the cast may still fail if the lockbox's required
--- lockpicking skill exceeds the player's. We don't gate on skill
--- here - just on knowing the spell - and let the standard Blizzard
--- "Lock is too difficult" error surface if the skill is short.
--- Engineering Lockpick items / consumable lockpicks are deliberately
--- out of scope; they need a different interaction model (right-click
--- the item, then click the box) that doesn't fit the secure-button
--- macrotext workflow.
-EC_compCache.SPELL_PICK_LOCK = 1804
--- v2.25.0: cached spell name for UNIT_SPELLCAST_SUCCEEDED matching.
--- arg2 of that event is a localised spell name string, not an ID, so
--- we resolve once at load and compare strings on each cast event.
--- GetSpellInfo may return nil if called before the spell DB is ready;
--- the handler also defensively re-resolves on first nil. Cached on
--- EC_compCache to stay under Lua 5.1's 200-locals cap.
-EC_compCache.PICK_LOCK_NAME = (GetSpellInfo and GetSpellInfo(1804)) or "Pick Lock"
-
-function EC_compCache.canDisenchant(itemID)
-    if not itemID then
-        return false
-    end
-    if not IsSpellKnown or not IsSpellKnown(EC_compCache.SPELL_DISENCHANT) then
-        return false
-    end
-    if not IsEquippableItem or not IsEquippableItem(itemID) then
-        return false
-    end
-    local _, _, quality = GetItemInfo(itemID)
-    if not quality then
-        return false
-    end
-    -- DE works on Uncommon (2) through Epic (4). Quality 5+ (Legendary,
-    -- Artifact, Heirloom) is treated as not-disenchantable.
-    return quality >= 2 and quality <= 4
-end
-
--- Tooltip-scan helper shared by canMill / canProspect. Caches the
--- result per itemID via processCache. Returns true if the item's
--- tooltip contains the given marker string (ITEM_MILLABLE or
--- ITEM_PROSPECTABLE).
-function EC_compCache.processTooltipHasLine(bag, slot, itemID, marker, modeName)
-    if not bag or not slot or not itemID or not marker then
-        return false
-    end
-    EC_scanTooltip:ClearLines()
-    EC_scanTooltip:SetBagItem(bag, slot)
-    for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
-        if not line then
-            break
-        end
-        local txt = line:GetText()
-        if txt and txt == marker then
-            EC_compCache.processCache[itemID] = modeName
-            return true
-        end
-    end
-    -- Negative cache. canMill / canProspect both early-return on
-    -- `cached == "none"`; without writing the sentinel here every
-    -- non-millable / non-prospectable item gets a fresh 30-line
-    -- tooltip scan on each BAG_UPDATE debounce-frame rearm.
-    EC_compCache.processCache[itemID] = "none"
-    return false
-end
-
-function EC_compCache.canMill(bag, slot, itemID)
-    if not IsSpellKnown or not IsSpellKnown(EC_compCache.SPELL_MILLING) then
-        return false
-    end
-    if not itemID then
-        return false
-    end
-    local cached = EC_compCache.processCache[itemID]
-    if cached == "Mill" then
-        return true
-    end
-    if cached == "Disenchant" or cached == "Prospect" or cached == "none" then
-        return false
-    end
-    -- Not yet scanned: check the tooltip for ITEM_MILLABLE marker.
-    local marker = ITEM_MILLABLE or "Millable"
-    return EC_compCache.processTooltipHasLine(bag, slot, itemID, marker, "Mill")
-end
-
-function EC_compCache.canProspect(bag, slot, itemID)
-    if not IsSpellKnown or not IsSpellKnown(EC_compCache.SPELL_PROSPECTING) then
-        return false
-    end
-    if not itemID then
-        return false
-    end
-    local cached = EC_compCache.processCache[itemID]
-    if cached == "Prospect" then
-        return true
-    end
-    if cached == "Disenchant" or cached == "Mill" or cached == "none" then
-        return false
-    end
-    local marker = ITEM_PROSPECTABLE or "Prospectable"
-    return EC_compCache.processTooltipHasLine(bag, slot, itemID, marker, "Prospect")
-end
-
--- v2.25.0: lockpick eligibility. Unlike Mill/Prospect/DE eligibility,
--- the "is this lockable" state is per-INSTANCE (a container is either
--- currently locked or already opened), so we don't cache. The LOCKED
--- tooltip marker is the same locale string EC_IsOpenable uses to
--- exclude locked containers from the auto-open driver, so an item
--- that fails EC_IsOpenable's LOCKED gate is exactly the one that
--- belongs in Lockpick mode.
-function EC_compCache.canPickLock(bag, slot)
-    if not IsSpellKnown or not IsSpellKnown(EC_compCache.SPELL_PICK_LOCK) then
-        return false
-    end
-    if not bag or not slot then
-        return false
-    end
-    local _, count, locked = GetContainerItemInfo(bag, slot)
-    if not count or count <= 0 then
-        return false
-    end
-    -- Skip slots the engine has flagged locked (mid-pickup, mid-cast).
-    -- The Pick Lock cast would fail against a locked-state slot anyway,
-    -- and including them would cause the cursor to jitter during the
-    -- cast resolution window (same locked-slot story as Mill/Prospect).
-    if locked then
-        return false
-    end
-    EC_scanTooltip:ClearLines()
-    EC_scanTooltip:SetBagItem(bag, slot)
-    for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
-        if not line then
-            break
-        end
-        local txt = line:GetText()
-        if txt == LOCKED then
-            return true
-        end
-    end
-    return false
-end
-
--- Tooltip-scan to check Soulbound status. The DE quality cap and
--- soulbound-include settings are applied here so the returned list
--- already respects user prefs.
-function EC_compCache.processIsSoulbound(bag, slot)
-    EC_scanTooltip:ClearLines()
-    EC_scanTooltip:SetBagItem(bag, slot)
-    for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
-        if not line then
-            break
-        end
-        local txt = line:GetText()
-        if txt == ITEM_SOULBOUND then
-            return true
-        end
-    end
-    return false
-end
-
--- Build an ordered list of process-eligible entries for the panel UI
--- and the cast-button rearm. Returns an array of entries; each entry:
---   { bag, slot, itemID, link, count, mode, spellName, perCast, casts }
--- Sorted: Disenchant first (by quality desc), then Mill, then Prospect.
--- Honours: Keep List exclude, currently-equipped exclude, ignored
--- list exclude, soulbound-toggle (DE only), DE quality cap.
-function EC_compCache.buildProcessSummary()
-    local results = {}
-    if not DB then
-        return results
-    end
-    local maxQ = DB.processMaxDEQuality or 4
-    local includeSB = DB.processIncludeSoulbound == true
-    local ignored = DB.processIgnored or {}
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            local itemID = GetContainerItemID(bag, slot)
-            local link = GetContainerItemLink(bag, slot)
-            local _, count = GetContainerItemInfo(bag, slot)
-            -- Intentionally not filtering on `locked` here: a slot is
-            -- briefly locked during the half-second a /cast on it
-            -- resolves, and excluding it would make the BAG_UPDATE
-            -- driven rearm lose the armedItemString lookup, fall
-            -- through to armedMode, and jump the cursor to a different
-            -- entry (then jump back once the slot unlocks). Keeping
-            -- locked slots in the list keeps the cursor stable across
-            -- the cast window. The /use macro would fail harmlessly
-            -- against a locked slot if the player click landed there
-            -- anyway.
-            if itemID and link and count and count > 0 then
-                local itemString = link:match("item[%-?%d:]+")
-                local skip = false
-                if itemString and ignored[itemString] then
-                    skip = true
-                end
-                if not skip and IsInSet and IsInSet(DB.blacklist, itemID) then
-                    skip = true
-                end
-                if not skip and IsEquippedItem and IsEquippedItem(itemID) then
-                    skip = true
-                end
-                -- v2.26.0: chance-on-hit protection extends to Process
-                -- Bags. An item carrying a `Chance on hit:` proc is
-                -- hidden from the DE / Mill / Prospect list until the
-                -- player marks its itemID via Alt+Right-Click ->
-                -- "Allow Sell". Same gate the auto-rule sell sweep
-                -- uses, applied here too so the user can't
-                -- accidentally DE / mill a weapon whose proc they
-                -- might still want to extract.
-                if
-                    not skip
-                    and DB.protectChanceOnHitItems
-                    and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
-                    and not (ADB.allowedItems and ADB.allowedItems[itemID])
-                then
-                    skip = true
-                end
-                if not skip then
-                    local mode, spellName, perCast
-                    if EC_compCache.canDisenchant(itemID) then
-                        local _, _, quality = GetItemInfo(itemID)
-                        -- v2.23.0: same dupe gate as the sell / delete
-                        -- chain. v2.27.0: also honour the unified
-                        -- ADB.allowedItems override so a user-marked
-                        -- affix item is DE-eligible from Process Bags.
-                        local affixGuarded = false
-                        if quality and quality >= 3 and DB.protectAffixedRareItems then
-                            local affix = EC_compCache.bagSlotAffixData and EC_compCache.bagSlotAffixData(bag, slot)
-                            if affix then
-                                local affixKey = affix.description
-                                    and EC_compCache.normaliseAffixDesc(affix.description)
-                                local manualAllow = affixKey and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
-                                local autoDupe = DB.affixAllowExactDupes
-                                    and EC_compCache.playerHasAffixDescription(affix.description)
-                                affixGuarded = not (manualAllow or autoDupe)
-                            end
-                        end
-                        if quality and quality <= maxQ and not affixGuarded then
-                            if includeSB or not EC_compCache.processIsSoulbound(bag, slot) then
-                                mode = "Disenchant"
-                                spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_DISENCHANT) or "Disenchant"
-                                perCast = 1
-                            end
-                        end
-                    elseif EC_compCache.canMill(bag, slot, itemID) then
-                        if count >= 5 then
-                            mode = "Mill"
-                            spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_MILLING) or "Milling"
-                            perCast = 5
-                        end
-                    elseif EC_compCache.canProspect(bag, slot, itemID) then
-                        if count >= 5 then
-                            mode = "Prospect"
-                            spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_PROSPECTING) or "Prospecting"
-                            perCast = 5
-                        end
-                    elseif DB.lockpickEnabled and EC_compCache.canPickLock(bag, slot) then
-                        -- v2.25.0: rogue Pick Lock. perCast = 1 (one
-                        -- cast unlocks one container; the container
-                        -- itself stays in the bag with a Right Click
-                        -- to Open state that the existing auto-open
-                        -- driver picks up on the next BAG_UPDATE).
-                        mode = "Lockpick"
-                        spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_PICK_LOCK) or "Pick Lock"
-                        perCast = 1
-                    end
-                    if mode then
-                        local _, _, quality = GetItemInfo(itemID)
-                        results[#results + 1] = {
-                            bag = bag,
-                            slot = slot,
-                            itemID = itemID,
-                            itemString = itemString,
-                            link = link,
-                            count = count,
-                            mode = mode,
-                            spellName = spellName,
-                            perCast = perCast,
-                            casts = math.floor(count / perCast),
-                            quality = quality or 1,
-                        }
-                    end
-                end
-            end
-        end
-    end
-    -- Sort: Disenchant first, then Mill, then Prospect, then
-    -- Lockpick. Within mode: DE by quality desc (Epic before Rare
-    -- before Uncommon), Mill / Prospect / Lockpick alphabetically by
-    -- item name.
-    --
-    -- Pre-compute names onto each entry so the comparator runs O(1)
-    -- per compare. Without the cache, table.sort calls the comparator
-    -- O(N log N) times and each call would hit GetItemInfo twice -
-    -- compounding overhead per BAG_UPDATE-driven rebuild.
-    for _, e in ipairs(results) do
-        e.name = (GetItemInfo(e.itemID)) or ""
-    end
-    local modeOrder = { Disenchant = 1, Mill = 2, Prospect = 3, Lockpick = 4 }
-    table.sort(results, function(a, b)
-        if a.mode ~= b.mode then
-            return modeOrder[a.mode] < modeOrder[b.mode]
-        end
-        if a.mode == "Disenchant" then
-            if a.quality ~= b.quality then
-                return a.quality > b.quality
-            end
-        end
-        return a.name < b.name
-    end)
-    return results
-end
-
--- Driver. Walks bags, opens the first openable item, and recurses via
--- EC_Delay if more remain. EC_autoOpenInFlight coalesces BAG_UPDATE bursts
--- so we never stack `UseContainerItem` calls within the inter-item delay.
--- Forward-declared at the top of the file so the v2.24.0 debounce
--- frame's OnUpdate closure can capture this name. Body unchanged.
-function EC_HandleAutoOpenContainers()
-    if not DB or not DB.autoOpenContainers then
-        return
-    end
-    if EC_compCache.vendorRunning then
-        return
-    end
-    if InCombatLockdown() then
-        -- One-shot deferral announce per combat instance. Walk bags only on
-        -- the first BAG_UPDATE-during-combat that finds the queue non-empty;
-        -- subsequent BAG_UPDATEs in the same combat skip the scan entirely.
-        -- The flag clears on PLAYER_REGEN_ENABLED so the next combat
-        -- announces fresh.
-        if not EC_compCache.combatDeferredAnnounced then
-            local count = 0
-            for bag = 0, 4 do
-                local slots = GetContainerNumSlots(bag)
-                for slot = 1, slots do
-                    if EC_IsOpenable(bag, slot) then
-                        count = count + 1
-                    end
-                end
-            end
-            if count > 0 then
-                PrintNicef("Deferred %d container(s) until out of combat.", count)
-            end
-            EC_compCache.combatDeferredAnnounced = true
-        end
-        return
-    end
-    if EC_autoOpenInFlight then
-        return
-    end
-    if not EC_IsAddonEnabledForChar() then
-        return
-    end
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            if EC_IsOpenable(bag, slot) then
-                EC_autoOpenInFlight = true
-                UseContainerItem(bag, slot)
-                -- 0.4 s gives the prior open's cast room to finish before we
-                -- trigger the next one. Tunable; lower would feel snappier
-                -- but risks interrupting the previous use.
-                EC_Delay(0.4, function()
-                    EC_autoOpenInFlight = false
-                    EC_HandleAutoOpenContainers()
-                end)
-                return
-            end
-        end
-    end
-end
 
 -- v2.21.0: Fast Loot driver. Replaces v2.16.0's tight-loop drain
 -- (which fired N LootSlot calls in one frame and risked anti-flood

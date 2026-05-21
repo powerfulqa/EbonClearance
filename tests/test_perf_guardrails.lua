@@ -46,6 +46,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Companion.lua",
     "EbonClearance_Protection.lua",
     "EbonClearance_Vendor.lua",
+    "EbonClearance_Process.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
 }
@@ -1451,6 +1452,64 @@ do
         "/ec sellinfo trace includes the professionToolSafetyNet step",
         src:find('"professionToolSafetyNet"') ~= nil,
         "describeSellability must surface the safety-net gate so /ec sellinfo and Alt+Shift+Right-Click trace it"
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 35 (Stage 7): Process Bags engine extracted; eligibility predicates
+-- stay on EC_compCache.
+-- ---------------------------------------------------------------------------
+-- Stage 7 moves the Process Bags ENGINE (spell IDs + eligibility
+-- predicates + buildProcessSummary) to EbonClearance_Process.lua. The
+-- Process Bags PANEL (UI helpers + rearmProcessButton +
+-- refreshProcessPanel + updateProcessSelection + skipProcessTarget)
+-- stays in EbonClearance.lua for Stage 8.
+do
+    local helpers = {
+        "canDisenchant",
+        "canMill",
+        "canProspect",
+        "canPickLock",
+        "processTooltipHasLine",
+        "processIsSoulbound",
+        "buildProcessSummary",
+    }
+    for _, name in ipairs(helpers) do
+        local pinned = src:find("EC_compCache." .. name, 1, true) ~= nil
+        local leakedFn = src:find("local function " .. name .. "%(") ~= nil
+        check(
+            name .. " is namespaced under EC_compCache",
+            pinned and not leakedFn,
+            name .. " must stay on EC_compCache so call sites elsewhere resolve through the shared upvalue"
+        )
+    end
+
+    -- Spell ID constants stay on EC_compCache.
+    local spellConstants = {
+        { "SPELL_DISENCHANT", "13262" },
+        { "SPELL_MILLING", "51005" },
+        { "SPELL_PROSPECTING", "31252" },
+        { "SPELL_PICK_LOCK", "1804" },
+    }
+    for _, pair in ipairs(spellConstants) do
+        local name, value = pair[1], pair[2]
+        check(
+            "EC_compCache." .. name .. " = " .. value,
+            src:find("EC_compCache%." .. name .. "%s*=%s*" .. value) ~= nil,
+            "the spell ID constant must remain on EC_compCache so the Process panel + UNIT_SPELLCAST_SUCCEEDED handler can read it"
+        )
+    end
+
+    -- NS exposures Process depends on:
+    check(
+        "NS.Delay exposed by EbonClearance.lua",
+        src:find("NS%.Delay%s*=%s*EC_Delay") ~= nil,
+        "Process schedules deferred callbacks via NS.Delay; EbonClearance.lua must publish the EC_Delay helper on NS"
+    )
+    check(
+        "NS.IsAddonEnabledForChar exposed by EbonClearance.lua",
+        src:find("NS%.IsAddonEnabledForChar%s*=%s*EC_IsAddonEnabledForChar") ~= nil,
+        "Process gates on per-character enable via NS.IsAddonEnabledForChar; EbonClearance.lua must publish the helper"
     )
 end
 

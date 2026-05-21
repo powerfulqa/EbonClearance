@@ -32,6 +32,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Companion.lua",
     "EbonClearance_Protection.lua",
     "EbonClearance_Vendor.lua",
+    "EbonClearance_Process.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
 }

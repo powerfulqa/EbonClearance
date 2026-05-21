@@ -1334,6 +1334,51 @@ Stage 3 invariants (enforced by `tests/test_perf_guardrails.lua` Test 29):
 - `EnsureDB` writes `NS.DB = DB`.
 - Every site that rebinds `PET_NAME_LC` mirrors onto `NS.PET_NAME_LC`.
 
+### Stage 4: extract EbonClearance_Protection.lua (commit `<pending>`)
+
+Stage 4 moves the PE-protection detection cluster previously in
+EbonClearance.lua at lines ~1817-2477:
+
+- **PE random-affix detection** - `linkHasAffix`, `romanToInt`,
+  `parseAffixFromTitle`, `scanTooltipForAffixDesc`, `normaliseAffixDesc`,
+  `bagSlotAffixData`, `bagSlotHasAffix`, `liveTooltipAffixData`,
+  `liveTooltipHasAffix`. The `ROMAN_VALUES` lookup table and the
+  `affixDataCache` (per-itemString) live here too.
+- **PE engraving / affix-catalog integration** - `knownAffixDescriptions`
+  table, `peDetected`, `refreshKnownAffixes`, `refreshExtractionIfDirty`,
+  `playerHasAffixDescription`. The `AFFIX_SPELL_PREFIX` literal, the
+  `knownExtractionVersion` dirty counter, and the `procIdToDescription`
+  cache also live here.
+- **PE chance-on-hit detection** - `lineLooksLikeChanceProc`,
+  `itemHasChanceOnHit`, `liveTooltipHasChanceOnHit`.
+- **PE Anvil bridge** - `findLearnedAffixForItem` plus
+  `itemAffixLookupCache` (per-itemLink).
+
+Every helper is attached to `EC_compCache` (Core's table, exposed as
+`NS.compCache`). Call sites elsewhere in the addon already resolve
+through the shared `EC_compCache` upvalue, so this move required NO
+call-site changes anywhere in EbonClearance.lua.
+
+Cross-file plumbing added in this stage:
+
+- `NS.scanTooltip` is written by EbonClearance.lua immediately after
+  the `EC_scanTooltip` frame is created. Protection's helper bodies
+  dereference `NS.scanTooltip` lazily inside the function body via a
+  `scanTip()` accessor (Protection loads BEFORE EbonClearance.lua's
+  main chunk, so an upvalue capture at Protection's load time would
+  store `nil`; by the time any of these helpers is first CALLED,
+  EbonClearance.lua has finished its main chunk).
+- The named `GameTooltip` frame stays in EbonClearance.lua because it
+  has non-protection callers (auto-open container detection, bug-report
+  builder, Process Bags mode detection, bind-type cache).
+
+Stage 4 invariants (enforced by `tests/test_perf_guardrails.lua` Test 30):
+
+- 17 protection helpers stay attached to `EC_compCache` and are not
+  shadowed by a module-level `local function NAME(...)` definition.
+- `EbonClearance.lua` writes `NS.scanTooltip = EC_scanTooltip`
+  immediately after creating the frame.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

@@ -44,6 +44,7 @@
 local SOURCE_PATHS = {
     "EbonClearance_Core.lua",
     "EbonClearance_Companion.lua",
+    "EbonClearance_Protection.lua",
     "EbonClearance.lua",
 }
 
@@ -1034,6 +1035,57 @@ do
         "Name refresh exposes NS.PET_NAME_LC",
         src:find("NS%.PET_NAME_LC%s*=%s*PET_NAME_LC", 1) ~= nil,
         "Every site that rebinds PET_NAME_LC must mirror onto NS.PET_NAME_LC for the chat filter to see the live value"
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 30 (Stage 4): Protection helpers stay namespaced under EC_compCache.
+-- ---------------------------------------------------------------------------
+-- After Stage 4 the affix + chance-on-hit detection cluster lives in
+-- EbonClearance_Protection.lua. Every helper is attached to EC_compCache,
+-- which is the same table EbonClearance.lua's call sites already resolve
+-- through via their re-aliased upvalue. If a future refactor moves any
+-- of these helpers off EC_compCache (e.g. as a module-level local in
+-- Protection), call sites in EbonClearance.lua would resolve to nil.
+do
+    local helpers = {
+        "linkHasAffix",
+        "romanToInt",
+        "parseAffixFromTitle",
+        "scanTooltipForAffixDesc",
+        "normaliseAffixDesc",
+        "bagSlotAffixData",
+        "bagSlotHasAffix",
+        "liveTooltipAffixData",
+        "liveTooltipHasAffix",
+        "peDetected",
+        "refreshKnownAffixes",
+        "refreshExtractionIfDirty",
+        "playerHasAffixDescription",
+        "lineLooksLikeChanceProc",
+        "itemHasChanceOnHit",
+        "liveTooltipHasChanceOnHit",
+        "findLearnedAffixForItem",
+    }
+    for _, name in ipairs(helpers) do
+        local pinned = src:find("EC_compCache." .. name, 1, true) ~= nil
+        local leakedFn = src:find("local function " .. name .. "%(") ~= nil
+        check(
+            name .. " is namespaced under EC_compCache",
+            pinned and not leakedFn,
+            name .. " must stay on EC_compCache so call sites in EbonClearance.lua resolve through the shared upvalue"
+        )
+    end
+
+    -- NS.scanTooltip exposure. EbonClearance.lua creates the named
+    -- GameTooltip frame and writes it onto NS so Protection's bodies
+    -- can dereference NS.scanTooltip lazily at call time (Protection
+    -- loads before EbonClearance.lua's main chunk so an upvalue capture
+    -- at Protection's load would store nil).
+    check(
+        "NS.scanTooltip exposed by EbonClearance.lua frame creation",
+        src:find("NS%.scanTooltip%s*=%s*EC_scanTooltip") ~= nil,
+        "EbonClearance.lua must write `NS.scanTooltip = EC_scanTooltip` immediately after creating the frame, so Protection's lazy dereference works"
     )
 end
 

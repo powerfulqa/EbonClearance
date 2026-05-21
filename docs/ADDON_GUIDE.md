@@ -1379,7 +1379,7 @@ Stage 4 invariants (enforced by `tests/test_perf_guardrails.lua` Test 30):
 - `EbonClearance.lua` writes `NS.scanTooltip = EC_scanTooltip`
   immediately after creating the frame.
 
-### Stage 5: extract EbonClearance_Vendor.lua (commit `<pending>`)
+### Stage 5: extract EbonClearance_Vendor.lua (commit `08c3893`)
 
 Stage 5 is deliberately scoped narrowly. The full vendor cycle
 (`EC_IsSellable`, `BuildQueue`, `DoNextAction`, `worker`, `StartRun`,

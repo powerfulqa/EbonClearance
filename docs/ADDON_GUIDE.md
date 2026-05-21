@@ -1334,7 +1334,7 @@ Stage 3 invariants (enforced by `tests/test_perf_guardrails.lua` Test 29):
 - `EnsureDB` writes `NS.DB = DB`.
 - Every site that rebinds `PET_NAME_LC` mirrors onto `NS.PET_NAME_LC`.
 
-### Stage 4: extract EbonClearance_Protection.lua (commit `<pending>`)
+### Stage 4: extract EbonClearance_Protection.lua (commit `9d65e64`)
 
 Stage 4 moves the PE-protection detection cluster previously in
 EbonClearance.lua at lines ~1817-2477:

@@ -47,6 +47,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Protection.lua",
     "EbonClearance_Vendor.lua",
     "EbonClearance.lua",
+    "EbonClearance_BagDisplay.lua",
 }
 
 local pieces = {}
@@ -801,12 +802,17 @@ do
 end
 
 -- ---------------------------------------------------------------------------
--- Test 26 (v2.29.0): list-mutation sites call EC_RefreshSellBorders.
+-- Test 26 (v2.29.0): list-mutation sites call the sell-border refresh helper.
 -- ---------------------------------------------------------------------------
 -- Any DB.whitelist / DB.blacklist / DB.deleteList / ADB.allowed* mutation
--- must be followed by EC_RefreshSellBorders so the slot-border ring
+-- must be followed by the refresh helper so the slot-border ring
 -- doesn't go stale. Verifies the documented contract in
--- docs/ADDON_GUIDE.md "List-mutation must call EC_RefreshSellBorders".
+-- docs/ADDON_GUIDE.md "List-mutation must call the sell-border refresh".
+-- The helper name changed from EC_RefreshSellBorders to NS.RefreshSellBorders
+-- in Stage 6 of the file split (the body moved to BagDisplay; the stub on
+-- NS lives in EbonClearance.lua so cross-file callers reach it).
+local SB_REFRESH_PATTERN = "NS%.RefreshSellBorders%(%)"
+local SB_REFRESH_CONTEXT_PATTERN = "NS%.RefreshSellBorders"
 do
     local function bodyHasRefresh(funcSig)
         local startIdx = src:find(funcSig)
@@ -817,28 +823,28 @@ do
         local nextTbl = src:find("\nfunction [A-Za-z_]+%.", startIdx + 1) or #src
         local endIdx = math.min(nextLocal, nextTbl)
         local body = src:sub(startIdx, endIdx)
-        return body:find("EC_RefreshSellBorders%(%)") ~= nil
+        return body:find(SB_REFRESH_PATTERN) ~= nil
     end
 
     local addOk = bodyHasRefresh("local function EC_AddItemToList%(")
-    check("EC_AddItemToList calls EC_RefreshSellBorders",
+    check("EC_AddItemToList calls NS.RefreshSellBorders",
           addOk,
           "list adds must refresh slot-border tints so rings draw on newly-added items immediately")
 
     local removeOk = bodyHasRefresh("local function EC_RemoveItemFromList%(")
-    check("EC_RemoveItemFromList calls EC_RefreshSellBorders",
+    check("EC_RemoveItemFromList calls NS.RefreshSellBorders",
           removeOk,
           "list removes must refresh slot-border tints so rings clear on freshly-removed items immediately")
 
     -- Allow Sell click handlers live inline in the context-menu builder;
     -- look for the "Allow Sell" / "Remove from Allow List" string literals
-    -- followed (within a reasonable window) by an EC_RefreshSellBorders call.
-    local allowSellRegion = src:match('Allow Sell".-EC_RefreshSellBorders')
-    local removeAllowRegion = src:match("Remove from Allow List|r.-EC_RefreshSellBorders")
-    check("Allow Sell click handler calls EC_RefreshSellBorders",
+    -- followed (within a reasonable window) by an NS.RefreshSellBorders call.
+    local allowSellRegion = src:match('Allow Sell".-' .. SB_REFRESH_CONTEXT_PATTERN)
+    local removeAllowRegion = src:match("Remove from Allow List|r.-" .. SB_REFRESH_CONTEXT_PATTERN)
+    check("Allow Sell click handler calls NS.RefreshSellBorders",
           allowSellRegion ~= nil,
           "marking an item as Allow Sell can flip its sellability verdict; the slot border must repaint")
-    check("Remove from Allow List click handler calls EC_RefreshSellBorders",
+    check("Remove from Allow List click handler calls NS.RefreshSellBorders",
           removeAllowRegion ~= nil,
           "removing an Allow Sell mark restores chance-on-hit / affix protection; the slot border must repaint")
 end
@@ -1273,6 +1279,120 @@ do
         "LEARNED_SPELL_IN_TAB / SPELLS_CHANGED branch does NOT call refreshKnownAffixes() synchronously",
         branchCodeOnly and branchCodeOnly:find("refreshKnownAffixes") == nil,
         "the event handler must route through the debounce frame; a direct call would defeat the whole fix (comments mentioning the function are fine; this check is code-only)"
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 33 (Stage 6): BagDisplay extraction + NS.RefreshSellBorders pattern.
+-- ---------------------------------------------------------------------------
+-- Stage 6 moves the Release-1 bag-display layer to EbonClearance_BagDisplay.lua.
+-- The forward-declared `EC_RefreshSellBorders` local was promoted to
+-- NS.RefreshSellBorders so the stub (in EbonClearance.lua) and the real
+-- body (in BagDisplay) can live in different files. Load order in the
+-- .toc puts BagDisplay AFTER EbonClearance.lua so BagDisplay's body
+-- assignment OVERWRITES the stub, not the other way around.
+do
+    -- The stub on NS (no-op). Lives in EbonClearance.lua's forward-decl
+    -- block so the Character Settings panel toggle can call it before
+    -- BagDisplay loads its real body.
+    check(
+        "NS.RefreshSellBorders stub declared",
+        src:find("NS%.RefreshSellBorders%s*=%s*function%(%)%s*end") ~= nil,
+        "EbonClearance.lua must forward-declare `NS.RefreshSellBorders = function() end` as a no-op stub"
+    )
+
+    -- The real body in BagDisplay. Pattern matches both
+    -- `NS.RefreshSellBorders = function()` and `function NS.RefreshSellBorders()`.
+    local hasBody =
+        src:find("NS%.RefreshSellBorders%s*=%s*function%(%s*%)%s*\n") ~= nil
+        or src:find("function%s+NS%.RefreshSellBorders%(%s*%)") ~= nil
+    -- The stub itself matches the first pattern with no body lines, so
+    -- "hasBody" is satisfied by either the stub OR a real reassignment.
+    -- To distinguish: look for `NS.RefreshSellBorders = function()` followed
+    -- by something other than `end` (the stub) OR a long body. Simplest
+    -- check: BagDisplay's file content directly.
+    local function read_file(path)
+        local f = io.open(path, "r")
+        if not f then
+            return nil
+        end
+        local s = f:read("*a")
+        f:close()
+        return s
+    end
+    local bagDisplay = read_file("EbonClearance_BagDisplay.lua")
+    check(
+        "EbonClearance_BagDisplay.lua exists",
+        bagDisplay ~= nil,
+        "Stage 6 must create EbonClearance_BagDisplay.lua"
+    )
+    if bagDisplay then
+        check(
+            "BagDisplay reassigns NS.RefreshSellBorders body",
+            bagDisplay:find("NS%.RefreshSellBorders%s*=%s*function%(%)") ~= nil,
+            "EbonClearance_BagDisplay.lua must reassign `NS.RefreshSellBorders = function()` with the real body (replaces the no-op stub from EbonClearance.lua)"
+        )
+        -- BagDisplay's helpers stay on EC_compCache.
+        local helpers = {
+            "sellBorderButtons",
+            "applySellBorder",
+            "bagSlotWillSell",
+            "updateSellBordersForBagFrame",
+            "installHostBagBorderHook",
+            "qualityNames",
+            "describeSellability",
+            "printSellabilityTrace",
+            "bagSlotFromButton",
+        }
+        for _, name in ipairs(helpers) do
+            check(
+                name .. " present in BagDisplay on EC_compCache",
+                bagDisplay:find("EC_compCache." .. name, 1, true) ~= nil,
+                name .. " must be attached to EC_compCache in BagDisplay so call sites elsewhere resolve via the shared cache"
+            )
+        end
+    end
+
+    -- The .toc loads BagDisplay AFTER EbonClearance.lua. Verifies via
+    -- the SOURCE_PATHS ordering this test file already uses (BagDisplay
+    -- last in the list). If a future contributor accidentally swaps
+    -- the order, the stub from EbonClearance.lua would clobber the real
+    -- body and the sell-border refresh would silently become a no-op.
+    local toc = read_file("EbonClearance.toc")
+    if toc then
+        local ebonIdx = toc:find("\nEbonClearance%.lua\n", 1)
+        local bagIdx = toc:find("\nEbonClearance_BagDisplay%.lua", 1)
+        check(
+            ".toc loads EbonClearance_BagDisplay.lua AFTER EbonClearance.lua",
+            ebonIdx and bagIdx and ebonIdx < bagIdx,
+            "BagDisplay's NS.RefreshSellBorders body reassignment must run AFTER EbonClearance.lua's stub assignment; reversing the .toc order would clobber the real body"
+        )
+    end
+
+    -- No bare-identifier call sites for EC_RefreshSellBorders. Definition
+    -- in BagDisplay was rewritten to NS.RefreshSellBorders; every caller
+    -- must use the NS-qualified form.
+    local function hasBareCall(s, name)
+        for line in s:gmatch("[^\n]+") do
+            local stripped = line:gsub("^%s+", "")
+            if stripped:sub(1, 2) ~= "--" then
+                local commentAt = stripped:find("%-%-", 1, true)
+                local code = commentAt and stripped:sub(1, commentAt - 1) or stripped
+                if code:find("[^.%w_]" .. name .. "%s*%(") then
+                    return stripped
+                end
+                if code:sub(1, #name + 1) == name .. "(" then
+                    return stripped
+                end
+            end
+        end
+        return nil
+    end
+    local bareCall = hasBareCall(src, "EC_RefreshSellBorders")
+    check(
+        "no bare EC_RefreshSellBorders() call sites (must be NS.RefreshSellBorders)",
+        bareCall == nil,
+        "found bare call: " .. tostring(bareCall)
     )
 end
 

@@ -33,6 +33,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Protection.lua",
     "EbonClearance_Vendor.lua",
     "EbonClearance.lua",
+    "EbonClearance_BagDisplay.lua",
 }
 
 local pieces = {}

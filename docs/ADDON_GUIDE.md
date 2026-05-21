@@ -1441,6 +1441,65 @@ Stage 5 invariants (enforced by `tests/test_perf_guardrails.lua` Test 31):
   anywhere in the shipped sources (either would silently desync from
   the cache field).
 
+### Stage 6: extract EbonClearance_BagDisplay.lua (commit `<pending>`)
+
+Stage 6 moves the Release-1 bag-display layer (sell-border tint +
+sellinfo predicate-trace inspector) out of EbonClearance.lua to a new
+`EbonClearance_BagDisplay.lua`. The block is contiguous (no Stage-5-style
+straddling), all helpers are on `EC_compCache`, so call sites elsewhere
+in the addon already resolve via the shared cache.
+
+What moved:
+
+- **Sell-border tint helpers**: `EC_compCache.sellBorderButtons`
+  (weak-keyed registry), `applySellBorder`, `bagSlotWillSell`,
+  `updateSellBordersForBagFrame`, `installHostBagBorderHook`. The
+  opt-in coloured ring around bag-slot frames whose items would be
+  sold at the next vendor visit. Hooks default `ContainerFrame_Update`
+  AND any host bag UI's per-slot class detected at runtime via LibStub.
+- **`NS.RefreshSellBorders` real body** (settings-flip repaint). The
+  forward-declared stub stays in EbonClearance.lua; this file replaces
+  it with the actual body that walks `sellBorderButtons` and re-applies.
+- **`EC_compCache.qualityNames`** lookup table.
+- **Sellability-trace inspector**: `describeSellability` +
+  `printSellabilityTrace`. Drives `/ec sellinfo` and Alt+Shift+Right-Click.
+- **`bagSlotFromButton`** helper.
+
+Cross-file API surface added in this stage:
+
+- **`EC_RefreshSellBorders` promoted from a file-scope local to
+  `NS.RefreshSellBorders`.** The stub-and-reassign pattern needed to
+  cross the file boundary; a `local` in EbonClearance.lua would mean
+  BagDisplay's assignment creates a global instead of replacing the
+  stub. 14 reference sites (7 call sites × the `if foo then foo() end`
+  guard pattern) substituted from `EC_RefreshSellBorders` to
+  `NS.RefreshSellBorders` in code-only positions.
+- **`NS.IsSellable = EC_IsSellable`** published right after the
+  EC_IsSellable definition. BagDisplay's `bagSlotWillSell` and
+  `describeSellability` consult it via `NS.IsSellable`.
+- **`NS.PrintNice = PrintNice`** and **`NS.PrintNicef = PrintNicef`**
+  for the sellinfo trace's chat output.
+
+**Load order is load-bearing.** `.toc` order is `Core → Companion →
+Protection → Vendor → EbonClearance.lua → BagDisplay`. BagDisplay loads
+AFTER EbonClearance.lua because EbonClearance.lua's stub
+`NS.RefreshSellBorders = function() end` would otherwise OVERWRITE
+BagDisplay's real body if it loaded second. Reversed order = silently
+broken sell-border refresh. Test 33 enforces this ordering.
+
+Stage 6 invariants (enforced by `tests/test_perf_guardrails.lua` Test 33):
+
+- `NS.RefreshSellBorders` stub declared in EbonClearance.lua's
+  forward-decl block.
+- BagDisplay reassigns `NS.RefreshSellBorders` with the real body.
+- All 9 named bag-display helpers (`sellBorderButtons`, `applySellBorder`,
+  `bagSlotWillSell`, `updateSellBordersForBagFrame`,
+  `installHostBagBorderHook`, `qualityNames`, `describeSellability`,
+  `printSellabilityTrace`, `bagSlotFromButton`) present in BagDisplay
+  AND attached to `EC_compCache`.
+- `.toc` loads BagDisplay AFTER EbonClearance.lua.
+- No bare `EC_RefreshSellBorders()` call sites anywhere.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

@@ -1817,7 +1817,7 @@ Stage 8e-i invariants (enforced by `tests/test_perf_guardrails.lua` Test 40):
   `EbonClearance.lua`'s scope).
 - `EbonClearance.lua` registers the panel via the `_G[]` lookup.
 
-### Stage 8e-ii: extract EbonClearance_MerchantPanel.lua (commit `<pending>`)
+### Stage 8e-ii: extract EbonClearance_MerchantPanel.lua (commit `850587f`)
 
 Stage 8e-ii moves the Merchant Settings Interface Options panel
 (~478 LOC moved, file is ~513 LOC with header) into

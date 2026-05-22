@@ -1909,7 +1909,7 @@ Stage 8e-ii invariants (enforced by `tests/test_perf_guardrails.lua` Test 41):
   `NS.AddSlider` / `NS.FitScrollContent` (not bare locals).
 - `EbonClearance.lua` registers the panel via the `_G[]` lookup.
 
-### Stage 8e-iii: extract EbonClearance_ScavengerPanel.lua (commit `<pending>`)
+### Stage 8e-iii: extract EbonClearance_ScavengerPanel.lua (commit `240046d`)
 
 Stage 8e-iii moves the Scavenger Settings Interface Options panel
 (~275 LOC moved, file is ~304 LOC with header) to

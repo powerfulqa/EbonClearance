@@ -2000,10 +2000,45 @@ file BEFORE `EbonClearance.lua`. DB captured at each OnShow entry.
 
 Stage 8e-v invariants (Test 47): both panel frames in the new file
 (not duplicated in EbonClearance.lua); new file uses `NS.CreateListUI`
-(not bare local); both registrations use `_G[]` lookups; the
-`BlacklistSettingsPanel` (Protection Settings) frame is still in
-EbonClearance.lua (sentinel check that the wrong panel didn't get
-swept up by accident).
+(not bare local); both registrations use `_G[]` lookups. The Stage
+8e-v sentinel check verifying `BlacklistSettingsPanel` was still in
+EbonClearance.lua was removed in Stage 8e-vi when that panel moved
+intentionally.
+
+### Stage 8e-vi: extract EbonClearance_ProtectionPanel.lua (commit `<pending>`)
+
+Stage 8e-vi moves the Protection Settings Interface Options panel
+(`BlacklistSettingsPanel` - internal frame name
+`EbonClearanceOptionsBlacklistSettings` preserved from v2.15.0 schema)
+into `EbonClearance_ProtectionPanel.lua`. ~391 LOC moved, new file is
+~426 LOC.
+
+The panel hosts:
+- Auto-protect toggles: `autoAddEquipped`, `autoProtectUpgrades`,
+  `autoProtectEquipmentSets`.
+- v2.20.0 affix + chance-on-hit protection toggles
+  (`protectAffixedRareItems`, `protectChanceOnHitItems`).
+- `affixAllowExactDupes` setting.
+- Explanatory notes interleaved between toggles (the reason the panel
+  builds checkboxes inline rather than using AddCheckbox's flat
+  format).
+
+**Zero new NS exposures needed**: `NS.MakeHeader`, `NS.MakeLabel`,
+`NS.FitScrollContent` already exposed in 8e-i / 8e-ii prep. The
+panel doesn't use AddCheckbox / AddSlider.
+
+Three of the OnClick handlers in this panel write to verdict-impacting
+DB fields (the Issue B fix in Test 42 family) and must call
+`NS.RefreshSellBorders` after the SV write. Test 48 includes a count
+invariant verifying at least 3 such calls survive the extraction.
+
+Registration converted to `_G[]` lookup. .toc loads the new file
+BEFORE `EbonClearance.lua`. DB captured at OnShow entry.
+
+Stage 8e-vi invariants (Test 48): frame lives in the new file (not
+in EbonClearance.lua); uses `NS.MakeHeader` / `NS.FitScrollContent`
+(not bare locals); Issue B refresh calls preserved; registration
+uses `_G[]` lookup.
 
 ### Target architecture (post-split)
 

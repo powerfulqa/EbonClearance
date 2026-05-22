@@ -52,6 +52,7 @@ local SOURCE_PATHS = {
     "EbonClearance_ScavengerPanel.lua",
     "EbonClearance_SellListPanels.lua",
     "EbonClearance_KeepDeletePanels.lua",
+    "EbonClearance_ProtectionPanel.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -2474,14 +2475,10 @@ do
             ecSrc:find('local DeletePanel%s*=%s*CreateFrame') == nil,
             "duplicate definition in EbonClearance.lua would clobber the extracted frame"
         )
-        -- BlacklistSettingsPanel (Protection Settings) is a DIFFERENT
-        -- panel that stays in EbonClearance.lua for a later stage. The
-        -- pattern above must NOT match it.
-        check(
-            "BlacklistSettingsPanel still in EbonClearance.lua (different stage)",
-            ecSrc:find('local BlacklistSettingsPanel') ~= nil,
-            "Protection Settings panel is a separate domain and stays in EbonClearance.lua for now"
-        )
+        -- Note: a Stage 8e-v sentinel check for BlacklistSettingsPanel
+        -- staying in EbonClearance.lua was removed when 8e-vi
+        -- intentionally moved it. Test 48 below now locks
+        -- BlacklistSettingsPanel's location in ProtectionPanel.lua.
     end
 
     check(
@@ -2492,6 +2489,65 @@ do
     check(
         "Delete List panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsDeletion"%]%)') ~= nil,
+        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 48 (Stage 8e-vi): Protection Settings panel extracted.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-vi moves the Protection Settings panel
+-- (BlacklistSettingsPanel - internal frame name preserved from
+-- v2.15.0 schema) into EbonClearance_ProtectionPanel.lua. Hosts the
+-- auto-protect toggles + the v2.20.0 affix / chance-on-hit protection
+-- toggles + affixAllowExactDupes. Three of the OnClick handlers
+-- contain NS.RefreshSellBorders calls (Issue B fix) that carry over.
+do
+    local ppFile = io.open("EbonClearance_ProtectionPanel.lua", "rb")
+    if ppFile then
+        local ppSrc = ppFile:read("*a") or ""
+        ppFile:close()
+        check(
+            "BlacklistSettingsPanel frame in EbonClearance_ProtectionPanel.lua",
+            ppSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsBlacklistSettings"') ~= nil,
+            "Protection Settings frame must live in EbonClearance_ProtectionPanel.lua (Stage 8e-vi)"
+        )
+        local code = (ppSrc:gsub("\n%-%-[^\n]*", ""))
+        check(
+            "EbonClearance_ProtectionPanel.lua uses NS.MakeHeader (not bare MakeHeader)",
+            code:find("NS%.MakeHeader%(") ~= nil
+                and code:find("[^.%w_]MakeHeader%(") == nil,
+            "panel build must call NS.MakeHeader (the local lives in EbonClearance.lua)"
+        )
+        check(
+            "EbonClearance_ProtectionPanel.lua uses NS.FitScrollContent",
+            code:find("NS%.FitScrollContent%(") ~= nil
+                and code:find("[^.%w_]EC_FitScrollContent%(") == nil,
+            "panel build must call NS.FitScrollContent"
+        )
+        -- Issue B fix invariant: the three affix/proc/dupe OnClick
+        -- handlers carried over must still call NS.RefreshSellBorders.
+        check(
+            "Protection Settings OnClick handlers still call NS.RefreshSellBorders",
+            select(2, ppSrc:gsub("NS%.RefreshSellBorders%(%)", "")) >= 3,
+            "the three verdict-impacting toggles (affix protection, chance-on-hit, affixAllowExactDupes) each need their post-Issue-B refresh call to survive extraction"
+        )
+    end
+
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        check(
+            "BlacklistSettingsPanel no longer created in EbonClearance.lua",
+            ecSrc:find('local BlacklistSettingsPanel') == nil,
+            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-vi extracted frame"
+        )
+    end
+
+    check(
+        "Protection Settings panel registered via _G lookup",
+        src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsBlacklistSettings"%]%)') ~= nil,
         "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end

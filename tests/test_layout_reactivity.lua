@@ -40,6 +40,7 @@ local SOURCE_PATHS = {
     "EbonClearance_KeepDeletePanels.lua",
     "EbonClearance_ProtectionPanel.lua",
     "EbonClearance_ItemHighlightingPanel.lua",
+    "EbonClearance_ProfilesPanel.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",

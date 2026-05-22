@@ -54,6 +54,7 @@ local SOURCE_PATHS = {
     "EbonClearance_KeepDeletePanels.lua",
     "EbonClearance_ProtectionPanel.lua",
     "EbonClearance_ItemHighlightingPanel.lua",
+    "EbonClearance_ProfilesPanel.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -2608,6 +2609,163 @@ do
         "Item Highlighting panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsCharacter"%]%)') ~= nil,
         "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 50 (Stage 8e-viii): Profiles + Import/Export panels bundled.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-viii bundles two related panels into one new file:
+-- ProfilesPanel (named-profile management) + ImportExportPanel
+-- (profile pack + settings pack import/export). The Import/Export
+-- region's file-scope helpers (EC_GetWhitelistForScope,
+-- EC_ExportWhitelist, EC_ImportWhitelist, EC_EXPORT_PREFIX) and
+-- EC_compCache.exportFullPack / importFullPack all move along with
+-- the panels. Profile-mutation helpers + EC_HookScrollbarAutoHide
+-- stay in EbonClearance.lua as NS-exposed entry points.
+do
+    -- 5 new NS exposures for this stage.
+    check(
+        "NS.SaveProfile exposed",
+        src:find("NS%.SaveProfile%s*=%s*EC_SaveProfile") ~= nil,
+        "EbonClearance.lua must publish NS.SaveProfile for the Profiles panel button OnClicks"
+    )
+    check(
+        "NS.LoadProfile exposed",
+        src:find("NS%.LoadProfile%s*=%s*EC_LoadProfile") ~= nil,
+        "EbonClearance.lua must publish NS.LoadProfile"
+    )
+    check(
+        "NS.DeleteProfile exposed",
+        src:find("NS%.DeleteProfile%s*=%s*EC_DeleteProfile") ~= nil,
+        "EbonClearance.lua must publish NS.DeleteProfile"
+    )
+    check(
+        "NS.RenameProfile exposed",
+        src:find("NS%.RenameProfile%s*=%s*EC_RenameProfile") ~= nil,
+        "EbonClearance.lua must publish NS.RenameProfile"
+    )
+    check(
+        "NS.HookScrollbarAutoHide exposed",
+        src:find("NS%.HookScrollbarAutoHide%s*=%s*EC_HookScrollbarAutoHide") ~= nil,
+        "EbonClearance.lua must publish NS.HookScrollbarAutoHide for the Profiles + ImportExport panels"
+    )
+    -- EC_PANEL_WIDTH is a file-scope local in EbonClearance.lua that
+    -- mutates dynamically in EC_UpdatePanelWidth; split panel files
+    -- that need it for build-time SetSize calls must use the
+    -- NS.GetPanelWidth() getter (returns the live value via upvalue
+    -- closure) instead of dereferencing EC_PANEL_WIDTH as a global.
+    check(
+        "NS.GetPanelWidth exposed",
+        src:find("NS%.GetPanelWidth%s*=%s*function") ~= nil,
+        "EbonClearance.lua must publish NS.GetPanelWidth for split panel files"
+    )
+
+    local ppFile = io.open("EbonClearance_ProfilesPanel.lua", "rb")
+    if ppFile then
+        local ppSrc = ppFile:read("*a") or ""
+        ppFile:close()
+        check(
+            "ProfilesPanel frame in EbonClearance_ProfilesPanel.lua",
+            ppSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsProfiles"') ~= nil,
+            "ProfilesPanel frame must live in EbonClearance_ProfilesPanel.lua (Stage 8e-viii)"
+        )
+        check(
+            "ImportExportPanel frame in EbonClearance_ProfilesPanel.lua",
+            ppSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsImportExport"') ~= nil,
+            "ImportExportPanel frame must also live in EbonClearance_ProfilesPanel.lua (bundled)"
+        )
+        local code = (ppSrc:gsub("\n%-%-[^\n]*", ""))
+        check(
+            "EbonClearance_ProfilesPanel.lua uses NS.SaveProfile (not bare EC_SaveProfile)",
+            code:find("NS%.SaveProfile%(") ~= nil
+                and code:find("[^.%w_]EC_SaveProfile%(") == nil,
+            "panel must call NS.SaveProfile (the local lives in EbonClearance.lua)"
+        )
+        check(
+            "EbonClearance_ProfilesPanel.lua uses NS.HookScrollbarAutoHide",
+            code:find("NS%.HookScrollbarAutoHide%(") ~= nil
+                and code:find("[^.%w_]EC_HookScrollbarAutoHide%(") == nil,
+            "panel must call NS.HookScrollbarAutoHide"
+        )
+        -- The build-time SetSize calls in this file must use the
+        -- NS.GetPanelWidth() getter, not the bare EC_PANEL_WIDTH
+        -- identifier (which would be nil here - EC_PANEL_WIDTH is a
+        -- file-scope local in EbonClearance.lua).
+        check(
+            "EbonClearance_ProfilesPanel.lua uses NS.GetPanelWidth() (not bare EC_PANEL_WIDTH)",
+            code:find("NS%.GetPanelWidth%(%)") ~= nil
+                and code:find("[^.%w_]EC_PANEL_WIDTH[^_%w]") == nil,
+            "build-time SetSize calls must call NS.GetPanelWidth() so they read the live width value"
+        )
+        -- Every file-scope function in this split file that references
+        -- DB.x or ADB.x must capture them at entry via
+        -- `local DB = NS.DB` / `local ADB = NS.ADB`. Pre-fix the
+        -- exportFullPack / importFullPack / EC_GetWhitelistForScope
+        -- helpers all silently returned empty data because DB / ADB
+        -- resolved to nil globals. Lock this so future helpers don't
+        -- regress: count the file-scope function definitions vs. the
+        -- DB-capture sites. (OnShow inner closures pick up DB via
+        -- upvalue from the OnShow's capture, so they aren't counted
+        -- against this invariant.)
+        local fnCount = 0
+        for _ in code:gmatch("function EC_compCache%.[a-zA-Z]+%(") do
+            fnCount = fnCount + 1
+        end
+        for _ in code:gmatch("\nlocal function [A-Za-z_]+%(") do
+            fnCount = fnCount + 1
+        end
+        local dbCaptureCount = 0
+        for _ in code:gmatch("local DB%s*=%s*NS%.DB") do
+            dbCaptureCount = dbCaptureCount + 1
+        end
+        -- The file has 2 panel OnShow handlers + 4 file-scope helpers
+        -- that directly read DB / ADB (EC_GetWhitelistForScope,
+        -- exportFullPack, importFullPack, EC_ImportWhitelist). The 5th
+        -- file-scope helper EC_ExportWhitelist doesn't touch DB / ADB
+        -- directly - it delegates to EC_GetWhitelistForScope - so it
+        -- doesn't need its own capture. Expected: 2 + 4 = 6 captures.
+        check(
+            "EbonClearance_ProfilesPanel.lua: every file-scope function that touches DB captures it at entry",
+            dbCaptureCount >= 6,
+            string.format(
+                "expected at least 6 'local DB = NS.DB' captures (2 OnShow + 4 helpers); found %d. Functions that read DB/ADB as globals after the file-scope move will silently return empty data.",
+                dbCaptureCount
+            )
+        )
+    end
+
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        check(
+            "ProfilesPanel no longer created in EbonClearance.lua",
+            ecSrc:find('local ProfilesPanel%s*=%s*CreateFrame') == nil,
+            "duplicate definition would clobber the extracted frame"
+        )
+        check(
+            "ImportExportPanel no longer created in EbonClearance.lua",
+            ecSrc:find('local ImportExportPanel%s*=%s*CreateFrame') == nil,
+            "duplicate definition would clobber the extracted frame"
+        )
+        -- The file-scope ImportExport helpers also move with the panels.
+        check(
+            "EC_GetWhitelistForScope no longer defined in EbonClearance.lua",
+            ecSrc:find('local function EC_GetWhitelistForScope') == nil,
+            "the helper is only used inside the ImportExport region and moves with it"
+        )
+    end
+
+    check(
+        "Profiles panel registered via _G lookup",
+        src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsProfiles"%]%)') ~= nil,
+        "post-extraction, EbonClearance.lua must use the _G lookup"
+    )
+    check(
+        "Import/Export panel registered via _G lookup",
+        src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsImportExport"%]%)') ~= nil,
+        "post-extraction, EbonClearance.lua must use the _G lookup"
     )
 end
 

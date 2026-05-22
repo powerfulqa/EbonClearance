@@ -2080,6 +2080,50 @@ preserved; new file uses `NS.MakeHeader` (not bare local);
 `CreateNameListUI` confirmed dropped from EbonClearance.lua;
 registration uses `_G[]` lookup.
 
+### Stage 8e-viii: extract EbonClearance_ProfilesPanel.lua (commit `<pending>`)
+
+Stage 8e-viii bundles two related panels into one new file:
+ProfilesPanel (named-profile management) + ImportExportPanel (profile
+pack + settings pack import/export). The two panels are adjacent in
+the source so the extraction is a single contiguous range. ~950 LOC
+moved, new file is ~986 LOC.
+
+Moved into the new file:
+
+- `local ProfilesPanel = CreateFrame(...)` + OnShow build (save /
+  load / rename / delete buttons + the profile list)
+- `local ImportExportPanel = CreateFrame(...)` + OnShow build (export
+  textarea + import textarea + scope dropdown + mode dropdown +
+  buttons)
+- The ImportExport region's file-scope helpers (`EC_EXPORT_PREFIX`,
+  `EC_GetWhitelistForScope`, `EC_ExportWhitelist`,
+  `EC_ImportWhitelist`) - only used inside the panel itself.
+- `EC_compCache.exportFullPack` + `EC_compCache.importFullPack` -
+  full settings pack serialiser / deserialiser (previously inline in
+  this region, on the shared cache table so still reachable via
+  `NS.compCache` from any future caller).
+
+Stage 8e-viii prep (5 new NS exposures, same commit):
+
+- `NS.SaveProfile` / `NS.LoadProfile` / `NS.DeleteProfile` /
+  `NS.RenameProfile` - profile-mutation helpers whose bodies stay in
+  `EbonClearance.lua` (slash commands also resolve them through the
+  same NS entries).
+- `NS.HookScrollbarAutoHide` - the scrollbar auto-hide utility used
+  by the Profiles list + ImportExport textarea. Internal helper
+  declared on the same line family as the other 8e-i / 8e-ii
+  exposures.
+
+Both `InterfaceOptions_AddCategory` calls converted to `_G[]` lookups;
+.toc loads the new file BEFORE `EbonClearance.lua`. DB captured at
+each OnShow entry.
+
+Stage 8e-viii invariants (Test 50): the 5 NS exposures present; both
+panel frames in the new file (not duplicated in EbonClearance.lua);
+new file uses `NS.SaveProfile` / `NS.HookScrollbarAutoHide` (not bare
+locals); `EC_GetWhitelistForScope` confirmed gone from
+`EbonClearance.lua`; both registrations use `_G[]` lookups.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

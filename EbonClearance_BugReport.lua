@@ -109,19 +109,9 @@ local function EC_BuildBugReport()
     add("Auto-Protect Equipment Sets: " .. tostring(DB.autoProtectEquipmentSets))
     add("Protect Affixed Rare Items: " .. tostring(DB.protectAffixedRareItems))
     add("Protect Chance-on-Hit Items: " .. tostring(DB.protectChanceOnHitItems))
-    add("Enable Only Listed Chars: " .. tostring(DB.enableOnlyListedChars))
-    if DB.enableOnlyListedChars then
-        local allowed = {}
-        if type(DB.allowedChars) == "table" then
-            for k, v in pairs(DB.allowedChars) do
-                if v == true and type(k) == "string" then
-                    allowed[#allowed + 1] = k
-                end
-            end
-        end
-        table.sort(allowed)
-        add("Allowed Characters: " .. (#allowed > 0 and table.concat(allowed, ", ") or "(none)"))
-    end
+    -- v2.30.x: the per-character allowlist feature was decommissioned;
+    -- DB.enableOnlyListedChars is force-disabled in EnsureDB and the
+    -- bug report no longer surfaces the legacy fields.
     add("")
 
     add("--- Scavenger ---")
@@ -284,17 +274,28 @@ local function EC_BuildBugReport()
     add("")
     add("--- Bag Display ---")
     add("Sell-border tint enabled: " .. (DB.sellBorderEnabled and "yes" or "no"))
-    if DB.sellBorderColor then
-        local c = DB.sellBorderColor
-        add(
-            string.format(
-                "Sell-border colour (r,g,b,a): %.2f, %.2f, %.2f, %.2f",
-                c.r or 0,
-                c.g or 0,
-                c.b or 0,
-                c.a or 0
-            )
-        )
+    if DB.sellBorderCategories then
+        -- v2.30.x: per-category sell-border colours replaced the
+        -- single DB.sellBorderColor. Dump each category's enable +
+        -- colour so bug reports surface user-customised tint state.
+        local catOrder = { "delete", "accountSell", "charSell", "junk", "rule" }
+        for _, key in ipairs(catOrder) do
+            local entry = DB.sellBorderCategories[key]
+            if entry and entry.color then
+                local c = entry.color
+                add(
+                    string.format(
+                        "  %-12s enabled=%s  r=%.2f g=%.2f b=%.2f a=%.2f",
+                        key,
+                        entry.enabled and "yes" or "no ",
+                        c.r or 0,
+                        c.g or 0,
+                        c.b or 0,
+                        c.a or 0
+                    )
+                )
+            end
+        end
     end
     local decoratedCount = 0
     if EC_compCache.sellBorderButtons then

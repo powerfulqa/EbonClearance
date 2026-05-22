@@ -91,7 +91,75 @@ end
 
 EC_compCache.sellBorderButtons = setmetatable({}, { __mode = "k" })
 
-function EC_compCache.applySellBorder(button, willSell, bag, slot)
+-- Set-membership helper. Local copy of EbonClearance.lua's IsInSet (same
+-- pattern as the other split files; pure function so duplication is cheap).
+local function IsInSet(setTable, itemID)
+    if not itemID or not setTable then
+        return false
+    end
+    local v = setTable[itemID]
+    return (v == true) or (v == 1)
+end
+
+-- Per-category sell-verdict resolver. Returns one of the category string
+-- keys defined in EnsureDB's DB.sellBorderCategories ("delete" /
+-- "accountSell" / "charSell" / "junk" / "rule"), or nil when the slot
+-- shouldn't be tinted at all.
+--
+-- Priority order matches the tooltip annotation:
+--   1. Delete List (red) - highest visibility because deletion is
+--      irreversible. Gated on DB.enableDeletion so toggling that flag
+--      hides the tint.
+--   2. Account Sell List - explicit user intent, account-wide scope.
+--   3. Character Sell List - explicit user intent, per-character.
+--   4. Junk - quality 0 with sell price. The "always sells" baseline.
+--   5. Rule - per-rarity rule match (the v2.29 default tint case).
+--
+-- Returns nil cheaply when the master toggle is off, when the slot is
+-- empty, when DB hasn't bootstrapped yet, or when no verdict applies.
+function EC_compCache.bagSlotWillSellCategory(bag, slot)
+    local DB = NS.DB
+    if not (DB and DB.sellBorderEnabled) then
+        return nil
+    end
+    local itemID = GetContainerItemID(bag, slot)
+    if not itemID then
+        return nil
+    end
+    -- Delete List path is separate from EC_IsSellable (which returns
+    -- false for delete-listed items because they don't go through the
+    -- merchant pipeline). Check it first so the red tint is honoured
+    -- even though the item "won't sell" from EC_IsSellable's POV.
+    if DB.enableDeletion and IsInSet(DB.deleteList, itemID) then
+        return "delete"
+    end
+    -- Everything below this point requires the item to be sellable per
+    -- the normal predicate chain. Filters out protected items,
+    -- equipped items, items without a sell price, etc.
+    local sellable = NS.IsSellable(bag, slot, false)
+    if not sellable then
+        return nil
+    end
+    local ADB = NS.ADB
+    if ADB and IsInSet(ADB.whitelist, itemID) then
+        return "accountSell"
+    end
+    if IsInSet(DB.whitelist, itemID) then
+        return "charSell"
+    end
+    -- Junk = grey (quality 0) with positive sell price. EC_IsSellable
+    -- returned true so we know it's sellable; the grey discriminator
+    -- separates it from per-rarity-rule matches.
+    local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+    if quality == 0 and sellPrice and sellPrice > 0 then
+        return "junk"
+    end
+    -- Default: the per-rarity rule sweep matched. Gold tint by default
+    -- (the v2.29 single-colour default).
+    return "rule"
+end
+
+function EC_compCache.applySellBorder(button, _, bag, slot)
     local DB = NS.DB
     if not button then
         return
@@ -104,19 +172,41 @@ function EC_compCache.applySellBorder(button, willSell, bag, slot)
         button._ec_sellBag = bag
         button._ec_sellSlot = slot
     end
-    -- Track every button we've ever decorated, even when the current verdict
-    -- is "won't sell". Without this, a button that first paints with
-    -- willSell=false (e.g. bags open with an item not yet on any list) never
-    -- enters the registry, and a later list mutation that flips it to
-    -- willSell=true can't find it during refresh. The set is weak-keyed so
+    -- Track every button we've ever decorated, even when the current
+    -- verdict is "won't sell". Without this, a button that first paints
+    -- with no tint (e.g. bags open with an item not yet on any list)
+    -- never enters the registry, and a later list mutation that flips it
+    -- to tinted can't find it during refresh. The set is weak-keyed so
     -- recycled / freed buttons drop out naturally.
     EC_compCache.sellBorderButtons[button] = true
-    if not (willSell and DB and DB.sellBorderEnabled) then
+
+    -- Master gate: feature disabled OR DB not yet bootstrapped.
+    if not (DB and DB.sellBorderEnabled) then
         if button._ec_sellBorder then
             button._ec_sellBorder:Hide()
         end
         return
     end
+
+    local category = (bag and slot) and EC_compCache.bagSlotWillSellCategory(bag, slot) or nil
+    if not category then
+        if button._ec_sellBorder then
+            button._ec_sellBorder:Hide()
+        end
+        return
+    end
+
+    -- Per-category enable + colour lookup. A category with enabled =
+    -- false (user opted out of that one tint) hides the border just
+    -- like a no-verdict slot.
+    local catSettings = DB.sellBorderCategories and DB.sellBorderCategories[category]
+    if not (catSettings and catSettings.enabled and catSettings.color) then
+        if button._ec_sellBorder then
+            button._ec_sellBorder:Hide()
+        end
+        return
+    end
+
     local b = button._ec_sellBorder
     if not b then
         -- OVERLAY sublevel 6 sits above the quality border at default
@@ -130,24 +220,19 @@ function EC_compCache.applySellBorder(button, willSell, bag, slot)
         b:SetPoint("CENTER", button)
         button._ec_sellBorder = b
     end
-    local c = DB.sellBorderColor
+    local c = catSettings.color
     b:SetVertexColor(c.r, c.g, c.b, c.a or 0.9)
     b:Show()
 end
 
--- Resolve the willSell predicate for one bag slot. Returns false cheaply
--- when the slot is empty, when the toggle is off, or when DB hasn't yet
--- bootstrapped (e.g. an early frame paint before EnsureDB runs).
+-- Boolean wrapper that returns whether the slot would tint under the
+-- current settings. Preserved as a public predicate (callers expect a
+-- bool); delegates to the category resolver. Returns true when the
+-- master toggle is off only if a category WOULD have matched - kept
+-- backwards compatible: any path that previously gated on
+-- bagSlotWillSell still gates correctly.
 function EC_compCache.bagSlotWillSell(bag, slot)
-    local DB = NS.DB
-    if not (DB and DB.sellBorderEnabled) then
-        return false
-    end
-    local link = GetContainerItemLink(bag, slot)
-    if not link then
-        return false
-    end
-    return (NS.IsSellable(bag, slot, false)) or false
+    return EC_compCache.bagSlotWillSellCategory(bag, slot) ~= nil
 end
 
 function EC_compCache.updateSellBordersForBagFrame(frame)

@@ -2110,6 +2110,93 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 43 (section 4.5 of plan): per-category sell-border colours.
+-- ---------------------------------------------------------------------------
+-- v2.30.x replaced the single DB.sellBorderColor with a per-category
+-- DB.sellBorderCategories table keyed by verdict reason (delete /
+-- accountSell / charSell / junk / rule). Each category has its own
+-- enable toggle + colour. The bagSlotWillSellCategory predicate
+-- resolves which category applies to a given slot, and
+-- applySellBorder paints the category's colour (or hides the border
+-- if the category is disabled).
+--
+-- Locks in this test:
+--   - EnsureDB creates DB.sellBorderCategories with all 5 expected keys
+--   - bagSlotWillSellCategory is defined on EC_compCache
+--   - applySellBorder reads from DB.sellBorderCategories (not the
+--     legacy DB.sellBorderColor field)
+--   - Five enable-checkbox global names exist (one per category)
+do
+    -- EnsureDB schema migration.
+    check(
+        "EnsureDB initialises DB.sellBorderCategories",
+        src:find("DB%.sellBorderCategories%s*=%s*{}") ~= nil
+            or src:find("type%(DB%.sellBorderCategories%)%s*~=%s*\"table\"") ~= nil,
+        "EnsureDB must guard DB.sellBorderCategories with a type check + default empty table"
+    )
+
+    local categories = { "delete", "accountSell", "charSell", "junk", "rule" }
+    for _, key in ipairs(categories) do
+        check(
+            "EnsureDB default for sellBorderCategories." .. key,
+            src:find(key .. "%s*=%s*defaultCat") ~= nil,
+            "EnsureDB must populate DB.sellBorderCategories." .. key
+                .. " with an { enabled, color } default"
+        )
+    end
+
+    -- Category-resolving predicate.
+    check(
+        "EC_compCache.bagSlotWillSellCategory defined",
+        src:find("function EC_compCache%.bagSlotWillSellCategory%(") ~= nil,
+        "the per-category resolver must be defined for applySellBorder to know which colour to paint"
+    )
+
+    -- applySellBorder reads the new per-category settings, not the
+    -- legacy DB.sellBorderColor field (which stays in SVs for
+    -- downgrade safety but is no longer consulted by the paint path).
+    local bdFile = io.open("EbonClearance_BagDisplay.lua", "rb")
+    if bdFile then
+        local bdSrc = bdFile:read("*a") or ""
+        bdFile:close()
+        check(
+            "applySellBorder reads DB.sellBorderCategories",
+            bdSrc:find("DB%.sellBorderCategories") ~= nil,
+            "the paint path must read the new per-category table, not the legacy single-colour field"
+        )
+        check(
+            "applySellBorder does NOT read DB.sellBorderColor (legacy field)",
+            bdSrc:find("DB%.sellBorderColor") == nil,
+            "remove any remaining DB.sellBorderColor reads from BagDisplay; the legacy field is for SV downgrade only"
+        )
+    end
+
+    -- The CharPanel iterates SELL_BORDER_CATEGORIES to build one row
+    -- per verdict category. Lock that the table lists all 5 keys so a
+    -- future refactor can't silently drop one of the rows.
+    check(
+        "CharPanel SELL_BORDER_CATEGORIES table exists",
+        src:find("local SELL_BORDER_CATEGORIES%s*=") ~= nil,
+        "the Character Settings panel must define a SELL_BORDER_CATEGORIES list (5 rows)"
+    )
+    for _, key in ipairs(categories) do
+        check(
+            "CharPanel SELL_BORDER_CATEGORIES includes " .. key,
+            src:find('key%s*=%s*"' .. key .. '"') ~= nil,
+            "the SELL_BORDER_CATEGORIES table must include { key = \"" .. key .. '" } so a row is built'
+        )
+    end
+    -- And the row builder must use the key to name the checkbox so
+    -- bug reports / external tooling can reference them by a stable
+    -- name family.
+    check(
+        "CharPanel checkbox naming uses EbonClearanceSellBorderCB_<key>",
+        src:find('"EbonClearanceSellBorderCB_"%s*%.%.%s*key') ~= nil,
+        "the per-category enable checkbox should be named EbonClearanceSellBorderCB_<key> via concatenation"
+    )
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

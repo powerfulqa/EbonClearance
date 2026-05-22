@@ -562,9 +562,16 @@ local function EnsureDB()
     if type(DB.enabled) ~= "boolean" then
         DB.enabled = true
     end
-    if type(DB.enableOnlyListedChars) ~= "boolean" then
-        DB.enableOnlyListedChars = false
-    end
+    -- v2.30.x: decommission the per-character enable filter. The minimap
+    -- toggle (DB.enabled) already covers the per-character disable use
+    -- case; the dedicated allowlist added little value and lived behind a
+    -- UI panel that's been repurposed for Item Highlighting settings.
+    -- Force the flag false on every load so existing users with the
+    -- filter previously enabled don't end up locked out of the addon on
+    -- characters not in their old DB.allowedChars set. DB.allowedChars
+    -- itself stays in the SV (dormant, ignored) so a downgrade to a
+    -- pre-v2.30.x version restores the user's list.
+    DB.enableOnlyListedChars = false
 
     if type(DB.inventoryWorthTotal) ~= "number" then
         DB.inventoryWorthTotal = 0
@@ -758,6 +765,62 @@ local function EnsureDB()
         c.g = clamp01(c.g, 0.82)
         c.b = clamp01(c.b, 0.0)
         c.a = clamp01(c.a, 0.9)
+    end
+    -- v2.30.x: per-category sell-border colours. Five distinct sell /
+    -- delete verdicts each get their own enable toggle + colour so the
+    -- user can see WHY a slot would clear at a glance. The legacy
+    -- DB.sellBorderColor field stays in the SV (ignored by the new
+    -- paint path) so a downgrade to v2.29.x doesn't lose the user's
+    -- previous colour pick. New installs and existing-but-unmigrated
+    -- saves both land on the five-category default set.
+    if type(DB.sellBorderCategories) ~= "table" then
+        DB.sellBorderCategories = {}
+    end
+    do
+        local function defaultCat(r, g, b, a)
+            return { enabled = true, color = { r = r, g = g, b = b, a = a } }
+        end
+        local CAT_DEFAULTS = {
+            delete = defaultCat(1.0, 0.20, 0.20, 0.9), -- red - highest visibility
+            accountSell = defaultCat(0.4, 1.0, 0.4, 0.9), -- bright green
+            charSell = defaultCat(0.4, 0.7, 1.0, 0.9), -- cyan / sky blue
+            junk = defaultCat(0.7, 0.7, 0.7, 0.7), -- low-alpha grey
+            rule = defaultCat(1.0, 0.82, 0.0, 0.9), -- gold (matches v2.29 single-colour default)
+        }
+        local function clamp01b(v, fallback)
+            if type(v) ~= "number" or v ~= v then
+                return fallback
+            end
+            if v < 0 then
+                return 0
+            end
+            if v > 1 then
+                return 1
+            end
+            return v
+        end
+        for cat, def in pairs(CAT_DEFAULTS) do
+            local existing = DB.sellBorderCategories[cat]
+            if type(existing) ~= "table" then
+                DB.sellBorderCategories[cat] = {
+                    enabled = def.enabled,
+                    color = { r = def.color.r, g = def.color.g, b = def.color.b, a = def.color.a },
+                }
+            else
+                if type(existing.enabled) ~= "boolean" then
+                    existing.enabled = def.enabled
+                end
+                if type(existing.color) ~= "table" then
+                    existing.color =
+                        { r = def.color.r, g = def.color.g, b = def.color.b, a = def.color.a }
+                else
+                    existing.color.r = clamp01b(existing.color.r, def.color.r)
+                    existing.color.g = clamp01b(existing.color.g, def.color.g)
+                    existing.color.b = clamp01b(existing.color.b, def.color.b)
+                    existing.color.a = clamp01b(existing.color.a, def.color.a)
+                end
+            end
+        end
     end
     if type(DB.keepBagsOpen) ~= "boolean" then
         -- v2.12.0: flipped from true to false per UX feedback - the
@@ -1735,6 +1798,22 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     local pbp = _G["EbonClearanceOptionsProcessBags"]
     if pbp and pbp:IsShown() and EC_compCache.refreshProcessPanel then
         EC_compCache.refreshProcessPanel()
+    end
+    -- v2.30.x: repaint slot-border tints after the bag burst settles.
+    -- The host bag UI's per-slot Update hook fires immediately during
+    -- a move - while the slot is still locked - and NS.IsSellable
+    -- bails on locked items, so the category resolver returns nil and
+    -- the tint hides. For list-based categories (delete / account
+    -- sell / character sell) the host's follow-up UpdateBorder often
+    -- catches things up via the search-fade path, but rule-category
+    -- items (which depend entirely on qualityPass via NS.IsSellable)
+    -- don't always get a second pass. Refreshing here after the
+    -- 120 ms idle ensures the locked state has cleared by the time
+    -- the final paint runs. The refresh iterates only tracked buttons
+    -- (weak-keyed registry) so the cost is one category lookup per
+    -- visible bag slot - bounded by the user's open bag count.
+    if NS.RefreshSellBorders then
+        NS.RefreshSellBorders()
     end
 end)
 
@@ -6675,7 +6754,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
 end)
 
 local CharPanel = CreateFrame("Frame", "EbonClearanceOptionsCharacter", InterfaceOptionsFramePanelContainer)
-CharPanel.name = "Character Settings"
+CharPanel.name = "Item Highlighting"
 CharPanel.parent = "EbonClearance"
 
 local function CreateNameListUI(parent, titleText, setTableName, x, y)
@@ -6851,66 +6930,25 @@ end
 
 CharPanel:SetScript("OnShow", function(self)
     EC_compCache.initPanel(self, function(self)
-        if self.onlyCB then
-            self.onlyCB:SetChecked(DB.enableOnlyListedChars)
-        end
         if self.sellBorderCB then
             self.sellBorderCB:SetChecked(DB.sellBorderEnabled)
         end
         if self.RefreshSellBorderSwatch then
             self:RefreshSellBorderSwatch()
         end
-        if self.listUI then
-            self.listUI:Refresh()
-        end
     end, function(self)
-        MakeHeader(self, "Character Settings", -16)
-        local charDesc = MakeLabel(
-            self,
-            "Prevents this addon from EC_compCache.vendorRunning on characters you didn't intend. If enabled, EbonClearance runs only on characters listed below.",
-            16,
-            -44
-        )
-
-        local cb = CreateFrame(
-            "CheckButton",
-            "EbonClearanceEnableOnlyListedCharsCB",
-            self,
-            "InterfaceOptionsCheckButtonTemplate"
-        )
-        cb:SetPoint("TOPLEFT", charDesc, "BOTTOMLEFT", 0, -8)
-        cb:SetChecked(DB.enableOnlyListedChars)
-
-        local t = _G[cb:GetName() .. "Text"]
-        if t then
-            t:SetText("Enable only for listed characters")
-            EC_compCache.setPanelWidth(t, 60)
-            t:SetJustifyH("LEFT")
-        end
-
-        cb:SetScript("OnClick", function()
-            DB.enableOnlyListedChars = cb:GetChecked() and true or false
-            PlaySound("igMainMenuOptionCheckBoxOn")
-        end)
-        self.onlyCB = cb
-
-        -- Bag display: opt-in coloured ring around bag slot frames whose items
-        -- the current rule chain would sell at the next vendor visit. The ring
-        -- texture sits on a frame-overlay sublevel and is anchored OUTSIDE the
-        -- icon bounds; the icon itself stays untouched. Disabled by default
-        -- so existing users see no visual change after upgrading.
-        local bagHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-        bagHeader:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", -2, -18)
-        bagHeader:SetText("Bag display")
-
+        MakeHeader(self, "Item Highlighting", -16)
+        -- v2.30.x: panel repurposed from "Character Settings" to focus
+        -- entirely on bag-item highlighting. The per-character enable
+        -- allowlist was removed (minimap toggle covers that use case);
+        -- DB.enableOnlyListedChars is force-disabled in EnsureDB and
+        -- DB.allowedChars sits dormant in the SV for downgrade safety.
         local bagDesc = MakeLabel(
             self,
             "Highlight bag items that would sell at the next vendor visit with a coloured border around the slot frame. The icon itself is never modified.",
             16,
-            0
+            -44
         )
-        bagDesc:ClearAllPoints()
-        bagDesc:SetPoint("TOPLEFT", bagHeader, "BOTTOMLEFT", 0, -6)
 
         local sbCB =
             CreateFrame("CheckButton", "EbonClearanceSellBorderCB", self, "InterfaceOptionsCheckButtonTemplate")
@@ -6936,100 +6974,155 @@ CharPanel:SetScript("OnShow", function(self)
         end)
         self.sellBorderCB = sbCB
 
-        -- Colour button: opens the standard colour picker via the
-        -- OpenColorPicker global. The global handles frame-strata elevation
-        -- so the picker sits above the Interface Options frame instead of
-        -- being occluded by it, which a direct ColorPickerFrame manipulation
-        -- fails to do on this client. Picker writes channel-by-channel to
-        -- DB.sellBorderColor and re-invokes the refresh helper so visible bag
-        -- frames recolour instantly without waiting for the next bag event.
-        local colourBtn = CreateFrame("Button", "EbonClearanceSellBorderColorBtn", self, "UIPanelButtonTemplate")
-        colourBtn:SetSize(120, 22)
-        -- Anchor to the checkbox text's right edge with a small gap. Falls
-        -- back to the checkbox itself if the text font-string isn't exposed
-        -- (template variant safety).
-        if sbText then
-            colourBtn:SetPoint("LEFT", sbText, "RIGHT", 12, 0)
-        else
-            colourBtn:SetPoint("LEFT", sbCB, "RIGHT", 140, 0)
-        end
-        colourBtn:SetText("Change colour")
+        -- v2.30.x: per-category colour pickers. One enable checkbox +
+        -- one swatch + one Change-colour button per verdict category.
+        -- Each row is anchored to the previous row so the column flows
+        -- naturally and the bottom-most row drives the listUI anchor.
+        --
+        -- Category display order matches the tooltip annotation
+        -- priority order: Delete first (highest visibility), then the
+        -- two Sell lists, then Junk, then per-rarity rule.
+        local SELL_BORDER_CATEGORIES = {
+            { key = "delete", label = "Delete List" },
+            { key = "accountSell", label = "Account Sell List" },
+            { key = "charSell", label = "Character Sell List" },
+            { key = "junk", label = "Junk (grey items)" },
+            { key = "rule", label = "Per-rarity rule match" },
+        }
+        local catSwatchUpdaters = {}
 
-        -- Swatch sits OUTSIDE the button frame, to its right, so it never
-        -- overlaps the centred button text. Parented to the panel (not the
-        -- button) so it isn't clipped by the button's content rect.
-        local swatch = self:CreateTexture(nil, "OVERLAY")
-        swatch:SetSize(16, 16)
-        swatch:SetPoint("LEFT", colourBtn, "RIGHT", 6, 0)
-        swatch:SetTexture("Interface\\Buttons\\WHITE8X8")
-
-        local function updateSwatch()
-            local c = DB.sellBorderColor or { r = 1, g = 0.82, b = 0, a = 0.9 }
-            swatch:SetVertexColor(c.r, c.g, c.b, 1)
-        end
-        updateSwatch()
-        self.RefreshSellBorderSwatch = function(panel)
-            updateSwatch()
-        end
-
-        colourBtn:SetScript("OnClick", function()
-            local c = DB.sellBorderColor
-
-            local function commit(r, g, b, a)
-                c.r, c.g, c.b, c.a = r, g, b, a
-                updateSwatch()
+        local lastRowAnchor = sbCB
+        for i, cat in ipairs(SELL_BORDER_CATEGORIES) do
+            local key = cat.key
+            -- Per-category enable checkbox. First row indents 18 px
+            -- relative to the master toggle so the rows visually nest
+            -- under it; subsequent rows align with the first.
+            local catCB = CreateFrame(
+                "CheckButton",
+                "EbonClearanceSellBorderCB_" .. key,
+                self,
+                "InterfaceOptionsCheckButtonTemplate"
+            )
+            local xOff = (i == 1) and 18 or 0
+            local yOff = (i == 1) and -6 or -4
+            catCB:SetPoint("TOPLEFT", lastRowAnchor, "BOTTOMLEFT", xOff, yOff)
+            catCB:SetChecked(DB.sellBorderCategories[key].enabled)
+            local catCBText = _G[catCB:GetName() .. "Text"]
+            if catCBText then
+                catCBText:SetText(cat.label)
+                catCBText:SetJustifyH("LEFT")
+            end
+            catCB:SetScript("OnClick", function()
+                DB.sellBorderCategories[key].enabled = catCB:GetChecked() and true or false
+                PlaySound("igMainMenuOptionCheckBoxOn")
                 if NS.RefreshSellBorders then
                     NS.RefreshSellBorders()
                 end
-            end
+            end)
 
-            local pickerInfo = {
-                r = c.r,
-                g = c.g,
-                b = c.b,
-                -- 3.3.5a opacity convention: 0 = fully opaque, 1 = fully
-                -- transparent. Our stored alpha is the inverse; flip on the
-                -- way in, flip back on the way out.
-                opacity = 1 - (c.a or 0.9),
-                hasOpacity = true,
-                swatchFunc = function()
-                    local r, g, b = ColorPickerFrame:GetColorRGB()
-                    local a = 1 - (OpacitySliderFrame:GetValue() or 0)
-                    commit(r, g, b, a)
-                end,
-                opacityFunc = function()
-                    local r, g, b = ColorPickerFrame:GetColorRGB()
-                    local a = 1 - (OpacitySliderFrame:GetValue() or 0)
-                    commit(r, g, b, a)
-                end,
-                cancelFunc = function(prev)
-                    if not prev then
-                        return
-                    end
-                    commit(prev.r, prev.g, prev.b, 1 - (prev.opacity or 0))
-                end,
-            }
-            OpenColorPicker(pickerInfo)
-            -- 3.3.5a quirk: the InterfaceOptions container can sit at the
-            -- same frame-strata as the colour picker, so the picker renders
-            -- behind it on some clients. Force the picker to the top
-            -- AFTER OpenColorPicker has reset the frame state.
-            if ColorPickerFrame then
-                ColorPickerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-                if ColorPickerFrame.Raise then
-                    ColorPickerFrame:Raise()
+            -- Per-category swatch and Change-colour button on the same
+            -- row, to the right of the label.
+            local catSwatch = self:CreateTexture(nil, "OVERLAY")
+            catSwatch:SetSize(16, 16)
+            local swatchAnchor = catCBText or catCB
+            catSwatch:SetPoint("LEFT", swatchAnchor, "RIGHT", 12, 0)
+            catSwatch:SetTexture("Interface\\Buttons\\WHITE8X8")
+
+            local function updateCatSwatch()
+                local entry = DB.sellBorderCategories[key]
+                if entry and entry.color then
+                    local c = entry.color
+                    catSwatch:SetVertexColor(c.r, c.g, c.b, 1)
                 end
             end
-        end)
+            updateCatSwatch()
+            catSwatchUpdaters[#catSwatchUpdaters + 1] = updateCatSwatch
 
-        self.listUI = CreateNameListUI(self, "Allowed Characters", "allowedChars", 16, -230)
-        -- v2.11.0: anchor BOTTOMRIGHT so the list stretches with the panel
-        -- on resize - keeps each row's "Remove" button inside the panel
-        -- boundary even after the user shrinks the Interface Options frame.
-        self.listUI:ClearAllPoints()
-        self.listUI:SetPoint("TOPLEFT", 16, -230)
-        self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
-        self.listUI:Refresh()
+            local catBtn = CreateFrame(
+                "Button",
+                "EbonClearanceSellBorderColorBtn_" .. key,
+                self,
+                "UIPanelButtonTemplate"
+            )
+            catBtn:SetSize(110, 22)
+            catBtn:SetPoint("LEFT", catSwatch, "RIGHT", 6, 0)
+            catBtn:SetText("Change colour")
+            catBtn:SetScript("OnClick", function()
+                local c = DB.sellBorderCategories[key].color
+                local function commit(r, g, b, a)
+                    c.r, c.g, c.b, c.a = r, g, b, a
+                    updateCatSwatch()
+                    if NS.RefreshSellBorders then
+                        NS.RefreshSellBorders()
+                    end
+                end
+
+                local pickerInfo = {
+                    r = c.r,
+                    g = c.g,
+                    b = c.b,
+                    -- 3.3.5a opacity convention: 0 = fully opaque,
+                    -- 1 = fully transparent. Our stored alpha is the
+                    -- inverse; flip on the way in, flip back on the
+                    -- way out.
+                    opacity = 1 - (c.a or 0.9),
+                    hasOpacity = true,
+                    swatchFunc = function()
+                        local r, g, b = ColorPickerFrame:GetColorRGB()
+                        local a = 1 - (OpacitySliderFrame:GetValue() or 0)
+                        commit(r, g, b, a)
+                    end,
+                    opacityFunc = function()
+                        local r, g, b = ColorPickerFrame:GetColorRGB()
+                        local a = 1 - (OpacitySliderFrame:GetValue() or 0)
+                        commit(r, g, b, a)
+                    end,
+                    cancelFunc = function(prev)
+                        if not prev then
+                            return
+                        end
+                        commit(prev.r, prev.g, prev.b, 1 - (prev.opacity or 0))
+                    end,
+                }
+                OpenColorPicker(pickerInfo)
+                -- 3.3.5a quirk: the InterfaceOptions container can sit
+                -- at the same frame-strata as the colour picker, so
+                -- the picker renders behind it on some clients. Force
+                -- the picker to the top AFTER OpenColorPicker has
+                -- reset the frame state.
+                if ColorPickerFrame then
+                    ColorPickerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+                    if ColorPickerFrame.Raise then
+                        ColorPickerFrame:Raise()
+                    end
+                end
+            end)
+
+            lastRowAnchor = catCB
+        end
+
+        -- Single refresh helper that re-syncs every category's swatch
+        -- and checkbox state. Called from the REFRESH branch of
+        -- initPanel (when the user navigates back to the panel after
+        -- a settings-pack import or other external DB mutation).
+        self.RefreshSellBorderSwatch = function(panel)
+            for _, updater in ipairs(catSwatchUpdaters) do
+                updater()
+            end
+            for _, cat in ipairs(SELL_BORDER_CATEGORIES) do
+                local cb = _G["EbonClearanceSellBorderCB_" .. cat.key]
+                if cb and cb.SetChecked then
+                    cb:SetChecked(DB.sellBorderCategories[cat.key].enabled)
+                end
+            end
+        end
+
+        -- v2.30.x: the "Allowed Characters" list UI was removed when
+        -- the per-character allowlist feature was decommissioned. The
+        -- panel now ends after the five per-category colour pickers.
+        -- The panel isn't scroll-wrapped (~244 px of content, well
+        -- under the Interface Options container's natural height) so
+        -- no FitScrollContent call is needed.
     end)
 end)
 

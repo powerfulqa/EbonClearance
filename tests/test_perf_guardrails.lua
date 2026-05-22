@@ -48,6 +48,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Vendor.lua",
     "EbonClearance_Process.lua",
     "EbonClearance_ProcessBagsPanel.lua",
+    "EbonClearance_MerchantPanel.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -1894,6 +1895,131 @@ do
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsProcessBags"%]%)') ~= nil,
         "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 41 (Stage 8e-ii): Merchant Settings panel extracted; widget
+-- primitives exposed on NS.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-ii moves the Merchant Settings Interface Options panel
+-- (frame creation + the OnShow body that builds the vendor mode
+-- dropdown, repair toggles, sliders, fast-mode checkbox, and per-
+-- rarity rule rows) into EbonClearance_MerchantPanel.lua. Five
+-- additional UI widget primitives needed NS exposure (the panel calls
+-- each of them in its OnShow body): AddCheckbox, AddSlider,
+-- ColorTextByQuality, StyleInputBox, FitScrollContent. Registration
+-- in EbonClearance.lua uses a _G lookup since the local MerchantPanel
+-- binding no longer exists there.
+do
+    check(
+        "NS.AddCheckbox exposed",
+        src:find("NS%.AddCheckbox%s*=%s*AddCheckbox") ~= nil,
+        "EbonClearance.lua must publish NS.AddCheckbox for the Merchant Settings panel's OnShow body"
+    )
+    check(
+        "NS.AddSlider exposed",
+        src:find("NS%.AddSlider%s*=%s*AddSlider") ~= nil,
+        "EbonClearance.lua must publish NS.AddSlider for the Merchant Settings panel's OnShow body"
+    )
+    check(
+        "NS.FitScrollContent exposed",
+        src:find("NS%.FitScrollContent%s*=%s*EC_FitScrollContent") ~= nil,
+        "EbonClearance.lua must publish NS.FitScrollContent for the Merchant Settings panel's bottom-anchor call"
+    )
+    check(
+        "NS.ColorTextByQuality exposed",
+        src:find("NS%.ColorTextByQuality%s*=%s*ColorTextByQuality") ~= nil,
+        "EbonClearance.lua must publish NS.ColorTextByQuality for the Merchant Settings panel's rarity dropdown"
+    )
+    check(
+        "NS.StyleInputBox exposed",
+        src:find("NS%.StyleInputBox%s*=%s*StyleInputBox") ~= nil,
+        "EbonClearance.lua must publish NS.StyleInputBox for the Merchant Settings panel's iLvl input"
+    )
+
+    -- Read the new file to confirm the MerchantPanel frame + OnShow
+    -- live there (not in EbonClearance.lua) AND that the file uses
+    -- the NS.* widget primitives (the bare locals only exist in
+    -- EbonClearance.lua's scope).
+    local mpFile = io.open("EbonClearance_MerchantPanel.lua", "rb")
+    if mpFile then
+        local mpSrc = mpFile:read("*a") or ""
+        mpFile:close()
+        check(
+            "MerchantPanel frame created in EbonClearance_MerchantPanel.lua",
+            mpSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsMerchant"') ~= nil,
+            "MerchantPanel frame creation must live in EbonClearance_MerchantPanel.lua (Stage 8e-ii)"
+        )
+        -- Avoid matching comment-line uses by stripping comment lines
+        -- before the bare-call check. The comment line in the file
+        -- header naturally references "MerchantPanel" by name.
+        local codeOnly = (mpSrc:gsub("\n%-%-[^\n]*", ""))
+        check(
+            "EbonClearance_MerchantPanel.lua uses NS.AddCheckbox (not bare AddCheckbox)",
+            codeOnly:find("NS%.AddCheckbox%(") ~= nil
+                and codeOnly:find("[^.%w_]AddCheckbox%(") == nil,
+            "OnShow body must call NS.AddCheckbox (the local lives in EbonClearance.lua)"
+        )
+        check(
+            "EbonClearance_MerchantPanel.lua uses NS.AddSlider (not bare AddSlider)",
+            codeOnly:find("NS%.AddSlider%(") ~= nil
+                and codeOnly:find("[^.%w_]AddSlider%(") == nil,
+            "OnShow body must call NS.AddSlider (the local lives in EbonClearance.lua)"
+        )
+        check(
+            "EbonClearance_MerchantPanel.lua uses NS.FitScrollContent (not bare EC_FitScrollContent)",
+            codeOnly:find("NS%.FitScrollContent%(") ~= nil
+                and codeOnly:find("[^.%w_]EC_FitScrollContent%(") == nil,
+            "OnShow body must call NS.FitScrollContent (the local lives in EbonClearance.lua)"
+        )
+    end
+
+    -- The MerchantPanel frame creation must NOT be duplicated in
+    -- EbonClearance.lua anymore (would clobber the new one if it were).
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        check(
+            "MerchantPanel frame no longer created in EbonClearance.lua",
+            ecSrc:find('local MerchantPanel%s*=%s*CreateFrame') == nil,
+            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-ii extracted frame"
+        )
+    end
+
+    -- Registration must use the _G lookup.
+    check(
+        "Merchant Settings panel registered via _G lookup in EbonClearance.lua",
+        src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsMerchant"%]%)') ~= nil,
+        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+    )
+
+    -- Eager NS.* calls at file load time are a load-order trap: this file
+    -- loads BEFORE EbonClearance.lua, so NS.ColorTextByQuality (and the
+    -- other widget primitives) don't exist at file-load time. Calling them
+    -- in a table constructor at file scope nil-errors out and the whole
+    -- file aborts before the frame is created, which then breaks the
+    -- _G[] registration lookup downstream. Function bodies that reference
+    -- NS.* are fine (lazy lookup at call time); top-level table
+    -- constructors are NOT.
+    local mpFile2 = io.open("EbonClearance_MerchantPanel.lua", "rb")
+    if mpFile2 then
+        local mpSrc = mpFile2:read("*a") or ""
+        mpFile2:close()
+        -- Build callback start marker; everything BEFORE it is file-scope
+        -- (load time). Everything inside the callback runs lazily.
+        local buildStart = mpSrc:find("end,%s*function%(self,%s*content%)")
+        if buildStart then
+            local fileScope = mpSrc:sub(1, buildStart - 1)
+            check(
+                "EbonClearance_MerchantPanel.lua does not call NS.ColorTextByQuality at file scope (load-order trap)",
+                fileScope:find("NS%.ColorTextByQuality%(") == nil,
+                "NS.ColorTextByQuality must not be called at file scope; "
+                    .. "this file loads BEFORE EbonClearance.lua so the binding is nil at load time. "
+                    .. "Move any such calls inside the OnShow build callback (lazy execution)."
+            )
+        end
+    end
 end
 
 -- ---------------------------------------------------------------------------

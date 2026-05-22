@@ -1817,6 +1817,98 @@ Stage 8e-i invariants (enforced by `tests/test_perf_guardrails.lua` Test 40):
   `EbonClearance.lua`'s scope).
 - `EbonClearance.lua` registers the panel via the `_G[]` lookup.
 
+### Stage 8e-ii: extract EbonClearance_MerchantPanel.lua (commit `<pending>`)
+
+Stage 8e-ii moves the Merchant Settings Interface Options panel
+(~478 LOC moved, file is ~513 LOC with header) into
+`EbonClearance_MerchantPanel.lua`. Second slice of the UI extraction:
+the Merchant panel is a single self-contained domain (vendor mode +
+repair + sliders + per-rarity rules) that uses five additional shared
+widget primitives.
+
+Moved into the new file:
+
+- `EC_WHITELIST_QUALITIES` table - rarity labels for the per-rarity
+  rule rows (used only by this panel; safe to move).
+- `local MerchantPanel = CreateFrame(...)` frame creation.
+- `EC_MERCHANT_MODES` table - vendor mode dropdown data (used only by
+  this panel; safe to move).
+- The MerchantPanel OnShow handler (the panel-build body that
+  constructs the dropdowns, sliders, fast-mode toggle, and the four
+  per-rarity rule rows).
+
+Stage 8e-ii prep (NS exposures, same commit):
+
+- `NS.AddCheckbox` / `NS.AddSlider` - widget primitives that the
+  OnShow body invokes for every settings toggle and slider.
+- `NS.FitScrollContent` - called at the end of the panel build to
+  size the scroll content to the bottom-most widget.
+- `NS.ColorTextByQuality` - the `EC_WHITELIST_QUALITIES` table calls
+  this at load time of `EbonClearance_MerchantPanel.lua`, but the
+  table is only consumed when the panel is built (much later), so
+  the lookup resolves at the right time even though the file loads
+  before `EbonClearance.lua`.
+- `NS.StyleInputBox` - the per-rarity rule rows have iLvl input
+  boxes that need the layered-OVERLAY treatment.
+
+Cross-file dependencies satisfied by NS / EC_compCache:
+
+- `NS.MakeHeader` / `NS.MakeLabel` (already on NS since Stage 8e-i).
+- `NS.PrintNice` / `NS.PrintNicef` (already on NS).
+- `NS.DB` captured at OnShow entry.
+- `EC_compCache.initPanel`, `getBindType`, `setPanelWidth`,
+  `registerWidth`, `refreshLayouts` (already shared via `EC_compCache`).
+
+`InterfaceOptions_AddCategory(MerchantPanel)` converted to
+`InterfaceOptions_AddCategory(_G["EbonClearanceOptionsMerchant"])`
+since the local binding no longer exists in `EbonClearance.lua`.
+The .toc loads `EbonClearance_MerchantPanel.lua` BEFORE
+`EbonClearance.lua` so the frame exists at registration time.
+
+**Mid-stage gotcha 1**: the file-header doc block must NOT contain the
+literal text `MerchantPanel:SetScript("OnShow"` because
+`tests/test_layout_reactivity.lua` Test 6 (`panelsNeedingWrap`)
+greps for that pattern as the panel's OnShow marker. The first hit
+wins; if a comment matches before the actual code, the test sees the
+comment-to-code range as the panel "block" and misses the
+`end, true)` closer. Reworded the header to describe the OnShow
+without using the literal pattern.
+
+**Mid-stage gotcha 2 (load-order trap)**: `EC_WHITELIST_QUALITIES`
+originally lived as a file-scope local with eager table construction
+calling `NS.ColorTextByQuality(...)` for each entry. But this file
+loads BEFORE `EbonClearance.lua` (so the `_G[]` registration lookup
+works), which means `NS.ColorTextByQuality` is nil at file-scope
+load time. The eager call nil-errored, the file aborted before the
+MerchantPanel frame was created, and `InterfaceOptions_AddCategory`
+in `EbonClearance.lua` then dereferenced a nil frame at the
+following line. Fix: move the table construction INSIDE the OnShow
+build callback (which fires lazily; by first OnShow,
+`EbonClearance.lua` has loaded and NS.* is populated). The
+`initPanel` "build once" gate keeps the cost equivalent to the
+file-scope upvalue.
+
+**General rule for split files that load BEFORE EbonClearance.lua**:
+function bodies referencing `NS.*` are fine (lazy lookup at call
+time). Top-level table constructors and other eager code that calls
+`NS.*` are NOT fine — defer them into a function body, or move the
+helper into Core.lua so it's available before any of the dependent
+files load. Test 41 includes a load-order-trap regression check
+scanning the file's pre-build-callback region for bare
+`NS.ColorTextByQuality(` calls; extend the check to other NS
+primitives if future panel extractions reveal new traps.
+
+Stage 8e-ii invariants (enforced by `tests/test_perf_guardrails.lua` Test 41):
+
+- `NS.AddCheckbox` / `NS.AddSlider` / `NS.FitScrollContent` /
+  `NS.ColorTextByQuality` / `NS.StyleInputBox` exposed by
+  `EbonClearance.lua`.
+- MerchantPanel frame created in
+  `EbonClearance_MerchantPanel.lua` (not in `EbonClearance.lua`).
+- `EbonClearance_MerchantPanel.lua` uses `NS.AddCheckbox` /
+  `NS.AddSlider` / `NS.FitScrollContent` (not bare locals).
+- `EbonClearance.lua` registers the panel via the `_G[]` lookup.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

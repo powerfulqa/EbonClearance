@@ -49,6 +49,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Process.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
+    "EbonClearance_BugReport.lua",
 }
 
 local pieces = {}
@@ -1511,6 +1512,117 @@ do
         src:find("NS%.IsAddonEnabledForChar%s*=%s*EC_IsAddonEnabledForChar") ~= nil,
         "Process gates on per-character enable via NS.IsAddonEnabledForChar; EbonClearance.lua must publish the helper"
     )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 36 (Stage 8): bug-report extraction + cycle-state promotions.
+-- ---------------------------------------------------------------------------
+-- Stage 8 moves the bug-report builder (EC_CopperToPlainText,
+-- EC_BuildBugReport, EC_ShowBugReport) to EbonClearance_BugReport.lua,
+-- exposed as NS.ShowBugReport. The .toc must load it AFTER
+-- EbonClearance.lua because the slash command in EbonClearance.lua
+-- calls NS.ShowBugReport(), and that name must be populated by the
+-- time the command runs (file-load order guarantees that).
+--
+-- Stage 8 also promoted three mutable file-scope cycle-state locals
+-- to EC_compCache fields (matching the Stage 3 lastScavSpokeAt +
+-- Stage 5 vendorRunning / pendingDelete promotions):
+--   * EC_lootCycleState  -> EC_compCache.lootCycleState
+--   * EC_lastScavengerOut -> EC_compCache.lastScavengerOut
+--   * EC_addonDismissed   -> EC_compCache.addonDismissed
+-- Plus four cross-file helpers exposed on NS so the bug-report builder
+-- can read live values from EbonClearance.lua:
+--   * NS.GetVersion / NS.GetFreeBagSlots / NS.CopperToColoredText / NS.EnsureDB
+do
+    check(
+        "NS.ShowBugReport exposed",
+        src:find("NS%.ShowBugReport%s*=%s*EC_ShowBugReport") ~= nil,
+        "EbonClearance_BugReport.lua must publish NS.ShowBugReport"
+    )
+
+    -- No bare EC_ShowBugReport() call sites. Definition in BugReport is
+    -- masked from the scan.
+    local function hasBareCall(s, name)
+        local cleaned = s:gsub("local function " .. name .. "%(", "local function _def_" .. name .. "(")
+        for line in cleaned:gmatch("[^\n]+") do
+            local stripped = line:gsub("^%s+", "")
+            if stripped:sub(1, 2) ~= "--" then
+                local commentAt = stripped:find("%-%-", 1, true)
+                local code = commentAt and stripped:sub(1, commentAt - 1) or stripped
+                if code:find("[^.%w_]" .. name .. "%s*%(") then
+                    return stripped
+                end
+                if code:sub(1, #name + 1) == name .. "(" then
+                    return stripped
+                end
+            end
+        end
+        return nil
+    end
+    local bareCall = hasBareCall(src, "EC_ShowBugReport")
+    check(
+        "no bare EC_ShowBugReport() call sites (must be NS.ShowBugReport)",
+        bareCall == nil,
+        "found bare call: " .. tostring(bareCall)
+    )
+
+    -- Three Stage-8-prep state promotions. Core's table literal must
+    -- initialise each one; EbonClearance.lua must not retain its
+    -- file-scope `local EC_xxx = ...` declarations (would silently
+    -- shadow the cache field).
+    for _, sym in ipairs({ "lootCycleState", "lastScavengerOut", "addonDismissed" }) do
+        check(
+            "EC_compCache." .. sym .. " initialised in Core",
+            src:find(sym .. "%s*=%s*[%w%.%-_\"]") ~= nil,
+            "Core's EC_compCache table literal must initialise " .. sym
+        )
+    end
+    local function noBareLocalDecl(name)
+        for line in src:gmatch("[^\n]+") do
+            local stripped = line:gsub("^%s+", "")
+            if stripped:sub(1, 2) ~= "--" then
+                local commentAt = stripped:find("%-%-", 1, true)
+                local code = commentAt and stripped:sub(1, commentAt - 1) or stripped
+                if code:match("^local%s+EC_" .. name .. "%s*=") then
+                    return line
+                end
+            end
+        end
+        return nil
+    end
+    local lurkLoot = noBareLocalDecl("lootCycleState")
+    local lurkScav = noBareLocalDecl("lastScavengerOut")
+    local lurkDis = noBareLocalDecl("addonDismissed")
+    check(
+        "no file-scope `local EC_lootCycleState`",
+        lurkLoot == nil,
+        "found: " .. tostring(lurkLoot)
+    )
+    check(
+        "no file-scope `local EC_lastScavengerOut`",
+        lurkScav == nil,
+        "found: " .. tostring(lurkScav)
+    )
+    check(
+        "no file-scope `local EC_addonDismissed`",
+        lurkDis == nil,
+        "found: " .. tostring(lurkDis)
+    )
+
+    -- NS exposures the bug-report builder relies on.
+    for _, exposure in ipairs({
+        { "NS.GetVersion", "NS%.GetVersion%s*=%s*EC_GetVersion" },
+        { "NS.GetFreeBagSlots", "NS%.GetFreeBagSlots%s*=%s*EC_GetFreeBagSlots" },
+        { "NS.CopperToColoredText", "NS%.CopperToColoredText%s*=%s*CopperToColoredText" },
+        { "NS.EnsureDB", "NS%.EnsureDB%s*=%s*EnsureDB" },
+    }) do
+        local name, pattern = exposure[1], exposure[2]
+        check(
+            name .. " exposed by EbonClearance.lua",
+            src:find(pattern) ~= nil,
+            name .. " must be published so BugReport can read the live value"
+        )
+    end
 end
 
 -- ---------------------------------------------------------------------------

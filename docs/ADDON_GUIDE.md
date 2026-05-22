@@ -1562,6 +1562,67 @@ Stage 7 invariants (enforced by `tests/test_perf_guardrails.lua` Test 35):
   Process panel's spell-known checks.
 - `NS.Delay = EC_Delay` and `NS.IsAddonEnabledForChar` published.
 
+### Stage 8: extract EbonClearance_BugReport.lua (commit `<pending>`)
+
+Stage 8 in the original plan was "extract everything UI" - ~3,500 LOC
+of dense Interface Options panels, list-row factories, the minimap +
+LDB + tooltip-annotation cluster. That's too much for one bite, so
+Stage 8 is the smallest meaningful UI cluster instead: the bug-report
+builder. Future Stages 8b / 8c can take on heavier UI surface.
+
+Moved into `EbonClearance_BugReport.lua` (~430 LOC):
+
+- `EC_CopperToPlainText` (plain-text gold/silver/copper formatter).
+- `EC_BuildBugReport` (walks DB / ADB / cache state to build a
+  copy-pasteable diagnostic snapshot).
+- `EC_ShowBugReport` (lazy popup frame with a scrolling read-only
+  EditBox; exposed as `NS.ShowBugReport` so the `/ec bugreport`
+  slash command and any settings-panel button can reach it).
+
+Stage 8 prep (state promotions + NS exposures, included in this
+commit because the move depends on them):
+
+- **Three cycle-state locals promoted to `EC_compCache.*` fields**
+  (matching the Stage 3 `lastScavSpokeAt` + Stage 5 `vendorRunning` /
+  `pendingDelete` pattern):
+  - `EC_lootCycleState` → `EC_compCache.lootCycleState` (initial
+    value `"idle"`, matches `STATE.IDLE`).
+  - `EC_lastScavengerOut` → `EC_compCache.lastScavengerOut` (initial
+    `false`).
+  - `EC_addonDismissed` → `EC_compCache.addonDismissed` (initial
+    `false`).
+  40 reference sites in EbonClearance.lua substituted in code-only
+  positions. Future Scavenger / Vendor extraction stages can read
+  these via the shared cache.
+- **Four cross-file helpers exposed on NS**:
+  - `NS.GetVersion = EC_GetVersion` (bug-report reads it for the
+    "Version: vX.Y.Z" line in the snapshot).
+  - `NS.GetFreeBagSlots = EC_GetFreeBagSlots` (snapshot reads "Free
+    Slots: N").
+  - `NS.CopperToColoredText = CopperToColoredText` (reused by future
+    UI extractions; exposed now while we're touching the helpers).
+  - `NS.EnsureDB = EnsureDB` (BugReport calls it once at the top of
+    `EC_BuildBugReport` to guarantee fields exist before reading).
+
+`.toc` order: `Core → Companion → Protection → Vendor → Process →
+EbonClearance.lua → BagDisplay → BugReport`. BugReport loads AFTER
+EbonClearance.lua so the `NS.ShowBugReport` exposure happens by the
+time anything could call it; the slash command + any settings-panel
+button references resolve via NS at call time anyway, but the
+file-load order keeps it tidy.
+
+Stage 8 invariants (enforced by `tests/test_perf_guardrails.lua` Test 36):
+
+- `NS.ShowBugReport = EC_ShowBugReport` published by BugReport.
+- No bare `EC_ShowBugReport()` call sites (every call NS-qualified).
+- `EC_compCache.lootCycleState` / `lastScavengerOut` / `addonDismissed`
+  initialised in Core's table literal.
+- No file-scope `local EC_lootCycleState` / `local EC_lastScavengerOut` /
+  `local EC_addonDismissed` lurking anywhere (would silently desync
+  from the cache fields).
+- `NS.GetVersion` / `NS.GetFreeBagSlots` / `NS.CopperToColoredText` /
+  `NS.EnsureDB` exposures all present.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

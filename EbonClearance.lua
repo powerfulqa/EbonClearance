@@ -65,6 +65,8 @@ local function EC_GetVersion()
     end
     return GetAddOnMetadata("EbonClearance", "Version") or "unknown"
 end
+-- Exposed to split files (the bug-report builder in Stage 8 reads this).
+NS.GetVersion = EC_GetVersion
 
 -- Build watermark: a precomputed fingerprint of "EbonClearance@<version>".
 -- Exposed as a global so /run inspection and external auditors can read it.
@@ -109,8 +111,14 @@ local STATE = {
     WAITING_MERCHANT = "waiting_merchant",
     SELLING = "selling",
 }
-local EC_lootCycleState = STATE.IDLE
-local EC_addonDismissed = false
+-- lootCycleState + addonDismissed + lastScavengerOut were promoted from
+-- file-scope locals to EC_compCache fields (initialised in Core's table
+-- literal) as part of Stage 8 prep. The cross-cutting Scavenger / cycle
+-- code in this file and the bug-report builder in
+-- EbonClearance_BugReport.lua now share state via the cache table.
+-- Same pattern as the vendorRunning / pendingDelete promotion in Stage 5
+-- and the lastScavSpokeAt promotion in Stage 3.
+
 -- Cached companion creature IDs and v2.9.0 dismiss-vs-leash classifier state.
 -- The actual table literal lives in EbonClearance_Core.lua (Stage 2 of the
 -- file split, see docs/CODE_REVIEW.md item 4) and is exposed on the addon
@@ -120,13 +128,6 @@ local EC_addonDismissed = false
 -- same memory. Comments documenting individual fields (scav, lastSummonAt,
 -- bindCache, etc.) live next to the declaration in Core.
 local EC_compCache = NS.compCache
-
--- Last-tick value of "is the Scavenger summoned?". Drives the OnUpdate
--- movement accumulator (only counts while the pet is out) and the
--- bag-full / mount-cycle paths. Forward-declared here so the closures
--- further down capture it. v2.6.1 dropped the speed-based transition
--- classifier that paired with this flag; see docs/ADDON_GUIDE.md.
-local EC_lastScavengerOut = false
 -- Player time-spent-moving (seconds) accumulated while the Scavenger is out.
 -- Drives the stuck-detection heuristic in EC_HandleScavengerOut. Resets on
 -- every Scavenger out<->in transition and after a stuck-dismiss fires.
@@ -830,6 +831,9 @@ local function EnsureDB()
     EC_compCache.scav = nil
     EC_compCache.merch = nil
 end
+-- Exposed to split files (the bug-report builder in Stage 8 calls
+-- EnsureDB() to guarantee fields exist before reading them).
+NS.EnsureDB = EnsureDB
 
 -- Session stats (in-memory only; reset on /reload or by user button).
 local EC_session = {
@@ -950,6 +954,9 @@ local function EC_CountItems(tbl)
     end
     return n
 end
+-- Exposed to split files (the bug-report builder in Stage 8 uses it for
+-- the "Sell List Items: N" / "Account Sell List Items: N" / etc. lines).
+NS.CountItems = EC_CountItems
 
 local function EC_SaveProfile(name)
     local ok, cleaned = EC_ValidateProfileName(name)
@@ -1082,6 +1089,7 @@ local function CopperToColoredText(copper)
     local c = string.format("|cffB87333%dc|r", cop)
     return string.format("%s %s %s", g, s, c)
 end
+NS.CopperToColoredText = CopperToColoredText
 
 local function PrintNice(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[EbonClearance]|r " .. msg)
@@ -1279,7 +1287,7 @@ local function SummonGreedyScavenger()
         -- through EC_TryResummonScavenger's tick path, which has
         -- the same busy gate plus retry-until-confirmed.
         if EC_IsPlayerBusy() or (DB and DB.summonOnlyOutOfCombat and InCombatLockdown()) then
-            EC_addonDismissed = true
+            EC_compCache.addonDismissed = true
             -- v2.10.0: arm the resummon-print debounce so the eventual
             -- pet-tick retry that catches a clear cast/movement window
             -- prints once. Without this, FinishRun-initiated summons that
@@ -1331,22 +1339,22 @@ local function SummonGreedyScavenger()
     else
         -- Already out on entry: CallCompanion is a no-op, safe to clear
         -- both flags here (no rejection window to worry about).
-        EC_addonDismissed = false
+        EC_compCache.addonDismissed = false
         EC_compCache.pendingAnnounce = false
     end
     -- Sync the stuck-detection gate immediately so the OnUpdate
     -- accumulator starts counting from this summon, not from the
     -- next 5 s tick observation.
-    EC_lastScavengerOut = true
+    EC_compCache.lastScavengerOut = true
     EC_scavMovementAccum = 0
     if DB and DB.autoLootCycle then
-        EC_lootCycleState = STATE.LOOTING
+        EC_compCache.lootCycleState = STATE.LOOTING
     end
 end
 
 local function DismissGreedyScavenger()
-    EC_addonDismissed = true
-    EC_lastScavengerOut = false
+    EC_compCache.addonDismissed = true
+    EC_compCache.lastScavengerOut = false
     EC_scavMovementAccum = 0
     if DismissCompanion then
         DismissCompanion("CRITTER")
@@ -1493,6 +1501,7 @@ local function EC_GetFreeBagSlots()
     end
     return free
 end
+NS.GetFreeBagSlots = EC_GetFreeBagSlots
 
 -- Stuck-detection threshold (seconds of player movement) above which we
 -- assume the Scavenger has been left behind and dismiss-then-re-summon at
@@ -1595,7 +1604,7 @@ local function EC_HandleBagFullForCycle()
     if not DB or not DB.autoLootCycle then
         return
     end
-    if EC_lootCycleState ~= STATE.LOOTING then
+    if EC_compCache.lootCycleState ~= STATE.LOOTING then
         return
     end
     if not EC_IsAddonEnabledForChar() then
@@ -1630,7 +1639,7 @@ local function EC_HandleBagFullForCycle()
         return
     end
     EC_compCache.bagFullSince = nil
-    EC_lootCycleState = STATE.WAITING_MERCHANT
+    EC_compCache.lootCycleState = STATE.WAITING_MERCHANT
     PrintNicef("|cffffff00%d free bag slots remaining. Summoning Goblin Merchant...|r", free)
     if DismissCompanion then
         DismissCompanion("CRITTER")
@@ -1643,7 +1652,7 @@ local function EC_HandleBagFullForCycle()
     -- The flag stays true through WAITING_MERCHANT/SELLING (pet-tick is
     -- gated on those states so it can't act on it) and is cleared by
     -- SummonGreedyScavenger when FinishRun brings the Scavenger back.
-    EC_addonDismissed = true
+    EC_compCache.addonDismissed = true
     -- v2.10.0: arm the resummon-print debounce. If FinishRun's
     -- SummonGreedyScavenger hits the busy-gate the recovery falls through
     -- to EC_TryResummonScavenger; that path's chat line should fire once
@@ -3140,7 +3149,7 @@ local function EC_TickGoblinSummon(elapsed)
             EC_targetGoblinTimer = 2.0
         else
             PrintNice("|cffff4444Goblin Merchant not found in companion list!|r")
-            EC_lootCycleState = STATE.LOOTING
+            EC_compCache.lootCycleState = STATE.LOOTING
         end
     end
     return true
@@ -3191,7 +3200,7 @@ local function EC_TickGoblinTarget(elapsed)
         else
             EC_goblinRetryCount = 0
             PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
-            EC_lootCycleState = STATE.LOOTING
+            EC_compCache.lootCycleState = STATE.LOOTING
         end
     end
     return true
@@ -3206,7 +3215,7 @@ local function EC_TickMerchantReminder(elapsed)
     EC_merchantReminderTimer = EC_merchantReminderTimer - elapsed
     if EC_merchantReminderTimer <= 0 then
         EC_merchantReminderPending = false
-        if EC_lootCycleState == STATE.WAITING_MERCHANT then
+        if EC_compCache.lootCycleState == STATE.WAITING_MERCHANT then
             PrintNice("|cffffff00Reminder: right-click the Goblin Merchant to open the vendor window.|r")
         end
     end
@@ -3216,14 +3225,14 @@ end
 -- Reconcile cycle state with companion-out reality: if the Scavenger is
 -- already out at IDLE, advance to LOOTING so the auto-loot cycle picks up.
 local function EC_AutoLootStateSync()
-    if not (DB.autoLootCycle and EC_lootCycleState == STATE.IDLE) then
+    if not (DB.autoLootCycle and EC_compCache.lootCycleState == STATE.IDLE) then
         return
     end
     local num = GetNumCompanions("CRITTER")
     for i = 1, (num or 0) do
         local _, creatureName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
         if creatureName == PET_NAME and isSummoned then
-            EC_lootCycleState = STATE.LOOTING
+            EC_compCache.lootCycleState = STATE.LOOTING
             break
         end
     end
@@ -3287,7 +3296,7 @@ local function EC_HandleScavengerOut(scavengerOut)
     local stuckByMovement = EC_scavMovementAccum >= EC_STUCK_MOVEMENT_THRESHOLD
     local stuckByLootSilence = EC_IsLootSilenceStuck()
     if stuckByMovement or stuckByLootSilence then
-        EC_addonDismissed = true
+        EC_compCache.addonDismissed = true
         -- v2.10.0: arm the resummon-print debounce. The recovery path may
         -- fire CallCompanion several times before the server confirms the
         -- summon; this flag ensures only the first successful CallCompanion
@@ -3356,7 +3365,7 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
     if (GetTime() - EC_mountDismissTime) <= 10 then
         return
     end
-    if not EC_addonDismissed then
+    if not EC_compCache.addonDismissed then
         return
     end
     if not greedyIndex then
@@ -3394,7 +3403,7 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
     -- gets honoured the same way as one immediately after a manual /ec.
     EC_compCache.lastSummonAt = GetTime()
     if DB and DB.autoLootCycle then
-        EC_lootCycleState = STATE.LOOTING
+        EC_compCache.lootCycleState = STATE.LOOTING
     end
 end
 
@@ -3416,7 +3425,7 @@ local function EC_PetCheckTick()
     EC_AutoLootStateSync()
     -- Bag-full detection lives in BAG_UPDATE (EC_HandleBagFullForCycle).
 
-    if EC_lootCycleState == STATE.WAITING_MERCHANT or EC_lootCycleState == STATE.SELLING then
+    if EC_compCache.lootCycleState == STATE.WAITING_MERCHANT or EC_compCache.lootCycleState == STATE.SELLING then
         return
     end
 
@@ -3455,7 +3464,7 @@ local function EC_PetCheckTick()
     -- means our last CallCompanion landed, so we can clear the flag and stop
     -- retrying. (If the player summoned manually via /ec, SummonGreedyScavenger
     -- has already cleared the flag itself.)
-    if EC_lastScavengerOut ~= scavengerOut then
+    if EC_compCache.lastScavengerOut ~= scavengerOut then
         EC_scavMovementAccum = 0
         -- Drop any prior loot timestamps so a fresh out<->in transition starts
         -- the loot-silence counter cleanly (otherwise stale pre-transition
@@ -3473,13 +3482,13 @@ local function EC_PetCheckTick()
         -- honours it. Range-leash transitions take longer than 5 s to
         -- surface, so they fall outside the window and the existing
         -- recovery path runs unchanged.
-        if EC_lastScavengerOut and not scavengerOut and not EC_addonDismissed then
+        if EC_compCache.lastScavengerOut and not scavengerOut and not EC_compCache.addonDismissed then
             if (GetTime() - EC_compCache.lastSummonAt) < EC_compCache.USER_WINDOW_S then
                 EC_compCache.userUntil = GetTime() + EC_compCache.USER_GRACE_S
             end
         end
-        if scavengerOut and EC_addonDismissed then
-            EC_addonDismissed = false
+        if scavengerOut and EC_compCache.addonDismissed then
+            EC_compCache.addonDismissed = false
             -- v2.10.0: cycle ended cleanly - the server has confirmed the
             -- summon. Drop any leftover pendingAnnounce so the next
             -- dismiss-and-resummon cycle starts from a known-clean state.
@@ -3494,7 +3503,7 @@ local function EC_PetCheckTick()
             EC_compCache.lastScavSpokeAt = GetTime()
         end
     end
-    EC_lastScavengerOut = scavengerOut
+    EC_compCache.lastScavengerOut = scavengerOut
 
     if EC_HandleScavengerOut(scavengerOut) then
         return
@@ -3505,7 +3514,7 @@ end
 EC_petCheckFrame:SetScript("OnUpdate", function(_, elapsed)
     -- Accumulate player movement time while the Scavenger is flagged as out.
     -- EC_HandleScavengerOut reads this on the 5 s tick to detect "stuck" cases.
-    if EC_lastScavengerOut and GetUnitSpeed and GetUnitSpeed("player") > 0 then
+    if EC_compCache.lastScavengerOut and GetUnitSpeed and GetUnitSpeed("player") > 0 then
         EC_scavMovementAccum = EC_scavMovementAccum + elapsed
     end
 
@@ -3522,7 +3531,7 @@ EC_petCheckFrame:SetScript("OnUpdate", function(_, elapsed)
     -- sample at 1 s instead of 5 s so we catch cast-clear windows much
     -- faster during heavy combat. Falls back to the 5 s baseline once the
     -- pet is back and we're just polling for the next stuck/dismiss event.
-    local interval = EC_addonDismissed and 1 or EC_PET_CHECK_INTERVAL
+    local interval = EC_compCache.addonDismissed and 1 or EC_PET_CHECK_INTERVAL
     if EC_petCheckElapsed < interval then
         return
     end
@@ -3977,7 +3986,7 @@ local function FinishRun()
                 -- if/else where both branches called it unconditionally.
                 -- Only the lootCycleState transition was branch-specific.
                 if DB and DB.autoLootCycle then
-                    EC_lootCycleState = STATE.IDLE
+                    EC_compCache.lootCycleState = STATE.IDLE
                 end
                 -- v2.14.0: arm the resummon-print debounce on every
                 -- merchant-cycle close-out, not just bag-full-triggered
@@ -4004,7 +4013,7 @@ local function FinishRun()
     )
 
     if DB and DB.autoLootCycle then
-        EC_lootCycleState = STATE.IDLE
+        EC_compCache.lootCycleState = STATE.IDLE
     end
     -- v2.14.0: see comment at the corresponding call above.
     EC_compCache.pendingAnnounce = true
@@ -9571,374 +9580,14 @@ if InterfaceOptionsFramePanelContainer and InterfaceOptionsFramePanelContainer.H
     end)
 end
 
--- Bug report diagnostic snapshot
-local function EC_CopperToPlainText(copper)
-    if not copper or copper <= 0 then
-        return "0"
-    end
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor((copper % 10000) / 100)
-    local cop = copper % 100
-    if gold > 0 then
-        return string.format("%dg %ds %dc", gold, silver, cop)
-    elseif silver > 0 then
-        return string.format("%ds %dc", silver, cop)
-    else
-        return string.format("%dc", cop)
-    end
-end
+-- The bug-report diagnostic snapshot (EC_CopperToPlainText,
+-- EC_BuildBugReport, EC_ShowBugReport) lives in
+-- EbonClearance_BugReport.lua after Stage 8 of the file split.
+-- Exposed as NS.ShowBugReport for the button on the main settings panel.
 
-local function EC_BuildBugReport()
-    EnsureDB()
-    local lines = {}
-    local function add(s)
-        lines[#lines + 1] = s
-    end
 
-    local version = EC_GetVersion()
-    local player = UnitName("player") or "Unknown"
-    local realm = GetRealmName() or "Unknown"
-    local dateStr = date("%Y-%m-%d %H:%M")
-    local className = UnitClass and UnitClass("player") or "Unknown"
-    local level = UnitLevel and UnitLevel("player") or 0
-    local locale = GetLocale and GetLocale() or "Unknown"
-
-    add("=== EbonClearance Bug Report ===")
-    add("Version: " .. version)
-    add("Character: " .. player .. " - " .. realm)
-    add("Class / Level: " .. className .. " / " .. tostring(level))
-    add("Locale: " .. tostring(locale))
-    add("Date: " .. dateStr)
-    add("")
-
-    -- v2.13.1 Live State section. Captures the runtime context at the
-    -- exact moment of report. Useful for diagnosing merchant-mode
-    -- target-vs-npc mismatches, combat-deferral cases, and "addon not
-    -- doing anything" reports where the cause is a live unit / frame
-    -- state the static settings can't show.
-    add("--- Live State ---")
-    add("In Combat: " .. tostring(InCombatLockdown and InCombatLockdown() or false))
-    add("Mounted: " .. tostring(IsMounted and IsMounted() or false))
-    local targetExists = UnitExists and UnitExists("target")
-    add("Target: " .. ((targetExists and UnitName("target")) or "(none)"))
-    local npcExists = UnitExists and UnitExists("npc")
-    add("NPC (interact): " .. ((npcExists and UnitName("npc")) or "(none)"))
-    local merchantOpen = MerchantFrame and MerchantFrame:IsShown() or false
-    add("Merchant Open: " .. tostring(merchantOpen))
-    local totalBagSlots = 0
-    for bag = 0, 4 do
-        totalBagSlots = totalBagSlots + (GetContainerNumSlots(bag) or 0)
-    end
-    add("Free Bags: " .. tostring(EC_GetFreeBagSlots()) .. " / " .. tostring(totalBagSlots))
-    add("")
-
-    add("--- Settings ---")
-    add("Enabled: " .. tostring(DB.enabled))
-    add("Merchant Mode: " .. tostring(DB.merchantMode))
-    add("Repair Gear: " .. tostring(DB.repairGear))
-    add("Repair via Guild Bank: " .. tostring(DB.repairUseGuildBank))
-    add("Keep Bags Open: " .. tostring(DB.keepBagsOpen))
-    add("Enable Deletion: " .. tostring(DB.enableDeletion))
-    add("Vendor Interval: " .. tostring(DB.vendorInterval))
-    add("Max Items Per Run: " .. tostring(DB.maxItemsPerRun))
-    add("Fast Mode: " .. tostring(DB.fastMode))
-    -- v2.10.0 / v2.11.0 / v2.13.0 auto-protect family - omitting these
-    -- left a blind spot in earlier reports for "why is X being kept?"
-    -- diagnostics where the auto-protect path was the answer.
-    add("Auto-Add Equipped: " .. tostring(DB.autoAddEquipped))
-    add("Auto-Protect Upgrades: " .. tostring(DB.autoProtectUpgrades))
-    add("Auto-Protect Equipment Sets: " .. tostring(DB.autoProtectEquipmentSets))
-    add("Protect Affixed Rare Items: " .. tostring(DB.protectAffixedRareItems))
-    add("Protect Chance-on-Hit Items: " .. tostring(DB.protectChanceOnHitItems))
-    add("Enable Only Listed Chars: " .. tostring(DB.enableOnlyListedChars))
-    if DB.enableOnlyListedChars then
-        local allowed = {}
-        if type(DB.allowedChars) == "table" then
-            for k, v in pairs(DB.allowedChars) do
-                if v == true and type(k) == "string" then
-                    allowed[#allowed + 1] = k
-                end
-            end
-        end
-        table.sort(allowed)
-        add("Allowed Characters: " .. (#allowed > 0 and table.concat(allowed, ", ") or "(none)"))
-    end
-    add("")
-
-    add("--- Scavenger ---")
-    add("Summon Greedy: " .. tostring(DB.summonGreedy))
-    add("Summon Delay: " .. tostring(DB.summonDelay))
-    add("Summon Only Out Of Combat: " .. tostring(DB.summonOnlyOutOfCombat))
-    add("Mute Greedy: " .. tostring(DB.muteGreedy))
-    add("Hide Chat: " .. tostring(DB.hideGreedyChat))
-    add("Hide Bubbles: " .. tostring(DB.hideGreedyBubbles))
-    add("Auto-Loot Cycle: " .. tostring(DB.autoLootCycle))
-    add("Bag Full Threshold: " .. tostring(DB.bagFullThreshold))
-    add("Auto-Open Containers: " .. tostring(DB.autoOpenContainers))
-    add("Fast Loot: " .. tostring(DB.fastLoot))
-    -- Companion-name overrides. Most users leave these as defaults; when a
-    -- user has customised one and then reports a "addon doesn't recognise
-    -- my Goblin Merchant" / "Scavenger isn't being detected" issue, the
-    -- override is usually the cause.
-    -- v2.13.3: dropped the DB.petName branch (field had no setter, copy-
-    -- paste artifact of the v2.9.0 scavengerName rename); the real pet
-    -- field is DB.scavengerName.
-    -- v2.13.5: only show these lines when the value actually differs
-    -- from the default that EnsureDB seeds. The previous "non-empty"
-    -- check matched every install because EnsureDB always seeds these
-    -- fields with default strings, so the "(override)" label was
-    -- displayed even when no override was set. Also added the scavenger
-    -- field which had a comment claiming it was "exposed elsewhere"
-    -- but in fact wasn't surfaced in the report at all.
-    if DB.merchantName and DB.merchantName ~= "" and DB.merchantName ~= "Goblin Merchant" then
-        add("Merchant Name (override): " .. tostring(DB.merchantName))
-    end
-    if DB.scavengerName and DB.scavengerName ~= "" and DB.scavengerName ~= "Greedy scavenger" then
-        add("Scavenger Name (override): " .. tostring(DB.scavengerName))
-    end
-    add("")
-
-    -- v2.13.1 Runtime State section. Snapshots the in-flight loot-cycle
-    -- and stuck-detection signals so a Discord report can pinpoint
-    -- "why isn't the cycle progressing" cases without requiring a /reload
-    -- or chat-log scrape.
-    add("--- Runtime State ---")
-    add("Loot Cycle State: " .. tostring(EC_lootCycleState or "?"))
-    add("Scavenger Out: " .. tostring(EC_lastScavengerOut))
-    add("Addon-Dismissed: " .. tostring(EC_addonDismissed))
-    add("Scav Speech Heard This Session: " .. tostring(EC_compCache.scavSpeechEverHeard))
-    if EC_compCache.bagFullSince and EC_compCache.bagFullSince > 0 then
-        local elapsed = (GetTime and GetTime() or 0) - EC_compCache.bagFullSince
-        add(string.format("Bag-Full Threshold Hit: %.1fs ago", elapsed))
-    else
-        add("Bag-Full Threshold Hit: -")
-    end
-    add("")
-
-    add("--- Sell Rules ---")
-    add("Quality Rules:")
-    for q = 1, 4 do
-        local r = DB.qualityRules and DB.qualityRules[q] or {}
-        local rarityName = (q == 1) and "White" or (q == 2) and "Green" or (q == 3) and "Blue" or "Epic"
-        local capStr = (r.maxILvl and r.maxILvl > 0) and tostring(r.maxILvl) or "no cap"
-        local bindStr = tostring(r.bindFilter or "any")
-        add(
-            string.format(
-                "  %s: enabled=%s, max iLvl=%s, useEquipped=%s, bind=%s",
-                rarityName,
-                tostring(r.enabled),
-                capStr,
-                tostring(r.useEquippedILvl),
-                bindStr
-            )
-        )
-    end
-    add("Active Profile: " .. tostring(DB.activeProfileName))
-    add("Sell List Items: " .. tostring(EC_CountItems(DB.whitelist)))
-    add("Account Sell List Items: " .. tostring(ADB and EC_CountItems(ADB.whitelist) or 0))
-    add("Keep List Items: " .. tostring(EC_CountItems(DB.blacklist)))
-    add("Delete List Items: " .. tostring(EC_CountItems(DB.deleteList)))
-    add("")
-
-    -- v2.13.1 Auto-Protected Breakdown. Walks DB.blacklistAuto and groups
-    -- entries by origin tag so a user reporting "my Keep list is huge,
-    -- why?" can see at a glance which auto-protect path is responsible.
-    -- Legacy entries (v2.10.0 / v2.11.0 stamped a boolean true rather
-    -- than a string tag) bucket separately so they're visible for the
-    -- /ec clean upgrades workflow.
-    if type(DB.blacklistAuto) == "table" then
-        local cWorn, cUpgrade, cSet, cLegacy = 0, 0, 0, 0
-        for _, tag in pairs(DB.blacklistAuto) do
-            if tag == "equipped" then
-                cWorn = cWorn + 1
-            elseif tag == "upgrade" then
-                cUpgrade = cUpgrade + 1
-            elseif tag == "set" then
-                cSet = cSet + 1
-            elseif tag == true then
-                cLegacy = cLegacy + 1
-            end
-        end
-        local total = cWorn + cUpgrade + cSet + cLegacy
-        if total > 0 then
-            add("--- Auto-Protected Breakdown ---")
-            add("Equipped (Worn): " .. cWorn)
-            add("Upgrade: " .. cUpgrade)
-            add("Set: " .. cSet)
-            if cLegacy > 0 then
-                add("Legacy (untagged): " .. cLegacy)
-            end
-            add("Total auto-tagged: " .. total)
-            add("")
-        end
-    end
-
-    add("--- Profiles ---")
-    local names = {}
-    for name in pairs(DB.whitelistProfiles) do
-        if type(name) == "string" then
-            names[#names + 1] = name
-        end
-    end
-    table.sort(names, function(a, b)
-        return a:lower() < b:lower()
-    end)
-    for i = 1, #names do
-        local wlCount = EC_CountItems(DB.whitelistProfiles[names[i]])
-        local blCount = DB.blacklistProfiles[names[i]] and EC_CountItems(DB.blacklistProfiles[names[i]]) or 0
-        local tag = (names[i] == DB.activeProfileName) and " (active)" or ""
-        add(names[i] .. " (" .. wlCount .. " sell, " .. blCount .. " keep)" .. tag)
-    end
-    add("")
-
-    add("--- Stats ---")
-    add("Total Money Made: " .. EC_CopperToPlainText(DB.totalCopper or 0))
-    add("Total Items Sold: " .. tostring(DB.totalItemsSold or 0))
-    add("Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0))
-    add("Total Repairs: " .. tostring(DB.totalRepairs or 0))
-    add("Total Repair Cost: " .. EC_CopperToPlainText(DB.totalRepairCopper or 0))
-    add("")
-
-    -- Capability flags. The bag-rendering layer and auction-pricing source
-    -- can interact (or fail to interact) with EC's hooks and integrations;
-    -- capturing which capabilities are present disambiguates "bag
-    -- decoration missing" / "tooltip overlaps" reports without a
-    -- follow-up. Generic flags so the report doesn't depend on specific
-    -- third-party addon names.
-    add("--- Environment Capabilities ---")
-    local hostBagUI = (_G.Bagnon ~= nil) or (_G.BagnonFrame ~= nil) or (_G.ArkInventory ~= nil) or (_G.ElvUI ~= nil)
-    add("Host bag UI detected: " .. (hostBagUI and "yes" or "no"))
-    add(
-        "Host bag-UI category API: "
-            .. ((_G.LibStub and pcall(_G.LibStub, "AceAddon-3.0", true)) and "available" or "absent")
-    )
-    add("LibItemSearch: " .. (_G.LibStub and _G.LibStub("LibItemSearch-1.0", true) and "yes" or "no"))
-    add(
-        "Auction pricing source: "
-            .. ((_G.Atr_GetAuctionBuyout ~= nil or _G.Auctionator ~= nil) and "detected" or "absent")
-    )
-    add(
-        "Project Ebonhold extraction catalog: "
-            .. ((_G.ExtractionService and _G.ExtractionService.learnedAffixes) and "exposed" or "absent")
-    )
-
-    add("")
-    add("--- Bag Display ---")
-    add("Sell-border tint enabled: " .. (DB.sellBorderEnabled and "yes" or "no"))
-    if DB.sellBorderColor then
-        local c = DB.sellBorderColor
-        add(
-            string.format(
-                "Sell-border colour (r,g,b,a): %.2f, %.2f, %.2f, %.2f",
-                c.r or 0,
-                c.g or 0,
-                c.b or 0,
-                c.a or 0
-            )
-        )
-    end
-    local decoratedCount = 0
-    if EC_compCache.sellBorderButtons then
-        for _ in pairs(EC_compCache.sellBorderButtons) do
-            decoratedCount = decoratedCount + 1
-        end
-    end
-    add("Decorated slot buttons (this session): " .. tostring(decoratedCount))
-    add("Host bag-UI border hook installed: " .. (EC_compCache._hostBagBorderHookInstalled and "yes" or "no"))
-
-    add("")
-    add("--- Allow Lists ---")
-    local allowedItemCount = 0
-    if ADB and ADB.allowedItems then
-        for _ in pairs(ADB.allowedItems) do
-            allowedItemCount = allowedItemCount + 1
-        end
-    end
-    local allowedAffixCount = 0
-    if ADB and ADB.allowedAffixes then
-        for _ in pairs(ADB.allowedAffixes) do
-            allowedAffixCount = allowedAffixCount + 1
-        end
-    end
-    local knownAffixCount = 0
-    if EC_compCache.knownAffixDescriptions then
-        for _ in pairs(EC_compCache.knownAffixDescriptions) do
-            knownAffixCount = knownAffixCount + 1
-        end
-    end
-    add("Chance-on-hit allow list (per-itemID): " .. tostring(allowedItemCount))
-    add("Random-affix allow list (per-description): " .. tostring(allowedAffixCount))
-    add("Known affix descriptions in session set: " .. tostring(knownAffixCount))
-    add("Allow exact-rank duplicates: " .. (DB.affixAllowExactDupes and "yes" or "no"))
-
-    add("")
-    add("--- Bags ---")
-    add("Free Slots: " .. tostring(EC_GetFreeBagSlots()))
-
-    return table.concat(lines, "\n")
-end
-
-local EC_bugReportFrame = nil
-
-local function EC_ShowBugReport()
-    if not EC_bugReportFrame then
-        local f = CreateFrame("Frame", "EbonClearanceBugReportFrame", UIParent)
-        f:SetSize(460, 360)
-        f:SetPoint("CENTER")
-        f:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true,
-            tileSize = 32,
-            edgeSize = 32,
-            insets = { left = 8, right = 8, top = 8, bottom = 8 },
-        })
-        f:SetMovable(true)
-        f:EnableMouse(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", f.StartMoving)
-        f:SetScript("OnDragStop", f.StopMovingOrSizing)
-        f:SetFrameStrata("DIALOG")
-        tinsert(UISpecialFrames, "EbonClearanceBugReportFrame")
-
-        local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-        title:SetPoint("TOP", 0, -14)
-        title:SetText("EbonClearance Bug Report")
-
-        local hint = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-        hint:SetText("|cff888888Press Ctrl+A then Ctrl+C to copy this report.|r")
-
-        local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-        closeBtn:SetPoint("TOPRIGHT", -4, -4)
-
-        local scroll = CreateFrame("ScrollFrame", "EbonClearanceBugReportScroll", f, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 16, -50)
-        scroll:SetPoint("BOTTOMRIGHT", -32, 16)
-
-        local editBox = CreateFrame("EditBox", "EbonClearanceBugReportBox", scroll)
-        editBox:SetAutoFocus(false)
-        editBox:SetMultiLine(true)
-        editBox:SetFontObject("GameFontHighlightSmall")
-        editBox:SetWidth(400)
-        editBox:SetText("")
-        editBox:SetScript("OnEscapePressed", function(s)
-            s:ClearFocus()
-        end)
-        scroll:SetScrollChild(editBox)
-
-        f.editBox = editBox
-        EC_bugReportFrame = f
-    end
-
-    local report = EC_BuildBugReport()
-    EC_bugReportFrame.editBox:SetText(report)
-    EC_bugReportFrame:Show()
-    EC_bugReportFrame.editBox:HighlightText()
-    EC_bugReportFrame.editBox:SetFocus()
-    PrintNice("Bug report generated. Copy the text from the window.")
-end
-
+-- Conflict detection + resolution across whitelist/blacklist/deleteList.
+-- Precedence when auto-resolving: blacklist > deleteList > whitelist.
 -- Keybinding registration. Populates the "EbonClearance" section of
 -- ESC -> Key Bindings. Four bindings:
 --   - "Target Goblin Merchant" - dispatched through the hidden
@@ -9999,8 +9648,6 @@ EC_FindAddConflict = function(itemID, targetListName)
     return nil
 end
 
--- Conflict detection + resolution across whitelist/blacklist/deleteList.
--- Precedence when auto-resolving: blacklist > deleteList > whitelist.
 local function EC_ScanListConflicts()
     local lists = {
         { name = "whitelist", data = DB.whitelist },
@@ -10354,7 +10001,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
     end
 
     if cmd == "bugreport" then
-        EC_ShowBugReport()
+        NS.ShowBugReport()
         return
     end
 
@@ -10680,7 +10327,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         if not EC_scavStateBootstrapped then
             local _, scavOut = EC_FindGreedyScavenger()
             if scavOut then
-                EC_lastScavengerOut = true
+                EC_compCache.lastScavengerOut = true
             end
             EC_scavStateBootstrapped = true
         end
@@ -10880,7 +10527,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- merchant the user opened by hand are still tracked.
         EC_manualSell.snapshotBags()
         if DB and DB.autoLootCycle then
-            EC_lootCycleState = STATE.SELLING
+            EC_compCache.lootCycleState = STATE.SELLING
         end
         if not EC_IsAddonEnabledForChar() then
             return
@@ -10906,7 +10553,7 @@ f:SetScript("OnEvent", function(self, event, ...)
                 -- manual portrait dismiss before mount-up never set
                 -- EC_addonDismissed=true (the mount-up branch above gates
                 -- on `if scavOut` first), so this naturally honours it.
-                if EC_addonDismissed then
+                if EC_compCache.addonDismissed then
                     EC_SummonGreedyWithDelay()
                 end
             end
@@ -10917,8 +10564,8 @@ f:SetScript("OnEvent", function(self, event, ...)
         worker:Hide()
         EC_compCache.pendingDelete = nil
         -- Reset cycle state so the stuck detection can re-summon the Scavenger
-        if EC_lootCycleState == STATE.SELLING then
-            EC_lootCycleState = STATE.IDLE
+        if EC_compCache.lootCycleState == STATE.SELLING then
+            EC_compCache.lootCycleState = STATE.IDLE
         end
         -- Reopen bags after merchant closes
         if DB and DB.keepBagsOpen and EC_keepBagsFlag then

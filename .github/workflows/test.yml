@@ -32,6 +32,7 @@ jobs:
           luac5.1 -p EbonClearance_Vendor.lua
           luac5.1 -p EbonClearance_Process.lua
           luac5.1 -p EbonClearance_BagDisplay.lua
+          luac5.1 -p EbonClearance_BugReport.lua
 
       - name: Layout-reactivity regression tests
         run: lua5.1 tests/test_layout_reactivity.lua

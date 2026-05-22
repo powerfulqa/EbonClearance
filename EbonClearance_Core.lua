@@ -197,6 +197,23 @@ local EC_compCache = {
     -- armed. Lives on EC_compCache for the same reason as vendorRunning
     -- above - cross-file access between Vendor and the event hub.
     pendingDelete = nil,
+    -- Auto-loot cycle state machine. Promoted from file-scope `local
+    -- EC_lootCycleState = STATE.IDLE` in EbonClearance.lua so split files
+    -- (the bug-report builder in Stage 8, and potentially future cycle
+    -- code) can read it as a snapshot. The string values match the STATE
+    -- constants table also declared in EbonClearance.lua's main chunk
+    -- (STATE = { IDLE = "idle", LOOTING = "looting", WAITING_MERCHANT =
+    -- "waiting_merchant", SELLING = "selling" }).
+    lootCycleState = "idle",
+    -- Last-tick value of "is the Scavenger summoned?". Promoted from
+    -- `local EC_lastScavengerOut = false`. Read by the pet-tick OnUpdate's
+    -- movement accumulator and by the bug-report snapshot.
+    lastScavengerOut = false,
+    -- "WE just dismissed the Scavenger and a resummon is pending"
+    -- flag. Promoted from `local EC_addonDismissed = false`. Set by the
+    -- mount handler and various recovery paths; cleared by the pet-tick
+    -- when the Scavenger comes back out.
+    addonDismissed = false,
     -- Baseline-protected itemIDs: profession tools the player needs to
     -- keep around to perform their profession (fishing poles, mining
     -- picks, the engineering Arclight Spanner, skinning knife, blacksmith

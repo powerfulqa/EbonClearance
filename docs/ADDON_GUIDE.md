@@ -1936,7 +1936,7 @@ new file (not duplicated in EbonClearance.lua); new file uses
 `NS.MakeHeader` / `NS.AddCheckbox` / `NS.AddSlider` (not bare
 locals); registration uses `_G[]` lookup.
 
-### Stage 8e-iv: extract EbonClearance_SellListPanels.lua (commit `<pending>`)
+### Stage 8e-iv: extract EbonClearance_SellListPanels.lua (commit `bcfde1a`)
 
 Stage 8e-iv bundles two sibling panels (Sell List + Account Sell
 List) into one file: `EbonClearance_SellListPanels.lua`. Same

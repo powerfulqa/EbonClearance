@@ -1752,8 +1752,70 @@ Stage 8d invariants (enforced by `tests/test_perf_guardrails.lua` Test 39):
 
 - `NS.InstallBagContextHookOnce` exposed by BagContextMenu.
 - `NS.AddItemToList` / `NS.RemoveItemFromList` / `NS.FindAddConflict`
-  exposed by EbonClearance.lua.
-- No bare `EC_InstallBagContextHookOnce()` call sites anywhere.
+  / `NS.GetListTable` exposed by EbonClearance.lua.
+- No bare `EC_InstallBagContextHookOnce()` call sites anywhere; no bare
+  `EC_GetListTable()` call sites inside `EbonClearance_BagContextMenu.lua`.
+
+### Stage 8e-i: extract EbonClearance_ProcessBagsPanel.lua (commit `<pending>`)
+
+Stage 8e-i moves the v2.22.0 Process Bags Interface Options panel
+(~662 LOC moved, file is ~709 LOC with header) to
+`EbonClearance_ProcessBagsPanel.lua`. The narrow first slice of the
+Stage 8e UI extraction: a self-contained domain (profession
+processing) with its four helpers already on `EC_compCache`
+(`rearmProcessButton`, `updateProcessSelection`, `skipProcessTarget`,
+`refreshProcessPanel`).
+
+The PROFESSION ENGINE (spell IDs, eligibility predicates,
+`buildProcessSummary`) was already extracted in Stage 7 into
+`EbonClearance_Process.lua`; Stage 8e-i splits the UI layer off from
+that. The two files share state through `EC_compCache`
+(`processCache`, the can-* predicates, the cast button macrotext) so
+the boundary is clean.
+
+Moved into the new file:
+
+- `local ProcessBagsPanel = CreateFrame(...)` frame creation
+- `EC_compCache.rearmProcessButton`, `updateProcessSelection`,
+  `skipProcessTarget`, `refreshProcessPanel` bodies
+- `ProcessBagsPanel:SetScript("OnShow", ...)` panel-build body
+
+Stage 8e-i prep (NS exposures, same commit):
+
+- `NS.MakeHeader` / `NS.MakeLabel` - panel-text primitives that the
+  OnShow build body calls. The locals stay in `EbonClearance.lua`;
+  the NS bindings let split files reach them lazily at call time.
+  Subsequent panel-extraction stages (8e-ii+) reuse these exposures.
+
+Cross-file dependencies satisfied by NS / EC_compCache:
+
+- `NS.PrintNice` / `NS.PrintNicef` (already on NS since Stage 8 prep).
+- `NS.DB` captured at function entry per helper / OnShow (matches the
+  Stage 4+ pattern for cross-file DB access).
+- `EC_compCache.initPanel` / `setPanelWidth` / `registerWidth` /
+  `refreshLayouts` (panel infra in `EbonClearance.lua`; reached via
+  the shared `EC_compCache` reference).
+- `EC_compCache.canDisenchant` / `canMill` / `canProspect` /
+  `buildProcessSummary` (from `EbonClearance_Process.lua`).
+
+`InterfaceOptions_AddCategory(ProcessBagsPanel)` in `EbonClearance.lua`
+was converted to
+`InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProcessBags"])`
+since the local binding no longer exists in that file. The .toc loads
+`EbonClearance_ProcessBagsPanel.lua` BEFORE `EbonClearance.lua` so the
+frame exists at registration time; the helpers' references to
+`NS.MakeHeader` / `NS.PrintNicef` resolve lazily at call time (not
+load time) so the late binding is safe.
+
+Stage 8e-i invariants (enforced by `tests/test_perf_guardrails.lua` Test 40):
+
+- `NS.MakeHeader` / `NS.MakeLabel` exposed by EbonClearance.lua.
+- All four `EC_compCache` helpers defined in
+  `EbonClearance_ProcessBagsPanel.lua` (not in `EbonClearance.lua`).
+- `EbonClearance_ProcessBagsPanel.lua` calls `NS.MakeHeader` /
+  `NS.MakeLabel` rather than the bare locals (which only exist in
+  `EbonClearance.lua`'s scope).
+- `EbonClearance.lua` registers the panel via the `_G[]` lookup.
 
 ### Target architecture (post-split)
 

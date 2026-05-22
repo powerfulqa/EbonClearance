@@ -47,6 +47,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Protection.lua",
     "EbonClearance_Vendor.lua",
     "EbonClearance_Process.lua",
+    "EbonClearance_ProcessBagsPanel.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -1798,6 +1799,101 @@ do
             "found bare call: " .. tostring(bareList)
         )
     end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 40 (Stage 8e-i): Process Bags panel extracted; UI primitives
+-- exposed on NS.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-i moves the v2.22.0 Process Bags Interface Options panel
+-- (frame creation + the four EC_compCache helpers + OnShow body) into
+-- EbonClearance_ProcessBagsPanel.lua. Two cross-file UI primitives
+-- (MakeHeader, MakeLabel) needed NS exposure to support the move - the
+-- OnShow build body calls them. Registration in EbonClearance.lua uses
+-- a _G lookup because the local ProcessBagsPanel binding no longer
+-- exists in that file.
+do
+    check(
+        "NS.MakeHeader exposed",
+        src:find("NS%.MakeHeader%s*=%s*MakeHeader") ~= nil,
+        "EbonClearance.lua must publish NS.MakeHeader for the Process Bags panel's OnShow body"
+    )
+    check(
+        "NS.MakeLabel exposed",
+        src:find("NS%.MakeLabel%s*=%s*MakeLabel") ~= nil,
+        "EbonClearance.lua must publish NS.MakeLabel for the Process Bags panel's OnShow body"
+    )
+
+    -- Read the new file to confirm the four EC_compCache helpers live
+    -- there (not in EbonClearance.lua) AND that the file references
+    -- NS.MakeHeader / NS.MakeLabel rather than the bare locals which
+    -- only exist in EbonClearance.lua's scope.
+    local pbFile = io.open("EbonClearance_ProcessBagsPanel.lua", "rb")
+    if pbFile then
+        local pbSrc = pbFile:read("*a") or ""
+        pbFile:close()
+        check(
+            "rearmProcessButton defined in EbonClearance_ProcessBagsPanel.lua",
+            pbSrc:find("function EC_compCache%.rearmProcessButton%(%)") ~= nil,
+            "rearmProcessButton must live in EbonClearance_ProcessBagsPanel.lua (Stage 8e-i)"
+        )
+        check(
+            "refreshProcessPanel defined in EbonClearance_ProcessBagsPanel.lua",
+            pbSrc:find("function EC_compCache%.refreshProcessPanel%(%)") ~= nil,
+            "refreshProcessPanel must live in EbonClearance_ProcessBagsPanel.lua (Stage 8e-i)"
+        )
+        check(
+            "updateProcessSelection defined in EbonClearance_ProcessBagsPanel.lua",
+            pbSrc:find("function EC_compCache%.updateProcessSelection%(%)") ~= nil,
+            "updateProcessSelection must live in EbonClearance_ProcessBagsPanel.lua (Stage 8e-i)"
+        )
+        check(
+            "skipProcessTarget defined in EbonClearance_ProcessBagsPanel.lua",
+            pbSrc:find("function EC_compCache%.skipProcessTarget%(%)") ~= nil,
+            "skipProcessTarget must live in EbonClearance_ProcessBagsPanel.lua (Stage 8e-i)"
+        )
+        check(
+            "EbonClearance_ProcessBagsPanel.lua uses NS.MakeHeader (not bare MakeHeader)",
+            pbSrc:find("NS%.MakeHeader%(") ~= nil
+                and pbSrc:find("[^.%w_]MakeHeader%(") == nil,
+            "panel build body must call NS.MakeHeader (the local lives in EbonClearance.lua)"
+        )
+        check(
+            "EbonClearance_ProcessBagsPanel.lua uses NS.MakeLabel (not bare MakeLabel)",
+            pbSrc:find("NS%.MakeLabel%(") ~= nil
+                and pbSrc:find("[^.%w_]MakeLabel%(") == nil,
+            "panel build body must call NS.MakeLabel (the local lives in EbonClearance.lua)"
+        )
+    end
+
+    -- The four EC_compCache helpers must NOT be defined in
+    -- EbonClearance.lua anymore (would-be regression: a stale copy
+    -- still sitting in the main file would clobber the new one).
+    -- Match against a clean global-src concat: count occurrences in
+    -- EbonClearance.lua specifically.
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        check(
+            "rearmProcessButton no longer defined in EbonClearance.lua",
+            ecSrc:find("function EC_compCache%.rearmProcessButton%(%)") == nil,
+            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-i extracted body"
+        )
+        check(
+            "refreshProcessPanel no longer defined in EbonClearance.lua",
+            ecSrc:find("function EC_compCache%.refreshProcessPanel%(%)") == nil,
+            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-i extracted body"
+        )
+    end
+
+    -- Registration call must use the _G lookup since the local was
+    -- moved out of EbonClearance.lua.
+    check(
+        "Process Bags panel registered via _G lookup in EbonClearance.lua",
+        src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsProcessBags"%]%)') ~= nil,
+        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+    )
 end
 
 -- ---------------------------------------------------------------------------

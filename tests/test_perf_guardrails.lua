@@ -2197,6 +2197,73 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 44 (section 4.6 Issue A): affix tooltip label rewrite.
+-- ---------------------------------------------------------------------------
+-- Pre-v2.30.x the random-affix tooltip branch used a blanket "Protected
+-- - Random affix" label whenever `affixAllowExactDupes` was OFF, even
+-- if the affix was one the player had already extracted at this rank.
+-- The auto-dupe branch ON used "Allowed - <name> rank N already known".
+-- Both labels are reworded for clarity:
+--
+--   Player doesn't know affix          -> "Protected - Affix found"
+--   Player knows it + setting OFF      -> "Protected - Affix known"
+--   Player knows it + setting ON       -> "Allowed - <name> known"
+--
+-- The "Affix known" branch is new: it surfaces "you have this; could
+-- sell if you toggle the setting" without collapsing into the blanket
+-- "Random affix" label.
+do
+    local tooltipFile = io.open("EbonClearance_Tooltip.lua", "rb")
+    if tooltipFile then
+        local ttSrc = tooltipFile:read("*a") or ""
+        tooltipFile:close()
+        -- Strip Lua line comments before checking - the legacy label
+        -- strings still appear in historical doc comments (documenting
+        -- pre-v2.30 behaviour) and aren't a regression.
+        local ttCode = ttSrc:gsub("%-%-[^\n]*", "")
+
+        check(
+            "Tooltip emits 'Protected - Affix found' (new unknown-affix label)",
+            ttCode:find("Protected %- Affix found") ~= nil,
+            "the v2.30.x relabel must replace the legacy 'Random affix' string with 'Protected - Affix found' for the affix-unknown case"
+        )
+        check(
+            "Tooltip emits 'Protected - Affix known' (new known-but-protected label)",
+            ttCode:find("Protected %- Affix known") ~= nil,
+            "the v2.30.x relabel must add a distinct 'Protected - Affix known' label for items whose affix the player has already extracted at this rank but affixAllowExactDupes is off"
+        )
+        check(
+            "Tooltip emits 'Allowed - <name> known' format (new auto-dupe label)",
+            ttCode:find('Allowed %- %%s known') ~= nil,
+            "the auto-dupe label must use the 'Allowed - <name> known' form (drop the 'already' word + the rank suffix per the plan)"
+        )
+
+        -- Legacy strings must NOT appear in the live label-emit paths.
+        -- (Comments documenting the pre-v2.30 behaviour are stripped
+        -- above before this check runs.)
+        check(
+            "Tooltip no longer emits legacy 'Random affix' label",
+            ttCode:find("Random affix") == nil,
+            "the legacy 'Random affix' wording must be removed from EbonClearance_Tooltip.lua label-emit paths; the v2.30.x scheme distinguishes 'found' vs 'known'"
+        )
+        check(
+            "Tooltip no longer emits 'already known' label",
+            ttCode:find('already known') == nil,
+            "the legacy 'already known' phrasing must be removed; the v2.30.x scheme uses 'known' alone for brevity"
+        )
+
+        -- playerKnows must be computed independently of
+        -- affixAllowExactDupes - the whole point of the rewrite is to
+        -- surface the known/unknown state regardless of the setting.
+        check(
+            "playerKnows is computed via playerHasAffixDescription independent of affixAllowExactDupes",
+            ttCode:find("local playerKnows%s*=") ~= nil,
+            "the affix branch must declare a `local playerKnows` that captures playerHasAffixDescription without gating on DB.affixAllowExactDupes"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

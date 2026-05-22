@@ -305,7 +305,18 @@ local function EC_AnnotateTooltip(tooltip)
                 end
                 local affixKey = affix.description and EC_compCache.normaliseAffixDesc(affix.description)
                 local manualAllow = affixKey and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
-                local autoDupe = DB.affixAllowExactDupes and EC_compCache.playerHasAffixDescription(affix.description)
+                -- v2.30.x: compute "does the player know this affix at
+                -- this rank" INDEPENDENTLY of affixAllowExactDupes so the
+                -- "Protected - Affix known" branch can fire even when the
+                -- setting is off. Pre-v2.30 the only way to surface
+                -- knowledge was via autoDupe, which silently rolled the
+                -- "known" state into a blanket "Random affix" label
+                -- whenever the dupe-allow flag was off.
+                local playerKnows = affix.description
+                    and EC_compCache.playerHasAffixDescription
+                    and EC_compCache.playerHasAffixDescription(affix.description)
+                    or false
+                local autoDupe = DB.affixAllowExactDupes and playerKnows
                 if manualAllow or autoDupe then
                     -- v2.27.0: list-destination label wins over the
                     -- auto-dupe info text. The destination tells the
@@ -337,16 +348,35 @@ local function EC_AnnotateTooltip(tooltip)
                             statusLine = "|cff66ccff[EC]|r |cffffea80Allowed - Choose List|r"
                         end
                     else
-                        -- autoDupe only, not on any list - keep the
-                        -- v2.23.0 informational label.
+                        -- autoDupe only, not on any list. v2.30.x label
+                        -- family rewrite: "Allowed - <name> known"
+                        -- (dropped the "already" word + the explicit
+                        -- "rank N" suffix for brevity per the plan §4.6
+                        -- Issue A). Matches the new
+                        -- "Protected - Affix found" / "Protected - Affix
+                        -- known" / "Allowed - <name> known" trio.
                         statusLine = string.format(
-                            "|cff66ccff[EC]|r |cffb6ffb6Allowed - %s %s already known|r",
-                            affix.name or "affix",
-                            (affix.rank and ("rank " .. affix.rank)) or ""
+                            "|cff66ccff[EC]|r |cffb6ffb6Allowed - %s known|r",
+                            affix.name or "affix"
                         )
                     end
+                elseif playerKnows then
+                    -- v2.30.x: surface the "you have this affix at this
+                    -- rank, protection still applies because dupe-allow is
+                    -- off" state distinctly. Pre-v2.30 this collapsed into
+                    -- the blanket "Random affix" label and the player
+                    -- couldn't tell at a glance which protected items they
+                    -- could safely manually allow. Users who toggle
+                    -- DB.affixAllowExactDupes ON will see this label flip
+                    -- to "Allowed - <name> known" automatically.
+                    statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Affix known|r"
                 else
-                    statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Random affix|r"
+                    -- v2.30.x: relabel from "Random affix" to "Affix
+                    -- found" per the plan §4.6 Issue A. "Found" reads as
+                    -- "we detected a random affix on this item" which is
+                    -- more accurate than "random affix" (which suggested
+                    -- the affix itself was random, not its presence).
+                    statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Affix found|r"
                 end
             end
         end

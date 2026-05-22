@@ -1756,7 +1756,7 @@ Stage 8d invariants (enforced by `tests/test_perf_guardrails.lua` Test 39):
 - No bare `EC_InstallBagContextHookOnce()` call sites anywhere; no bare
   `EC_GetListTable()` call sites inside `EbonClearance_BagContextMenu.lua`.
 
-### Stage 8e-i: extract EbonClearance_ProcessBagsPanel.lua (commit `<pending>`)
+### Stage 8e-i: extract EbonClearance_ProcessBagsPanel.lua (commit `7db22bf`)
 
 Stage 8e-i moves the v2.22.0 Process Bags Interface Options panel
 (~662 LOC moved, file is ~709 LOC with header) to

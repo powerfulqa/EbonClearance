@@ -7635,18 +7635,45 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
 end)
 
 
--- Register sub-panels in alphabetical order
-InterfaceOptions_AddCategory(CharPanel)
-InterfaceOptions_AddCategory(ScavengerPanel)
-InterfaceOptions_AddCategory(_G["EbonClearanceOptionsMerchant"])
-InterfaceOptions_AddCategory(ProfilesPanel)
-InterfaceOptions_AddCategory(ImportExportPanel)
-InterfaceOptions_AddCategory(DeletePanel)
-InterfaceOptions_AddCategory(BlacklistPanel)
-InterfaceOptions_AddCategory(BlacklistSettingsPanel)
-InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProcessBags"])
-InterfaceOptions_AddCategory(WhitelistPanel)
-InterfaceOptions_AddCategory(AccountWhitelistPanel)
+-- Register sub-panels in v2.30.x discovery order.
+--
+-- The Interface Options sidebar has no headers / separators, so the
+-- registration order IS the visible order. The grouping below follows
+-- the user's mental model:
+--
+--   1. Behaviour panels first - the settings that drive what the
+--      addon DOES every cycle:
+--        Merchant Settings   - vendor mode + per-rarity rules
+--        Protection Settings - affix / proc / equipped auto-protect
+--        Scavenger Settings  - companion automation
+--        Item Highlighting   - bag-UI border tints
+--
+--   2. List management - the data that overrides behaviour for
+--      specific items. Sibling pairs stay adjacent (Sell + Account
+--      Sell, Keep + Delete):
+--        Sell List
+--        Account Sell List
+--        Keep List
+--        Delete List
+--
+--   3. Specialised workflows + management:
+--        Process Bags     - profession (DE/Mill/Prospect/Lockpick)
+--        Profiles         - save / load named snapshots
+--        Import/Export    - share rules + lists across characters
+--
+-- IMPORTANT: don't sort alphabetically again. The previous A-Z order
+-- scattered related panels.
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsMerchant"]) -- Merchant Settings
+InterfaceOptions_AddCategory(BlacklistSettingsPanel) -- Protection Settings
+InterfaceOptions_AddCategory(ScavengerPanel) -- Scavenger Settings
+InterfaceOptions_AddCategory(CharPanel) -- Item Highlighting
+InterfaceOptions_AddCategory(WhitelistPanel) -- Sell List
+InterfaceOptions_AddCategory(AccountWhitelistPanel) -- Account Sell List
+InterfaceOptions_AddCategory(BlacklistPanel) -- Keep List
+InterfaceOptions_AddCategory(DeletePanel) -- Delete List
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProcessBags"]) -- Process Bags
+InterfaceOptions_AddCategory(ProfilesPanel) -- Profiles
+InterfaceOptions_AddCategory(ImportExportPanel) -- Import/Export
 
 -- v2.11.0 reactive panel layout. The Interface Options frame is user-
 -- resizable in some UI mod packs (and the resize handle is exposed as a

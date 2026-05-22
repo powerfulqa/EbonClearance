@@ -1712,7 +1712,7 @@ Stage 8c invariants (enforced by `tests/test_perf_guardrails.lua` Test 38):
   by Tooltip.
 - No bare `EC_InstallTooltipHookOnce()` call sites anywhere.
 
-### Stage 8d: extract EbonClearance_BagContextMenu.lua (commit `<pending>`)
+### Stage 8d: extract EbonClearance_BagContextMenu.lua (commit `af81c07`)
 
 Stage 8d moves the Alt+Right-Click bag-item quick-action popup
 (~375 LOC) to `EbonClearance_BagContextMenu.lua`. A custom popup

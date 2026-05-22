@@ -4139,6 +4139,11 @@ local function EC_PreviewSellable()
     end
     return count, copper
 end
+-- Exposed to split files. The minimap mouse-over tooltip (now in
+-- EbonClearance_Minimap.lua post-Stage-8b) calls this for its
+-- "Sellable now: N items" + "Est. value: ..." lines. Also reachable
+-- by the LDB launcher's `OnTooltipShow`.
+NS.PreviewSellable = EC_PreviewSellable
 
 -- The Release-1 bag-display layer (sell-border tint helpers, the
 -- NS.RefreshSellBorders body, the sellability-trace inspector that
@@ -5568,215 +5573,11 @@ local function AddSlider(parent, name, anchor, labelText, minVal, maxVal, step, 
     return s
 end
 
-local function EC_UpdateMinimapPos()
-    local btn = _G["EbonClearanceMinimapButton"]
-    if not btn then
-        return
-    end
-    local angle = math.rad(DB and DB.minimapButtonAngle or 220)
-    local x = math.cos(angle) * 80
-    local y = math.sin(angle) * 80
-    btn:ClearAllPoints()
-    btn:SetPoint("CENTER", Minimap, "CENTER", x, y)
-end
+-- The minimap button, LDB launcher, and combat-vendor button live in
+-- EbonClearance_Minimap.lua after Stage 8b of the file split. Exposed
+-- as NS.CreateMinimapButton, NS.CreateLDBLauncher,
+-- NS.CreateTargetMerchantButton, NS.UpdateMinimapPos.
 
-local function EC_CreateMinimapButton()
-    if not DB then
-        return
-    end
-    if _G["EbonClearanceMinimapButton"] then
-        return
-    end -- only create once
-
-    local btn = CreateFrame("Button", "EbonClearanceMinimapButton", Minimap)
-    btn:SetSize(31, 31)
-    btn:SetFrameStrata("MEDIUM")
-    btn:SetFrameLevel(8)
-    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
-    btn:RegisterForDrag("LeftButton")
-
-    -- Circular background
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Background")
-    bg:SetSize(53, 53)
-    bg:SetPoint("CENTER", btn, "CENTER", -1, 1)
-
-    -- Icon
-    local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
-    icon:SetSize(20, 20)
-    icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
-    btn.icon = icon
-
-    -- Border ring
-    local border = btn:CreateTexture(nil, "OVERLAY")
-    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    border:SetSize(53, 53)
-    border:SetPoint("CENTER", btn, "CENTER", 10, -10)
-
-    EC_UpdateMinimapPos()
-
-    local dragging = false
-
-    btn:SetScript("OnDragStart", function(self)
-        dragging = true
-    end)
-
-    btn:SetScript("OnDragStop", function(self)
-        dragging = false
-        EC_UpdateMinimapPos()
-    end)
-
-    btn:SetScript("OnUpdate", function(self)
-        if not dragging then
-            return
-        end
-        if not IsMouseButtonDown("LeftButton") then
-            dragging = false
-            return
-        end
-        local mx, my = Minimap:GetCenter()
-        local scale = Minimap:GetEffectiveScale()
-        local cx, cy = GetCursorPosition()
-        cx = cx / scale
-        cy = cy / scale
-        local angle = math.deg(math.atan2(cy - my, cx - mx))
-        if DB then
-            DB.minimapButtonAngle = angle
-        end
-        EC_UpdateMinimapPos()
-    end)
-
-    btn:SetScript("OnClick", function(self, button)
-        if button == "LeftButton" then
-            -- Combat lockdown blocks the InterfaceOptions panel-swap path;
-            -- queue the open so it fires the moment combat ends. The user
-            -- gets a one-line note so silent no-op doesn't look broken.
-            if InCombatLockdown and InCombatLockdown() then
-                EC_compCache.pendingOpenAfterCombat = "main"
-                PrintNice("|cffffb84dSettings will open when combat ends.|r")
-                return
-            end
-            InterfaceOptionsFrame_OpenToCategory(MainOptions)
-            InterfaceOptionsFrame_OpenToCategory(MainOptions)
-        elseif button == "MiddleButton" then
-            local pbp = _G["EbonClearanceOptionsProcessBags"]
-            if pbp and InterfaceOptionsFrame_OpenToCategory then
-                if InCombatLockdown and InCombatLockdown() then
-                    EC_compCache.pendingOpenAfterCombat = "process"
-                    PrintNice("|cffffb84dProcess Bags will open when combat ends.|r")
-                    return
-                end
-                -- Double-call is the 3.3.5a workaround for the first
-                -- OpenToCategory landing on the parent's main panel
-                -- instead of the requested sub-panel.
-                InterfaceOptionsFrame_OpenToCategory(pbp)
-                InterfaceOptionsFrame_OpenToCategory(pbp)
-            end
-        elseif button == "RightButton" then
-            if not DB then
-                return
-            end
-            DB.enabled = not DB.enabled
-            local state = DB.enabled and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
-            PrintNice("Addon " .. state)
-            if self.icon then
-                self.icon:SetDesaturated(not DB.enabled)
-            end
-        end
-    end)
-
-    -- Apply initial desaturation if disabled
-    if DB and DB.enabled == false then
-        icon:SetDesaturated(true)
-    end
-
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("EbonClearance")
-        GameTooltip:AddLine("Left: Options  |  Middle: Process Bags  |  Right: Toggle Addon", 1, 1, 1)
-        local stateStr = (DB and DB.enabled ~= false) and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
-        GameTooltip:AddLine("Status: " .. stateStr)
-        local freeSlots = EC_GetFreeBagSlots()
-        local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
-        GameTooltip:AddLine("Free bag slots: " .. slotColor .. freeSlots .. "|r")
-
-        local sellCount, sellCopper = EC_PreviewSellable()
-        GameTooltip:AddLine(string.format("Sellable now: |cffffff00%d|r items", sellCount))
-        if sellCopper > 0 then
-            GameTooltip:AddLine("Est. value: " .. CopperToColoredText(sellCopper))
-        end
-        GameTooltip:Show()
-    end)
-
-    btn:SetScript("OnLeave", function(self)
-        GameTooltip:Hide()
-    end)
-end
-
--- Hidden SecureActionButton that registers a keybinding to /target the Goblin
--- Merchant. The button is never shown; its only job is to sink the keybind
--- registered via BINDING_HEADER_EBONCLEARANCE near the slash commands. The
--- macrotext attribute is set at creation so it remains functional inside
--- InCombatLockdown() (secure click from a player hardware event).
-local function EC_CreateTargetMerchantButton()
-    if _G.EbonClearanceTargetMerchantButton then
-        return
-    end
-    local btn = CreateFrame("Button", "EbonClearanceTargetMerchantButton", UIParent, "SecureActionButtonTemplate")
-    btn:RegisterForClicks("AnyUp")
-    btn:SetAttribute("type", "macro")
-    btn:SetAttribute("macrotext", "/target " .. TARGET_NAME)
-    btn:Hide()
-end
-
--- Optional LibDataBroker-1.0 launcher. No-op if LibStub or LDB is not present,
--- so users on Titan Panel / Bazooka / ChocolateBar / etc. get an entry in
--- their display addon without us taking a hard dependency on anything.
-local function EC_CreateLDBLauncher()
-    if not _G.LibStub then
-        return
-    end
-    local LDB = _G.LibStub("LibDataBroker-1.0", true)
-    if not LDB then
-        return
-    end
-    if LDB.GetDataObjectByName and LDB:GetDataObjectByName("EbonClearance") then
-        return
-    end
-
-    LDB:NewDataObject("EbonClearance", {
-        type = "launcher",
-        label = "EbonClearance",
-        icon = "Interface\\Icons\\INV_Misc_Coin_01",
-        OnClick = function(_, button)
-            if button == "RightButton" then
-                if not DB then
-                    return
-                end
-                DB.enabled = not DB.enabled
-                PrintNice("Addon " .. (DB.enabled and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"))
-            else
-                InterfaceOptionsFrame_OpenToCategory(MainOptions)
-                InterfaceOptionsFrame_OpenToCategory(MainOptions)
-            end
-        end,
-        OnTooltipShow = function(tt)
-            tt:AddLine("EbonClearance")
-            tt:AddLine("Left-click: Options  |  Right-click: Toggle", 1, 1, 1)
-            local stateStr = (DB and DB.enabled ~= false) and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
-            tt:AddLine("Status: " .. stateStr)
-            local freeSlots = EC_GetFreeBagSlots()
-            local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
-            tt:AddLine("Free bag slots: " .. slotColor .. freeSlots .. "|r")
-            local count, copper = EC_PreviewSellable()
-            tt:AddLine(string.format("Sellable now: |cffffff00%d|r items", count))
-            if copper > 0 then
-                tt:AddLine("Est. value: " .. CopperToColoredText(copper))
-            end
-        end,
-    })
-end
 
 -- v2.13.3: removed the dormant vendor-button cluster (EC_vendorButton,
 -- EC_CreateVendorButton, EC_SaveVendorButtonPos, EC_UpdateVendorButtonVisibility,
@@ -10295,10 +10096,10 @@ f:SetScript("OnEvent", function(self, event, ...)
             if NS.ApplyGreedyChatFilter then
                 NS.ApplyGreedyChatFilter()
             end
-            EC_CreateMinimapButton()
+            NS.CreateMinimapButton()
             EC_InstallTooltipHookOnce()
-            EC_CreateLDBLauncher()
-            EC_CreateTargetMerchantButton()
+            NS.CreateLDBLauncher()
+            NS.CreateTargetMerchantButton()
             EC_InstallBagContextHookOnce()
             EC_manualSell.installHookOnce()
         elseif addonName == "Bagnon" then

@@ -1623,6 +1623,53 @@ Stage 8 invariants (enforced by `tests/test_perf_guardrails.lua` Test 36):
 - `NS.GetVersion` / `NS.GetFreeBagSlots` / `NS.CopperToColoredText` /
   `NS.EnsureDB` exposures all present.
 
+### Stage 8b: extract EbonClearance_Minimap.lua (commit `<pending>`)
+
+Stage 8b moves the minimap button + LDB launcher + the combat-vendor
+SecureActionButton to `EbonClearance_Minimap.lua` (~210 LOC). Three
+self-contained UI buttons that live OUTSIDE the Interface Options
+panel hierarchy.
+
+Moved into Minimap:
+
+- `EC_UpdateMinimapPos` (positions the minimap button using
+  `DB.minimapAngle`).
+- `EC_CreateMinimapButton` (draggable minimap button with left /
+  middle / right-click bindings: options / Process Bags / toggle;
+  hover tooltip showing free bag slots, sellable count, est. value).
+- `EC_CreateTargetMerchantButton` (hidden SecureActionButton dispatched
+  through by the "Target Goblin Merchant" key binding — combat-lockdown safe).
+- `EC_CreateLDBLauncher` (LibDataBroker plugin for users running
+  Bazooka / ChocolateBar / etc.).
+
+Cross-file reach pattern:
+
+- Both main settings panel (`EbonClearanceOptionsMain`) and Process Bags
+  panel (`EbonClearanceOptionsProcessBags`) are named frames. Minimap
+  reaches them via `_G[<name>]` lookup instead of an explicit NS
+  exposure. One less NS surface to maintain.
+- Other helpers (`PreviewSellable`, `CopperToColoredText`,
+  `GetFreeBagSlots`, `PrintNice`, `PrintNicef`, `TARGET_NAME`)
+  already on NS from prior stages.
+- `EbonClearance_ToggleSettings` / `ToggleEnabled` / `ForceSell` are
+  WoW globals (Bindings.xml glue) — reachable from any file.
+
+Exposed on NS for the ADDON_LOADED branch in EbonClearance.lua:
+
+- `NS.UpdateMinimapPos`
+- `NS.CreateMinimapButton`
+- `NS.CreateTargetMerchantButton`
+- `NS.CreateLDBLauncher`
+
+Three external call sites in EbonClearance.lua's ADDON_LOADED branch
+updated to NS-qualified form.
+
+Stage 8b invariants (enforced by `tests/test_perf_guardrails.lua` Test 37):
+
+- All four `NS.<name>` exposures published by Minimap.
+- No bare `EC_CreateMinimapButton()` / `EC_CreateTargetMerchantButton()` /
+  `EC_CreateLDBLauncher()` call sites in any shipped source.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

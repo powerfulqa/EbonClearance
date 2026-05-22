@@ -50,6 +50,7 @@ local SOURCE_PATHS = {
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
+    "EbonClearance_Minimap.lua",
 }
 
 local pieces = {}
@@ -1621,6 +1622,59 @@ do
             name .. " exposed by EbonClearance.lua",
             src:find(pattern) ~= nil,
             name .. " must be published so BugReport can read the live value"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 37 (Stage 8b): minimap + LDB + combat-vendor button extracted.
+-- ---------------------------------------------------------------------------
+-- Stage 8b moves the minimap button, LDB launcher, and the SecureActionButton
+-- combat-vendor button to EbonClearance_Minimap.lua. Four entry points get
+-- published on NS for the ADDON_LOADED branch in EbonClearance.lua to call:
+do
+    for _, name in ipairs({
+        "UpdateMinimapPos",
+        "CreateMinimapButton",
+        "CreateTargetMerchantButton",
+        "CreateLDBLauncher",
+    }) do
+        check(
+            "NS." .. name .. " exposed by Minimap",
+            src:find("NS%." .. name .. "%s*=%s*EC_" .. name) ~= nil,
+            "EbonClearance_Minimap.lua must publish NS." .. name
+        )
+    end
+
+    -- No bare EC_Create*Button() / EC_CreateLDBLauncher() call sites in
+    -- the shipped source. Definition lines in Minimap are masked.
+    local function hasBareCall(s, name)
+        local cleaned = s:gsub("local function " .. name .. "%(", "local function _def_" .. name .. "(")
+        for line in cleaned:gmatch("[^\n]+") do
+            local stripped = line:gsub("^%s+", "")
+            if stripped:sub(1, 2) ~= "--" then
+                local commentAt = stripped:find("%-%-", 1, true)
+                local code = commentAt and stripped:sub(1, commentAt - 1) or stripped
+                if code:find("[^.%w_]" .. name .. "%s*%(") then
+                    return stripped
+                end
+                if code:sub(1, #name + 1) == name .. "(" then
+                    return stripped
+                end
+            end
+        end
+        return nil
+    end
+    for _, name in ipairs({
+        "EC_CreateMinimapButton",
+        "EC_CreateTargetMerchantButton",
+        "EC_CreateLDBLauncher",
+    }) do
+        local bare = hasBareCall(src, name)
+        check(
+            "no bare " .. name .. "() call sites (must be NS." .. name:gsub("^EC_", "") .. ")",
+            bare == nil,
+            "found bare call: " .. tostring(bare)
         )
     end
 end

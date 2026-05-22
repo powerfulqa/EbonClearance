@@ -1670,7 +1670,7 @@ Stage 8b invariants (enforced by `tests/test_perf_guardrails.lua` Test 37):
 - No bare `EC_CreateMinimapButton()` / `EC_CreateTargetMerchantButton()` /
   `EC_CreateLDBLauncher()` call sites in any shipped source.
 
-### Stage 8c: extract EbonClearance_Tooltip.lua (commit `<pending>`)
+### Stage 8c: extract EbonClearance_Tooltip.lua (commit `471ae04`)
 
 Stage 8c moves the bag-item tooltip annotation system to
 `EbonClearance_Tooltip.lua` (~362 LOC). The system that adds the

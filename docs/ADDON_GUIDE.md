@@ -2005,7 +2005,7 @@ Stage 8e-v invariants (Test 47): both panel frames in the new file
 EbonClearance.lua was removed in Stage 8e-vi when that panel moved
 intentionally.
 
-### Stage 8e-vi: extract EbonClearance_ProtectionPanel.lua (commit `<pending>`)
+### Stage 8e-vi: extract EbonClearance_ProtectionPanel.lua (commit `49403cb`)
 
 Stage 8e-vi moves the Protection Settings Interface Options panel
 (`BlacklistSettingsPanel` - internal frame name

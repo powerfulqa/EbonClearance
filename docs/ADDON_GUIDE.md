@@ -2124,7 +2124,7 @@ new file uses `NS.SaveProfile` / `NS.HookScrollbarAutoHide` (not bare
 locals); `EC_GetWhitelistForScope` confirmed gone from
 `EbonClearance.lua`; both registrations use `_G[]` lookups.
 
-### Stage 8e-ix-a: extract EbonClearance_MainPanel.lua (commit `<pending>`)
+### Stage 8e-ix-a: extract EbonClearance_MainPanel.lua (commit `8bfa7f8`)
 
 Stage 8e-ix-a moves the top-level "EbonClearance" Interface Options
 panel (MainOptions) + its BuildMainPanel helper into

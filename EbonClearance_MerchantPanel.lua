@@ -313,6 +313,13 @@ MerchantPanel:SetScript("OnShow", function(self)
                 end,
                 function(v)
                     DB.qualityRules[qualityIdx].enabled = v
+                    -- Per-rarity rule flip changes EC_IsSellable's
+                    -- qualityPass for every slot of this rarity.
+                    -- Repaint so slot tints track immediately. Same
+                    -- rule as the list-mutation refresh invariant.
+                    if NS.RefreshSellBorders then
+                        NS.RefreshSellBorders()
+                    end
                 end,
                 yOff
             )
@@ -425,6 +432,13 @@ MerchantPanel:SetScript("OnShow", function(self)
                 DB.qualityRules[qualityIdx].useEquippedILvl = self_:GetChecked() and true or false
                 applyInputEnabled()
                 PlaySound("igMainMenuOptionCheckBoxOn")
+                -- Toggling useEquippedILvl switches the per-rarity
+                -- rule between fixed-cap and dynamic-cap modes - same
+                -- slot verdict can flip either direction. Repaint so
+                -- tints track.
+                if NS.RefreshSellBorders then
+                    NS.RefreshSellBorders()
+                end
             end)
             cb._applyInputEnabled = applyInputEnabled
 
@@ -438,6 +452,14 @@ MerchantPanel:SetScript("OnShow", function(self)
                 end
                 DB.qualityRules[qualityIdx].maxILvl = v
                 input:SetText(tostring(v))
+                -- Cap change flips qualityPass for every slot at the
+                -- threshold; repaint so tints track. Note: this fires
+                -- on every focus-lost (every commit), which is the
+                -- right granularity - per-keystroke firing would be
+                -- wasted work.
+                if NS.RefreshSellBorders then
+                    NS.RefreshSellBorders()
+                end
             end
             input:SetScript("OnEnterPressed", function()
                 input:ClearFocus()
@@ -473,6 +495,11 @@ MerchantPanel:SetScript("OnShow", function(self)
                         DB.qualityRules[qualityIdx].bindFilter = entry.value
                         UIDropDownMenu_SetText(bindDD, entry.text)
                         PlaySound("igMainMenuOptionCheckBoxOn")
+                        -- Bind-filter change can drop or restore many
+                        -- slots from qualityPass at once; repaint.
+                        if NS.RefreshSellBorders then
+                            NS.RefreshSellBorders()
+                        end
                     end
                     UIDropDownMenu_AddButton(info, _level)
                 end

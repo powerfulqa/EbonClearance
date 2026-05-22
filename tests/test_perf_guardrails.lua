@@ -2023,6 +2023,93 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 42 (Issue B fix): every settings OnClick that writes a verdict-
+-- impacting DB field must call NS.RefreshSellBorders so the slot tints
+-- track the user's setting change immediately.
+-- ---------------------------------------------------------------------------
+-- Pre-fix behaviour: toggling the "Allow exact-rank duplicates" checkbox
+-- (or any of the other affix / proc / per-rarity setting toggles) wrote
+-- the SV but did not refresh the slot-border tint registry, so users had
+-- to close and reopen their bags to see the new verdict reflected in
+-- the host bag UI. Same root rule as Test 26 (list mutations) - any
+-- write to a DB field that EC_IsSellable reads must repaint.
+--
+-- The check: for each pattern below, scan the full source for every
+-- occurrence and verify NS.RefreshSellBorders appears in the next ~25
+-- lines (~1000 chars) of source. Multiple matches for the same field
+-- (e.g. protectAffixedRareItems wired twice in the same build callback)
+-- all need the call - prevents future regressions where a future
+-- contributor adds a fresh SetScript handler and forgets the refresh.
+do
+    local function eachOccurrence(pattern, fn)
+        local startPos = 1
+        while true do
+            local s, e = src:find(pattern, startPos)
+            if not s then
+                return
+            end
+            fn(s, e)
+            startPos = e + 1
+        end
+    end
+
+    local function checkRefreshAfter(pattern, fieldLabel)
+        local missing = 0
+        local total = 0
+        eachOccurrence(pattern, function(_, e)
+            total = total + 1
+            local window = src:sub(e + 1, e + 1000)
+            if not window:find("NS%.RefreshSellBorders") then
+                missing = missing + 1
+            end
+        end)
+        check(
+            "every write to " .. fieldLabel .. " is followed by NS.RefreshSellBorders",
+            total > 0 and missing == 0,
+            string.format(
+                "expected refresh after each %s write; found %d write(s), %d missing the call within 1000 chars",
+                fieldLabel,
+                total,
+                missing
+            )
+        )
+    end
+
+    checkRefreshAfter(
+        "DB%.enableDeletion%s*=%s*delCB:GetChecked",
+        "DB.enableDeletion (Deletion panel)"
+    )
+    checkRefreshAfter(
+        "DB%.affixAllowExactDupes%s*=%s*cb:GetChecked",
+        "DB.affixAllowExactDupes (BlacklistSettings panel)"
+    )
+    checkRefreshAfter(
+        "DB%.protectAffixedRareItems%s*=%s*cb:GetChecked",
+        "DB.protectAffixedRareItems (CharPanel + BlacklistSettings)"
+    )
+    checkRefreshAfter(
+        "DB%.protectChanceOnHitItems%s*=%s*cb:GetChecked",
+        "DB.protectChanceOnHitItems (CharPanel)"
+    )
+    checkRefreshAfter(
+        "DB%.qualityRules%[qualityIdx%]%.enabled%s*=%s*v",
+        "DB.qualityRules[qualityIdx].enabled (Merchant per-rarity)"
+    )
+    checkRefreshAfter(
+        "DB%.qualityRules%[qualityIdx%]%.useEquippedILvl%s*=%s*self_:GetChecked",
+        "DB.qualityRules[qualityIdx].useEquippedILvl (Merchant per-rarity)"
+    )
+    checkRefreshAfter(
+        "DB%.qualityRules%[qualityIdx%]%.maxILvl%s*=%s*v",
+        "DB.qualityRules[qualityIdx].maxILvl (Merchant per-rarity input commit)"
+    )
+    checkRefreshAfter(
+        "DB%.qualityRules%[qualityIdx%]%.bindFilter%s*=%s*entry%.value",
+        "DB.qualityRules[qualityIdx].bindFilter (Merchant per-rarity dropdown)"
+    )
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

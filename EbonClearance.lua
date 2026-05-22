@@ -6375,6 +6375,14 @@ DeletePanel:SetScript("OnShow", function(self)
         delCB:SetScript("OnClick", function()
             DB.enableDeletion = delCB:GetChecked() and true or false
             PlaySound("igMainMenuOptionCheckBoxOn")
+            -- Toggling deletion changes EC_IsSellable / BuildQueue's
+            -- delete-list verdict for every Delete List slot. Repaint
+            -- so the slot tints track immediately without requiring a
+            -- bag close/reopen. Same rule as the list-mutation refresh
+            -- invariant (Test 26 in test_perf_guardrails.lua).
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
         end)
 
         self.listUI = CreateListUI(self, "Delete List", "deleteList", 16, -130)
@@ -7302,6 +7310,18 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         autoAffixCB:SetScript("OnClick", function(cb)
             DB.protectAffixedRareItems = cb:GetChecked() and true or false
             PlaySound("igMainMenuOptionCheckBoxOn")
+            -- Same refresh as the second autoAffixCB OnClick handler
+            -- below (line ~7392). This first handler is replaced by
+            -- the second a few lines later within the same build
+            -- callback, so the body never runs in practice - but the
+            -- refresh is included for symmetry so the verdict-toggle
+            -- refresh invariant (Test 42) catches BOTH SetScript sites
+            -- without special-casing the dead one. Future contributors
+            -- who add a third autoAffixCB:SetScript will get the
+            -- refresh by default.
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
         end)
         self.autoAffixCB = autoAffixCB
 
@@ -7342,6 +7362,14 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         dupeAffixCB:SetScript("OnClick", function(cb)
             DB.affixAllowExactDupes = cb:GetChecked() and true or false
             PlaySound("igMainMenuOptionCheckBoxOn")
+            -- Toggling the dupe-allow flag changes EC_IsSellable's
+            -- verdict for every affixed Rare/Epic item the player has
+            -- already extracted. Without this refresh, slot tints stay
+            -- frozen until the host bag UI repaints (bag close/reopen).
+            -- Same rule as the list-mutation refresh invariant.
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
         end)
         self.dupeAffixCB = dupeAffixCB
 
@@ -7392,6 +7420,13 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             DB.protectAffixedRareItems = cb:GetChecked() and true or false
             PlaySound("igMainMenuOptionCheckBoxOn")
             UpdateDupeAffixEnabled()
+            -- Toggling the master affix-protection flag flips
+            -- EC_IsSellable's verdict for every affixed Rare/Epic slot.
+            -- Repaint so the borders track immediately. Same rule as
+            -- the list-mutation refresh invariant.
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
         end)
 
         -- v2.20.0 Chance-on-hit protection. Sibling toggle to the affix
@@ -7444,6 +7479,13 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         procCB:SetScript("OnClick", function(cb)
             DB.protectChanceOnHitItems = cb:GetChecked() and true or false
             PlaySound("igMainMenuOptionCheckBoxOn")
+            -- Same reasoning as the affix-protection toggles: flipping
+            -- this changes EC_IsSellable's verdict for every chance-on-
+            -- hit item not on the Allow Sell list. Repaint immediately
+            -- so the user sees the effect of their setting change.
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
         end)
 
         EC_FitScrollContent(content, procNote)

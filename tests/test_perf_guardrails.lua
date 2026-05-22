@@ -53,6 +53,7 @@ local SOURCE_PATHS = {
     "EbonClearance_SellListPanels.lua",
     "EbonClearance_KeepDeletePanels.lua",
     "EbonClearance_ProtectionPanel.lua",
+    "EbonClearance_ItemHighlightingPanel.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -2548,6 +2549,64 @@ do
     check(
         "Protection Settings panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsBlacklistSettings"%]%)') ~= nil,
+        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 49 (Stage 8e-vii): Item Highlighting panel extracted + dead code
+-- cleanup.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-vii moves CharPanel (Item Highlighting, internal frame name
+-- "EbonClearanceOptionsCharacter" preserved) into
+-- EbonClearance_ItemHighlightingPanel.lua. The dead CreateNameListUI
+-- function (orphaned in §4.5 when the per-character allowlist UI was
+-- decommissioned) is dropped in the same stage. Test 2 in
+-- test_layout_reactivity.lua was updated to remove the now-obsolete
+-- CreateNameListUI box:OnSizeChanged check.
+do
+    local ihFile = io.open("EbonClearance_ItemHighlightingPanel.lua", "rb")
+    if ihFile then
+        local ihSrc = ihFile:read("*a") or ""
+        ihFile:close()
+        check(
+            "CharPanel frame in EbonClearance_ItemHighlightingPanel.lua",
+            ihSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsCharacter"') ~= nil,
+            "CharPanel (Item Highlighting) frame must live in EbonClearance_ItemHighlightingPanel.lua (Stage 8e-vii)"
+        )
+        check(
+            "Item Highlighting panel name preserved",
+            ihSrc:find('CharPanel%.name%s*=%s*"Item Highlighting"') ~= nil,
+            "the v2.30.x panel name 'Item Highlighting' must survive the extraction"
+        )
+        local code = (ihSrc:gsub("\n%-%-[^\n]*", ""))
+        check(
+            "EbonClearance_ItemHighlightingPanel.lua uses NS.MakeHeader (not bare MakeHeader)",
+            code:find("NS%.MakeHeader%(") ~= nil
+                and code:find("[^.%w_]MakeHeader%(") == nil,
+            "panel build must call NS.MakeHeader (the local lives in EbonClearance.lua)"
+        )
+    end
+
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        check(
+            "CharPanel no longer created in EbonClearance.lua",
+            ecSrc:find('local CharPanel%s*=%s*CreateFrame') == nil,
+            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-vii extracted frame"
+        )
+        check(
+            "CreateNameListUI (dead code) dropped from EbonClearance.lua",
+            ecSrc:find('local function CreateNameListUI') == nil,
+            "CreateNameListUI was orphaned in §4.5 (per-character allowlist UI decommission) and should be dropped in Stage 8e-vii"
+        )
+    end
+
+    check(
+        "Item Highlighting panel registered via _G lookup",
+        src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsCharacter"%]%)') ~= nil,
         "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end

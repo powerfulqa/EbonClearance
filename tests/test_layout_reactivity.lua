@@ -15,7 +15,7 @@
 -- structural mistakes that caused the original v2.11.0 regression report:
 --
 --   1. Bare :SetWidth(EC_PANEL_WIDTH - X) outside the registered helpers.
---   2. CreateListUI / CreateNameListUI missing the box:OnSizeChanged hook.
+--   2. CreateListUI missing the box:OnSizeChanged hook.
 --   3. Panels using CreateListUI without the ClearAllPoints + BOTTOMRIGHT
 --      anchor follow-up (so list rows can stretch with the parent).
 --   4. List row text using SetWidth instead of TOPLEFT + TOPRIGHT anchors.
@@ -39,6 +39,7 @@ local SOURCE_PATHS = {
     "EbonClearance_SellListPanels.lua",
     "EbonClearance_KeepDeletePanels.lua",
     "EbonClearance_ProtectionPanel.lua",
+    "EbonClearance_ItemHighlightingPanel.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -108,9 +109,9 @@ do
 end
 
 -- ---------------------------------------------------------------------------
--- Test 2: CreateListUI and CreateNameListUI must each install an
--- OnSizeChanged hook on their `box` so the ScrollChild content (and
--- therefore the rows anchored to it) tracks parent resize.
+-- Test 2: CreateListUI must install an OnSizeChanged hook on its
+-- `box` so the ScrollChild content (and therefore the rows anchored
+-- to it) tracks parent resize.
 --
 -- v2.18.0 split CreateListUI: the scroll-area setup (including the
 -- OnSizeChanged hook) moved into `EC_compCache.buildListScrollArea`,
@@ -118,7 +119,9 @@ end
 -- hook just lives in the extracted helper instead of inline. The
 -- check follows the call by accepting the hook anywhere in either the
 -- function's own body or the buildListScrollArea helper's body.
--- CreateNameListUI hasn't been split; its hook stays inline.
+--
+-- v2.30.x (Stage 8e-vii) dropped CreateNameListUI as dead code; the
+-- second arm of this test that locked its hook is no longer needed.
 -- ---------------------------------------------------------------------------
 do
     local function bodyOf(funcName, funcPrefix)
@@ -159,14 +162,14 @@ do
         listInline or listInHelper,
         "missing - rows inside CreateListUI will not stretch with the panel on resize"
             .. " (checked CreateListUI body and EC_compCache.buildListScrollArea)")
-
-    local ok2 = listBodyHasHook("CreateNameListUI")
-    check("CreateNameListUI installs box:OnSizeChanged", ok2,
-        "missing - rows inside CreateNameListUI will not stretch with the panel on resize")
+    -- The Stage 8e-vii CharPanel extraction dropped CreateNameListUI (it
+    -- was orphaned in §4.5 when the per-character allowlist UI was
+    -- decommissioned). The corresponding box:OnSizeChanged check is
+    -- removed since the function no longer exists.
 end
 
 -- ---------------------------------------------------------------------------
--- Test 3: every panel that uses CreateListUI / CreateNameListUI must
+-- Test 3: every panel that uses CreateListUI must
 -- follow up with ClearAllPoints + BOTTOMRIGHT anchor so the list box
 -- itself tracks the panel size. Without this the box stays at its
 -- build-time width and the OnSizeChanged inside the helper is never
@@ -174,10 +177,12 @@ end
 -- ---------------------------------------------------------------------------
 do
     local panelsMissingAnchor = {}
-    -- Capture each "self.listUI = CreateListUI/CreateNameListUI(..." line plus
+    -- Capture each "self.listUI = (NS.)?CreateListUI(..." line plus
     -- the next ~6 lines of context. If "ClearAllPoints" and "BOTTOMRIGHT"
     -- aren't both present in that block, the panel doesn't anchor properly.
-    for callLine in src:gmatch("(self%.listUI = Create[N]?a?m?e?ListUI%([^\n]*)") do
+    -- v2.30.x panels call NS.CreateListUI from split files; the bare
+    -- `CreateListUI(` form is the original in-EbonClearance.lua call site.
+    for callLine in src:gmatch("(self%.listUI = N?S?%.?CreateListUI%([^\n]*)") do
         local startIdx = src:find(callLine, 1, true)
         if startIdx then
             local block = src:sub(startIdx, startIdx + 600) -- ~10-15 lines

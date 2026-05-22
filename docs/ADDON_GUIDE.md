@@ -2040,6 +2040,46 @@ in EbonClearance.lua); uses `NS.MakeHeader` / `NS.FitScrollContent`
 (not bare locals); Issue B refresh calls preserved; registration
 uses `_G[]` lookup.
 
+### Stage 8e-vii: extract EbonClearance_ItemHighlightingPanel.lua (commit `<pending>`)
+
+Stage 8e-vii moves the Item Highlighting Interface Options panel
+(`CharPanel` - internal frame name `EbonClearanceOptionsCharacter`
+preserved from the pre-v2.30.x "Character Settings" schema) into
+`EbonClearance_ItemHighlightingPanel.lua`. ~200 LOC of CharPanel +
+OnShow moved; new file is ~242 LOC with header.
+
+**Zero new NS exposures needed** - the panel only uses
+`NS.MakeHeader` + `NS.MakeLabel` (both already exposed in 8e-i).
+Per-category enable checkboxes and colour buttons are built inline
+inside the SELL_BORDER_CATEGORIES iteration loop.
+
+**Bonus cleanups bundled into this stage:**
+
+1. **Drop dead `CreateNameListUI` (~170 LOC).** Orphaned in §4.5 when
+   the per-character allowlist UI was decommissioned (panel renamed
+   from "Character Settings" to "Item Highlighting"). Zero call sites
+   confirmed via grep across all shipped files.
+2. **Strip orphan comment headers** left behind by Stages 8e-v / 8e-vi.
+   The `"v2.15.0 Blacklist (Do Not Sell) Panel"` and `"v2.15.0
+   Protection Settings sub-panel"` docstrings survived their panel
+   extractions; ~40 lines of stale documentation removed from
+   `EbonClearance.lua`.
+3. **Update `tests/test_layout_reactivity.lua` Test 2**: removed the
+   `CreateNameListUI installs box:OnSizeChanged` check (function no
+   longer exists). Test 3's regex extended from
+   `Create[N]?a?m?e?ListUI` to `N?S?%.?CreateListUI` so it matches
+   both the bare-local form in EbonClearance.lua AND the `NS.CreateListUI`
+   form used by split panel files.
+
+Registration converted to `_G[]` lookup. .toc loads the new file
+BEFORE `EbonClearance.lua`. DB captured at OnShow entry.
+
+Stage 8e-vii invariants (Test 49): CharPanel frame in the new file
+(not duplicated in EbonClearance.lua); panel name "Item Highlighting"
+preserved; new file uses `NS.MakeHeader` (not bare local);
+`CreateNameListUI` confirmed dropped from EbonClearance.lua;
+registration uses `_G[]` lookup.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

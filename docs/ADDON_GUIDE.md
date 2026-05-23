@@ -2165,7 +2165,7 @@ MainOptions + BuildMainPanel confirmed gone from `EbonClearance.lua`;
 no bare `MainOptions` identifier references remain; registration
 uses `_G[]` lookup.
 
-### Stage 8e-ix-b: extract EbonClearance_PanelInfra.lua (commit `<pending>`)
+### Stage 8e-ix-b: extract EbonClearance_PanelInfra.lua (commit `04d791c`)
 
 Stage 8e-ix-b moves the panel-infrastructure block (the foundation
 that every Interface Options panel in the addon depends on) into

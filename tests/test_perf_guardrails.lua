@@ -3423,6 +3423,119 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 57: Fast Loot AntiDoS throttle.
+-- ---------------------------------------------------------------------------
+-- AzerothCore antidos_opcode_policies caps per-opcode packets/sec at
+-- 5-8 by default. A tight `for i = 1, GetNumLootItems() do LootSlot(i) end`
+-- loop on a multi-slot corpse exceeds that threshold and triggers a
+-- KickPlayer action on PE-style servers. EC's v2.21.0 Fast Loot refactor
+-- uses an OnUpdate-driven queue throttled to one LootSlot call per
+-- ~110 ms; this test locks that design so a future refactor cannot
+-- silently regress to a tight loop without CI catching it.
+do
+    -- Strip comment lines (per-line %-%- prefix) so docstrings referencing
+    -- the bad pattern as a counter-example don't false-positive on the
+    -- negative invariants below.
+    local code = (src:gsub("\n[^\n]*", function(line)
+        local at = line:find("%-%-", 1, false)
+        if not at then return line end
+        return line:sub(1, at - 1)
+    end))
+
+    -- 1. Queue table present with safe delay (>= 0.10 s = 100 ms).
+    --    Pattern matches `lootQueue = { ... delay = 0.NN ... }`. Uses
+    --    `.-` (non-greedy any-char) rather than `[^}]-` so the match
+    --    spans nested table literals like `slots = {}` that appear
+    --    before the delay field.
+    local delayStr = src:match("lootQueue%s*=%s*{.-delay%s*=%s*(0%.%d+)")
+    local delay = tonumber(delayStr or "")
+    check(
+        "Fast Loot lootQueue.delay >= 0.10 (AntiDoS throttle floor)",
+        delay ~= nil and delay >= 0.10,
+        "Fast Loot drain must throttle at >= 100 ms to stay below AzerothCore "
+            .. "AntiDoS opcode rate limits (MaxAllowedCount is typically 5-8 "
+            .. "packets/sec). Found: " .. tostring(delayStr)
+    )
+
+    -- 2. OnUpdate driver consults the throttle interval before each
+    --    LootSlot call. Look for the time-since-last gate.
+    check(
+        "Fast Loot OnUpdate body checks (GetTime - lastLootAt) < delay",
+        src:find("GetTime%(%)%s*%-%s*qs%.lastLootAt") ~= nil
+            and src:find("<%s*qs%.delay") ~= nil,
+        "the OnUpdate driver must consult qs.delay between LootSlot calls; "
+            .. "without this gate the queue would drain in a single frame and "
+            .. "trigger AntiDoS"
+    )
+
+    -- 3. Exactly one bare `LootSlot(` call in shipped code (comment-
+    --    stripped). The legitimate call is the throttled LootSlot(slotIdx)
+    --    inside the OnUpdate body. The "LootSlot" string literal in
+    --    hooksecurefunc("LootSlot", ...) doesn't match because it's inside
+    --    quotes. ConfirmLootSlot(slot) doesn't match because the preceding
+    --    char "m" is alphanumeric (excluded by [^%w_]).
+    local lootSlotCalls = 0
+    for _ in code:gmatch("[^%w_]LootSlot%(") do
+        lootSlotCalls = lootSlotCalls + 1
+    end
+    check(
+        "exactly one LootSlot() call site in shipped source",
+        lootSlotCalls == 1,
+        "Fast Loot must dispatch through a single throttled LootSlot call site "
+            .. "(the OnUpdate driver). Extra call sites can bypass the "
+            .. "throttle and trigger AntiDoS kicks. Found " .. lootSlotCalls
+            .. " call site(s)."
+    )
+
+    -- 4. Negative invariant - no tight `for ... do ... LootSlot()` loop
+    --    anywhere in shipped source. Catches the kick-vulnerable pattern
+    --    even if a future contributor restores the original v2.16.0 drain
+    --    shape. The pattern matches a `for IDENT = NUM, ...` header on the
+    --    same line as a LootSlot( call (the typical one-liner) AND a
+    --    multi-line variant where the for-block contains LootSlot( before
+    --    the matching end.
+    local tightLoopOneLine = code:find(
+        "for%s+[%w_]+%s*=%s*[%w_]+%s*,[^\n]-do[^\n]-[^%w_]LootSlot%("
+    )
+    local tightLoopMultiLine = false
+    -- Scan each `for ... do` opening and look ahead bounded chars for
+    -- LootSlot( before the matching `end`. Bounded because Lua patterns
+    -- can't express balanced delimiters.
+    for openIdx in code:gmatch("()for%s+[%w_]+%s*=%s*[%w_]+%s*,[^\n]*do") do
+        local body = code:sub(openIdx, openIdx + 600)
+        if body:find("[^%w_]LootSlot%(") and not body:find("qs%.delay") then
+            tightLoopMultiLine = true
+            break
+        end
+    end
+    check(
+        "no tight `for ... do ... LootSlot()` loop in shipped source",
+        not tightLoopOneLine and not tightLoopMultiLine,
+        "Fast Loot must NOT drain via a tight for-loop; AzerothCore AntiDoS "
+            .. "will KickPlayer on packet burst. Use the EC_compCache.lootQueue "
+            .. "OnUpdate-throttled queue instead."
+    )
+
+    -- 5. LOOT_READY is the right event source. LOOT_OPENED fires earlier
+    --    and may queue against stale slot data, so it must NOT be
+    --    registered as a separate event handler. The "LOOT_OPENED"
+    --    string can still appear in comments (it does in the design
+    --    rationale comment block at line ~2120); the check uses the
+    --    comment-stripped `code` so doc references don't trip it.
+    check(
+        "LOOT_READY is registered (Fast Loot event source)",
+        src:find('RegisterEvent%("LOOT_READY"%)') ~= nil,
+        "LOOT_READY drives the lazy-build OnUpdate frame in EC_HandleLootReady"
+    )
+    check(
+        "LOOT_OPENED is NOT registered as a separate handler",
+        code:find('RegisterEvent%("LOOT_OPENED"%)') == nil,
+        "Fast Loot must consume LOOT_READY only; LOOT_OPENED can fire before "
+            .. "loot data is populated and would queue against stale slot info"
+    )
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

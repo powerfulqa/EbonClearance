@@ -2329,7 +2329,7 @@ EC_AddScanByQualityRow definitions remain in `EbonClearance.lua`
 `local EC_activeIDBox` declaration remains in `EbonClearance.lua`;
 `ChatEdit_InsertLink` hook reads `NS.activeIDBox`.
 
-### Stage 9: rename EbonClearance.lua to EbonClearance_Events.lua (commit `<pending>`)
+### Stage 9: rename EbonClearance.lua to EbonClearance_Events.lua (commit `defa02e`)
 
 The closing stage of the multi-stage file split. The original
 monolith filename was retained through stages 1-8e-ix-d so the

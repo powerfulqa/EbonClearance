@@ -35,7 +35,7 @@
 -- external dependencies so it works in CI without a luarocks step.
 
 -- Post-split: concat every shipped .lua source file. The file-split refactor
--- tracked in docs/CODE_REVIEW.md item 4 moves chunks out of EbonClearance.lua
+-- tracked in docs/CODE_REVIEW.md item 4 moves chunks out of EbonClearance_Events.lua
 -- into per-feature files (Core first, more to follow). Every static-pattern
 -- check below runs against the whole concatenated source, so invariants
 -- expressed as `src:find(...)` continue to hold across the split boundary.
@@ -59,7 +59,7 @@ local SOURCE_PATHS = {
     "EbonClearance_PanelInfra.lua",
     "EbonClearance_PanelWidgets.lua",
     "EbonClearance_ListWidget.lua",
-    "EbonClearance.lua",
+    "EbonClearance_Events.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
     "EbonClearance_Minimap.lua",
@@ -827,7 +827,7 @@ end
 -- docs/ADDON_GUIDE.md "List-mutation must call the sell-border refresh".
 -- The helper name changed from EC_RefreshSellBorders to NS.RefreshSellBorders
 -- in Stage 6 of the file split (the body moved to BagDisplay; the stub on
--- NS lives in EbonClearance.lua so cross-file callers reach it).
+-- NS lives in EbonClearance_Events.lua so cross-file callers reach it).
 local SB_REFRESH_PATTERN = "NS%.RefreshSellBorders%(%)"
 local SB_REFRESH_CONTEXT_PATTERN = "NS%.RefreshSellBorders"
 do
@@ -911,7 +911,7 @@ end
 -- on `local NS = select(2, ...)` at the top of every shipped source file
 -- AND on EC_compCache being declared exactly ONCE as a table literal
 -- (in EbonClearance_Core.lua after Stage 2) plus exactly ONCE as a
--- namespace re-alias (in EbonClearance.lua). The concat-source pattern
+-- namespace re-alias (in EbonClearance_Events.lua). The concat-source pattern
 -- the tests use means both of those declarations appear in `src`;
 -- the invariants below count them separately so a shadowing redeclaration
 -- still fails.
@@ -919,7 +919,7 @@ do
     -- Every shipped .lua file must declare `local NS = select(2, ...)`
     -- near its top - that's how each file captures the shared namespace
     -- table WoW passes as the second file-load vararg. After Stage 2
-    -- both EbonClearance_Core.lua and EbonClearance.lua have one each,
+    -- both EbonClearance_Core.lua and EbonClearance_Events.lua have one each,
     -- so the concat source contains AT LEAST 2 occurrences.
     --
     -- Plain-mode find: pass true as the 3rd arg so `()` are literal
@@ -957,7 +957,7 @@ do
     -- EC_compCache. A second literal would silently desync from
     -- NS.compCache (the alias would still point at the first table).
     -- The re-alias pattern `local EC_compCache = NS.compCache` is
-    -- expected (in EbonClearance.lua) and intentionally NOT counted here.
+    -- expected (in EbonClearance_Events.lua) and intentionally NOT counted here.
     local literalCount = 0
     for _ in src:gmatch("\nlocal EC_compCache%s*=%s*{") do
         literalCount = literalCount + 1
@@ -974,7 +974,7 @@ do
     -- Companion invariant: AT LEAST ONE re-alias `local EC_compCache = NS.compCache`.
     -- Every split file that uses the `EC_compCache.foo` upvalue idiom adds
     -- its own re-alias near the top so call sites resolve through the
-    -- file-scope local. EbonClearance.lua has one; EbonClearance_Companion.lua
+    -- file-scope local. EbonClearance_Events.lua has one; EbonClearance_Companion.lua
     -- has one; later stages will add more. If the count drops to zero,
     -- every `EC_compCache.foo` reference would resolve to global nil.
     local aliasCount = 0
@@ -992,9 +992,9 @@ end
 -- Test 29 (Stage 3): Companion module cross-file API surface.
 -- ---------------------------------------------------------------------------
 -- After Stage 3 the chat-filter / bubble-killer cluster lives in
--- EbonClearance_Companion.lua. The event hub in EbonClearance.lua calls
+-- EbonClearance_Companion.lua. The event hub in EbonClearance_Events.lua calls
 -- two entry points by name; both must be exposed on NS by Companion AND
--- called via NS by EbonClearance.lua. If anyone re-introduces an
+-- called via NS by EbonClearance_Events.lua. If anyone re-introduces an
 -- unqualified `EC_InstallGreedyMuteOnce()` / `ApplyGreedyChatFilter()`
 -- call (which would resolve to nil), CI catches it here.
 do
@@ -1012,7 +1012,7 @@ do
 
     -- No bare-identifier call sites for either helper. After the move,
     -- every call site MUST be NS-qualified - a bare call would resolve
-    -- to nil because the file-scope local is gone from EbonClearance.lua.
+    -- to nil because the file-scope local is gone from EbonClearance_Events.lua.
     -- The function-definition lines in Companion ALSO match `<name>(` so
     -- we mask them out before scanning. Comment lines are skipped.
     local function hasBareCall(s, name)
@@ -1048,7 +1048,7 @@ do
     )
 
     -- Companion captures `NS.DB` and `NS.PET_NAME_LC` inline at call time.
-    -- The mirror sites in EbonClearance.lua MUST keep writing those, so a
+    -- The mirror sites in EbonClearance_Events.lua MUST keep writing those, so a
     -- future refactor that drops the NS exposure surfaces here.
     check(
         "EnsureDB exposes NS.DB",
@@ -1067,10 +1067,10 @@ end
 -- ---------------------------------------------------------------------------
 -- After Stage 4 the affix + chance-on-hit detection cluster lives in
 -- EbonClearance_Protection.lua. Every helper is attached to EC_compCache,
--- which is the same table EbonClearance.lua's call sites already resolve
+-- which is the same table EbonClearance_Events.lua's call sites already resolve
 -- through via their re-aliased upvalue. If a future refactor moves any
 -- of these helpers off EC_compCache (e.g. as a module-level local in
--- Protection), call sites in EbonClearance.lua would resolve to nil.
+-- Protection), call sites in EbonClearance_Events.lua would resolve to nil.
 do
     local helpers = {
         "linkHasAffix",
@@ -1097,19 +1097,19 @@ do
         check(
             name .. " is namespaced under EC_compCache",
             pinned and not leakedFn,
-            name .. " must stay on EC_compCache so call sites in EbonClearance.lua resolve through the shared upvalue"
+            name .. " must stay on EC_compCache so call sites in EbonClearance_Events.lua resolve through the shared upvalue"
         )
     end
 
-    -- NS.scanTooltip exposure. EbonClearance.lua creates the named
+    -- NS.scanTooltip exposure. EbonClearance_Events.lua creates the named
     -- GameTooltip frame and writes it onto NS so Protection's bodies
     -- can dereference NS.scanTooltip lazily at call time (Protection
-    -- loads before EbonClearance.lua's main chunk so an upvalue capture
+    -- loads before EbonClearance_Events.lua's main chunk so an upvalue capture
     -- at Protection's load would store nil).
     check(
-        "NS.scanTooltip exposed by EbonClearance.lua frame creation",
+        "NS.scanTooltip exposed by EbonClearance_Events.lua frame creation",
         src:find("NS%.scanTooltip%s*=%s*EC_scanTooltip") ~= nil,
-        "EbonClearance.lua must write `NS.scanTooltip = EC_scanTooltip` immediately after creating the frame, so Protection's lazy dereference works"
+        "EbonClearance_Events.lua must write `NS.scanTooltip = EC_scanTooltip` immediately after creating the frame, so Protection's lazy dereference works"
     )
 end
 
@@ -1119,14 +1119,14 @@ end
 -- ---------------------------------------------------------------------------
 -- Stage 5 is narrowly scoped: only the deletion-popup hook moves to
 -- EbonClearance_Vendor.lua. The vendor cycle itself (EC_IsSellable,
--- BuildQueue, worker, StartRun, EC_manualSell) stays in EbonClearance.lua
+-- BuildQueue, worker, StartRun, EC_manualSell) stays in EbonClearance_Events.lua
 -- for future stages because its cross-file dependency surface is wide.
 --
 -- Two vendor-cycle scalars WERE promoted in Stage 5 prep:
 --   * running -> EC_compCache.vendorRunning
 --   * pendingDelete -> EC_compCache.pendingDelete
 -- Both initialise in Core's table literal. If a future refactor reintroduces
--- file-scope `local running` or `local pendingDelete` in EbonClearance.lua,
+-- file-scope `local running` or `local pendingDelete` in EbonClearance_Events.lua,
 -- it would silently desync from the cache table; the count check below
 -- catches that.
 do
@@ -1264,7 +1264,7 @@ do
     )
 
     -- 4. Event branch triggers the debounce frame and does NOT call
-    --    refreshKnownAffixes directly. The branch lives in EbonClearance.lua's
+    --    refreshKnownAffixes directly. The branch lives in EbonClearance_Events.lua's
     --    event-hub dispatcher; we extract it, strip comments, and assert
     --    against the resulting code (comments that mention the function
     --    name by way of explanation are fine).
@@ -1304,18 +1304,18 @@ end
 -- ---------------------------------------------------------------------------
 -- Stage 6 moves the Release-1 bag-display layer to EbonClearance_BagDisplay.lua.
 -- The forward-declared `EC_RefreshSellBorders` local was promoted to
--- NS.RefreshSellBorders so the stub (in EbonClearance.lua) and the real
+-- NS.RefreshSellBorders so the stub (in EbonClearance_Events.lua) and the real
 -- body (in BagDisplay) can live in different files. Load order in the
--- .toc puts BagDisplay AFTER EbonClearance.lua so BagDisplay's body
+-- .toc puts BagDisplay AFTER EbonClearance_Events.lua so BagDisplay's body
 -- assignment OVERWRITES the stub, not the other way around.
 do
-    -- The stub on NS (no-op). Lives in EbonClearance.lua's forward-decl
+    -- The stub on NS (no-op). Lives in EbonClearance_Events.lua's forward-decl
     -- block so the Character Settings panel toggle can call it before
     -- BagDisplay loads its real body.
     check(
         "NS.RefreshSellBorders stub declared",
         src:find("NS%.RefreshSellBorders%s*=%s*function%(%)%s*end") ~= nil,
-        "EbonClearance.lua must forward-declare `NS.RefreshSellBorders = function() end` as a no-op stub"
+        "EbonClearance_Events.lua must forward-declare `NS.RefreshSellBorders = function() end` as a no-op stub"
     )
 
     -- The real body in BagDisplay. Pattern matches both
@@ -1347,7 +1347,7 @@ do
         check(
             "BagDisplay reassigns NS.RefreshSellBorders body",
             bagDisplay:find("NS%.RefreshSellBorders%s*=%s*function%(%)") ~= nil,
-            "EbonClearance_BagDisplay.lua must reassign `NS.RefreshSellBorders = function()` with the real body (replaces the no-op stub from EbonClearance.lua)"
+            "EbonClearance_BagDisplay.lua must reassign `NS.RefreshSellBorders = function()` with the real body (replaces the no-op stub from EbonClearance_Events.lua)"
         )
         -- BagDisplay's helpers stay on EC_compCache.
         local helpers = {
@@ -1370,19 +1370,21 @@ do
         end
     end
 
-    -- The .toc loads BagDisplay AFTER EbonClearance.lua. Verifies via
-    -- the SOURCE_PATHS ordering this test file already uses (BagDisplay
-    -- last in the list). If a future contributor accidentally swaps
-    -- the order, the stub from EbonClearance.lua would clobber the real
-    -- body and the sell-border refresh would silently become a no-op.
+    -- The .toc loads BagDisplay AFTER EbonClearance_Events.lua. Verifies
+    -- via the SOURCE_PATHS ordering this test file already uses
+    -- (BagDisplay last in the list). If a future contributor accidentally
+    -- swaps the order, the stub from EbonClearance_Events.lua would
+    -- clobber the real body and the sell-border refresh would silently
+    -- become a no-op. (File was named EbonClearance_Events.lua before Stage 9
+    -- of the file split.)
     local toc = read_file("EbonClearance.toc")
     if toc then
-        local ebonIdx = toc:find("\nEbonClearance%.lua\n", 1)
+        local ebonIdx = toc:find("\nEbonClearance_Events%.lua\n", 1)
         local bagIdx = toc:find("\nEbonClearance_BagDisplay%.lua", 1)
         check(
-            ".toc loads EbonClearance_BagDisplay.lua AFTER EbonClearance.lua",
+            ".toc loads EbonClearance_BagDisplay.lua AFTER EbonClearance_Events.lua",
             ebonIdx and bagIdx and ebonIdx < bagIdx,
-            "BagDisplay's NS.RefreshSellBorders body reassignment must run AFTER EbonClearance.lua's stub assignment; reversing the .toc order would clobber the real body"
+            "BagDisplay's NS.RefreshSellBorders body reassignment must run AFTER EbonClearance_Events.lua's stub assignment; reversing the .toc order would clobber the real body"
         )
     end
 
@@ -1479,7 +1481,7 @@ end
 -- predicates + buildProcessSummary) to EbonClearance_Process.lua. The
 -- Process Bags PANEL (UI helpers + rearmProcessButton +
 -- refreshProcessPanel + updateProcessSelection + skipProcessTarget)
--- stays in EbonClearance.lua for Stage 8.
+-- stays in EbonClearance_Events.lua for Stage 8.
 do
     local helpers = {
         "canDisenchant",
@@ -1518,14 +1520,14 @@ do
 
     -- NS exposures Process depends on:
     check(
-        "NS.Delay exposed by EbonClearance.lua",
+        "NS.Delay exposed by EbonClearance_Events.lua",
         src:find("NS%.Delay%s*=%s*EC_Delay") ~= nil,
-        "Process schedules deferred callbacks via NS.Delay; EbonClearance.lua must publish the EC_Delay helper on NS"
+        "Process schedules deferred callbacks via NS.Delay; EbonClearance_Events.lua must publish the EC_Delay helper on NS"
     )
     check(
-        "NS.IsAddonEnabledForChar exposed by EbonClearance.lua",
+        "NS.IsAddonEnabledForChar exposed by EbonClearance_Events.lua",
         src:find("NS%.IsAddonEnabledForChar%s*=%s*EC_IsAddonEnabledForChar") ~= nil,
-        "Process gates on per-character enable via NS.IsAddonEnabledForChar; EbonClearance.lua must publish the helper"
+        "Process gates on per-character enable via NS.IsAddonEnabledForChar; EbonClearance_Events.lua must publish the helper"
     )
 end
 
@@ -1535,7 +1537,7 @@ end
 -- Stage 8 moves the bug-report builder (EC_CopperToPlainText,
 -- EC_BuildBugReport, EC_ShowBugReport) to EbonClearance_BugReport.lua,
 -- exposed as NS.ShowBugReport. The .toc must load it AFTER
--- EbonClearance.lua because the slash command in EbonClearance.lua
+-- EbonClearance_Events.lua because the slash command in EbonClearance_Events.lua
 -- calls NS.ShowBugReport(), and that name must be populated by the
 -- time the command runs (file-load order guarantees that).
 --
@@ -1546,7 +1548,7 @@ end
 --   * EC_lastScavengerOut -> EC_compCache.lastScavengerOut
 --   * EC_addonDismissed   -> EC_compCache.addonDismissed
 -- Plus four cross-file helpers exposed on NS so the bug-report builder
--- can read live values from EbonClearance.lua:
+-- can read live values from EbonClearance_Events.lua:
 --   * NS.GetVersion / NS.GetFreeBagSlots / NS.CopperToColoredText / NS.EnsureDB
 do
     check(
@@ -1582,7 +1584,7 @@ do
     )
 
     -- Three Stage-8-prep state promotions. Core's table literal must
-    -- initialise each one; EbonClearance.lua must not retain its
+    -- initialise each one; EbonClearance_Events.lua must not retain its
     -- file-scope `local EC_xxx = ...` declarations (would silently
     -- shadow the cache field).
     for _, sym in ipairs({ "lootCycleState", "lastScavengerOut", "addonDismissed" }) do
@@ -1633,7 +1635,7 @@ do
     }) do
         local name, pattern = exposure[1], exposure[2]
         check(
-            name .. " exposed by EbonClearance.lua",
+            name .. " exposed by EbonClearance_Events.lua",
             src:find(pattern) ~= nil,
             name .. " must be published so BugReport can read the live value"
         )
@@ -1645,7 +1647,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Stage 8b moves the minimap button, LDB launcher, and the SecureActionButton
 -- combat-vendor button to EbonClearance_Minimap.lua. Four entry points get
--- published on NS for the ADDON_LOADED branch in EbonClearance.lua to call:
+-- published on NS for the ADDON_LOADED branch in EbonClearance_Events.lua to call:
 do
     for _, name in ipairs({
         "UpdateMinimapPos",
@@ -1699,7 +1701,7 @@ end
 -- Stage 8c moves the per-bag-item tooltip annotation system
 -- (EC_AnnotateTooltip + EC_ClearTooltipFlag + EC_InstallTooltipHookOnce)
 -- to EbonClearance_Tooltip.lua. The install entry point is exposed
--- on NS for the ADDON_LOADED branch in EbonClearance.lua to call.
+-- on NS for the ADDON_LOADED branch in EbonClearance_Events.lua to call.
 do
     check(
         "NS.InstallTooltipHookOnce exposed by Tooltip",
@@ -1752,22 +1754,22 @@ do
     check(
         "NS.AddItemToList exposed",
         src:find("NS%.AddItemToList%s*=%s*EC_AddItemToList") ~= nil,
-        "EbonClearance.lua must publish NS.AddItemToList for the context menu's row-click handlers"
+        "EbonClearance_Events.lua must publish NS.AddItemToList for the context menu's row-click handlers"
     )
     check(
         "NS.RemoveItemFromList exposed",
         src:find("NS%.RemoveItemFromList%s*=%s*EC_RemoveItemFromList") ~= nil,
-        "EbonClearance.lua must publish NS.RemoveItemFromList for the context menu's row-click handlers"
+        "EbonClearance_Events.lua must publish NS.RemoveItemFromList for the context menu's row-click handlers"
     )
     check(
         "NS.FindAddConflict exposed",
         src:find("NS%.FindAddConflict%s*=%s*EC_FindAddConflict") ~= nil,
-        "EbonClearance.lua must publish NS.FindAddConflict for the context menu's add-time conflict guard"
+        "EbonClearance_Events.lua must publish NS.FindAddConflict for the context menu's add-time conflict guard"
     )
     check(
         "NS.GetListTable exposed",
         src:find("NS%.GetListTable%s*=%s*EC_GetListTable") ~= nil,
-        "EbonClearance.lua must publish NS.GetListTable for the context menu's list-membership check"
+        "EbonClearance_Events.lua must publish NS.GetListTable for the context menu's list-membership check"
     )
 
     -- No bare EC_InstallBagContextHookOnce() or EC_GetListTable() call sites
@@ -1798,7 +1800,7 @@ do
     )
 
     -- Read BagContextMenu file directly for a focused bare-EC_GetListTable check;
-    -- the global src concat includes EbonClearance.lua where the local is fine.
+    -- the global src concat includes EbonClearance_Events.lua where the local is fine.
     local ctxFile = io.open("EbonClearance_BagContextMenu.lua", "rb")
     if ctxFile then
         local ctxSrc = ctxFile:read("*a") or ""
@@ -1820,25 +1822,25 @@ end
 -- (frame creation + the four EC_compCache helpers + OnShow body) into
 -- EbonClearance_ProcessBagsPanel.lua. Two cross-file UI primitives
 -- (MakeHeader, MakeLabel) needed NS exposure to support the move - the
--- OnShow build body calls them. Registration in EbonClearance.lua uses
+-- OnShow build body calls them. Registration in EbonClearance_Events.lua uses
 -- a _G lookup because the local ProcessBagsPanel binding no longer
 -- exists in that file.
 do
     check(
         "NS.MakeHeader exposed",
         src:find("NS%.MakeHeader%s*=%s*MakeHeader") ~= nil,
-        "EbonClearance.lua must publish NS.MakeHeader for the Process Bags panel's OnShow body"
+        "EbonClearance_Events.lua must publish NS.MakeHeader for the Process Bags panel's OnShow body"
     )
     check(
         "NS.MakeLabel exposed",
         src:find("NS%.MakeLabel%s*=%s*MakeLabel") ~= nil,
-        "EbonClearance.lua must publish NS.MakeLabel for the Process Bags panel's OnShow body"
+        "EbonClearance_Events.lua must publish NS.MakeLabel for the Process Bags panel's OnShow body"
     )
 
     -- Read the new file to confirm the four EC_compCache helpers live
-    -- there (not in EbonClearance.lua) AND that the file references
+    -- there (not in EbonClearance_Events.lua) AND that the file references
     -- NS.MakeHeader / NS.MakeLabel rather than the bare locals which
-    -- only exist in EbonClearance.lua's scope.
+    -- only exist in EbonClearance_Events.lua's scope.
     local pbFile = io.open("EbonClearance_ProcessBagsPanel.lua", "rb")
     if pbFile then
         local pbSrc = pbFile:read("*a") or ""
@@ -1867,43 +1869,43 @@ do
             "EbonClearance_ProcessBagsPanel.lua uses NS.MakeHeader (not bare MakeHeader)",
             pbSrc:find("NS%.MakeHeader%(") ~= nil
                 and pbSrc:find("[^.%w_]MakeHeader%(") == nil,
-            "panel build body must call NS.MakeHeader (the local lives in EbonClearance.lua)"
+            "panel build body must call NS.MakeHeader (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_ProcessBagsPanel.lua uses NS.MakeLabel (not bare MakeLabel)",
             pbSrc:find("NS%.MakeLabel%(") ~= nil
                 and pbSrc:find("[^.%w_]MakeLabel%(") == nil,
-            "panel build body must call NS.MakeLabel (the local lives in EbonClearance.lua)"
+            "panel build body must call NS.MakeLabel (the local lives in EbonClearance_Events.lua)"
         )
     end
 
     -- The four EC_compCache helpers must NOT be defined in
-    -- EbonClearance.lua anymore (would-be regression: a stale copy
+    -- EbonClearance_Events.lua anymore (would-be regression: a stale copy
     -- still sitting in the main file would clobber the new one).
     -- Match against a clean global-src concat: count occurrences in
-    -- EbonClearance.lua specifically.
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    -- EbonClearance_Events.lua specifically.
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "rearmProcessButton no longer defined in EbonClearance.lua",
+            "rearmProcessButton no longer defined in EbonClearance_Events.lua",
             ecSrc:find("function EC_compCache%.rearmProcessButton%(%)") == nil,
-            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-i extracted body"
+            "duplicate definition in EbonClearance_Events.lua would clobber the Stage 8e-i extracted body"
         )
         check(
-            "refreshProcessPanel no longer defined in EbonClearance.lua",
+            "refreshProcessPanel no longer defined in EbonClearance_Events.lua",
             ecSrc:find("function EC_compCache%.refreshProcessPanel%(%)") == nil,
-            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-i extracted body"
+            "duplicate definition in EbonClearance_Events.lua would clobber the Stage 8e-i extracted body"
         )
     end
 
     -- Registration call must use the _G lookup since the local was
-    -- moved out of EbonClearance.lua.
+    -- moved out of EbonClearance_Events.lua.
     check(
-        "Process Bags panel registered via _G lookup in EbonClearance.lua",
+        "Process Bags panel registered via _G lookup in EbonClearance_Events.lua",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsProcessBags"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end
 
@@ -1918,39 +1920,39 @@ end
 -- additional UI widget primitives needed NS exposure (the panel calls
 -- each of them in its OnShow body): AddCheckbox, AddSlider,
 -- ColorTextByQuality, StyleInputBox, FitScrollContent. Registration
--- in EbonClearance.lua uses a _G lookup since the local MerchantPanel
+-- in EbonClearance_Events.lua uses a _G lookup since the local MerchantPanel
 -- binding no longer exists there.
 do
     check(
         "NS.AddCheckbox exposed",
         src:find("NS%.AddCheckbox%s*=%s*AddCheckbox") ~= nil,
-        "EbonClearance.lua must publish NS.AddCheckbox for the Merchant Settings panel's OnShow body"
+        "EbonClearance_Events.lua must publish NS.AddCheckbox for the Merchant Settings panel's OnShow body"
     )
     check(
         "NS.AddSlider exposed",
         src:find("NS%.AddSlider%s*=%s*AddSlider") ~= nil,
-        "EbonClearance.lua must publish NS.AddSlider for the Merchant Settings panel's OnShow body"
+        "EbonClearance_Events.lua must publish NS.AddSlider for the Merchant Settings panel's OnShow body"
     )
     check(
         "NS.FitScrollContent exposed",
         src:find("NS%.FitScrollContent%s*=%s*EC_FitScrollContent") ~= nil,
-        "EbonClearance.lua must publish NS.FitScrollContent for the Merchant Settings panel's bottom-anchor call"
+        "EbonClearance_Events.lua must publish NS.FitScrollContent for the Merchant Settings panel's bottom-anchor call"
     )
     check(
         "NS.ColorTextByQuality exposed",
         src:find("NS%.ColorTextByQuality%s*=%s*ColorTextByQuality") ~= nil,
-        "EbonClearance.lua must publish NS.ColorTextByQuality for the Merchant Settings panel's rarity dropdown"
+        "EbonClearance_Events.lua must publish NS.ColorTextByQuality for the Merchant Settings panel's rarity dropdown"
     )
     check(
         "NS.StyleInputBox exposed",
         src:find("NS%.StyleInputBox%s*=%s*StyleInputBox") ~= nil,
-        "EbonClearance.lua must publish NS.StyleInputBox for the Merchant Settings panel's iLvl input"
+        "EbonClearance_Events.lua must publish NS.StyleInputBox for the Merchant Settings panel's iLvl input"
     )
 
     -- Read the new file to confirm the MerchantPanel frame + OnShow
-    -- live there (not in EbonClearance.lua) AND that the file uses
+    -- live there (not in EbonClearance_Events.lua) AND that the file uses
     -- the NS.* widget primitives (the bare locals only exist in
-    -- EbonClearance.lua's scope).
+    -- EbonClearance_Events.lua's scope).
     local mpFile = io.open("EbonClearance_MerchantPanel.lua", "rb")
     if mpFile then
         local mpSrc = mpFile:read("*a") or ""
@@ -1968,44 +1970,44 @@ do
             "EbonClearance_MerchantPanel.lua uses NS.AddCheckbox (not bare AddCheckbox)",
             codeOnly:find("NS%.AddCheckbox%(") ~= nil
                 and codeOnly:find("[^.%w_]AddCheckbox%(") == nil,
-            "OnShow body must call NS.AddCheckbox (the local lives in EbonClearance.lua)"
+            "OnShow body must call NS.AddCheckbox (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_MerchantPanel.lua uses NS.AddSlider (not bare AddSlider)",
             codeOnly:find("NS%.AddSlider%(") ~= nil
                 and codeOnly:find("[^.%w_]AddSlider%(") == nil,
-            "OnShow body must call NS.AddSlider (the local lives in EbonClearance.lua)"
+            "OnShow body must call NS.AddSlider (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_MerchantPanel.lua uses NS.FitScrollContent (not bare EC_FitScrollContent)",
             codeOnly:find("NS%.FitScrollContent%(") ~= nil
                 and codeOnly:find("[^.%w_]EC_FitScrollContent%(") == nil,
-            "OnShow body must call NS.FitScrollContent (the local lives in EbonClearance.lua)"
+            "OnShow body must call NS.FitScrollContent (the local lives in EbonClearance_Events.lua)"
         )
     end
 
     -- The MerchantPanel frame creation must NOT be duplicated in
-    -- EbonClearance.lua anymore (would clobber the new one if it were).
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    -- EbonClearance_Events.lua anymore (would clobber the new one if it were).
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "MerchantPanel frame no longer created in EbonClearance.lua",
+            "MerchantPanel frame no longer created in EbonClearance_Events.lua",
             ecSrc:find('local MerchantPanel%s*=%s*CreateFrame') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-ii extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the Stage 8e-ii extracted frame"
         )
     end
 
     -- Registration must use the _G lookup.
     check(
-        "Merchant Settings panel registered via _G lookup in EbonClearance.lua",
+        "Merchant Settings panel registered via _G lookup in EbonClearance_Events.lua",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsMerchant"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 
     -- Eager NS.* calls at file load time are a load-order trap: this file
-    -- loads BEFORE EbonClearance.lua, so NS.ColorTextByQuality (and the
+    -- loads BEFORE EbonClearance_Events.lua, so NS.ColorTextByQuality (and the
     -- other widget primitives) don't exist at file-load time. Calling them
     -- in a table constructor at file scope nil-errors out and the whole
     -- file aborts before the frame is created, which then breaks the
@@ -2025,7 +2027,7 @@ do
                 "EbonClearance_MerchantPanel.lua does not call NS.ColorTextByQuality at file scope (load-order trap)",
                 fileScope:find("NS%.ColorTextByQuality%(") == nil,
                 "NS.ColorTextByQuality must not be called at file scope; "
-                    .. "this file loads BEFORE EbonClearance.lua so the binding is nil at load time. "
+                    .. "this file loads BEFORE EbonClearance_Events.lua so the binding is nil at load time. "
                     .. "Move any such calls inside the OnShow build callback (lazy execution)."
             )
         end
@@ -2305,7 +2307,7 @@ end
 -- zero new NS exposures needed.
 do
     -- ScavengerPanel frame must be created in the new file (not in
-    -- EbonClearance.lua anymore).
+    -- EbonClearance_Events.lua anymore).
     local spFile = io.open("EbonClearance_ScavengerPanel.lua", "rb")
     if spFile then
         local spSrc = spFile:read("*a") or ""
@@ -2320,7 +2322,7 @@ do
             "EbonClearance_ScavengerPanel.lua uses NS.MakeHeader (not bare MakeHeader)",
             code:find("NS%.MakeHeader%(") ~= nil
                 and code:find("[^.%w_]MakeHeader%(") == nil,
-            "panel build body must call NS.MakeHeader (the local lives in EbonClearance.lua)"
+            "panel build body must call NS.MakeHeader (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_ScavengerPanel.lua uses NS.AddCheckbox (not bare AddCheckbox)",
@@ -2336,23 +2338,23 @@ do
         )
     end
 
-    -- The ScavengerPanel local must NOT be re-created in EbonClearance.lua.
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    -- The ScavengerPanel local must NOT be re-created in EbonClearance_Events.lua.
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "ScavengerPanel frame no longer created in EbonClearance.lua",
+            "ScavengerPanel frame no longer created in EbonClearance_Events.lua",
             ecSrc:find('local ScavengerPanel%s*=%s*CreateFrame') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-iii extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the Stage 8e-iii extracted frame"
         )
     end
 
     -- Registration uses the _G lookup.
     check(
-        "Scavenger Settings panel registered via _G lookup in EbonClearance.lua",
+        "Scavenger Settings panel registered via _G lookup in EbonClearance_Events.lua",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsScavenger"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end
 
@@ -2368,12 +2370,12 @@ do
     check(
         "NS.CreateListUI exposed",
         src:find("NS%.CreateListUI%s*=%s*CreateListUI") ~= nil,
-        "EbonClearance.lua must publish NS.CreateListUI for split panels to build list UIs"
+        "EbonClearance_Events.lua must publish NS.CreateListUI for split panels to build list UIs"
     )
     check(
         "NS.AddScanByQualityRow exposed",
         src:find("NS%.AddScanByQualityRow%s*=%s*EC_AddScanByQualityRow") ~= nil,
-        "EbonClearance.lua must publish NS.AddScanByQualityRow for the Sell List family panels"
+        "EbonClearance_Events.lua must publish NS.AddScanByQualityRow for the Sell List family panels"
     )
 
     local slFile = io.open("EbonClearance_SellListPanels.lua", "rb")
@@ -2395,7 +2397,7 @@ do
             "EbonClearance_SellListPanels.lua uses NS.CreateListUI (not bare CreateListUI)",
             code:find("NS%.CreateListUI%(") ~= nil
                 and code:find("[^.%w_]CreateListUI%(") == nil,
-            "panel builds must call NS.CreateListUI (the local lives in EbonClearance.lua)"
+            "panel builds must call NS.CreateListUI (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_SellListPanels.lua uses NS.AddScanByQualityRow",
@@ -2405,31 +2407,31 @@ do
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "WhitelistPanel no longer created in EbonClearance.lua",
+            "WhitelistPanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local WhitelistPanel%s*=%s*CreateFrame') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the extracted frame"
         )
         check(
-            "AccountWhitelistPanel no longer created in EbonClearance.lua",
+            "AccountWhitelistPanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local AccountWhitelistPanel%s*=') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the extracted frame"
         )
     end
 
     check(
         "Sell List panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsWhitelist"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
     check(
         "Account Sell List panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsAccountWhitelist"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end
 
@@ -2438,7 +2440,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Stage 8e-v moves two sibling list-management panels (BlacklistPanel
 -- and DeletePanel) into one bundled file. The Protection Settings
--- panel (BlacklistSettingsPanel) stays in EbonClearance.lua for a
+-- panel (BlacklistSettingsPanel) stays in EbonClearance_Events.lua for a
 -- later stage - it's a different domain (auto-protect toggles, not
 -- list management). Zero new NS exposures needed - both panels use
 -- NS.MakeHeader / NS.MakeLabel / NS.CreateListUI already exposed in
@@ -2463,26 +2465,26 @@ do
             "EbonClearance_KeepDeletePanels.lua uses NS.CreateListUI (not bare CreateListUI)",
             code:find("NS%.CreateListUI%(") ~= nil
                 and code:find("[^.%w_]CreateListUI%(") == nil,
-            "panel builds must call NS.CreateListUI (the local lives in EbonClearance.lua)"
+            "panel builds must call NS.CreateListUI (the local lives in EbonClearance_Events.lua)"
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "BlacklistPanel no longer created in EbonClearance.lua",
+            "BlacklistPanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local BlacklistPanel%s*=%s*CreateFrame') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the extracted frame"
         )
         check(
-            "DeletePanel no longer created in EbonClearance.lua",
+            "DeletePanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local DeletePanel%s*=%s*CreateFrame') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the extracted frame"
         )
         -- Note: a Stage 8e-v sentinel check for BlacklistSettingsPanel
-        -- staying in EbonClearance.lua was removed when 8e-vi
+        -- staying in EbonClearance_Events.lua was removed when 8e-vi
         -- intentionally moved it. Test 48 below now locks
         -- BlacklistSettingsPanel's location in ProtectionPanel.lua.
     end
@@ -2490,12 +2492,12 @@ do
     check(
         "Keep List panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsBlacklist"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
     check(
         "Delete List panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsDeletion"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end
 
@@ -2523,7 +2525,7 @@ do
             "EbonClearance_ProtectionPanel.lua uses NS.MakeHeader (not bare MakeHeader)",
             code:find("NS%.MakeHeader%(") ~= nil
                 and code:find("[^.%w_]MakeHeader%(") == nil,
-            "panel build must call NS.MakeHeader (the local lives in EbonClearance.lua)"
+            "panel build must call NS.MakeHeader (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_ProtectionPanel.lua uses NS.FitScrollContent",
@@ -2540,21 +2542,21 @@ do
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "BlacklistSettingsPanel no longer created in EbonClearance.lua",
+            "BlacklistSettingsPanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local BlacklistSettingsPanel') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-vi extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the Stage 8e-vi extracted frame"
         )
     end
 
     check(
         "Protection Settings panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsBlacklistSettings"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end
 
@@ -2589,21 +2591,21 @@ do
             "EbonClearance_ItemHighlightingPanel.lua uses NS.MakeHeader (not bare MakeHeader)",
             code:find("NS%.MakeHeader%(") ~= nil
                 and code:find("[^.%w_]MakeHeader%(") == nil,
-            "panel build must call NS.MakeHeader (the local lives in EbonClearance.lua)"
+            "panel build must call NS.MakeHeader (the local lives in EbonClearance_Events.lua)"
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "CharPanel no longer created in EbonClearance.lua",
+            "CharPanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local CharPanel%s*=%s*CreateFrame') == nil,
-            "duplicate definition in EbonClearance.lua would clobber the Stage 8e-vii extracted frame"
+            "duplicate definition in EbonClearance_Events.lua would clobber the Stage 8e-vii extracted frame"
         )
         check(
-            "CreateNameListUI (dead code) dropped from EbonClearance.lua",
+            "CreateNameListUI (dead code) dropped from EbonClearance_Events.lua",
             ecSrc:find('local function CreateNameListUI') == nil,
             "CreateNameListUI was orphaned in §4.5 (per-character allowlist UI decommission) and should be dropped in Stage 8e-vii"
         )
@@ -2612,7 +2614,7 @@ do
     check(
         "Item Highlighting panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsCharacter"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end
 
@@ -2626,35 +2628,35 @@ end
 -- EC_ExportWhitelist, EC_ImportWhitelist, EC_EXPORT_PREFIX) and
 -- EC_compCache.exportFullPack / importFullPack all move along with
 -- the panels. Profile-mutation helpers + EC_HookScrollbarAutoHide
--- stay in EbonClearance.lua as NS-exposed entry points.
+-- stay in EbonClearance_Events.lua as NS-exposed entry points.
 do
     -- 5 new NS exposures for this stage.
     check(
         "NS.SaveProfile exposed",
         src:find("NS%.SaveProfile%s*=%s*EC_SaveProfile") ~= nil,
-        "EbonClearance.lua must publish NS.SaveProfile for the Profiles panel button OnClicks"
+        "EbonClearance_Events.lua must publish NS.SaveProfile for the Profiles panel button OnClicks"
     )
     check(
         "NS.LoadProfile exposed",
         src:find("NS%.LoadProfile%s*=%s*EC_LoadProfile") ~= nil,
-        "EbonClearance.lua must publish NS.LoadProfile"
+        "EbonClearance_Events.lua must publish NS.LoadProfile"
     )
     check(
         "NS.DeleteProfile exposed",
         src:find("NS%.DeleteProfile%s*=%s*EC_DeleteProfile") ~= nil,
-        "EbonClearance.lua must publish NS.DeleteProfile"
+        "EbonClearance_Events.lua must publish NS.DeleteProfile"
     )
     check(
         "NS.RenameProfile exposed",
         src:find("NS%.RenameProfile%s*=%s*EC_RenameProfile") ~= nil,
-        "EbonClearance.lua must publish NS.RenameProfile"
+        "EbonClearance_Events.lua must publish NS.RenameProfile"
     )
     check(
         "NS.HookScrollbarAutoHide exposed",
         src:find("NS%.HookScrollbarAutoHide%s*=%s*EC_HookScrollbarAutoHide") ~= nil,
-        "EbonClearance.lua must publish NS.HookScrollbarAutoHide for the Profiles + ImportExport panels"
+        "EbonClearance_Events.lua must publish NS.HookScrollbarAutoHide for the Profiles + ImportExport panels"
     )
-    -- EC_PANEL_WIDTH is a file-scope local in EbonClearance.lua that
+    -- EC_PANEL_WIDTH is a file-scope local in EbonClearance_Events.lua that
     -- mutates dynamically in EC_UpdatePanelWidth; split panel files
     -- that need it for build-time SetSize calls must use the
     -- NS.GetPanelWidth() getter (returns the live value via upvalue
@@ -2662,7 +2664,7 @@ do
     check(
         "NS.GetPanelWidth exposed",
         src:find("NS%.GetPanelWidth%s*=%s*function") ~= nil,
-        "EbonClearance.lua must publish NS.GetPanelWidth for split panel files"
+        "EbonClearance_Events.lua must publish NS.GetPanelWidth for split panel files"
     )
 
     local ppFile = io.open("EbonClearance_ProfilesPanel.lua", "rb")
@@ -2684,7 +2686,7 @@ do
             "EbonClearance_ProfilesPanel.lua uses NS.SaveProfile (not bare EC_SaveProfile)",
             code:find("NS%.SaveProfile%(") ~= nil
                 and code:find("[^.%w_]EC_SaveProfile%(") == nil,
-            "panel must call NS.SaveProfile (the local lives in EbonClearance.lua)"
+            "panel must call NS.SaveProfile (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_ProfilesPanel.lua uses NS.HookScrollbarAutoHide",
@@ -2695,7 +2697,7 @@ do
         -- The build-time SetSize calls in this file must use the
         -- NS.GetPanelWidth() getter, not the bare EC_PANEL_WIDTH
         -- identifier (which would be nil here - EC_PANEL_WIDTH is a
-        -- file-scope local in EbonClearance.lua).
+        -- file-scope local in EbonClearance_Events.lua).
         check(
             "EbonClearance_ProfilesPanel.lua uses NS.GetPanelWidth() (not bare EC_PANEL_WIDTH)",
             code:find("NS%.GetPanelWidth%(%)") ~= nil
@@ -2739,23 +2741,23 @@ do
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "ProfilesPanel no longer created in EbonClearance.lua",
+            "ProfilesPanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local ProfilesPanel%s*=%s*CreateFrame') == nil,
             "duplicate definition would clobber the extracted frame"
         )
         check(
-            "ImportExportPanel no longer created in EbonClearance.lua",
+            "ImportExportPanel no longer created in EbonClearance_Events.lua",
             ecSrc:find('local ImportExportPanel%s*=%s*CreateFrame') == nil,
             "duplicate definition would clobber the extracted frame"
         )
         -- The file-scope ImportExport helpers also move with the panels.
         check(
-            "EC_GetWhitelistForScope no longer defined in EbonClearance.lua",
+            "EC_GetWhitelistForScope no longer defined in EbonClearance_Events.lua",
             ecSrc:find('local function EC_GetWhitelistForScope') == nil,
             "the helper is only used inside the ImportExport region and moves with it"
         )
@@ -2764,31 +2766,31 @@ do
     check(
         "Profiles panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsProfiles"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must use the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must use the _G lookup"
     )
     check(
         "Import/Export panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsImportExport"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must use the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must use the _G lookup"
     )
 end
 
 -- ---------------------------------------------------------------------------
 -- Test 51 (Stage 8e-ix-a): MainOptions panel + BuildMainPanel extracted.
 -- ---------------------------------------------------------------------------
--- Stage 8e-ix-a moves three non-contiguous chunks from EbonClearance.lua
+-- Stage 8e-ix-a moves three non-contiguous chunks from EbonClearance_Events.lua
 -- into EbonClearance_MainPanel.lua:
 --   - local MainOptions = CreateFrame(...) frame creation
 --   - BuildMainPanel function body
 --   - MainOptions:SetScript("OnShow", ...) panel-build handler
 -- The panel-infra helpers (MakeHeader, MakeLabel, EC_PANEL_WIDTH,
--- EC_UpdatePanelWidth, etc.) stay in EbonClearance.lua for later
+-- EC_UpdatePanelWidth, etc.) stay in EbonClearance_Events.lua for later
 -- stages.
 do
     check(
         "NS.ResetSession exposed",
         src:find("NS%.ResetSession%s*=%s*EC_ResetSession") ~= nil,
-        "EbonClearance.lua must publish NS.ResetSession for the Main panel's Reset Session button"
+        "EbonClearance_Events.lua must publish NS.ResetSession for the Main panel's Reset Session button"
     )
 
     local mpFile = io.open("EbonClearance_MainPanel.lua", "rb")
@@ -2810,17 +2812,17 @@ do
             "EbonClearance_MainPanel.lua uses NS.ResetSession (not bare EC_ResetSession)",
             code:find("NS%.ResetSession%(") ~= nil
                 and code:find("[^.%w_]EC_ResetSession%(") == nil,
-            "the Reset Session button must call NS.ResetSession (the local lives in EbonClearance.lua)"
+            "the Reset Session button must call NS.ResetSession (the local lives in EbonClearance_Events.lua)"
         )
         check(
             "EbonClearance_MainPanel.lua uses NS.CopperToColoredText",
             code:find("NS%.CopperToColoredText%(") ~= nil
                 and code:find("[^.%w_]CopperToColoredText%(") == nil,
-            "stats display must call NS.CopperToColoredText (the local lives in EbonClearance.lua)"
+            "stats display must call NS.CopperToColoredText (the local lives in EbonClearance_Events.lua)"
         )
         -- Catch other common file-scope-locals-as-globals traps from the
         -- extraction: ADDON_AUTHOR / ADDON_URL / EC_session are file-
-        -- scope locals in EbonClearance.lua that the byline + stats
+        -- scope locals in EbonClearance_Events.lua that the byline + stats
         -- panel use. The new file must call them through NS.
         check(
             "EbonClearance_MainPanel.lua uses NS.ADDON_AUTHOR / NS.ADDON_URL",
@@ -2834,29 +2836,29 @@ do
             "EbonClearance_MainPanel.lua uses NS.session (not bare EC_session)",
             code:find("NS%.session%.") ~= nil
                 and code:find("[^.%w_]EC_session[^.%w_]") == nil,
-            "stats display must call NS.session (the EC_session table lives in EbonClearance.lua)"
+            "stats display must call NS.session (the EC_session table lives in EbonClearance_Events.lua)"
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "MainOptions no longer created in EbonClearance.lua",
+            "MainOptions no longer created in EbonClearance_Events.lua",
             ecSrc:find('local MainOptions%s*=%s*CreateFrame') == nil,
             "duplicate definition would clobber the Stage 8e-ix-a extracted frame"
         )
         check(
-            "BuildMainPanel no longer defined in EbonClearance.lua",
+            "BuildMainPanel no longer defined in EbonClearance_Events.lua",
             ecSrc:find('local function BuildMainPanel%(') == nil,
-            "BuildMainPanel must move with the panel; leftover definition in EbonClearance.lua is dead code"
+            "BuildMainPanel must move with the panel; leftover definition in EbonClearance_Events.lua is dead code"
         )
-        -- The 5 in-EbonClearance.lua MainOptions call sites must all be
+        -- The 5 in-EbonClearance_Events.lua MainOptions call sites must all be
         -- replaced with _G[] lookups so they still work after the local
         -- binding moves out.
         check(
-            "no bare MainOptions identifier references in EbonClearance.lua",
+            "no bare MainOptions identifier references in EbonClearance_Events.lua",
             ecSrc:find("[^_%w\"]MainOptions[^_%w\"]") == nil,
             "every InterfaceOptionsFrame_OpenToCategory(MainOptions) and similar must use _G[\"EbonClearanceOptionsMain\"] after extraction"
         )
@@ -2865,7 +2867,7 @@ do
     check(
         "Main panel registered via _G lookup",
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsMain"%]%)') ~= nil,
-        "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
+        "post-extraction, EbonClearance_Events.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
 end
 
@@ -2880,7 +2882,7 @@ end
 -- EC_FitScrollContent / initPanel) into EbonClearance_PanelInfra.lua.
 -- The widget primitives (MakeHeader, MakeLabel, AddCheckbox,
 -- AddSlider, ColorTextByQuality, StyleInputBox) + CreateListUI + the
--- list-row factories STAY in EbonClearance.lua for 8e-ix-c / 8e-ix-d.
+-- list-row factories STAY in EbonClearance_Events.lua for 8e-ix-c / 8e-ix-d.
 do
     local infraFile = io.open("EbonClearance_PanelInfra.lua", "rb")
     if infraFile then
@@ -2910,9 +2912,9 @@ do
             "EbonClearance_PanelInfra.lua uses NS.EnsureDB (not bare EnsureDB)",
             infraSrc:find("NS%.EnsureDB%(%)") ~= nil
                 and infraSrc:find("[^.%w_]EnsureDB%(%)") == nil,
-            "initPanel must call NS.EnsureDB (the local lives in EbonClearance.lua)"
+            "initPanel must call NS.EnsureDB (the local lives in EbonClearance_Events.lua)"
         )
-        -- EC_Delay is a file-scope local in EbonClearance.lua; the
+        -- EC_Delay is a file-scope local in EbonClearance_Events.lua; the
         -- HookScrollbarAutoHide / FitScrollContent / refreshLayouts
         -- helpers all schedule deferred work and must call NS.Delay.
         local infraCode = (infraSrc:gsub("\n[^\n]*", function(line)
@@ -2924,23 +2926,23 @@ do
             "EbonClearance_PanelInfra.lua uses NS.Delay (not bare EC_Delay)",
             infraCode:find("NS%.Delay%(") ~= nil
                 and infraCode:find("[^.%w_]EC_Delay%(") == nil,
-            "deferred-work scheduling must call NS.Delay (the EC_Delay local lives in EbonClearance.lua)"
+            "deferred-work scheduling must call NS.Delay (the EC_Delay local lives in EbonClearance_Events.lua)"
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
         check(
-            "EC_PANEL_WIDTH no longer declared in EbonClearance.lua",
+            "EC_PANEL_WIDTH no longer declared in EbonClearance_Events.lua",
             ecSrc:find("local EC_PANEL_WIDTH%s*=%s*440") == nil,
             "duplicate definition would clobber the Stage 8e-ix-b extracted local"
         )
         check(
-            "initPanel no longer defined in EbonClearance.lua",
+            "initPanel no longer defined in EbonClearance_Events.lua",
             ecSrc:find("function EC_compCache%.initPanel%(") == nil,
-            "duplicate definition in EbonClearance.lua would clobber the extracted body"
+            "duplicate definition in EbonClearance_Events.lua would clobber the extracted body"
         )
         -- Strip Lua line comments before the bare-ref checks; comment
         -- lines that reference the old identifier are historical
@@ -2955,14 +2957,14 @@ do
             return line:sub(1, commentAt - 1)
         end))
         check(
-            "EbonClearance.lua callers use NS.GetPanelWidth (not bare EC_PANEL_WIDTH)",
+            "EbonClearance_Events.lua callers use NS.GetPanelWidth (not bare EC_PANEL_WIDTH)",
             ecCode:find("[^.%w_]EC_PANEL_WIDTH[^_%w]") == nil,
-            "after the move, EbonClearance.lua can no longer reference EC_PANEL_WIDTH as a local; all callers must use NS.GetPanelWidth()"
+            "after the move, EbonClearance_Events.lua can no longer reference EC_PANEL_WIDTH as a local; all callers must use NS.GetPanelWidth()"
         )
         check(
-            "EbonClearance.lua callers use NS.HookScrollbarAutoHide (not bare)",
+            "EbonClearance_Events.lua callers use NS.HookScrollbarAutoHide (not bare)",
             ecCode:find("[^.%w_]EC_HookScrollbarAutoHide%(") == nil,
-            "after the move, EbonClearance.lua can no longer reference EC_HookScrollbarAutoHide as a local; all callers must use NS.HookScrollbarAutoHide()"
+            "after the move, EbonClearance_Events.lua can no longer reference EC_HookScrollbarAutoHide as a local; all callers must use NS.HookScrollbarAutoHide()"
         )
     end
 end
@@ -2974,7 +2976,7 @@ end
 -- AddCheckbox, AddSlider, StyleInputBox, ColorTextByQuality) into
 -- EbonClearance_PanelWidgets.lua. The list-row factories
 -- (EC_compCache.makeListRowFactory + buildList*Row helpers) +
--- CreateListUI + EC_AddScanByQualityRow STAY in EbonClearance.lua for
+-- CreateListUI + EC_AddScanByQualityRow STAY in EbonClearance_Events.lua for
 -- Stage 8e-ix-d.
 do
     local pwFile = io.open("EbonClearance_PanelWidgets.lua", "rb")
@@ -3003,21 +3005,21 @@ do
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
-        -- The widget primitives must NOT be re-defined in EbonClearance.lua.
+        -- The widget primitives must NOT be re-defined in EbonClearance_Events.lua.
         for _, name in ipairs({ "MakeHeader", "MakeLabel", "AddCheckbox",
                 "AddSlider", "StyleInputBox", "ColorTextByQuality" }) do
             check(
-                name .. " no longer defined in EbonClearance.lua",
+                name .. " no longer defined in EbonClearance_Events.lua",
                 ecSrc:find("local function " .. name .. "%(") == nil,
                 "duplicate definition would clobber the Stage 8e-ix-c extracted body"
             )
         end
-        -- No bare StyleInputBox call sites in EbonClearance.lua code
-        -- (comments stripped) - all 3 in-EbonClearance.lua callers
+        -- No bare StyleInputBox call sites in EbonClearance_Events.lua code
+        -- (comments stripped) - all 3 in-EbonClearance_Events.lua callers
         -- inside the list-row factories were converted to
         -- NS.StyleInputBox.
         local ecCode = (ecSrc:gsub("\n[^\n]*", function(line)
@@ -3026,7 +3028,7 @@ do
             return line:sub(1, at - 1)
         end))
         check(
-            "no bare StyleInputBox() call sites in EbonClearance.lua code",
+            "no bare StyleInputBox() call sites in EbonClearance_Events.lua code",
             ecCode:find("[^.%w_]StyleInputBox%(") == nil,
             "the 3 list-row-factory call sites must use NS.StyleInputBox after the move"
         )
@@ -3049,10 +3051,10 @@ end
 --   2. CreateListUI is a file-scope local in the new file.
 --   3. EC_AddScanByQualityRow is a file-scope local in the new file.
 --   4. NS.CreateListUI and NS.AddScanByQualityRow are exposed from the
---      new file (not from EbonClearance.lua).
---   5. EbonClearance.lua no longer contains the function bodies or
+--      new file (not from EbonClearance_Events.lua).
+--   5. EbonClearance_Events.lua no longer contains the function bodies or
 --      the NS exposures (would clobber the new file's exposures).
---   6. EbonClearance.lua no longer has a `local EC_activeIDBox` (moved
+--   6. EbonClearance_Events.lua no longer has a `local EC_activeIDBox` (moved
 --      to NS.activeIDBox so the cross-file ChatEdit_InsertLink reader
 --      and the buildListHeaderRow setter can share state).
 --   7. The new file's CreateListUI body uses NS.GetListTable /
@@ -3094,7 +3096,7 @@ do
             "EbonClearance_SellListPanels.lua calls NS.AddScanByQualityRow"
         )
         -- The CreateListUI body must call NS.GetListTable etc., not the
-        -- file-scope locals from EbonClearance.lua which are no longer
+        -- file-scope locals from EbonClearance_Events.lua which are no longer
         -- in scope after the move.
         check(
             "CreateListUI body uses NS.GetListTable",
@@ -3118,7 +3120,7 @@ do
         )
         -- The buildListHeaderRow OnEditFocusGained/Lost handlers must
         -- read/write NS.activeIDBox (not the bare local that used to
-        -- live in EbonClearance.lua's main chunk).
+        -- live in EbonClearance_Events.lua's main chunk).
         check(
             "buildListHeaderRow uses NS.activeIDBox",
             lwSrc:find("NS%.activeIDBox%s*=%s*self") ~= nil,
@@ -3126,7 +3128,7 @@ do
         )
     end
 
-    local ecFile = io.open("EbonClearance.lua", "rb")
+    local ecFile = io.open("EbonClearance_Events.lua", "rb")
     if ecFile then
         local ecSrc = ecFile:read("*a") or ""
         ecFile:close()
@@ -3137,40 +3139,40 @@ do
             if not at then return line end
             return line:sub(1, at - 1)
         end))
-        -- Function bodies must NOT be redefined in EbonClearance.lua.
+        -- Function bodies must NOT be redefined in EbonClearance_Events.lua.
         for _, name in ipairs({ "makeListRowFactory", "buildListHeaderRow",
                 "buildListSearchAndSortRow", "buildListMatchRow",
                 "buildListScrollArea" }) do
             check(
-                "EC_compCache." .. name .. " no longer defined in EbonClearance.lua",
+                "EC_compCache." .. name .. " no longer defined in EbonClearance_Events.lua",
                 ecCode:find("function EC_compCache%." .. name .. "%(") == nil,
                 "duplicate definition would clobber the Stage 8e-ix-d extracted body"
             )
         end
         check(
-            "local CreateListUI no longer defined in EbonClearance.lua",
+            "local CreateListUI no longer defined in EbonClearance_Events.lua",
             ecCode:find("local function CreateListUI%(") == nil,
             "duplicate definition would clobber the Stage 8e-ix-d extracted body"
         )
         check(
-            "local EC_AddScanByQualityRow no longer defined in EbonClearance.lua",
+            "local EC_AddScanByQualityRow no longer defined in EbonClearance_Events.lua",
             ecCode:find("local function EC_AddScanByQualityRow%(") == nil,
             "duplicate definition would clobber the Stage 8e-ix-d extracted body"
         )
         check(
-            "NS.CreateListUI no longer assigned in EbonClearance.lua",
+            "NS.CreateListUI no longer assigned in EbonClearance_Events.lua",
             ecCode:find("NS%.CreateListUI%s*=%s*CreateListUI") == nil,
             "duplicate NS.CreateListUI assignment would clobber the new file's exposure"
         )
         check(
-            "NS.AddScanByQualityRow no longer assigned in EbonClearance.lua",
+            "NS.AddScanByQualityRow no longer assigned in EbonClearance_Events.lua",
             ecCode:find("NS%.AddScanByQualityRow%s*=%s*EC_AddScanByQualityRow") == nil,
             "duplicate NS.AddScanByQualityRow assignment would clobber the new file's exposure"
         )
         -- EC_activeIDBox is now NS-only. The bare local must be gone
         -- and ChatEdit_InsertLink must read NS.activeIDBox.
         check(
-            "no `local EC_activeIDBox` declaration in EbonClearance.lua",
+            "no `local EC_activeIDBox` declaration in EbonClearance_Events.lua",
             ecCode:find("local EC_activeIDBox%s*=") == nil,
             "EC_activeIDBox was promoted to NS.activeIDBox for cross-file access in Stage 8e-ix-d"
         )
@@ -3178,6 +3180,90 @@ do
             "ChatEdit_InsertLink hook reads NS.activeIDBox",
             ecCode:find("NS%.activeIDBox") ~= nil,
             "the shift-click-to-add reader must use NS.activeIDBox after Stage 8e-ix-d"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 55 (Stage 9): EbonClearance.lua renamed to EbonClearance_Events.lua.
+-- ---------------------------------------------------------------------------
+-- Stage 9 closes out the multi-stage file split (docs/CODE_REVIEW.md item 4)
+-- by renaming the original monolith file. The rename is mechanical but has
+-- several load-bearing references that all need to stay in lockstep:
+--   * EbonClearance.toc must load EbonClearance_Events.lua (not the old
+--     name); a stale .toc reference would cause the addon to fail to load
+--     because the old file is gone.
+--   * .github/workflows/release.yml's sed rules must target the new name;
+--     a stale sed would silently leave ADDON_VERSION at the old value
+--     after a release tag push.
+--   * The ADDON_VERSION constant must live in EbonClearance_Events.lua
+--     (the release sed pattern is filename-anchored).
+--   * No stale EbonClearance.lua file is left in the working tree.
+do
+    local stillExists = io.open("EbonClearance.lua", "rb")
+    check(
+        "stale EbonClearance.lua file removed",
+        stillExists == nil,
+        "the rename to EbonClearance_Events.lua should have deleted the old file; a leftover copy would shadow the renamed one"
+    )
+    if stillExists then stillExists:close() end
+
+    local newFile = io.open("EbonClearance_Events.lua", "rb")
+    check(
+        "EbonClearance_Events.lua exists",
+        newFile ~= nil,
+        "Stage 9 of the file split renamed EbonClearance.lua to this file"
+    )
+    if newFile then
+        local newSrc = newFile:read("*a") or ""
+        newFile:close()
+        check(
+            "ADDON_VERSION lives in EbonClearance_Events.lua",
+            newSrc:find('local ADDON_VERSION%s*=%s*"v[0-9]+%.[0-9]+%.[0-9]+"') ~= nil,
+            "release.yml's sed pattern is anchored to this file; the constant must stay here"
+        )
+    end
+
+    local toc = io.open("EbonClearance.toc", "rb")
+    if toc then
+        local tocSrc = toc:read("*a") or ""
+        toc:close()
+        check(
+            ".toc loads EbonClearance_Events.lua",
+            tocSrc:find("EbonClearance_Events%.lua") ~= nil,
+            "the .toc must reference the renamed file; the old EbonClearance.lua name was retired in Stage 9"
+        )
+        check(
+            ".toc no longer references the old EbonClearance.lua name",
+            tocSrc:find("\nEbonClearance%.lua") == nil,
+            "leftover .toc reference would fail to load (the file is gone)"
+        )
+    end
+
+    local release = io.open(".github/workflows/release.yml", "rb")
+    if release then
+        local relSrc = release:read("*a") or ""
+        release:close()
+        check(
+            "release.yml sed targets EbonClearance_Events.lua",
+            relSrc:find("EbonClearance_Events%.lua") ~= nil,
+            "the ADDON_VERSION sed rule + cp + git add must reference the new filename after Stage 9"
+        )
+        -- Approximate "no bare EbonClearance.lua token". Lua's pattern
+        -- lang has no lookbehind, so we walk lines and check that any
+        -- match has a non-identifier char before it (i.e. is part of
+        -- EbonClearance_*.lua, not the retired bare name).
+        local hasBareOld = false
+        for line in relSrc:gmatch("[^\n]+") do
+            if line:find("[^_%w]EbonClearance%.lua") or line:find("^EbonClearance%.lua") then
+                hasBareOld = true
+                break
+            end
+        end
+        check(
+            "release.yml has no stale EbonClearance.lua reference",
+            not hasBareOld,
+            "release.yml should no longer reference the retired EbonClearance.lua name"
         )
     end
 end

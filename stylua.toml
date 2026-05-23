@@ -1,8 +1,10 @@
 # StyLua formatter config for EbonClearance.
-# Run:  stylua EbonClearance.lua
-# Check:  stylua --check EbonClearance.lua
-# Matches the existing 4-space indentation in EbonClearance.lua so adopting
-# the formatter produces no re-indent churn.
+# Run:  stylua *.lua
+# Check:  stylua --check *.lua
+# (After Stage 9 of the file split the addon ships as 23 .lua files; the
+# original monolith EbonClearance.lua was renamed to EbonClearance_Events.lua.)
+# Matches the existing 4-space indentation so adopting the formatter
+# produces no re-indent churn.
 
 column_width = 120
 line_endings = "Unix"

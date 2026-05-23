@@ -45,7 +45,7 @@ local SOURCE_PATHS = {
     "EbonClearance_PanelInfra.lua",
     "EbonClearance_PanelWidgets.lua",
     "EbonClearance_ListWidget.lua",
-    "EbonClearance.lua",
+    "EbonClearance_Events.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
     "EbonClearance_Minimap.lua",
@@ -196,7 +196,7 @@ do
     -- the next ~6 lines of context. If "ClearAllPoints" and "BOTTOMRIGHT"
     -- aren't both present in that block, the panel doesn't anchor properly.
     -- v2.30.x panels call NS.CreateListUI from split files; the bare
-    -- `CreateListUI(` form is the original in-EbonClearance.lua call site.
+    -- `CreateListUI(` form is the original in-EbonClearance_Events.lua call site.
     for callLine in src:gmatch("(self%.listUI = N?S?%.?CreateListUI%([^\n]*)") do
         local startIdx = src:find(callLine, 1, true)
         if startIdx then

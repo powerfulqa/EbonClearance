@@ -25,7 +25,7 @@ jobs:
         # Add new EbonClearance_*.lua files to this list as future
         # split stages land.
         run: |
-          luac5.1 -p EbonClearance.lua
+          luac5.1 -p EbonClearance_Events.lua
           luac5.1 -p EbonClearance_Core.lua
           luac5.1 -p EbonClearance_Companion.lua
           luac5.1 -p EbonClearance_Protection.lua

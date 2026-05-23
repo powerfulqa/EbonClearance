@@ -22,7 +22,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           echo "Building version: $VERSION"
           # Replace @VERSION@ placeholder or any previous vX.Y.Z version string.
-          sed -i "s/@VERSION@/$VERSION/g" EbonClearance.toc EbonClearance.lua
+          sed -i "s/@VERSION@/$VERSION/g" EbonClearance.toc EbonClearance_Events.lua
           sed -i "s/\[v[0-9]*\.[0-9]*\.[0-9]*\]/[$VERSION]/g" EbonClearance.toc
           sed -i "s/^## Version: .*/## Version: $VERSION/" EbonClearance.toc
           # v2.13.2: anchor the lua sed to the canonical ADDON_VERSION
@@ -32,7 +32,7 @@ jobs:
           # lua constant was silently stuck at whatever was last manually
           # bumped. The anchored pattern matches one specific line and
           # cannot accidentally rewrite an unrelated version-shaped string.
-          sed -i "s/^local ADDON_VERSION = \"v[0-9]*\.[0-9]*\.[0-9]*\"/local ADDON_VERSION = \"$VERSION\"/" EbonClearance.lua
+          sed -i "s/^local ADDON_VERSION = \"v[0-9]*\.[0-9]*\.[0-9]*\"/local ADDON_VERSION = \"$VERSION\"/" EbonClearance_Events.lua
 
       - name: Package addon
         run: |
@@ -42,7 +42,7 @@ jobs:
           # EbonClearance_*.lua file listed in EbonClearance.toc must be
           # included or the addon fails to load. Add new split files to
           # this glob as future stages land.
-          cp EbonClearance.lua EbonClearance_Core.lua EbonClearance_Companion.lua \
+          cp EbonClearance_Events.lua EbonClearance_Core.lua EbonClearance_Companion.lua \
              EbonClearance_Protection.lua EbonClearance_Vendor.lua \
              EbonClearance_Process.lua EbonClearance_ProcessBagsPanel.lua \
              EbonClearance_MerchantPanel.lua EbonClearance_ScavengerPanel.lua \
@@ -61,7 +61,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add EbonClearance.toc EbonClearance.lua
+          git add EbonClearance.toc EbonClearance_Events.lua
           git commit -m "Update version to ${GITHUB_REF_NAME} [skip ci]" || echo "No changes to commit"
           git push origin master
 

@@ -1,22 +1,26 @@
--- EbonClearance - bag manager for Project Ebonhold (3.3.5a): vendoring,
--- deletion, looting, protection rules, profession processing.
+-- EbonClearance_Events - event hub + slash commands + residual glue.
 -- Author:  Serv
 -- Source:  https://github.com/powerfulqa/EbonClearance
 -- License: see LICENSE; attribution preservation is required.
-
+--
+-- Stage 9 of the multi-stage file split (docs/CODE_REVIEW.md item 4):
+-- this file was renamed from EbonClearance.lua to EbonClearance_Events.lua
+-- once the file split was substantively complete. The rename clarifies the
+-- file's actual remaining responsibility: the event hub, slash commands,
+-- Bindings.xml handlers, and the glue that ties Core / Companion /
+-- Protection / Vendor / Process / the panel files together. ADDON_VERSION
+-- still lives in this file (the release workflow's sed rule was updated
+-- to target the new name in lockstep with the rename).
+--
 -- Shared namespace for the addon. WoW passes (addonName, namespaceTable) as
 -- the varargs to every .lua file in an addon; the same table is shared
--- across files. NS exists from the first stage of the multi-release file
--- split planned in docs/CODE_REVIEW.md item 4 ("File split"). Stage 1
--- (this commit) bootstraps the namespace without moving any code -
--- existing file-scope locals stay as upvalue captures, and module-level
--- helpers that need to be reachable from future split files get mirrored
--- onto NS as the split progresses. Reading or writing NS.foo from any
--- future EbonClearance_*.lua file picks up the same table this assignment
--- creates. `select(2, ...)` is used instead of `local addonName, NS = ...`
--- because the main chunk is already at Lua 5.1's 200-locals cap; capturing
--- only the namespace (and not the addon name string, which we don't use)
--- spends one slot instead of two.
+-- across files. NS was first bootstrapped in Stage 1 of the file split and
+-- has been the spine of every subsequent extraction. Reading or writing
+-- NS.foo from any EbonClearance_*.lua file picks up the same table this
+-- assignment creates. `select(2, ...)` is used instead of
+-- `local addonName, NS = ...` because the main chunk is already at Lua
+-- 5.1's 200-locals cap; capturing only the namespace (and not the addon
+-- name string, which we don't use) spends one slot instead of two.
 local NS = select(2, ...)
 
 local ADDON_NAME = "EbonClearance"
@@ -56,8 +60,11 @@ local ADDON_URL = NS.ADDON_URL
 -- version lie on a release build. The CI test in
 -- tests/test_layout_reactivity.lua asserts this constant matches the
 -- .toc Version field so any future drift fails CI before shipping.
--- DO NOT move this constant out of EbonClearance.lua without first
--- updating the CI workflow's sed rule that targets this file by name.
+-- DO NOT move this constant out of EbonClearance_Events.lua without first
+-- updating the CI workflow's sed rule that targets this file by name
+-- (.github/workflows/release.yml). The rule was retargeted from
+-- EbonClearance.lua to EbonClearance_Events.lua during Stage 9 of the
+-- file split.
 local ADDON_VERSION = "v2.31.0"
 local function EC_GetVersion()
     if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then

@@ -2329,6 +2329,78 @@ EC_AddScanByQualityRow definitions remain in `EbonClearance.lua`
 `local EC_activeIDBox` declaration remains in `EbonClearance.lua`;
 `ChatEdit_InsertLink` hook reads `NS.activeIDBox`.
 
+### Stage 9: rename EbonClearance.lua to EbonClearance_Events.lua (commit `<pending>`)
+
+The closing stage of the multi-stage file split. The original
+monolith filename was retained through stages 1-8e-ix-d so the
+.toc / release workflow / luacheck / stylua all stayed
+incrementally working. Once the event hub + slash commands +
+Bindings.xml glue were the only substantive content left in
+`EbonClearance.lua`, the file's name no longer matched its
+responsibility - so Stage 9 renames it.
+
+**Mechanical changes (lockstep):**
+
+- `git mv EbonClearance.lua EbonClearance_Events.lua` -
+  preserves history.
+- `EbonClearance.toc`: line 26 updated from `EbonClearance.lua` to
+  `EbonClearance_Events.lua`. The `.toc` itself keeps its name
+  (only the Lua file moved).
+- `.github/workflows/release.yml`: 4 sites updated -
+  - `sed @VERSION@ ...` target file (line 25)
+  - `sed ADDON_VERSION ...` target file (line 35)
+  - `cp ... EbonClearance/` source list (line 45)
+  - `git add ...` target list (line 64)
+- `.github/workflows/test.yml`: `luac5.1 -p EbonClearance.lua` ->
+  `EbonClearance_Events.lua`.
+- 3 test SOURCE_PATHS arrays: `"EbonClearance.lua"` ->
+  `"EbonClearance_Events.lua"`.
+- 12 `io.open("EbonClearance.lua", "rb")` sites in
+  `tests/test_perf_guardrails.lua`: all retargeted to the new
+  filename via `replace_all`.
+- Stale `EbonClearance.lua` references in test failure messages
+  and surrounding comments: swept via regex replace
+  (`(?<![_A-Za-z])EbonClearance\.lua` -> `EbonClearance_Events.lua`,
+  preserving every `EbonClearance_<feature>.lua` name).
+- `.luacheckrc`, `stylua.toml`: header comments updated to
+  `*.lua` wildcards + a note about the rename.
+- `CLAUDE.md`: file reference + the stylua/luacheck command line
+  updated; "single-file architecture" rewritten to "multi-file
+  architecture" with a NS-namespace note.
+- `EbonClearance_Events.lua` header: new top-of-file doc block
+  noting Stage 9 + the file's actual remaining responsibility
+  (event hub + slash commands + Bindings.xml glue). The
+  ADDON_VERSION constant's "DO NOT move" warning updated to
+  reference the new filename + the matching release.yml sed
+  pattern.
+
+**ADDON_VERSION stays in this file:** the release workflow's sed
+pattern at `.github/workflows/release.yml` line 35 is anchored to
+`EbonClearance_Events.lua` (updated in this stage). The constant
+itself stays at `v2.31.0` - Stage 9 is a code-rearrange commit, not
+a user-facing release. The watermark
+(`EC_Fingerprint("EbonClearance@" .. ADDON_VERSION)`) is unchanged
+because the input string is unchanged.
+
+**Sweep of residuals deferred:** the original Stage 9 brief
+included "sweep residuals (auto-open driver, Fast Loot driver,
+vendor-cycle remnants from Stage 5's narrow scope) to their target
+files." The rename itself is large enough as a verify-then-ship
+change; teasing those residuals into BagDisplay / Vendor is a
+follow-up that can land in subsequent commits without bumping a
+stage. The current contents of `EbonClearance_Events.lua` work as
+the event hub; the residuals are just sitting alongside it.
+
+Stage 9 invariants (Test 55): the old `EbonClearance.lua` file no
+longer exists in the working tree (a leftover copy would shadow
+the renamed one if Lua's `package.path` somehow picked it up);
+`EbonClearance_Events.lua` exists and contains the `ADDON_VERSION`
+constant matching `local ADDON_VERSION = "vX.Y.Z"`; .toc
+references the new filename + contains no bare `EbonClearance.lua`
+reference; release.yml references the new filename + contains no
+bare `EbonClearance.lua` reference (approximate non-identifier
+boundary check since Lua patterns lack lookbehind).
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

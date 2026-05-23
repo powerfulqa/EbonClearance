@@ -56,6 +56,7 @@ local SOURCE_PATHS = {
     "EbonClearance_ItemHighlightingPanel.lua",
     "EbonClearance_ProfilesPanel.lua",
     "EbonClearance_MainPanel.lua",
+    "EbonClearance_PanelInfra.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -2864,6 +2865,104 @@ do
         src:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsMain"%]%)') ~= nil,
         "post-extraction, EbonClearance.lua must call InterfaceOptions_AddCategory with the _G lookup"
     )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 52 (Stage 8e-ix-b): panel-width registry + reactivity layer
+-- extracted to EbonClearance_PanelInfra.lua.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-ix-b moves the panel-infrastructure block (EC_PANEL_WIDTH,
+-- EC_UpdatePanelWidth, the widthRegistry, registerWidth /
+-- registerScrollFit / setPanelWidth / refreshLayouts /
+-- EC_HookScrollbarAutoHide / EC_WrapPanelInScrollFrame /
+-- EC_FitScrollContent / initPanel) into EbonClearance_PanelInfra.lua.
+-- The widget primitives (MakeHeader, MakeLabel, AddCheckbox,
+-- AddSlider, ColorTextByQuality, StyleInputBox) + CreateListUI + the
+-- list-row factories STAY in EbonClearance.lua for 8e-ix-c / 8e-ix-d.
+do
+    local infraFile = io.open("EbonClearance_PanelInfra.lua", "rb")
+    if infraFile then
+        local infraSrc = infraFile:read("*a") or ""
+        infraFile:close()
+        check(
+            "EC_PANEL_WIDTH local lives in EbonClearance_PanelInfra.lua",
+            infraSrc:find("local EC_PANEL_WIDTH%s*=%s*440") ~= nil,
+            "the panel-width local must live in EbonClearance_PanelInfra.lua (Stage 8e-ix-b)"
+        )
+        check(
+            "EC_compCache.initPanel defined in EbonClearance_PanelInfra.lua",
+            infraSrc:find("function EC_compCache%.initPanel%(") ~= nil,
+            "initPanel must live in EbonClearance_PanelInfra.lua"
+        )
+        check(
+            "EC_compCache.widthRegistry defined in EbonClearance_PanelInfra.lua",
+            infraSrc:find("EC_compCache%.widthRegistry%s*=") ~= nil,
+            "the reactive-layout registry must live in EbonClearance_PanelInfra.lua"
+        )
+        check(
+            "NS.GetPanelWidth closure lives in EbonClearance_PanelInfra.lua",
+            infraSrc:find("NS%.GetPanelWidth%s*=%s*function") ~= nil,
+            "the getter closure must be co-located with EC_PANEL_WIDTH so the upvalue resolves correctly"
+        )
+        check(
+            "EbonClearance_PanelInfra.lua uses NS.EnsureDB (not bare EnsureDB)",
+            infraSrc:find("NS%.EnsureDB%(%)") ~= nil
+                and infraSrc:find("[^.%w_]EnsureDB%(%)") == nil,
+            "initPanel must call NS.EnsureDB (the local lives in EbonClearance.lua)"
+        )
+        -- EC_Delay is a file-scope local in EbonClearance.lua; the
+        -- HookScrollbarAutoHide / FitScrollContent / refreshLayouts
+        -- helpers all schedule deferred work and must call NS.Delay.
+        local infraCode = (infraSrc:gsub("\n[^\n]*", function(line)
+            local commentAt = line:find("%-%-", 1, false)
+            if not commentAt then return line end
+            return line:sub(1, commentAt - 1)
+        end))
+        check(
+            "EbonClearance_PanelInfra.lua uses NS.Delay (not bare EC_Delay)",
+            infraCode:find("NS%.Delay%(") ~= nil
+                and infraCode:find("[^.%w_]EC_Delay%(") == nil,
+            "deferred-work scheduling must call NS.Delay (the EC_Delay local lives in EbonClearance.lua)"
+        )
+    end
+
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        check(
+            "EC_PANEL_WIDTH no longer declared in EbonClearance.lua",
+            ecSrc:find("local EC_PANEL_WIDTH%s*=%s*440") == nil,
+            "duplicate definition would clobber the Stage 8e-ix-b extracted local"
+        )
+        check(
+            "initPanel no longer defined in EbonClearance.lua",
+            ecSrc:find("function EC_compCache%.initPanel%(") == nil,
+            "duplicate definition in EbonClearance.lua would clobber the extracted body"
+        )
+        -- Strip Lua line comments before the bare-ref checks; comment
+        -- lines that reference the old identifier are historical
+        -- documentation, not live code. Strip ALL line comments
+        -- regardless of leading whitespace (the simpler "\n--"-prefix
+        -- gsub misses indented inline comments).
+        local ecCode = (ecSrc:gsub("(\n[^\n]*)", function(line)
+            local commentAt = line:find("%-%-", 1, false)
+            if not commentAt then
+                return line
+            end
+            return line:sub(1, commentAt - 1)
+        end))
+        check(
+            "EbonClearance.lua callers use NS.GetPanelWidth (not bare EC_PANEL_WIDTH)",
+            ecCode:find("[^.%w_]EC_PANEL_WIDTH[^_%w]") == nil,
+            "after the move, EbonClearance.lua can no longer reference EC_PANEL_WIDTH as a local; all callers must use NS.GetPanelWidth()"
+        )
+        check(
+            "EbonClearance.lua callers use NS.HookScrollbarAutoHide (not bare)",
+            ecCode:find("[^.%w_]EC_HookScrollbarAutoHide%(") == nil,
+            "after the move, EbonClearance.lua can no longer reference EC_HookScrollbarAutoHide as a local; all callers must use NS.HookScrollbarAutoHide()"
+        )
+    end
 end
 
 -- ---------------------------------------------------------------------------

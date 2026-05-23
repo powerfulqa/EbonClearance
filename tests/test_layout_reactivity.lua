@@ -42,6 +42,7 @@ local SOURCE_PATHS = {
     "EbonClearance_ItemHighlightingPanel.lua",
     "EbonClearance_ProfilesPanel.lua",
     "EbonClearance_MainPanel.lua",
+    "EbonClearance_PanelInfra.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -79,21 +80,31 @@ end
 -- ---------------------------------------------------------------------------
 -- Test 1: no bare :SetWidth(EC_PANEL_WIDTH - N) outside the two known helpers.
 -- ---------------------------------------------------------------------------
--- Two patterns are allowed:
---   * Inside EC_compCache.setPanelWidth: "widget:SetWidth(EC_PANEL_WIDTH - (x or 0))"
---   * Inside MakeLabel:                    "fs:SetWidth(EC_PANEL_WIDTH - x)"
+-- Allowed patterns:
+--   * Inside EC_compCache.setPanelWidth:
+--       "widget:SetWidth(EC_PANEL_WIDTH - (x or 0))"
+--   * Inside MakeLabel (pre-Stage-8e-ix-b form):
+--       "fs:SetWidth(EC_PANEL_WIDTH - x)"
+--   * Inside MakeLabel (post-Stage-8e-ix-b form via NS.GetPanelWidth()
+--     because EC_PANEL_WIDTH moved to EbonClearance_PanelInfra.lua and
+--     MakeLabel can no longer reference it as a local upvalue):
+--       "fs:SetWidth(NS.GetPanelWidth() - x)"
 -- Plus comment lines (the helper's own docstring references the pattern).
--- Any other ":SetWidth(EC_PANEL_WIDTH" is a regression - the widget will
--- not track resize. Use EC_compCache.setPanelWidth instead.
+-- Any other ":SetWidth(EC_PANEL_WIDTH" or ":SetWidth(NS.GetPanelWidth()"
+-- is a regression - the widget will not track resize. Use
+-- EC_compCache.setPanelWidth instead.
 do
     local violators = {}
     for line in src:gmatch("([^\n]+)") do
-        if line:find(":SetWidth%(EC_PANEL_WIDTH") then
+        local hasPanelWidth = line:find(":SetWidth%(EC_PANEL_WIDTH")
+            or line:find(":SetWidth%(NS%.GetPanelWidth%(%)")
+        if hasPanelWidth then
             local stripped = line:gsub("^%s+", "")
             local isHelperBody = stripped:find("^widget:SetWidth%(EC_PANEL_WIDTH %- %(x or 0%)%)")
-            local isMakeLabel = stripped:find("^fs:SetWidth%(EC_PANEL_WIDTH %- x%)")
+            local isMakeLabelOld = stripped:find("^fs:SetWidth%(EC_PANEL_WIDTH %- x%)")
+            local isMakeLabelNew = stripped:find("^fs:SetWidth%(NS%.GetPanelWidth%(%) %- x%)")
             local isComment = stripped:find("^%-%-")
-            if not (isHelperBody or isMakeLabel or isComment) then
+            if not (isHelperBody or isMakeLabelOld or isMakeLabelNew or isComment) then
                 violators[#violators + 1] = line
             end
         end

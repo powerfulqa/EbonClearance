@@ -2165,6 +2165,57 @@ MainOptions + BuildMainPanel confirmed gone from `EbonClearance.lua`;
 no bare `MainOptions` identifier references remain; registration
 uses `_G[]` lookup.
 
+### Stage 8e-ix-b: extract EbonClearance_PanelInfra.lua (commit `<pending>`)
+
+Stage 8e-ix-b moves the panel-infrastructure block (the foundation
+that every Interface Options panel in the addon depends on) into
+`EbonClearance_PanelInfra.lua`. ~263 LOC moved; new file is ~311 LOC.
+
+Moved into the new file:
+
+- `local EC_PANEL_WIDTH` (mutable; the container's effective width
+  minus a fixed 40 px margin)
+- `local function EC_UpdatePanelWidth` (refreshes from
+  `InterfaceOptionsFramePanelContainer:GetWidth()`)
+- `NS.GetPanelWidth` (getter closure; captures the upvalue - must be
+  co-located with EC_PANEL_WIDTH for the upvalue to resolve)
+- `EC_compCache.widthRegistry` (state table)
+- `EC_compCache.registerWidth` / `registerScrollFit` / `setPanelWidth`
+  / `refreshLayouts` (the 4 reactive-layout helpers)
+- `local function EC_HookScrollbarAutoHide`
+- `local function EC_WrapPanelInScrollFrame`
+- `local function EC_FitScrollContent`
+- `EC_compCache.initPanel` (the panel-OnShow preamble extractor)
+
+The widget primitives (`MakeHeader`, `MakeLabel`, `AddCheckbox`,
+`AddSlider`, `StyleInputBox`, `ColorTextByQuality`) + `CreateListUI`
++ the list-row factories STAY in `EbonClearance.lua` for Stages
+8e-ix-c / 8e-ix-d.
+
+Stage 8e-ix-b prep (before the extraction):
+
+- Four in-`EbonClearance.lua` bare callers of `EC_PANEL_WIDTH` /
+  `EC_HookScrollbarAutoHide` were converted to `NS.GetPanelWidth()` /
+  `NS.HookScrollbarAutoHide` so they still work after the move:
+  - `MakeLabel` initial-width SetWidth.
+  - `CreateListUI` initial-width `local w` snapshot.
+  - `EC_AddScanByQualityRow` row-frame SetSize.
+  - `EC_compCache.buildListScrollArea` scrollbar hook call.
+- Test 1 in `tests/test_layout_reactivity.lua` updated to accept the
+  new `fs:SetWidth(NS.GetPanelWidth() - x)` form in MakeLabel
+  alongside the legacy `fs:SetWidth(EC_PANEL_WIDTH - x)` form.
+- `EnsureDB()` call inside `initPanel` rewritten to `NS.EnsureDB()`
+  (NS.EnsureDB was already exposed during Stage 8 prep).
+
+Stage 8e-ix-b invariants (Test 52): `EC_PANEL_WIDTH` + `initPanel` +
+`widthRegistry` + `NS.GetPanelWidth` closure live in
+`EbonClearance_PanelInfra.lua`; new file uses `NS.EnsureDB` (not
+bare); `EbonClearance.lua` no longer declares `EC_PANEL_WIDTH` or
+`initPanel`; no bare `EC_PANEL_WIDTH` or `EC_HookScrollbarAutoHide`
+references remain in `EbonClearance.lua` code (comments are stripped
+before checking via a per-line `%-%-` scan that handles indented
+inline comments).
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

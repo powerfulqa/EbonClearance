@@ -465,6 +465,25 @@ local function EnsureDB()
     if type(DB.protectChanceOnHitItems) ~= "boolean" then
         DB.protectChanceOnHitItems = true
     end
+    -- Tome protection (per-character because alts vary in what they
+    -- have or want to keep). Two independent toggles:
+    --   * protectUnlearnedTomes - items that teach a spell the
+    --     character does NOT yet know are HARD-vetoed by EC_IsSellable
+    --     even when on the Sell List. The user must explicitly mark
+    --     Allow Sell (Alt+Right-Click -> Allow Sell, ADB.allowedItems)
+    --     to lift the protection. Mirrors the v2.19.0 affix protection
+    --     design rather than the v2.20.1 chance-on-hit narrowing:
+    --     tomes are high-value enough that "two-key" confirmation
+    --     (Sell List entry + Allow Sell) is required before vendoring.
+    --   * protectAllTomes - same hard-veto semantic; protects every
+    --     spell-teaching item regardless of whether the character has
+    --     learned it.
+    if type(DB.protectUnlearnedTomes) ~= "boolean" then
+        DB.protectUnlearnedTomes = true
+    end
+    if type(DB.protectAllTomes) ~= "boolean" then
+        DB.protectAllTomes = false
+    end
     -- v2.22.0: Process Bags panel. Lets the player batch-cast their
     -- profession spells (Disenchant / Mill / Prospect) on eligible
     -- bag items via a secure-button macro. Soulbound DE is opt-in
@@ -559,12 +578,15 @@ local function EnsureDB()
     if type(DB.muteGreedy) ~= "boolean" then
         DB.muteGreedy = true
     end
-    if type(DB.hideGreedyChat) ~= "boolean" then
-        DB.hideGreedyChat = DB.muteGreedy
-    end
-    if type(DB.hideGreedyBubbles) ~= "boolean" then
-        DB.hideGreedyBubbles = DB.muteGreedy
-    end
+    -- Hide chat + hide bubbles are now baked-in addon behaviour, not a
+    -- user-toggleable setting. The DB fields are kept so existing call
+    -- sites that read them (Companion.lua's chat / bubble filters) keep
+    -- working without code churn, but they are unconditionally forced
+    -- to true on every load - any prior `false` value from when the
+    -- toggle was user-controlled gets reset. The Scavenger Settings
+    -- panel's two checkboxes were removed in the same change.
+    DB.hideGreedyChat = true
+    DB.hideGreedyBubbles = true
 
     if type(DB.enabled) ~= "boolean" then
         DB.enabled = true
@@ -3581,9 +3603,32 @@ local function EC_IsSellable(bag, slot, junkOnly)
             qualityPass = false
         end
     end
-    -- After the chance-on-hit downgrade, if no positive sell signal
-    -- remains (isJunk / qualityPass / whitelistPass), the item is no
-    -- longer sellable. Recheck the predicate the main guard uses.
+    -- Tome protection. HARD veto regardless of list membership - mirrors
+    -- the v2.19.0 affix protection design rather than the v2.20.1 chance-
+    -- on-hit narrowing: a protected tome cannot be vendored even when on
+    -- the Sell List. The user must explicitly mark Allow Sell
+    -- (Alt+Right-Click -> Allow Sell, ADB.allowedItems[itemID]) to lift
+    -- the protection. Two-key gate: Sell List entry expresses intent;
+    -- Allow Sell is the acknowledgment that the protection is being
+    -- overridden. protectAllTomes wins over protectUnlearnedTomes when
+    -- both are on.
+    if (qualityPass or whitelistPass)
+        and (DB.protectAllTomes or DB.protectUnlearnedTomes)
+        and EC_compCache.itemIsTome(bag, slot, itemID)
+    then
+        if not (ADB.allowedItems and ADB.allowedItems[itemID]) then
+            if DB.protectAllTomes then
+                return false
+            elseif DB.protectUnlearnedTomes
+                and not EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+            then
+                return false
+            end
+        end
+    end
+    -- After the chance-on-hit / tome downgrades, if no positive sell
+    -- signal remains (isJunk / qualityPass / whitelistPass), the item
+    -- is no longer sellable. Recheck the predicate the main guard uses.
     if not (isJunk or qualityPass or whitelistPass) then
         return false
     end
@@ -4939,17 +4984,24 @@ f:SetScript("OnEvent", function(self, event, ...)
             -- briefly leaked into _G. Harmless if absent. See v2.2.1 fix.
             _G.EC_summonGoblinPending = nil
             _G.EC_summonGoblinTimer = nil
-            NS.HookDeletePopupOnce()
+            -- Defensive nil-guards around the NS bootstrap chain. A
+            -- missing or partial-sync split file is the most common
+            -- failure mode during development (one .lua not yet
+            -- copied to the live addon folder); without these guards
+            -- a single missing file kills the whole init chain at the
+            -- nil call site, hiding which subsystem actually failed
+            -- to load.
+            if NS.HookDeletePopupOnce then NS.HookDeletePopupOnce() end
             EC_InstallFastLootHookOnce()
-            if NS.ApplyGreedyChatFilter then
-                NS.ApplyGreedyChatFilter()
+            if NS.ApplyGreedyChatFilter then NS.ApplyGreedyChatFilter() end
+            if NS.CreateMinimapButton then NS.CreateMinimapButton() end
+            if NS.InstallTooltipHookOnce then NS.InstallTooltipHookOnce() end
+            if NS.CreateLDBLauncher then NS.CreateLDBLauncher() end
+            if NS.CreateTargetMerchantButton then NS.CreateTargetMerchantButton() end
+            if NS.InstallBagContextHookOnce then NS.InstallBagContextHookOnce() end
+            if EC_manualSell and EC_manualSell.installHookOnce then
+                EC_manualSell.installHookOnce()
             end
-            NS.CreateMinimapButton()
-            NS.InstallTooltipHookOnce()
-            NS.CreateLDBLauncher()
-            NS.CreateTargetMerchantButton()
-            NS.InstallBagContextHookOnce()
-            EC_manualSell.installHookOnce()
         elseif addonName == "Bagnon" then
             -- The host bag UI's slot class was registered during its load
             -- pass; install the sell-border hook now so the first paint
@@ -5067,6 +5119,17 @@ f:SetScript("OnEvent", function(self, event, ...)
         EC_compCache.spellUpdatePending = true
         EC_compCache.spellUpdateAccum = 0
         EC_compCache.spellUpdateFrame:Show()
+        -- Tome "Already known" lookups read the LIVE tooltip via
+        -- SetBagItem, so flipping false -> true on a tome the player
+        -- just learned needs the cache cleared immediately. The wipe
+        -- is cheap (one table reset); doing it synchronously avoids
+        -- the 0.5 s debounce window where the next auto-rule sweep
+        -- could still treat a just-learned recipe as unlearned and
+        -- protect it from vendoring. tomeCache itself isn't wiped
+        -- because is-a-tome is stable per itemID.
+        if EC_compCache.tomeIsKnownCache then
+            wipe(EC_compCache.tomeIsKnownCache)
+        end
     elseif event == "BAG_UPDATE" or event == "ITEM_LOCK_CHANGED" then
         -- v2.24.0 perf: bag-full handler stays synchronous so the
         -- cycle's responsiveness across the free-slot threshold is

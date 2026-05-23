@@ -209,8 +209,26 @@ local function EC_ShowItemContextMenu(button)
         and affixData.description
         and EC_compCache.normaliseAffixDesc
         and EC_compCache.normaliseAffixDesc(affixData.description)
-    local hasProtection = hasProc or hasAffix
-    -- Allowance has three sources:
+    -- Tome protection: same per-itemID storage as chance-on-hit
+    -- (ADB.allowedItems[itemID]), so the Allow Sell / Remove from
+    -- Allow List flow shares those branches. The unlearned-only mode
+    -- gates on playerKnowsTomeSpell; protectAllTomes is unconditional.
+    local hasTome = false
+    if (DB.protectAllTomes or DB.protectUnlearnedTomes)
+        and EC_compCache.itemIsTome
+        and EC_compCache.itemIsTome(bag, slot, itemID)
+    then
+        if DB.protectAllTomes then
+            hasTome = true
+        elseif DB.protectUnlearnedTomes
+            and EC_compCache.playerKnowsTomeSpell
+            and not EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+        then
+            hasTome = true
+        end
+    end
+    local hasProtection = hasProc or hasAffix or hasTome
+    -- Allowance has four sources:
     --   1. Manual itemID mark for chance-on-hit (allowedItems).
     --   2. Manual affix-description mark for random affix
     --      (allowedAffixes).
@@ -219,7 +237,10 @@ local function EC_ShowItemContextMenu(button)
     --      already extracted is implicitly allowed - no manual mark
     --      needed. This is the "if exact-rank dupes is enabled then
     --      Allow Sell isn't required" rule from the user spec.
+    --   4. Manual itemID mark for tome (allowedItems, shared with
+    --      chance-on-hit since both protections are per-itemID).
     local procAllowed = hasProc and ADB.allowedItems and ADB.allowedItems[itemID] == true
+    local tomeAllowed = hasTome and ADB.allowedItems and ADB.allowedItems[itemID] == true
     local affixManualAllowed = hasAffix and affixKey and ADB.allowedAffixes and ADB.allowedAffixes[affixKey] == true
     local affixAutoAllowed = hasAffix
         and affixData
@@ -228,7 +249,7 @@ local function EC_ShowItemContextMenu(button)
         and EC_compCache.playerHasAffixDescription
         and EC_compCache.playerHasAffixDescription(affixData.description)
     local affixAllowed = affixManualAllowed or affixAutoAllowed
-    local itemAllowed = procAllowed or affixAllowed
+    local itemAllowed = procAllowed or affixAllowed or tomeAllowed
     local procProtected = hasProtection and not itemAllowed
 
     local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
@@ -302,11 +323,14 @@ local function EC_ShowItemContextMenu(button)
             -- player has extracted), there's no manual mark to
             -- toggle - hide the row. The full list menu is already
             -- visible because itemAllowed is true.
-            local hasManualMark = procAllowed or affixManualAllowed
+            local hasManualMark = procAllowed or affixManualAllowed or tomeAllowed
             if hasManualMark then
                 btn:SetText("|cffff8000Remove from Allow List|r")
                 btn:SetScript("OnClick", function()
-                    if procAllowed and ADB.allowedItems then
+                    -- procAllowed and tomeAllowed share the same
+                    -- ADB.allowedItems[itemID] flag; clearing once
+                    -- restores both protections.
+                    if (procAllowed or tomeAllowed) and ADB.allowedItems then
                         ADB.allowedItems[itemID] = nil
                     end
                     if affixManualAllowed and affixKey and ADB.allowedAffixes then
@@ -348,6 +372,12 @@ local function EC_ShowItemContextMenu(button)
             elseif hasProtection then
                 btn:SetText("Allow Sell")
                 btn:SetScript("OnClick", function()
+                    -- Mark each protection layer that applies. In the
+                    -- common case only one of (affix, proc, tome) is
+                    -- true; mixed cases (e.g. a chance-on-hit tome -
+                    -- rare) mark both flags so a single Allow Sell
+                    -- click lifts everything.
+                    local marked = false
                     if hasAffix and affixKey then
                         ADB.allowedAffixes = ADB.allowedAffixes or {}
                         ADB.allowedAffixes[affixKey] = true
@@ -355,10 +385,17 @@ local function EC_ShowItemContextMenu(button)
                             "Marked affix %s as allowed. Future drops with this affix will auto-sell.",
                             tostring(affixData.name or affixKey)
                         )
-                    elseif hasProc then
+                        marked = true
+                    end
+                    if hasProc or hasTome then
                         ADB.allowedItems = ADB.allowedItems or {}
                         ADB.allowedItems[itemID] = true
-                        NS.PrintNicef("Marked %s as allowed. Future drops will auto-sell.", itemName)
+                        if not marked then
+                            NS.PrintNicef(
+                                "Marked %s as allowed. Future drops will auto-sell.",
+                                itemName
+                            )
+                        end
                     end
                     frame:Hide()
                     -- Same reasoning as the remove-from-allow path: this

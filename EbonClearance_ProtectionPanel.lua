@@ -71,6 +71,15 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.procCB then
             self.procCB:SetChecked(DB.protectChanceOnHitItems)
         end
+        if self.unlearnedTomeCB then
+            self.unlearnedTomeCB:SetChecked(DB.protectUnlearnedTomes)
+        end
+        if self.allTomeCB then
+            self.allTomeCB:SetChecked(DB.protectAllTomes)
+        end
+        if self.UpdateAllTomeEnabled then
+            self:UpdateAllTomeEnabled()
+        end
     end, function(self, content)
         -- Auto-protect handlers used to refresh `self.listUI` directly because
         -- the list lived on the same frame. Now the list lives on the Keep List
@@ -421,6 +430,115 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
 
-        NS.FitScrollContent(content, procNote)
+        -- Tome protection. Parent + child checkbox pair mirroring the
+        -- affix-dupe shape above:
+        --   * Parent (unlearnedTomeCB) controls DB.protectUnlearnedTomes -
+        --     when ON, unlearned spell-teaching items (recipes, tomes,
+        --     scrolls) are protected.
+        --   * Child (allTomeCB), indented and only enabled when parent is
+        --     ON, controls DB.protectAllTomes - extends the protection to
+        --     items the character has already learned.
+        -- Both HARD-VETO in EC_IsSellable: a protected tome / recipe
+        -- cannot be vendored even when on the Sell List - the user must
+        -- explicitly Alt+Right-Click -> Allow Sell first. Mirrors affix-
+        -- protection semantics (v2.19.0), not chance-on-hit (v2.20.1).
+        local unlearnedTomeCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceProtectUnlearnedTomesCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        unlearnedTomeCB:SetPoint("TOPLEFT", procNote, "BOTTOMLEFT", -26, -10)
+        unlearnedTomeCB:SetChecked(DB.protectUnlearnedTomes)
+        local utText = _G[unlearnedTomeCB:GetName() .. "Text"]
+        if utText then
+            utText:SetText("Protect tomes and recipes")
+            EC_compCache.setPanelWidth(utText, 60)
+            utText:SetJustifyH("LEFT")
+        end
+        self.unlearnedTomeCB = unlearnedTomeCB
+
+        local unlearnedTomeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        unlearnedTomeNote:SetPoint("TOPLEFT", unlearnedTomeCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(unlearnedTomeNote, 60)
+        unlearnedTomeNote:SetJustifyH("LEFT")
+        if unlearnedTomeNote.SetWordWrap then
+            unlearnedTomeNote:SetWordWrap(true)
+        end
+        unlearnedTomeNote:SetText(
+            "|cff888888Spell-teaching items the character does not yet know are protected. Alt+Right-Click |cffffb84d-> Allow Sell|r|cff888888 is required to vendor a protected item; Sell List membership alone does not bypass the protection.|r"
+        )
+
+        -- Child toggle: extends protection to already-known items.
+        -- Indented under the parent's note (matches the affix-dupe
+        -- pattern - +0 x-offset under the +26-indented note puts the
+        -- child a column further right than the parent).
+        local allTomeCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceProtectAllTomesCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        allTomeCB:SetPoint("TOPLEFT", unlearnedTomeNote, "BOTTOMLEFT", 0, -8)
+        allTomeCB:SetChecked(DB.protectAllTomes)
+        local atText = _G[allTomeCB:GetName() .. "Text"]
+        if atText then
+            atText:SetText("Even when already known")
+            EC_compCache.setPanelWidth(atText, 86)
+            atText:SetJustifyH("LEFT")
+        end
+        self.allTomeCB = allTomeCB
+
+        local allTomeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        allTomeNote:SetPoint("TOPLEFT", allTomeCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(allTomeNote, 86)
+        allTomeNote:SetJustifyH("LEFT")
+        if allTomeNote.SetWordWrap then
+            allTomeNote:SetWordWrap(true)
+        end
+        self.allTomeNote = allTomeNote
+
+        allTomeCB:SetScript("OnClick", function(cb)
+            DB.protectAllTomes = cb:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
+        end)
+
+        -- Greys-out the child CB when the parent is off, swapping the
+        -- explanatory note for a status line. Same shape as
+        -- UpdateDupeAffixEnabled above.
+        local function UpdateAllTomeEnabled()
+            local parentOn = DB.protectUnlearnedTomes == true
+            if parentOn then
+                allTomeCB:Enable()
+                if atText then
+                    atText:SetTextColor(1, 1, 1)
+                end
+                allTomeNote:SetText(
+                    "|cff888888Extends the protection to items the character has already learned. Useful for hoarding spare recipes / plans for alts or selling later.|r"
+                )
+            else
+                allTomeCB:Disable()
+                if atText then
+                    atText:SetTextColor(0.5, 0.5, 0.5)
+                end
+                allTomeNote:SetText("|cff888888Enable the protection above to use this option.|r")
+            end
+        end
+        self.UpdateAllTomeEnabled = UpdateAllTomeEnabled
+        UpdateAllTomeEnabled()
+
+        unlearnedTomeCB:SetScript("OnClick", function(cb)
+            DB.protectUnlearnedTomes = cb:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            UpdateAllTomeEnabled()
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
+        end)
+
+        NS.FitScrollContent(content, allTomeNote)
     end, true)
 end)

@@ -3269,6 +3269,160 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 56: tome protection (per-character).
+-- ---------------------------------------------------------------------------
+-- Two new DB toggles (DB.protectUnlearnedTomes default ON,
+-- DB.protectAllTomes default OFF) drive a HARD veto in EC_IsSellable that
+-- blocks vendoring of spell-teaching items even when on the Sell List.
+-- Mirrors the v2.19.0 affix protection semantics, not v2.20.1 chance-on-
+-- hit narrowing: the user must explicitly mark Allow Sell
+-- (ADB.allowedItems[itemID]) to lift the protection. Detection is hybrid:
+-- GetItemInfo class == "Recipe" is the fast path; tooltip scan for
+-- `Use: Teaches you...` (locale-aware via ITEM_SPELL_TRIGGER_ONUSE)
+-- covers class tomes and mount scrolls. Unlearned check via
+-- ITEM_SPELL_KNOWN ("Already known") tooltip line. Two caches: tomeCache
+-- (stable per itemID, never invalidated) and tomeIsKnownCache (character-
+-- state-sensitive, wiped on LEARNED_SPELL_IN_TAB / SPELLS_CHANGED).
+do
+    -- EnsureDB defaults must be wired with the documented values.
+    check(
+        "EnsureDB defaults DB.protectUnlearnedTomes to true",
+        src:find("DB%.protectUnlearnedTomes%s*=%s*true") ~= nil,
+        "the new unlearned-tome protection must default ON to match the affix / chance-on-hit precedent"
+    )
+    check(
+        "EnsureDB defaults DB.protectAllTomes to false",
+        src:find("DB%.protectAllTomes%s*=%s*false") ~= nil,
+        "the all-tomes variant defaults OFF; opt-in toggle"
+    )
+
+    -- Detection helpers must live on EC_compCache so all callers
+    -- (EC_IsSellable, tooltip annotation, future call sites) share the
+    -- same per-itemID caches.
+    local helpers = {
+        "itemIsTome", "playerKnowsTomeSpell",
+        "liveTooltipIsTome", "liveTooltipPlayerKnowsTome",
+    }
+    for _, name in ipairs(helpers) do
+        check(
+            "EC_compCache." .. name .. " defined",
+            src:find("function EC_compCache%." .. name .. "%(") ~= nil,
+            name .. " must be attached to EC_compCache so the bag-item and live-tooltip paths share the cache"
+        )
+    end
+
+    -- Both caches must be declared on EC_compCache in Core.lua so
+    -- they exist at load time (no lazy init in helpers).
+    local coreFile = io.open("EbonClearance_Core.lua", "rb")
+    if coreFile then
+        local coreSrc = coreFile:read("*a") or ""
+        coreFile:close()
+        check(
+            "tomeCache declared on EC_compCache (Core)",
+            coreSrc:find("tomeCache%s*=%s*{}") ~= nil,
+            "tomeCache must exist at load so the is-a-tome lookup never hits nil"
+        )
+        check(
+            "tomeIsKnownCache declared on EC_compCache (Core)",
+            coreSrc:find("tomeIsKnownCache%s*=%s*{}") ~= nil,
+            "tomeIsKnownCache must exist at load so the LEARNED_SPELL_IN_TAB wipe is safe"
+        )
+    end
+
+    -- The cache invalidation must fire on LEARNED_SPELL_IN_TAB /
+    -- SPELLS_CHANGED. The wipe is intentionally NOT debounced (it's
+    -- one table reset; doing it synchronously avoids a 0.5 s window
+    -- where a just-learned recipe still reads as unlearned).
+    local eventsFile = io.open("EbonClearance_Events.lua", "rb")
+    if eventsFile then
+        local eventsSrc = eventsFile:read("*a") or ""
+        eventsFile:close()
+        -- Locate the LEARNED_SPELL_IN_TAB branch and look for the wipe
+        -- within the next ~30 lines.
+        local branchAt = eventsSrc:find('event == "LEARNED_SPELL_IN_TAB"', 1, true)
+        check(
+            "LEARNED_SPELL_IN_TAB branch wipes tomeIsKnownCache",
+            branchAt
+                and eventsSrc:sub(branchAt, branchAt + 1500):find("wipe%(EC_compCache%.tomeIsKnownCache%)") ~= nil,
+            "the cache wipe must live in the event branch; without it a just-learned recipe stays \"unlearned\" until /reload"
+        )
+        -- The EC_IsSellable veto block must reference both toggles AND
+        -- the Allow Sell bypass. Three patterns to find:
+        check(
+            "EC_IsSellable references DB.protectAllTomes",
+            eventsSrc:find("DB%.protectAllTomes") ~= nil,
+            "the veto must consult the aggressive all-tomes toggle"
+        )
+        check(
+            "EC_IsSellable references DB.protectUnlearnedTomes",
+            eventsSrc:find("DB%.protectUnlearnedTomes") ~= nil,
+            "the veto must consult the unlearned-tome toggle"
+        )
+        check(
+            "EC_IsSellable calls EC_compCache.itemIsTome",
+            eventsSrc:find("EC_compCache%.itemIsTome%(") ~= nil,
+            "the veto must dispatch to the cached tome detector"
+        )
+        check(
+            "EC_IsSellable calls EC_compCache.playerKnowsTomeSpell",
+            eventsSrc:find("EC_compCache%.playerKnowsTomeSpell%(") ~= nil,
+            "the unlearned branch must consult the learned-state cache"
+        )
+        -- Hard-veto invariant: the tome block must include `return false`,
+        -- not just demote qualityPass. The Sell List override pattern
+        -- (from chance-on-hit v2.20.1) is intentionally NOT used; tomes
+        -- require Allow Sell even with explicit list entries.
+        local tomeBlockStart = eventsSrc:find("EC_compCache%.itemIsTome%(")
+        if tomeBlockStart then
+            -- Capture the next ~600 chars (covers the if/end block).
+            local tomeBlock = eventsSrc:sub(tomeBlockStart, tomeBlockStart + 600)
+            check(
+                "EC_IsSellable tome block hard-vetoes via `return false`",
+                tomeBlock:find("return false") ~= nil,
+                "the tome veto must HARD-veto (return false) so Sell List membership doesn't bypass it; Allow Sell is the only bypass"
+            )
+            check(
+                "EC_IsSellable tome block considers whitelistPass in the gate",
+                eventsSrc:find("%(qualityPass or whitelistPass%)%s*\n%s*and %(DB%.protectAllTomes") ~= nil,
+                "the tome gate must include whitelistPass so the protection fires even for Sell List entries"
+            )
+        end
+    end
+
+    -- The Protection Settings panel must wire two checkboxes that
+    -- write the toggles AND call NS.RefreshSellBorders (so toggling
+    -- the protection re-paints the bag tints immediately, matching
+    -- Test 42's list-mutation invariant family).
+    local protPanelFile = io.open("EbonClearance_ProtectionPanel.lua", "rb")
+    if protPanelFile then
+        local panelSrc = protPanelFile:read("*a") or ""
+        protPanelFile:close()
+        check(
+            "ProtectionPanel writes DB.protectUnlearnedTomes",
+            panelSrc:find("DB%.protectUnlearnedTomes%s*=") ~= nil,
+            "the unlearned-tome checkbox OnClick must persist the new state"
+        )
+        check(
+            "ProtectionPanel writes DB.protectAllTomes",
+            panelSrc:find("DB%.protectAllTomes%s*=") ~= nil,
+            "the all-tomes checkbox OnClick must persist the new state"
+        )
+        -- Both OnClick handlers must call NS.RefreshSellBorders.
+        -- Count occurrences as a sanity check (one per checkbox + the
+        -- pre-existing 3 in this file = at least 5 total).
+        local refreshCount = 0
+        for _ in panelSrc:gmatch("NS%.RefreshSellBorders") do
+            refreshCount = refreshCount + 1
+        end
+        check(
+            "ProtectionPanel calls NS.RefreshSellBorders at least 5 times",
+            refreshCount >= 5,
+            "Stage 8e-vi pinned 3 refresh calls; the two new tome toggles add 2 more (Issue B invariant family)"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

@@ -410,35 +410,94 @@ local function EC_AnnotateTooltip(tooltip)
     -- label is plain "Allowed - Sell". Keep List membership wins
     -- everything else; we don't override the Kept label.
     if DB.protectChanceOnHitItems and EC_compCache.liveTooltipHasChanceOnHit(tooltip, id) then
-        if ADB.allowedItems and ADB.allowedItems[id] then
-            if IsInSet(DB.blacklist, id) then
-                -- Kept wins; leave the earlier Protected / Auto-
-                -- Protected label alone.
-            elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
+        -- Explicit user lists override the safety net. The protection
+        -- veto in EC_IsSellable only narrows qualityPass; whitelistPass
+        -- (explicit Sell List entry) keeps the item sellable. BuildQueue's
+        -- delete path also doesn't gate on chance-on-hit (v2.20.1 note).
+        -- So if the item is on Sell / Account Sell / Delete / Keep, the
+        -- earlier annotation chain produced the correct verdict already;
+        -- don't overwrite it.
+        local onExplicit = IsInSet(DB.blacklist, id)
+            or IsInSet(DB.whitelist, id)
+            or (ADB and IsInSet(ADB.whitelist, id))
+            or (IsInSet(DB.deleteList, id) and DB.enableDeletion)
+        if onExplicit then
+            -- Explicit list verdict stands; leave statusLine alone.
+        elseif ADB.allowedItems and ADB.allowedItems[id] then
+            -- Marked allowed but no specific list chosen. If the
+            -- per-rarity sweep chain above already produced a
+            -- "Will Sell - <reason>" verdict, the item IS being
+            -- auto-sold by the rule - rewrite the prefix to
+            -- "Allowed - <reason>". When no rule verdict exists, fall
+            -- back to the "pick a list" call to action.
+            if statusLine and statusLine:find("Will Sell", 1, true) then
+                statusLine = statusLine:gsub("Will Sell", "Allowed", 1)
+            else
+                statusLine = "|cff66ccff[EC]|r |cffffea80Allowed - Choose List|r"
+            end
+        else
+            statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Chance on hit|r"
+        end
+    end
+
+    -- Tome protection annotation. Same precedence shape as chance-on-
+    -- hit above: a Keep List entry (blacklist) leaves any earlier
+    -- Protected / Auto-Protected label alone; an Allow Sell mark
+    -- (ADB.allowedItems) rewrites to the destination list; the
+    -- unmarked default is "Protected - Tome (unlearned)" or
+    -- "Protected - Tome". The aggressive "all tomes" toggle wins over
+    -- "unlearned only" - same precedence as EC_IsSellable.
+    local tomeProtected = false
+    local tomeReason
+    if (DB.protectAllTomes or DB.protectUnlearnedTomes)
+        and EC_compCache.liveTooltipIsTome(tooltip, id)
+    then
+        -- Label the protection accurately. GetItemInfo's class is
+        -- "Recipe" for BOTH profession crafting items (Plans /
+        -- Schematic / Pattern / Formula / Recipe / Design / Manual)
+        -- AND generic spell-teaching tomes (class spell books, mount
+        -- scrolls, PE Tome of Echo). The distinguishing field is the
+        -- subtype - profession recipes carry a profession-name
+        -- subtype; everything else falls through to "Tome".
+        local kindLabel = (EC_compCache.tomeKind and EC_compCache.tomeKind(id)) or "Tome"
+        if DB.protectAllTomes then
+            tomeProtected = true
+            tomeReason = EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
+                and (kindLabel .. " (known)")
+                or (kindLabel .. " (unlearned)")
+        elseif DB.protectUnlearnedTomes
+            and not EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
+        then
+            tomeProtected = true
+            tomeReason = kindLabel .. " (unlearned)"
+        end
+    end
+    if tomeProtected then
+        -- Tome protection HARD-VETOES in EC_IsSellable (return false)
+        -- regardless of Sell List membership, so the Protected label
+        -- is the truth - leave the Keep List label alone (it's
+        -- already an "Auto-Protected" or "Protected" prefix that
+        -- shouldn't be downgraded), but otherwise show
+        -- "Protected - Tome (...)" until the user marks Allow Sell.
+        -- The Allow Sell branch relabels destination lists so the
+        -- user sees where the item will go once the gate is lifted.
+        if IsInSet(DB.blacklist, id) then
+            -- Kept wins; leave the earlier Auto-Protected /
+            -- Protected label alone.
+        elseif ADB.allowedItems and ADB.allowedItems[id] then
+            if IsInSet(DB.deleteList, id) and DB.enableDeletion then
                 statusLine = "|cff66ccff[EC]|r |cffff4444Allowed - Delete|r"
             elseif ADB and ADB.whitelist and IsInSet(ADB.whitelist, id) then
                 statusLine = "|cff66ccff[EC]|r |cffb6ffb6Allowed - Account Sell|r"
             elseif IsInSet(DB.whitelist, id) then
                 statusLine = "|cff66ccff[EC]|r |cffb6ffb6Allowed - Character Sell|r"
+            elseif statusLine and statusLine:find("Will Sell", 1, true) then
+                statusLine = statusLine:gsub("Will Sell", "Allowed", 1)
             else
-                -- Marked allowed but no specific list chosen. If the
-                -- per-rarity sweep chain above already produced a
-                -- "Will Sell - <reason>" verdict, the item IS being
-                -- auto-sold by the rule - rewrite the prefix to
-                -- "Allowed - <reason>" to match the established
-                -- "Allowed - Character Sell" / "Allowed - Account
-                -- Sell" label family. Without this, the user sees
-                -- "Choose List" while the merchant cycle silently
-                -- vendors the item. When no rule verdict exists, fall
-                -- back to the "pick a list" call to action.
-                if statusLine and statusLine:find("Will Sell", 1, true) then
-                    statusLine = statusLine:gsub("Will Sell", "Allowed", 1)
-                else
-                    statusLine = "|cff66ccff[EC]|r |cffffea80Allowed - Choose List|r"
-                end
+                statusLine = "|cff66ccff[EC]|r |cffffea80Allowed - Choose List|r"
             end
         else
-            statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - Chance on hit|r"
+            statusLine = "|cff66ccff[EC]|r |cffffb84dProtected - " .. tomeReason .. "|r"
         end
     end
 

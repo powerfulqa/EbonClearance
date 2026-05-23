@@ -135,6 +135,21 @@ local EC_compCache = {
     -- this table lives in the module-local EC_compCache and isn't
     -- persisted. Filled lazily by EC_compCache.itemHasChanceOnHit.
     chanceOnHitCache = {},
+    -- Tome caches. Two tables because the two properties decay at
+    -- different rates:
+    --   * tomeCache - is-a-tome boolean. Stable per itemID (an item
+    --     that teaches a spell ALWAYS teaches that spell), so the
+    --     entry never needs invalidation. Filled lazily by
+    --     EC_compCache.itemIsTome.
+    --   * tomeIsKnownCache - has-player-learned-the-spell boolean.
+    --     Character-state-sensitive: flips false -> true the moment
+    --     the player right-clicks a recipe or trains a spell. The
+    --     LEARNED_SPELL_IN_TAB / SPELLS_CHANGED handler wipes this
+    --     table so the next lookup re-scans the tooltip for the
+    --     "Already known" line (ITEM_SPELL_KNOWN). Filled lazily by
+    --     EC_compCache.playerKnowsTomeSpell.
+    tomeCache = {},
+    tomeIsKnownCache = {},
     -- v2.22.0 Process-mode cache. Maps itemID to one of
     -- "Disenchant" | "Mill" | "Prospect" | "none", or nil if not yet
     -- scanned. Stable property per itemID. Filled lazily by the

@@ -727,6 +727,204 @@ function EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)
     return result
 end
 
+-- Tome detection. A "tome" here means a spell-teaching item: profession
+-- recipes (Recipe class via GetItemInfo) and class spell books / talent
+-- tomes / mount-training scrolls (detected via a `Use: Teaches you...`
+-- tooltip line). Two helpers because the two signals decay at different
+-- rates:
+--   * itemIsTome    - stable per itemID. Recipe class is a hard
+--                     fast-path; tooltip-scan covers everything else.
+--   * playerKnowsTomeSpell - flips when the player learns the spell.
+--                     Scans the live tooltip for the locale-aware
+--                     ITEM_SPELL_KNOWN string ("Already known").
+function EC_compCache.itemIsTome(bag, slot, itemID)
+    if not itemID then
+        return false
+    end
+    if EC_compCache.tomeCache[itemID] ~= nil then
+        return EC_compCache.tomeCache[itemID]
+    end
+    -- Fast path: GetItemInfo class "Recipe" covers every profession
+    -- recipe (cookbook, schematic, manual, design, formula, etc.) and
+    -- is set on the itemID alone, so it works even without a bag/slot.
+    local _, _, _, _, _, itype = GetItemInfo(itemID)
+    if itype == "Recipe" then
+        EC_compCache.tomeCache[itemID] = true
+        return true
+    end
+    -- Slow path: tooltip-scan for `Use: Teaches...`. Covers class
+    -- spell books (e.g. Death Knight talent tomes) and the various
+    -- mount-/critter-training scrolls. Needs bag/slot for SetBagItem.
+    if not bag or not slot then
+        EC_compCache.tomeCache[itemID] = false
+        return false
+    end
+    scanTip():ClearLines()
+    scanTip():SetBagItem(bag, slot)
+    local result = false
+    local usePrefix = ITEM_SPELL_TRIGGER_ONUSE or "Use:"
+    for i = 1, 30 do
+        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        if not line then
+            break
+        end
+        local txt = line:GetText()
+        if type(txt) == "string"
+            and txt:find(usePrefix, 1, true) == 1
+            and txt:find("[Tt]eaches", 1, false)
+        then
+            result = true
+            break
+        end
+    end
+    EC_compCache.tomeCache[itemID] = result
+    return result
+end
+
+function EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+    if not itemID then
+        return false
+    end
+    if EC_compCache.tomeIsKnownCache[itemID] ~= nil then
+        return EC_compCache.tomeIsKnownCache[itemID]
+    end
+    if not bag or not slot then
+        return false
+    end
+    scanTip():ClearLines()
+    scanTip():SetBagItem(bag, slot)
+    local result = false
+    local knownStr = ITEM_SPELL_KNOWN or "Already known"
+    for i = 1, 30 do
+        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        if not line then
+            break
+        end
+        local txt = line:GetText()
+        if type(txt) == "string" and txt:find(knownStr, 1, true) then
+            result = true
+            break
+        end
+    end
+    EC_compCache.tomeIsKnownCache[itemID] = result
+    return result
+end
+
+-- Profession subtypes used by GetItemInfo for class="Recipe" items.
+-- Items whose subtype is in this set are profession crafting recipes
+-- (Plans / Schematic / Pattern / Formula / Recipe / Design / Manual);
+-- items with class="Recipe" but a subtype NOT in this set are spell-
+-- teaching tomes / books / scrolls (Tome of Echo, class spell books,
+-- mount training scrolls, etc.). Used by EC_compCache.tomeKind to
+-- pick the right label for the tooltip annotation. enUS strings;
+-- the addon targets a single locale (enUS PE).
+local EC_TOME_PROFESSION_SUBTYPES = {
+    Alchemy = true,
+    Blacksmithing = true,
+    Cooking = true,
+    Enchanting = true,
+    Engineering = true,
+    ["First Aid"] = true,
+    Fishing = true,
+    Inscription = true,
+    Jewelcrafting = true,
+    Leatherworking = true,
+    Mining = true,
+    Tailoring = true,
+}
+
+-- Pick the right label for a protected tome / recipe. Returns
+-- "Recipe" for profession crafting items, "Tome" for everything else
+-- (class tomes, mount scrolls, PE Tome of Echo, etc.). GetItemInfo's
+-- class string is "Recipe" for both groups, so we have to consult
+-- the subtype to tell them apart.
+function EC_compCache.tomeKind(itemID)
+    if not itemID then
+        return "Tome"
+    end
+    local _, _, _, _, _, _, isubtype = GetItemInfo(itemID)
+    if isubtype and EC_TOME_PROFESSION_SUBTYPES[isubtype] then
+        return "Recipe"
+    end
+    return "Tome"
+end
+
+-- Live-tooltip variants of the tome helpers. Used by the tooltip
+-- annotation system (EbonClearance_Tooltip.lua) which has the live
+-- tooltip frame but not a bag/slot pair. Mirror
+-- liveTooltipHasChanceOnHit's structure: cache hit fast-path; else
+-- scan the visible tooltip lines and write the result back into the
+-- same per-itemID caches shared with the bag-item path.
+function EC_compCache.liveTooltipIsTome(tooltip, itemID)
+    if itemID and EC_compCache.tomeCache[itemID] ~= nil then
+        return EC_compCache.tomeCache[itemID]
+    end
+    if itemID then
+        local _, _, _, _, _, itype = GetItemInfo(itemID)
+        if itype == "Recipe" then
+            EC_compCache.tomeCache[itemID] = true
+            return true
+        end
+    end
+    if not tooltip or not tooltip.NumLines or not tooltip.GetName then
+        return false
+    end
+    local tname = tooltip:GetName()
+    if not tname then
+        return false
+    end
+    local n = tooltip:NumLines() or 0
+    local usePrefix = ITEM_SPELL_TRIGGER_ONUSE or "Use:"
+    local result = false
+    for i = 2, n do
+        local fs = _G[tname .. "TextLeft" .. i]
+        if fs and fs.GetText then
+            local txt = fs:GetText()
+            if type(txt) == "string"
+                and txt:find(usePrefix, 1, true) == 1
+                and txt:find("[Tt]eaches", 1, false)
+            then
+                result = true
+                break
+            end
+        end
+    end
+    if itemID then
+        EC_compCache.tomeCache[itemID] = result
+    end
+    return result
+end
+
+function EC_compCache.liveTooltipPlayerKnowsTome(tooltip, itemID)
+    if itemID and EC_compCache.tomeIsKnownCache[itemID] ~= nil then
+        return EC_compCache.tomeIsKnownCache[itemID]
+    end
+    if not tooltip or not tooltip.NumLines or not tooltip.GetName then
+        return false
+    end
+    local tname = tooltip:GetName()
+    if not tname then
+        return false
+    end
+    local n = tooltip:NumLines() or 0
+    local knownStr = ITEM_SPELL_KNOWN or "Already known"
+    local result = false
+    for i = 2, n do
+        local fs = _G[tname .. "TextLeft" .. i]
+        if fs and fs.GetText then
+            local txt = fs:GetText()
+            if type(txt) == "string" and txt:find(knownStr, 1, true) then
+                result = true
+                break
+            end
+        end
+    end
+    if itemID then
+        EC_compCache.tomeIsKnownCache[itemID] = result
+    end
+    return result
+end
+
 -- v2.26.0: bag-item -> ExtractionService record lookup. PE's own
 -- Enchanted Anvil uses `FindItemAffix(link)` (in
 -- ProjectEbonhold/modules/extraction/extraction.lua) to decide whether

@@ -40,15 +40,10 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if self.delaySlider then
             self.delaySlider:SetValue(DB.summonDelay or 1.6)
         end
-        if self.muteCB then
-            self.muteCB:SetChecked(DB.muteGreedy)
-        end
-        if self.chatCB then
-            self.chatCB:SetChecked(DB.hideGreedyChat)
-        end
-        if self.bubCB then
-            self.bubCB:SetChecked(DB.hideGreedyBubbles)
-        end
+        -- Hide chat + hide bubbles are no longer user-toggleable; their
+        -- DB fields are forced true in EnsureDB. The muteCB OnShow guard
+        -- predated the panel-split refactor and never had a backing
+        -- checkbox; dropped along with the chat / bubble guards.
         if self.cycleCB then
             self.cycleCB:SetChecked(DB.autoLootCycle)
         end
@@ -107,41 +102,15 @@ ScavengerPanel:SetScript("OnShow", function(self)
         )
         self.combatOnlyCB = combatOnlyCB
 
-        local chatCB = NS.AddCheckbox(
-            content,
-            "EbonClearanceHideGreedyChatCB",
-            combatOnlyCB,
-            "Hide |cffff7f7fGreedy Scavenger|r's chat messages",
-            function()
-                return DB.hideGreedyChat
-            end,
-            function(v)
-                DB.hideGreedyChat = v
-                NS.ApplyGreedyChatFilter()
-            end,
-            -8
-        )
-        self.chatCB = chatCB
-
-        local bubCB = NS.AddCheckbox(
-            content,
-            "EbonClearanceHideGreedyBubblesCB",
-            chatCB,
-            "Hide |cffff7f7fGreedy Scavenger|r's chat bubbles",
-            function()
-                return DB.hideGreedyBubbles
-            end,
-            function(v)
-                DB.hideGreedyBubbles = v
-            end,
-            -8
-        )
-        self.bubCB = bubCB
+        -- Hide chat + hide bubbles checkboxes were removed: this is now
+        -- baked-in addon behaviour. DB.hideGreedyChat /
+        -- DB.hideGreedyBubbles are forced true in EnsureDB so the
+        -- Companion.lua filters keep working unchanged.
 
         local delaySlider = NS.AddSlider(
             content,
             "EbonClearanceSummonDelaySlider",
-            bubCB,
+            combatOnlyCB,
             "Summon delay",
             0.0,
             3.0,

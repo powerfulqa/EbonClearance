@@ -109,6 +109,8 @@ local function EC_BuildBugReport()
     add("Auto-Protect Equipment Sets: " .. tostring(DB.autoProtectEquipmentSets))
     add("Protect Affixed Rare Items: " .. tostring(DB.protectAffixedRareItems))
     add("Protect Chance-on-Hit Items: " .. tostring(DB.protectChanceOnHitItems))
+    add("Protect Unlearned Tomes: " .. tostring(DB.protectUnlearnedTomes))
+    add("Protect All Tomes: " .. tostring(DB.protectAllTomes))
     -- v2.30.x: the per-character allowlist feature was decommissioned;
     -- DB.enableOnlyListedChars is force-disabled in EnsureDB and the
     -- bug report no longer surfaces the legacy fields.
@@ -119,8 +121,6 @@ local function EC_BuildBugReport()
     add("Summon Delay: " .. tostring(DB.summonDelay))
     add("Summon Only Out Of Combat: " .. tostring(DB.summonOnlyOutOfCombat))
     add("Mute Greedy: " .. tostring(DB.muteGreedy))
-    add("Hide Chat: " .. tostring(DB.hideGreedyChat))
-    add("Hide Bubbles: " .. tostring(DB.hideGreedyBubbles))
     add("Auto-Loot Cycle: " .. tostring(DB.autoLootCycle))
     add("Bag Full Threshold: " .. tostring(DB.bagFullThreshold))
     add("Auto-Open Containers: " .. tostring(DB.autoOpenContainers))

@@ -2216,6 +2216,43 @@ references remain in `EbonClearance.lua` code (comments are stripped
 before checking via a per-line `%-%-` scan that handles indented
 inline comments).
 
+### Stage 8e-ix-c: extract EbonClearance_PanelWidgets.lua (commit `<pending>`)
+
+Stage 8e-ix-c bundles the six widget primitives into one new file:
+
+- `MakeHeader` (GameFontNormalLarge anchor at TOPLEFT 16, y)
+- `MakeLabel` (wrapped GameFontHighlight; registers width with the
+  reactive layout registry)
+- `StyleInputBox` (InputBoxTemplate EditBox chrome treatment)
+- `AddCheckbox` (InterfaceOptionsCheckButtonTemplate wrapper)
+- `AddSlider` (OptionsSliderTemplate wrapper)
+- `ColorTextByQuality` (ITEM_QUALITY_COLORS-aware text formatter)
+
+~150 LOC moved across 3 non-contiguous chunks (MakeHeader +
+StyleInputBox; MakeLabel; AddCheckbox + ColorTextByQuality +
+AddSlider). The list-row factories (`EC_compCache.makeListRowFactory`
++ `buildList*Row` helpers) + `CreateListUI` + `EC_AddScanByQualityRow`
+STAY in `EbonClearance.lua` for Stage 8e-ix-d.
+
+**Zero new NS exposures needed** - all six were exposed during the
+v2.31.0 + earlier stages' prep work. The existing in-EbonClearance.lua
+callers of these widgets (just 3 `StyleInputBox(...)` calls inside
+the list-row factories) were converted to `NS.StyleInputBox(...)`
+before the extraction.
+
+The extraction script's initial pass missed StyleInputBox because the
+blank-line probe forward from `NS.MakeHeader = MakeHeader` stopped at
+the leading doc-comment block of StyleInputBox (multi-line comment,
+not blank). A small surgical follow-up extracted StyleInputBox
+separately and inserted it before the MakeLabel block in the new
+file. Same total scope; just two passes of the script.
+
+Stage 8e-ix-c invariants (Test 53): all 6 widgets defined in
+`EbonClearance_PanelWidgets.lua`; all 6 NS exposures present in the
+new file; no widget primitive is duplicated in `EbonClearance.lua`;
+no bare `StyleInputBox()` call sites remain in `EbonClearance.lua`
+code (comments stripped before the scan via per-line `%-%-` parse).
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

@@ -57,6 +57,7 @@ local SOURCE_PATHS = {
     "EbonClearance_ProfilesPanel.lua",
     "EbonClearance_MainPanel.lua",
     "EbonClearance_PanelInfra.lua",
+    "EbonClearance_PanelWidgets.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -2961,6 +2962,72 @@ do
             "EbonClearance.lua callers use NS.HookScrollbarAutoHide (not bare)",
             ecCode:find("[^.%w_]EC_HookScrollbarAutoHide%(") == nil,
             "after the move, EbonClearance.lua can no longer reference EC_HookScrollbarAutoHide as a local; all callers must use NS.HookScrollbarAutoHide()"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 53 (Stage 8e-ix-c): widget primitives extracted.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-ix-c moves the six widget primitives (MakeHeader, MakeLabel,
+-- AddCheckbox, AddSlider, StyleInputBox, ColorTextByQuality) into
+-- EbonClearance_PanelWidgets.lua. The list-row factories
+-- (EC_compCache.makeListRowFactory + buildList*Row helpers) +
+-- CreateListUI + EC_AddScanByQualityRow STAY in EbonClearance.lua for
+-- Stage 8e-ix-d.
+do
+    local pwFile = io.open("EbonClearance_PanelWidgets.lua", "rb")
+    if pwFile then
+        local pwSrc = pwFile:read("*a") or ""
+        pwFile:close()
+        local widgets = { "MakeHeader", "MakeLabel", "AddCheckbox",
+            "AddSlider", "StyleInputBox", "ColorTextByQuality" }
+        for _, name in ipairs(widgets) do
+            check(
+                "EbonClearance_PanelWidgets.lua defines " .. name,
+                pwSrc:find("local function " .. name .. "%(") ~= nil,
+                name .. " must live in EbonClearance_PanelWidgets.lua (Stage 8e-ix-c)"
+            )
+        end
+        -- NS exposures must also be co-located.
+        check(
+            "EbonClearance_PanelWidgets.lua exposes all 6 widgets on NS",
+            pwSrc:find("NS%.MakeHeader%s*=%s*MakeHeader") ~= nil
+                and pwSrc:find("NS%.MakeLabel%s*=%s*MakeLabel") ~= nil
+                and pwSrc:find("NS%.AddCheckbox%s*=%s*AddCheckbox") ~= nil
+                and pwSrc:find("NS%.AddSlider%s*=%s*AddSlider") ~= nil
+                and pwSrc:find("NS%.StyleInputBox%s*=%s*StyleInputBox") ~= nil
+                and pwSrc:find("NS%.ColorTextByQuality%s*=%s*ColorTextByQuality") ~= nil,
+            "all 6 widget primitives must be exposed on NS so split panel files can call them"
+        )
+    end
+
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        -- The widget primitives must NOT be re-defined in EbonClearance.lua.
+        for _, name in ipairs({ "MakeHeader", "MakeLabel", "AddCheckbox",
+                "AddSlider", "StyleInputBox", "ColorTextByQuality" }) do
+            check(
+                name .. " no longer defined in EbonClearance.lua",
+                ecSrc:find("local function " .. name .. "%(") == nil,
+                "duplicate definition would clobber the Stage 8e-ix-c extracted body"
+            )
+        end
+        -- No bare StyleInputBox call sites in EbonClearance.lua code
+        -- (comments stripped) - all 3 in-EbonClearance.lua callers
+        -- inside the list-row factories were converted to
+        -- NS.StyleInputBox.
+        local ecCode = (ecSrc:gsub("\n[^\n]*", function(line)
+            local at = line:find("%-%-", 1, false)
+            if not at then return line end
+            return line:sub(1, at - 1)
+        end))
+        check(
+            "no bare StyleInputBox() call sites in EbonClearance.lua code",
+            ecCode:find("[^.%w_]StyleInputBox%(") == nil,
+            "the 3 list-row-factory call sites must use NS.StyleInputBox after the move"
         )
     end
 end

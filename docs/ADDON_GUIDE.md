@@ -2216,7 +2216,7 @@ references remain in `EbonClearance.lua` code (comments are stripped
 before checking via a per-line `%-%-` scan that handles indented
 inline comments).
 
-### Stage 8e-ix-c: extract EbonClearance_PanelWidgets.lua (commit `<pending>`)
+### Stage 8e-ix-c: extract EbonClearance_PanelWidgets.lua (commit `de3fc0b`)
 
 Stage 8e-ix-c bundles the six widget primitives into one new file:
 

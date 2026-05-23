@@ -58,6 +58,7 @@ local SOURCE_PATHS = {
     "EbonClearance_MainPanel.lua",
     "EbonClearance_PanelInfra.lua",
     "EbonClearance_PanelWidgets.lua",
+    "EbonClearance_ListWidget.lua",
     "EbonClearance.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -3028,6 +3029,155 @@ do
             "no bare StyleInputBox() call sites in EbonClearance.lua code",
             ecCode:find("[^.%w_]StyleInputBox%(") == nil,
             "the 3 list-row-factory call sites must use NS.StyleInputBox after the move"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 54 (Stage 8e-ix-d): list widget extracted.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-ix-d moves the five list-row factories (makeListRowFactory,
+-- buildListHeaderRow, buildListSearchAndSortRow, buildListMatchRow,
+-- buildListScrollArea), the CreateListUI widget body itself, and the
+-- shared EC_AddScanByQualityRow into EbonClearance_ListWidget.lua. The
+-- file lives after PanelInfra/PanelWidgets in the .toc load order so
+-- NS.StyleInputBox and NS.HookScrollbarAutoHide are already published
+-- by the time the row factories are defined.
+--
+-- Locks:
+--   1. The new file defines all 5 row-factory functions on EC_compCache.
+--   2. CreateListUI is a file-scope local in the new file.
+--   3. EC_AddScanByQualityRow is a file-scope local in the new file.
+--   4. NS.CreateListUI and NS.AddScanByQualityRow are exposed from the
+--      new file (not from EbonClearance.lua).
+--   5. EbonClearance.lua no longer contains the function bodies or
+--      the NS exposures (would clobber the new file's exposures).
+--   6. EbonClearance.lua no longer has a `local EC_activeIDBox` (moved
+--      to NS.activeIDBox so the cross-file ChatEdit_InsertLink reader
+--      and the buildListHeaderRow setter can share state).
+--   7. The new file's CreateListUI body uses NS.GetListTable /
+--      NS.AddItemToList / NS.PrintNicef / NS.Delay (bare locals would
+--      be nil there).
+do
+    local lwFile = io.open("EbonClearance_ListWidget.lua", "rb")
+    if lwFile then
+        local lwSrc = lwFile:read("*a") or ""
+        lwFile:close()
+        local factories = { "makeListRowFactory", "buildListHeaderRow",
+            "buildListSearchAndSortRow", "buildListMatchRow",
+            "buildListScrollArea" }
+        for _, name in ipairs(factories) do
+            check(
+                "EbonClearance_ListWidget.lua defines EC_compCache." .. name,
+                lwSrc:find("function EC_compCache%." .. name .. "%(") ~= nil,
+                name .. " must live in EbonClearance_ListWidget.lua (Stage 8e-ix-d)"
+            )
+        end
+        check(
+            "EbonClearance_ListWidget.lua defines local CreateListUI",
+            lwSrc:find("local function CreateListUI%(") ~= nil,
+            "CreateListUI must be a file-scope local in EbonClearance_ListWidget.lua"
+        )
+        check(
+            "EbonClearance_ListWidget.lua defines local EC_AddScanByQualityRow",
+            lwSrc:find("local function EC_AddScanByQualityRow%(") ~= nil,
+            "EC_AddScanByQualityRow must be a file-scope local in EbonClearance_ListWidget.lua"
+        )
+        check(
+            "EbonClearance_ListWidget.lua exposes NS.CreateListUI",
+            lwSrc:find("NS%.CreateListUI%s*=%s*CreateListUI") ~= nil,
+            "split panel files (Sell List, Keep List, etc.) call NS.CreateListUI"
+        )
+        check(
+            "EbonClearance_ListWidget.lua exposes NS.AddScanByQualityRow",
+            lwSrc:find("NS%.AddScanByQualityRow%s*=%s*EC_AddScanByQualityRow") ~= nil,
+            "EbonClearance_SellListPanels.lua calls NS.AddScanByQualityRow"
+        )
+        -- The CreateListUI body must call NS.GetListTable etc., not the
+        -- file-scope locals from EbonClearance.lua which are no longer
+        -- in scope after the move.
+        check(
+            "CreateListUI body uses NS.GetListTable",
+            lwSrc:find("NS%.GetListTable%(") ~= nil,
+            "the moved body must call NS.GetListTable; bare EC_GetListTable is nil here"
+        )
+        check(
+            "CreateListUI body uses NS.AddItemToList",
+            lwSrc:find("NS%.AddItemToList%(") ~= nil,
+            "the moved body must call NS.AddItemToList; bare EC_AddItemToList is nil here"
+        )
+        check(
+            "CreateListUI body uses NS.PrintNicef",
+            lwSrc:find("NS%.PrintNicef%(") ~= nil,
+            "the moved body must call NS.PrintNicef; bare PrintNicef is nil here"
+        )
+        check(
+            "CreateListUI body uses NS.Delay",
+            lwSrc:find("NS%.Delay%(") ~= nil,
+            "the moved body must call NS.Delay; bare EC_Delay is nil here"
+        )
+        -- The buildListHeaderRow OnEditFocusGained/Lost handlers must
+        -- read/write NS.activeIDBox (not the bare local that used to
+        -- live in EbonClearance.lua's main chunk).
+        check(
+            "buildListHeaderRow uses NS.activeIDBox",
+            lwSrc:find("NS%.activeIDBox%s*=%s*self") ~= nil,
+            "OnEditFocusGained must set NS.activeIDBox so the ChatEdit_InsertLink hook can read it"
+        )
+    end
+
+    local ecFile = io.open("EbonClearance.lua", "rb")
+    if ecFile then
+        local ecSrc = ecFile:read("*a") or ""
+        ecFile:close()
+        -- Strip comments line-by-line so doc references don't trigger
+        -- the "moved body still here" failure.
+        local ecCode = (ecSrc:gsub("\n[^\n]*", function(line)
+            local at = line:find("%-%-", 1, false)
+            if not at then return line end
+            return line:sub(1, at - 1)
+        end))
+        -- Function bodies must NOT be redefined in EbonClearance.lua.
+        for _, name in ipairs({ "makeListRowFactory", "buildListHeaderRow",
+                "buildListSearchAndSortRow", "buildListMatchRow",
+                "buildListScrollArea" }) do
+            check(
+                "EC_compCache." .. name .. " no longer defined in EbonClearance.lua",
+                ecCode:find("function EC_compCache%." .. name .. "%(") == nil,
+                "duplicate definition would clobber the Stage 8e-ix-d extracted body"
+            )
+        end
+        check(
+            "local CreateListUI no longer defined in EbonClearance.lua",
+            ecCode:find("local function CreateListUI%(") == nil,
+            "duplicate definition would clobber the Stage 8e-ix-d extracted body"
+        )
+        check(
+            "local EC_AddScanByQualityRow no longer defined in EbonClearance.lua",
+            ecCode:find("local function EC_AddScanByQualityRow%(") == nil,
+            "duplicate definition would clobber the Stage 8e-ix-d extracted body"
+        )
+        check(
+            "NS.CreateListUI no longer assigned in EbonClearance.lua",
+            ecCode:find("NS%.CreateListUI%s*=%s*CreateListUI") == nil,
+            "duplicate NS.CreateListUI assignment would clobber the new file's exposure"
+        )
+        check(
+            "NS.AddScanByQualityRow no longer assigned in EbonClearance.lua",
+            ecCode:find("NS%.AddScanByQualityRow%s*=%s*EC_AddScanByQualityRow") == nil,
+            "duplicate NS.AddScanByQualityRow assignment would clobber the new file's exposure"
+        )
+        -- EC_activeIDBox is now NS-only. The bare local must be gone
+        -- and ChatEdit_InsertLink must read NS.activeIDBox.
+        check(
+            "no `local EC_activeIDBox` declaration in EbonClearance.lua",
+            ecCode:find("local EC_activeIDBox%s*=") == nil,
+            "EC_activeIDBox was promoted to NS.activeIDBox for cross-file access in Stage 8e-ix-d"
+        )
+        check(
+            "ChatEdit_InsertLink hook reads NS.activeIDBox",
+            ecCode:find("NS%.activeIDBox") ~= nil,
+            "the shift-click-to-add reader must use NS.activeIDBox after Stage 8e-ix-d"
         )
     end
 end

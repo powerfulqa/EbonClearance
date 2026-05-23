@@ -2253,6 +2253,82 @@ new file; no widget primitive is duplicated in `EbonClearance.lua`;
 no bare `StyleInputBox()` call sites remain in `EbonClearance.lua`
 code (comments stripped before the scan via per-line `%-%-` parse).
 
+### Stage 8e-ix-d: extract EbonClearance_ListWidget.lua (commit `<pending>`)
+
+Stage 8e-ix-d is the densest remaining cluster: the reusable list
+widget that every list panel (Sell List, Account Sell List, Keep
+List, Delete List) composes its UI from. ~605 LOC moved across three
+non-contiguous chunks of `EbonClearance.lua`:
+
+- Five row-factory helpers hung off `EC_compCache`
+  (`makeListRowFactory`, `buildListHeaderRow`,
+  `buildListSearchAndSortRow`, `buildListMatchRow`,
+  `buildListScrollArea`) - the layout primitives that compose
+  CreateListUI's pieces.
+- `CreateListUI` itself (309 LOC) - the assembled list widget,
+  including its `Refresh` closure with name-sort, search debounce,
+  affix annotation, tooltip prime, and the Add / Clear All / Add
+  Matching button OnClick handlers.
+- `EC_AddScanByQualityRow` (78 LOC) - the shared "Add from bags:
+  White / Green / Blue" scan row used by both Sell List panels.
+
+The new file lives after `EbonClearance_PanelInfra.lua` and
+`EbonClearance_PanelWidgets.lua` in the `.toc` load order so the
+row factories see `NS.StyleInputBox` and `NS.HookScrollbarAutoHide`
+as already-published NS members. CreateListUI itself only runs
+inside panel OnShow callbacks, so by the time it executes the
+panel files (loaded BEFORE EbonClearance.lua) have also bound their
+`NS.foo` exposures.
+
+**Two new NS exposures from the new file:**
+- `NS.CreateListUI` - panel files (`SellListPanels`,
+  `KeepDeletePanels`) call it inside their OnShow build callback.
+- `NS.AddScanByQualityRow` - SellListPanels.lua calls it to attach
+  the per-quality scan-row above each Sell List widget.
+
+**One prep refactor:** `EC_activeIDBox` was a file-scope local in
+`EbonClearance.lua` (line 1238 pre-split) shared by the row-factory
+header's OnEditFocusGained/Lost setter and the
+`ChatEdit_InsertLink` hook's reader. After the move, the setter is
+in `EbonClearance_ListWidget.lua` and the reader is still in
+`EbonClearance.lua` - they cannot share a file-scope local across
+files. Promoted to `NS.activeIDBox`: the reader at line 1251 now
+captures `local box = NS.activeIDBox` before checking
+`box:IsShown()`, and the setter writes `NS.activeIDBox = self`.
+The bare `local EC_activeIDBox = nil` declaration is gone (line
+count stayed identical because the new `local box = NS.activeIDBox`
+absorbed its slot).
+
+**CreateListUI body re-targeting:** four formerly file-scope-local
+references in the moved body needed to become NS calls:
+
+- `EC_GetListTable` → `NS.GetListTable` (already exposed earlier)
+- `EC_AddItemToList` → `NS.AddItemToList` (already exposed earlier)
+- `PrintNicef` → `NS.PrintNicef` (already exposed earlier)
+- `EC_Delay` → `NS.Delay` (already exposed in Stage 8e-ix-b)
+
+The `EC_compCache` reference works because every split file binds
+`local EC_compCache = NS.compCache` at the top (Core.lua exposes
+`NS.compCache = EC_compCache`).
+
+Tests 20-22 (existing CreateListUI invariants from v2.28.0) still
+pass because they search the concatenated `src` built from
+SOURCE_PATHS. They find `local function CreateListUI(` in the new
+file's body without modification.
+
+Stage 8e-ix-d invariants (Test 54): all 5 row-factory functions
+defined on `EC_compCache.*` in `EbonClearance_ListWidget.lua`;
+`local function CreateListUI(` and `local function
+EC_AddScanByQualityRow(` defined in the new file;
+`NS.CreateListUI` and `NS.AddScanByQualityRow` exposed from the new
+file; CreateListUI body uses `NS.GetListTable` / `NS.AddItemToList`
+/ `NS.PrintNicef` / `NS.Delay`; buildListHeaderRow uses
+`NS.activeIDBox`; no row factories / CreateListUI /
+EC_AddScanByQualityRow definitions remain in `EbonClearance.lua`
+(comments stripped via per-line `%-%-` parse); no
+`local EC_activeIDBox` declaration remains in `EbonClearance.lua`;
+`ChatEdit_InsertLink` hook reads `NS.activeIDBox`.
+
 ### Target architecture (post-split)
 
 Per docs/CODE_REVIEW.md item 4, the planned split shape is:

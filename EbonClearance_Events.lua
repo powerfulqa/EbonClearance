@@ -3716,14 +3716,33 @@ local function BuildQueue(junkOnly)
                         -- sell path. When the user opted in AND owns
                         -- the same (affix, rank) pair, the affix
                         -- protection releases the item to be deleted.
+                        -- v2.32.x: also honour the per-affix manual
+                        -- Allow Sell mark (ADB.allowedAffixes). The
+                        -- sell-path affix gate releases the item when
+                        -- the user has explicitly Alt+Right-Clicked ->
+                        -- Allow Sell on the affix description; the
+                        -- delete path was missing the same bypass, so
+                        -- items with no vendor value AND an Allow-Sell-
+                        -- marked affix had no escape from the bag - the
+                        -- delete-list path silently kept them. Mirror
+                        -- the sell path's `manualAllow or autoDupe`
+                        -- shape so explicit user intent (whether sell
+                        -- or delete) wins over the safety net.
                         local _, _, quality = GetItemInfo(id)
                         local affixProtected = false
                         if DB.protectAffixedRareItems and quality and quality >= 3 then
                             local affix = EC_compCache.bagSlotAffixData(bag, slot)
                             if affix then
+                                local affixKey = affix.description
+                                    and EC_compCache.normaliseAffixDesc
+                                    and EC_compCache.normaliseAffixDesc(affix.description)
+                                local manualAllow = affixKey
+                                    and ADB
+                                    and ADB.allowedAffixes
+                                    and ADB.allowedAffixes[affixKey]
                                 local isDupe = DB.affixAllowExactDupes
                                     and EC_compCache.playerHasAffixDescription(affix.description)
-                                affixProtected = not isDupe
+                                affixProtected = not (manualAllow or isDupe)
                             end
                         end
                         if not affixProtected then

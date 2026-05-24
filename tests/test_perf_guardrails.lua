@@ -3536,6 +3536,49 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 58: BuildQueue delete-path affix gate honours manual Allow Sell.
+-- ---------------------------------------------------------------------------
+-- Pre-v2.32.x bug: a Rare/Epic item with an affix that the user had
+-- explicitly Alt+Right-Click -> Allow Sell'd (so ADB.allowedAffixes[key]
+-- was set) could not be deleted via the Delete List. The sell-path gate
+-- in EC_IsSellable releases the item on `manualAllow or autoDupe`; the
+-- delete-path gate in BuildQueue only checked `isDupe` (autoDupe only).
+-- Items with no vendor value and an Allow-Sell-marked affix had no
+-- escape from the bag - Delete List entries silently kept them.
+--
+-- Fix: the delete-path affix gate now also checks ADB.allowedAffixes
+-- (the manual Allow Sell mark). Explicit user intent wins, matching the
+-- sell-path semantics.
+--
+-- This test locks the new shape: any future refactor that drops the
+-- manualAllow check from BuildQueue's delete-path affix gate will fail.
+do
+    local eventsFile = io.open("EbonClearance_Events.lua", "rb")
+    if eventsFile then
+        local eventsSrc = eventsFile:read("*a") or ""
+        eventsFile:close()
+        -- Locate the delete-path affix block. Marker: the BuildQueue's
+        -- delete-list branch sets `affixProtected` local. Grab the
+        -- surrounding ~1500 chars and pattern-match the gate logic.
+        local blockStart = eventsSrc:find("local affixProtected = false")
+        if blockStart then
+            local block = eventsSrc:sub(blockStart, blockStart + 1500)
+            check(
+                "BuildQueue delete-path affix gate references ADB.allowedAffixes",
+                block:find("ADB%.allowedAffixes") ~= nil,
+                "manual Allow Sell on an affix description must release the delete-list gate; without this the user has no way to delete a no-vendor-value affixed item they have explicitly allowed"
+            )
+            check(
+                "BuildQueue delete-path affix gate uses `manualAllow or` shape",
+                block:find("manualAllow") ~= nil
+                    and block:find("not %(manualAllow or") ~= nil,
+                "the delete-path gate must mirror the sell-path's `not (manualAllow or autoDupe)` shape so either bypass releases the protection"
+            )
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

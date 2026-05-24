@@ -533,7 +533,21 @@ function EC_compCache.describeSellability(bag, slot)
             step("affixProtection", true, "no random affix on this item")
         end
     else
-        step("affixProtection", true, "n/a (quality below Rare or protection off)")
+        -- v2.32.x: split the catch-all "n/a" message into the actual
+        -- gate that failed. The earlier blanket "quality below Rare or
+        -- protection off" was misleading on items that ARE Rare/Epic
+        -- with protection ON but where the sell-side gate doesn't fire
+        -- because the item has no positive sell signal (no Sell List
+        -- entry, no per-rarity rule match). The delete-side affix gate
+        -- in BuildQueue is a separate path; see `/ec sellinfo` is sell-
+        -- only by design.
+        if not DB or not DB.protectAffixedRareItems then
+            step("affixProtection", true, "n/a (affix protection toggle off)")
+        elseif not quality or quality < 3 then
+            step("affixProtection", true, "n/a (quality below Rare)")
+        else
+            step("affixProtection", true, "n/a (no positive sell signal — affix gate only fires for items the sell rules would otherwise touch; delete-list path is checked separately)")
+        end
     end
 
     local procProtected = false

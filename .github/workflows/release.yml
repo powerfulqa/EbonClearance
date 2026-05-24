@@ -65,8 +65,33 @@ jobs:
           git commit -m "Update version to ${GITHUB_REF_NAME} [skip ci]" || echo "No changes to commit"
           git push origin master
 
+      - name: Extract changelog section for this release
+        # Pulls the `### vX.Y.Z` stanza from CHANGELOG.md and writes it to
+        # release-body.md so the next step can pass it to the release.
+        # Falls back to a small stub if the tag doesn't have a CHANGELOG
+        # entry (e.g. a patch tag the maintainer didn't separately note);
+        # softprops/action-gh-release@v3 will still append its own auto-
+        # generated "Full Changelog" compare link via generate_release_notes.
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          awk -v target="### $VERSION" '
+            $0 == target { found = 1; print; next }
+            found && /^### v/ { found = 0 }
+            found { print }
+          ' CHANGELOG.md > release-body.md
+          if [ ! -s release-body.md ]; then
+            printf "### %s\n\nPatch release. See the previous minor version for the feature description.\n" "$VERSION" > release-body.md
+          fi
+          echo "--- release-body.md (first 20 lines) ---"
+          head -20 release-body.md
+
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           files: EbonClearance.zip
+          body_path: release-body.md
+          # generate_release_notes still appends the compare-link footer
+          # ("**Full Changelog**: ...vPREV...vCUR") below the body_path
+          # content, so the release page shows the curated changelog FIRST
+          # and the auto-generated compare-link block below it.
           generate_release_notes: true

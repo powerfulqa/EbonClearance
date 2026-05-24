@@ -290,6 +290,21 @@ local function EC_AnnotateTooltip(tooltip)
         if quality and quality >= 3 then
             local affix = EC_compCache.liveTooltipAffixData(tooltip, id)
             if affix then
+                -- v2.32.x lazy catalog refresh. Pick up any newly-
+                -- learned ExtractionService affixes BEFORE the
+                -- playerHasAffixDescription lookup so a player who
+                -- learned an affix at the Anvil and immediately
+                -- hovers a new drop sees the correct verdict on the
+                -- FIRST hover (no waiting for the BAG_UPDATE debounce
+                -- + spell-event debounce + chunked scan to settle).
+                -- The dirty-check is a cheap count comparison that
+                -- early-returns when nothing changed; when dirty, the
+                -- v2.32.x refactor does an incremental synchronous
+                -- merge so the live map reflects the new state by
+                -- the time playerHasAffixDescription reads it below.
+                if EC_compCache.refreshExtractionIfDirty then
+                    EC_compCache.refreshExtractionIfDirty()
+                end
                 -- v2.27.0: backfill the affix-meta flag for itemIDs
                 -- already on a list. Pre-v2.27 entries didn't get
                 -- stamped at add time; hovering the item now after

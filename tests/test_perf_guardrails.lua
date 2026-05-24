@@ -3579,6 +3579,147 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 59 (v2.32.x): lazy + incremental affix-catalog refresh.
+-- ---------------------------------------------------------------------------
+-- Background: a player who learned an affix at the Anvil and
+-- immediately hovered a new drop saw a stale "Protected - Affix
+-- found" verdict because the catalog refresh path was:
+--   PE.ExtractionService update -> no event we listen to ->
+--   wait for next BAG_UPDATE (120 ms debounce) ->
+--   refreshExtractionIfDirty fires -> kicks off async refresh
+--   refreshKnownAffixes (0.5 s spell-event debounce skipped here
+--   because we call it directly, but the chunked OnUpdate scan
+--   still takes 150-300 ms) -> map updated.
+-- Total: ~300-500 ms after the BAG_UPDATE settled, plus the
+-- "no event yet" gap if PE didn't fire BAG_UPDATE on extraction.
+-- v2.32.x splits this in two:
+--   1. refreshExtractionIfDirty does a SYNCHRONOUS INCREMENTAL
+--      merge into the live knownAffixDescriptions map (driven by
+--      the procIdToDescription cache, so per-call cost is O(new
+--      affixes)). The full async refreshKnownAffixes is kept as a
+--      fallback for two cases only: pre-PLAYER_LOGIN bootstrap
+--      (map not yet a table) and learnedCount going DOWN.
+--   2. EbonClearance_Tooltip.lua now calls refreshExtractionIfDirty
+--      from inside the affix branch BEFORE playerHasAffixDescription,
+--      so a fresh hover after a learn picks up the new state.
+--
+-- These two invariants lock the v2.32.x shape so a future refactor
+-- that drops either piece (e.g. "consolidate by always going
+-- through refreshKnownAffixes again") fails the test before merge.
+do
+    local protFile = io.open("EbonClearance_Protection.lua", "rb")
+    if protFile then
+        local protSrc = protFile:read("*a") or ""
+        protFile:close()
+        -- Extract the body of refreshExtractionIfDirty (function start to
+        -- the closing `end` of the same function). Marker: function
+        -- declaration line. Pattern-match the incremental-merge body
+        -- inside.
+        local startIdx = protSrc:find("function EC_compCache%.refreshExtractionIfDirty%(%)")
+        local body
+        if startIdx then
+            -- Take ~3500 chars of body; the function is well under that.
+            body = protSrc:sub(startIdx, startIdx + 3500)
+            local nextFnIdx = body:find("\nfunction EC_compCache%.", 2)
+            if nextFnIdx then
+                body = body:sub(1, nextFnIdx - 1)
+            end
+        end
+        check(
+            "refreshExtractionIfDirty does an incremental merge into knownAffixDescriptions",
+            body ~= nil
+                and body:find("EC_compCache%.knownAffixDescriptions") ~= nil
+                and body:find("map%[desc%]%s*=%s*true") ~= nil,
+            "the v2.32.x refactor must add learned affixes directly to the live knownAffixDescriptions map so the first hover after a learn-at-Anvil sees the correct verdict; without this the user has to wait for the async chunked scan to settle"
+        )
+        check(
+            "refreshExtractionIfDirty reads procIdToDescription cache (incremental path)",
+            body ~= nil and body:find("procIdToDescription%[r%.id%]") ~= nil,
+            "the incremental merge must hit the per-spellID description cache so repeated dirty-checks don't re-scan the same engraving spell every time"
+        )
+        check(
+            "refreshExtractionIfDirty keeps the async rebuild as a fallback",
+            body ~= nil and body:find("refreshKnownAffixes") ~= nil,
+            "the function must still defer to refreshKnownAffixes when knownAffixDescriptions isn't bootstrapped yet or when learnedCount went down (un-learn); pure incremental can't drop stale entries"
+        )
+    end
+
+    local tooltipFile = io.open("EbonClearance_Tooltip.lua", "rb")
+    if tooltipFile then
+        local ttSrc = tooltipFile:read("*a") or ""
+        tooltipFile:close()
+        -- Strip Lua line comments so the check only matches a live call
+        -- site, not the explanatory comment block above it.
+        local ttCode = ttSrc:gsub("%-%-[^\n]*", "")
+        check(
+            "EbonClearance_Tooltip.lua calls refreshExtractionIfDirty (lazy refresh)",
+            ttCode:find("refreshExtractionIfDirty") ~= nil,
+            "the affix branch must call refreshExtractionIfDirty before playerHasAffixDescription so a fresh hover picks up newly-learned affixes without waiting for the next BAG_UPDATE or combat-exit tick"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 60 (v2.32.x): liveTooltipPlayerKnowsTome reads live tooltip first.
+-- ---------------------------------------------------------------------------
+-- Background: PE's roguelite "Tome of Echo" mechanic doesn't teach a
+-- Blizzard spell on use - it updates internal PE state, which means
+-- LEARNED_SPELL_IN_TAB / SPELLS_CHANGED don't fire. The
+-- tomeIsKnownCache wipe is wired to those events, so a cached `false`
+-- (from a hover before the tome was used) stuck around forever and
+-- the EC tooltip kept labelling the tome as "Protected - Tome
+-- (unlearned)" even when Blizzard's own "Already known" line was
+-- visible right above. This is the same cache-staleness shape as
+-- the affix issue addressed in Test 59 but on a different cache.
+--
+-- v2.32.x fix: liveTooltipPlayerKnowsTome now scans the live tooltip
+-- BEFORE consulting the cache. The cache becomes a side-effect
+-- output (still useful to playerKnowsTomeSpell which has no live
+-- tooltip), not a read-path fast-path that can pin stale state. The
+-- live tooltip is what the user sees, so we read the same source.
+do
+    local protFile = io.open("EbonClearance_Protection.lua", "rb")
+    if protFile then
+        local protSrc = protFile:read("*a") or ""
+        protFile:close()
+        local fnStart = protSrc:find("function EC_compCache%.liveTooltipPlayerKnowsTome%(")
+        if fnStart then
+            -- Trim the body to the function only (~2000 chars is well over
+            -- the function size; nextFn marker scopes precisely).
+            local body = protSrc:sub(fnStart, fnStart + 2500)
+            local nextFnIdx = body:find("\nfunction EC_compCache%.", 2)
+            if nextFnIdx then
+                body = body:sub(1, nextFnIdx - 1)
+            end
+
+            -- The defining-shape assertion: tooltip:GetName() (live
+            -- tooltip read) must appear BEFORE the
+            -- `return EC_compCache.tomeIsKnownCache[itemID]` cache-
+            -- hit early-return. In the buggy v2.32.2 and earlier
+            -- shape, the cache return was the first conditional in
+            -- the function body (came BEFORE any tooltip read).
+            local firstGetName = body:find("tooltip:GetName")
+            local firstReturnCache = body:find("return EC_compCache%.tomeIsKnownCache")
+            check(
+                "liveTooltipPlayerKnowsTome reads the live tooltip BEFORE the cache (cache is side-effect output)",
+                firstGetName
+                    and firstReturnCache
+                    and firstGetName < firstReturnCache,
+                "the live tooltip is the authoritative source; the prior cache-first fast-path returned a stale `false` for PE Tome of Echo items that don't fire LEARNED_SPELL_IN_TAB on use"
+            )
+            -- The cache write at the end must still exist - it's what
+            -- keeps playerKnowsTomeSpell (the bag-scan variant) hitting
+            -- the corrected value on subsequent merchant cycles.
+            check(
+                "liveTooltipPlayerKnowsTome still writes the cache as a side effect",
+                body:find("EC_compCache%.tomeIsKnownCache%[itemID%]%s*=%s*result") ~= nil,
+                "the cache write is what propagates a live-tooltip-corrected verdict to the merchant cycle's playerKnowsTomeSpell path"
+            )
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

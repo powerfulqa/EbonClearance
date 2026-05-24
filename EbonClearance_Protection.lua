@@ -587,6 +587,21 @@ end
 -- BAG_UPDATE debounce frame and PLAYER_REGEN_ENABLED so the player's
 -- post-extraction state (new proc learned at the Enchanted Anvil)
 -- propagates without a manual /ec refresh.
+--
+-- v2.32.x: when learnedCount has GROWN since the last check, the
+-- function now does a SYNCHRONOUS INCREMENTAL MERGE into the live
+-- knownAffixDescriptions map (driven by the procIdToDescription cache
+-- so repeat calls are O(1) per affix). This replaces the prior path
+-- that always kicked off the async refreshKnownAffixes rebuild on
+-- every dirty-check; with the async path, a player who learned an
+-- affix at the Anvil and immediately hovered a new drop of that
+-- affix saw a stale "Protected - Affix found" verdict until the
+-- ~600-800 ms (BAG_UPDATE debounce + spell-event debounce + chunked
+-- scan) settled. The incremental sync path makes the first hover
+-- after the learn correct. Two fallback cases still defer to the
+-- async rebuild: knownAffixDescriptions not yet bootstrapped (pre-
+-- PLAYER_LOGIN) and learnedCount going DOWN (un-learn or reset, so
+-- the now-stale entries need to be dropped via a full rebuild).
 function EC_compCache.refreshExtractionIfDirty()
     local svc = _G.ExtractionService
     if not svc or type(svc.learnedAffixes) ~= "table" then
@@ -601,10 +616,58 @@ function EC_compCache.refreshExtractionIfDirty()
     if learnedCount == EC_compCache.knownExtractionVersion then
         return false
     end
-    EC_compCache.knownExtractionVersion = learnedCount
-    if EC_compCache.refreshKnownAffixes then
-        EC_compCache.refreshKnownAffixes()
+
+    -- Fallback to the async rebuild when the map isn't bootstrapped
+    -- yet (pre-PLAYER_LOGIN) or when learnedCount went down (un-
+    -- learn / reset). The incremental path below only adds entries;
+    -- a count decrease needs a from-scratch rebuild to drop the
+    -- now-stale ones.
+    local map = EC_compCache.knownAffixDescriptions
+    if type(map) ~= "table" or learnedCount < EC_compCache.knownExtractionVersion then
+        EC_compCache.knownExtractionVersion = learnedCount
+        if EC_compCache.refreshKnownAffixes then
+            EC_compCache.refreshKnownAffixes()
+        end
+        return true
     end
+
+    -- Synchronous incremental merge. For each currently-learned
+    -- entry, take the cached description if available; otherwise
+    -- scan the engraving-spell tooltip once (and cache the result).
+    -- Same scan body as the OnUpdate path above so the two stay
+    -- equivalent in what they extract.
+    local tip = NS.scanTooltip
+    if tip and tip.ClearLines and tip.SetHyperlink and tip.NumLines then
+        for _, r in ipairs(svc.learnedAffixes) do
+            if r and r.learned and r.id then
+                local desc = EC_compCache.procIdToDescription[r.id]
+                if desc == nil then
+                    desc = false
+                    tip:ClearLines()
+                    tip:SetHyperlink("spell:" .. r.id)
+                    for j = 1, tip:NumLines() do
+                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                        if fs and fs.GetText then
+                            local txt = fs:GetText()
+                            if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
+                                local d = txt:match(":%s*(.+)$")
+                                d = EC_compCache.normaliseAffixDesc(d)
+                                if d and d ~= "" then
+                                    desc = d
+                                end
+                                break
+                            end
+                        end
+                    end
+                    EC_compCache.procIdToDescription[r.id] = desc
+                end
+                if desc then
+                    map[desc] = true
+                end
+            end
+        end
+    end
+    EC_compCache.knownExtractionVersion = learnedCount
     return true
 end
 
@@ -896,14 +959,26 @@ function EC_compCache.liveTooltipIsTome(tooltip, itemID)
 end
 
 function EC_compCache.liveTooltipPlayerKnowsTome(tooltip, itemID)
-    if itemID and EC_compCache.tomeIsKnownCache[itemID] ~= nil then
-        return EC_compCache.tomeIsKnownCache[itemID]
-    end
-    if not tooltip or not tooltip.NumLines or not tooltip.GetName then
-        return false
-    end
-    local tname = tooltip:GetName()
+    -- v2.32.x: live tooltip is the authoritative source; the cache is
+    -- a side-effect output (still consulted by playerKnowsTomeSpell
+    -- which has no live tooltip), not a read-path fast-path. The
+    -- cache-first fast-path was buggy: PE's roguelite "Tome of Echo"
+    -- mechanic doesn't teach a Blizzard spell on use, so
+    -- LEARNED_SPELL_IN_TAB / SPELLS_CHANGED don't fire, the cache
+    -- never gets wiped, and a cached `false` from a hover BEFORE the
+    -- tome was used stuck around forever - tooltip showed Blizzard's
+    -- own "Already known" line but EC kept labelling the item as
+    -- "Protected - Tome (unlearned)". Scanning the live tooltip on
+    -- every hover is cheap (~30 line iterations) and self-healing:
+    -- whatever state PE's tooltip code wrote IS what the user sees,
+    -- so we read the same source.
+    local tname = tooltip and tooltip.NumLines and tooltip.GetName and tooltip:GetName()
     if not tname then
+        -- No tooltip to scan - fall back to the cache (if any) so the
+        -- bag-scan variant's prior write stays useful.
+        if itemID and EC_compCache.tomeIsKnownCache[itemID] ~= nil then
+            return EC_compCache.tomeIsKnownCache[itemID]
+        end
         return false
     end
     local n = tooltip:NumLines() or 0

@@ -74,7 +74,16 @@ local function EC_BuildCtxFrame()
     -- Layout: 8 top pad + 22 title + 6 gap + rows*22 + 8 bottom pad
     local frameHeight = 8 + 22 + 6 + (rowCount * 22) + 8
     local frame = CreateFrame("Frame", "EbonClearanceCtxFrame", UIParent)
-    frame:SetFrameStrata("DIALOG")
+    -- 3.3.5a strata layering: host bag UI replacements commonly run
+    -- their bag frames at DIALOG strata with a very high internal
+    -- frame level, so a popup at plain DIALOG can render BEHIND the
+    -- bag frame and become invisible. Same class of bug already
+    -- handled for the colour picker in
+    -- EbonClearance_ItemHighlightingPanel.lua; same fix applied here -
+    -- bump one strata up to FULLSCREEN_DIALOG + Raise() on every show
+    -- so the menu always wins the layering contest regardless of
+    -- which host bag UI is loaded.
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
     frame:SetSize(240, frameHeight)
     frame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -442,6 +451,14 @@ local function EC_ShowItemContextMenu(button)
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
     frame:Show()
+    -- Belt-and-braces: even at FULLSCREEN_DIALOG strata, a host bag UI
+    -- replacement might have raised one of its own frames to the top
+    -- of the same strata. Calling Raise() on every show guarantees the
+    -- menu sits at the highest frame level within FULLSCREEN_DIALOG,
+    -- so it lands above whatever the host bag UI is doing.
+    if frame.Raise then
+        frame:Raise()
+    end
 end
 
 local EC_bagContextHookInstalled = false

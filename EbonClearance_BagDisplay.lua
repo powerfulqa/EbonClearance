@@ -73,14 +73,18 @@ end
 -- frame-overlay sublevel; nothing is drawn on top of the item icon itself,
 -- so the slot's quality border + icon stay pristine.
 --
--- Two surfaces are decorated:
+-- Three surfaces are decorated:
 --   1. The default container frames (`ContainerFrame_Update` hook) — covers
 --      the no-extra-bag-UI case and any user who hasn't installed a host
 --      bag UI replacement.
---   2. The host bag UI's per-slot class, when detected at runtime via
---      LibStub. Re-hooks both the slot's per-call update and its
---      border-only update path so search-fade transitions don't leave a
---      stale ring behind.
+--   2. The legacy AceAddon-3.0-registered host bag UI's per-slot class,
+--      detected at runtime via LibStub. Re-hooks both the slot's per-call
+--      update and its border-only update path so search-fade transitions
+--      don't leave a stale ring behind.
+--   3. The engine-table-exposure host bag UI's per-slot redraw path,
+--      detected at runtime via the framework's global table + module
+--      lookup. The slot button is reached through the bag-frame's
+--      Bags[bagID][slotID] table.
 --
 -- Helpers hang off EC_compCache (not module-local) because the main chunk
 -- sits near Lua 5.1's 200-local cap; the registry table is a junk drawer
@@ -215,11 +219,23 @@ function EC_compCache.applySellBorder(button, _, bag, slot)
         b = button:CreateTexture(nil, "OVERLAY", nil, 6)
         b:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
         b:SetBlendMode("ADD")
-        b:SetWidth(67)
-        b:SetHeight(67)
         b:SetPoint("CENTER", button)
         button._ec_sellBorder = b
     end
+    -- Size the ring relative to the button each call so the visible
+    -- glow hugs the slot edge consistently across host bag UIs with
+    -- different button sizes. The 67/37 ratio matches Blizzard's
+    -- default container slot (37 px button -> 67 px texture, glow at
+    -- slot edge); smaller / larger host slots scale proportionally
+    -- to preserve the same tight visual. Per-call (not per-create)
+    -- so dynamic resizes by the host adapter still track.
+    local sw = button:GetWidth()
+    if not sw or sw <= 0 then
+        sw = 37
+    end
+    local textureSize = math.floor(sw * 67 / 37 + 0.5)
+    b:SetWidth(textureSize)
+    b:SetHeight(textureSize)
     local c = catSettings.color
     b:SetVertexColor(c.r, c.g, c.b, c.a or 0.9)
     b:Show()
@@ -264,68 +280,173 @@ if _G.ContainerFrame_Update then
     hooksecurefunc("ContainerFrame_Update", EC_compCache.updateSellBordersForBagFrame)
 end
 
--- Host bag-UI adapter. The hosted slot class exposes :GetBag(), :GetID(),
--- :GetItem(), and :IsCached(); the latter flags cross-character views where
--- our character-scoped rule chain doesn't apply, so the border is hidden
--- regardless of the toggle.
+-- Host bag-UI adapter. Two surfaces are recognised, each with its own
+-- install-once flag so the presence (or absence) of one host doesn't
+-- block the other from installing:
+--
+--   1. Legacy AceAddon-3.0 host: per-slot class with :GetBag() /
+--      :GetID() / :GetItem() / :IsCached() methods. Hook the slot
+--      class's Update + UpdateBorder methods; force-repaint via the
+--      host's per-frame UpdateEverything.
+--   2. UI-replacement framework with an "engine table → module" exposure
+--      pattern (table at _G, unpack to engine, engine:GetModule("Bags")).
+--      The bags module exposes per-slot UpdateSlot(frame, bagID, slotID)
+--      and the slot button lives at frame.Bags[bagID][slotID]. Hook the
+--      method; force-repaint via the module's UpdateAllBagSlots.
+--
+-- `installHostBagBorderHook` is called from two sites in the event hub
+-- (ADDON_LOADED and PLAYER_LOGIN + 2 s fallback); each attempt below is
+-- idempotent through its own install flag.
 function EC_compCache.installHostBagBorderHook()
-    if EC_compCache._hostBagBorderHookInstalled then
-        return
-    end
-    local LibStub = _G.LibStub
-    if not LibStub then
-        return
-    end
-    local ok, ace = pcall(LibStub, "AceAddon-3.0", true)
-    if not ok or not ace or not ace.GetAddon then
-        return
-    end
-    local ok2, host = pcall(ace.GetAddon, ace, "Bagnon")
-    if not ok2 or not host or not host.ItemSlot then
-        return
-    end
-
-    local ItemSlot = host.ItemSlot
     local apply = EC_compCache.applySellBorder
     local willSell = EC_compCache.bagSlotWillSell
 
-    local function refresh(slot)
-        if not (slot and slot.GetBag and slot.GetID) then
+    -- Attempt 1: legacy AceAddon-3.0-registered host. The slot class
+    -- carries its own :GetBag()/:GetID()/:GetItem()/:IsCached() helpers
+    -- so we resolve identity per-slot rather than via a container frame.
+    local function tryLegacyHost()
+        if EC_compCache._hostBagBorderHookInstalled then
             return
         end
-        if slot.IsCached and slot:IsCached() then
-            apply(slot, false)
+        local LibStub = _G.LibStub
+        if not LibStub then
             return
         end
-        local link = slot.GetItem and slot:GetItem()
-        if not link then
-            apply(slot, false)
+        local ok, ace = pcall(LibStub, "AceAddon-3.0", true)
+        if not ok or not ace or not ace.GetAddon then
             return
         end
-        local bag, id = slot:GetBag(), slot:GetID()
-        if not (bag and id) then
+        local ok2, host = pcall(ace.GetAddon, ace, "Bagnon")
+        if not ok2 or not host or not host.ItemSlot then
             return
         end
-        apply(slot, willSell(bag, id), bag, id)
-    end
 
-    hooksecurefunc(ItemSlot, "Update", refresh)
-    if ItemSlot.UpdateBorder then
-        hooksecurefunc(ItemSlot, "UpdateBorder", refresh)
-    end
-    EC_compCache._hostBagBorderHookInstalled = true
+        local ItemSlot = host.ItemSlot
 
-    -- Force a one-shot repaint of any already-visible host bag frames.
-    -- Without this, slots painted by the host BEFORE our hook installed
-    -- sit with no border until the player triggers another host refresh
-    -- (open bag, visit bank, move an item). The hook only fires forward.
-    if host.frames then
-        for _, frame in pairs(host.frames) do
-            if frame and frame.UpdateEverything and frame.IsVisible and frame:IsVisible() then
-                pcall(frame.UpdateEverything, frame)
+        local function refresh(slot)
+            if not (slot and slot.GetBag and slot.GetID) then
+                return
+            end
+            if slot.IsCached and slot:IsCached() then
+                apply(slot, false)
+                return
+            end
+            local link = slot.GetItem and slot:GetItem()
+            if not link then
+                apply(slot, false)
+                return
+            end
+            local bag, id = slot:GetBag(), slot:GetID()
+            if not (bag and id) then
+                return
+            end
+            apply(slot, willSell(bag, id), bag, id)
+        end
+
+        hooksecurefunc(ItemSlot, "Update", refresh)
+        if ItemSlot.UpdateBorder then
+            hooksecurefunc(ItemSlot, "UpdateBorder", refresh)
+        end
+        EC_compCache._hostBagBorderHookInstalled = true
+
+        -- Force a one-shot repaint of any already-visible host bag frames.
+        -- Without this, slots painted by the host BEFORE our hook installed
+        -- sit with no border until the player triggers another host refresh
+        -- (open bag, visit bank, move an item). The hook only fires forward.
+        if host.frames then
+            for _, frame in pairs(host.frames) do
+                if frame and frame.UpdateEverything and frame.IsVisible and frame:IsVisible() then
+                    pcall(frame.UpdateEverything, frame)
+                end
             end
         end
     end
+
+    -- Attempt 2: UI-replacement framework with the engine-table exposure
+    -- pattern. The framework table is a global; unpack(table) yields
+    -- (Engine, Locales, PrivateDB, ProfileDB, GlobalDB); Engine:GetModule
+    -- ("Bags") returns the bag module B which exposes
+    -- B:UpdateSlot(frame, bagID, slotID) as the per-slot redraw path.
+    -- The slot button is reachable as frame.Bags[bagID][slotID].
+    local function tryEngineHost()
+        if EC_compCache._engineBagBorderHookInstalled then
+            return
+        end
+        -- Detection code names the framework global directly because we
+        -- have to know what to read off _G; the comment frames it
+        -- neutrally per the project's third-party-naming rule. The
+        -- exact global identifier is necessary for runtime resolution.
+        local hostTable = _G.ElvUI
+        if type(hostTable) ~= "table" then
+            return
+        end
+        local ok, engine = pcall(unpack, hostTable)
+        if not ok or type(engine) ~= "table" or type(engine.GetModule) ~= "function" then
+            return
+        end
+        local ok2, B = pcall(engine.GetModule, engine, "Bags")
+        if not ok2 or type(B) ~= "table" or type(B.UpdateSlot) ~= "function" then
+            return
+        end
+
+        hooksecurefunc(B, "UpdateSlot", function(_self, frame, bagID, slotID)
+            if not frame or type(frame.Bags) ~= "table" then
+                return
+            end
+            local bag = frame.Bags[bagID]
+            if not bag then
+                return
+            end
+            local slotButton = bag[slotID]
+            if not slotButton then
+                return
+            end
+            apply(slotButton, willSell(bagID, slotID), bagID, slotID)
+        end)
+
+        EC_compCache._engineBagBorderHookInstalled = true
+
+        -- Force a one-shot repaint of any already-visible bag frames.
+        -- Same rationale as the legacy attempt above; slots painted
+        -- before the hook installed otherwise sit with no border until
+        -- the next host-driven slot refresh.
+        if B.UpdateAllBagSlots then
+            pcall(B.UpdateAllBagSlots, B)
+        end
+
+        -- Belt-and-braces direct paint by predictable global frame
+        -- name. The host's Layout path creates slot buttons named
+        -- "<bagFrameName>Bag<bagID>Slot<slotID>", and the bag frames
+        -- the host builds eagerly during its module init are named
+        -- ElvUI_ContainerFrame (main) and ElvUI_BankContainerFrame
+        -- (bank, lazy). This loop runs even when B.UpdateAllBagSlots
+        -- bailed (e.g. B.BagFrames not yet populated, or the host's
+        -- bags feature disabled) so the first paint after EC install
+        -- doesn't depend on a subsequent host-driven update firing.
+        -- The names are needed for runtime lookup; comments stay
+        -- neutral per the project's third-party-naming rule.
+        local function paintByName(framePrefix, bagRange)
+            for _, bagID in ipairs(bagRange) do
+                local numSlots = GetContainerNumSlots(bagID)
+                if numSlots and numSlots > 0 then
+                    for slotID = 1, numSlots do
+                        local name = framePrefix .. "Bag" .. bagID .. "Slot" .. slotID
+                        local slot = _G[name]
+                        if slot then
+                            apply(slot, willSell(bagID, slotID), bagID, slotID)
+                        end
+                    end
+                end
+            end
+        end
+        paintByName("ElvUI_ContainerFrame", { 0, 1, 2, 3, 4 })
+        if _G.ElvUI_BankContainerFrame then
+            paintByName("ElvUI_BankContainerFrame", { -1, 5, 6, 7, 8, 9, 10 })
+        end
+    end
+
+    tryLegacyHost()
+    tryEngineHost()
 end
 
 -- Settings-flip refresh body. The forward-declared name was stubbed to a

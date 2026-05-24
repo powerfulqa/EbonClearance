@@ -851,6 +851,15 @@ local function EnsureDB()
             end
         end
     end
+    -- Opt-in tooltip annotation: append the numeric item ID under the EC
+    -- status line on bag-item / item-link tooltips. Useful for filing bug
+    -- reports and for authoring Keep / Sell / Delete entries by ID. Off
+    -- by default; users opt in via the Item Highlighting panel. The line
+    -- rides the same OnTooltipSetItem hook EC already installs, so there
+    -- is no extra hook cost when the toggle is off.
+    if type(DB.showItemIDOnTooltip) ~= "boolean" then
+        DB.showItemIDOnTooltip = false
+    end
     if type(DB.keepBagsOpen) ~= "boolean" then
         -- v2.12.0: flipped from true to false per UX feedback - the
         -- "bags stay open after merchant closes" behaviour was felt

@@ -51,6 +51,9 @@ CharPanel:SetScript("OnShow", function(self)
         if self.RefreshSellBorderSwatch then
             self:RefreshSellBorderSwatch()
         end
+        if self.showItemIDCB then
+            self.showItemIDCB:SetChecked(DB.showItemIDOnTooltip)
+        end
     end, function(self)
         NS.MakeHeader(self, "Item Highlighting", -16)
         -- v2.30.x: panel repurposed from "Character Settings" to focus
@@ -215,6 +218,57 @@ CharPanel:SetScript("OnShow", function(self)
 
             lastRowAnchor = catCB
         end
+
+        -- Tooltip section. Opt-in itemID annotation that appends the
+        -- numeric item ID to the EC tooltip status line. Defaults OFF;
+        -- power users (bug reports, list authoring by ID) flip this on.
+        -- The -18 x-offset un-nests this section from the indented
+        -- per-category rows above so the header aligns with the master
+        -- sell-border toggle.
+        local tipHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        tipHeader:SetPoint("TOPLEFT", lastRowAnchor, "BOTTOMLEFT", -18, -16)
+        tipHeader:SetText("Tooltip")
+
+        local idCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceShowItemIDCB",
+            self,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        idCB:SetPoint("TOPLEFT", tipHeader, "BOTTOMLEFT", 0, -6)
+        idCB:SetChecked(DB.showItemIDOnTooltip)
+        local idCBText = _G[idCB:GetName() .. "Text"]
+        if idCBText then
+            idCBText:SetText("Show item ID in tooltip")
+            idCBText:SetJustifyH("LEFT")
+        end
+        idCB:SetScript("OnClick", function()
+            DB.showItemIDOnTooltip = idCB:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            -- Tooltips don't re-render themselves while visible, and
+            -- EC_AnnotateTooltip's __EC_annotated dedupe flag can keep
+            -- an already-drawn tooltip pinned to the pre-toggle state
+            -- until the cursor moves off it. Drop the flag and hide
+            -- any visible tooltip so the next hover paints fresh -
+            -- avoids needing a /reload to see the change take effect.
+            if GameTooltip then
+                GameTooltip.__EC_annotated = nil
+                if GameTooltip:IsShown() then
+                    GameTooltip:Hide()
+                end
+            end
+            if ItemRefTooltip then
+                ItemRefTooltip.__EC_annotated = nil
+            end
+        end)
+        self.showItemIDCB = idCB
+
+        -- Discoverability hint. The toggle takes effect on the NEXT
+        -- tooltip render, not on already-visible ones - tell the user
+        -- so they don't assume a /reload is required.
+        local idHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        idHint:SetPoint("TOPLEFT", idCB, "BOTTOMLEFT", 4, -2)
+        idHint:SetText("|cff888888Re-hover bag items to refresh open tooltips.|r")
 
         -- Single refresh helper that re-syncs every category's swatch
         -- and checkbox state. Called from the REFRESH branch of

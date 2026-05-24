@@ -504,6 +504,14 @@ local function EC_AnnotateTooltip(tooltip)
     if statusLine then
         tooltip:AddLine(statusLine)
     end
+    -- Opt-in item-ID annotation. Surfaces the numeric itemID under the
+    -- EC verdict line for users filing bug reports or authoring Keep /
+    -- Sell / Delete entries by ID. The id has already been parsed at
+    -- the top of this function from the |Hitem:NNNN| link, so this is a
+    -- single conditional AddLine - no extra parsing cost.
+    if DB.showItemIDOnTooltip then
+        tooltip:AddLine(string.format("|cff666666Item ID: %d|r", id))
+    end
     -- Discoverability hint for the v2.3.0 right-click context menu. Shown on
     -- every bag/item-link tooltip so users know the action is available.
     tooltip:AddLine("|cff666666Alt+Right-Click for EbonClearance menu|r")

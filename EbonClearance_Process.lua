@@ -56,6 +56,23 @@ local IsSpellKnown = IsSpellKnown
 local IsEquippableItem = IsEquippableItem
 local GetSpellInfo = GetSpellInfo
 
+-- Set-membership helper. Local copy of EbonClearance_Events.lua's IsInSet
+-- (same convention as Vendor / Tooltip / BagDisplay / BagContextMenu - pure
+-- function, cheap to duplicate, avoids cross-file lookup inside the
+-- BAG_UPDATE-driven bag walk). The earlier Stage 7 extraction silently
+-- dropped this; the bag walk's `if not skip and IsInSet and IsInSet(...)`
+-- short-circuited on the bare global nil and the Keep List skip-gate never
+-- fired, so Keep-listed items appeared in Process Bags as DE / Mill /
+-- Prospect candidates. Test 56 (in tests/test_perf_guardrails.lua) locks
+-- the call-site-defines-helper invariant.
+local function IsInSet(setTable, itemID)
+    if not itemID or not setTable then
+        return false
+    end
+    local v = setTable[itemID]
+    return (v == true) or (v == 1)
+end
+
 -- ---------------------------------------------------------------------------
 -- v2.22.0 Process Bags helpers
 -- ---------------------------------------------------------------------------
@@ -271,7 +288,7 @@ function EC_compCache.buildProcessSummary()
                 if itemString and ignored[itemString] then
                     skip = true
                 end
-                if not skip and IsInSet and IsInSet(DB.blacklist, itemID) then
+                if not skip and IsInSet(DB.blacklist, itemID) then
                     skip = true
                 end
                 if not skip and IsEquippedItem and IsEquippedItem(itemID) then

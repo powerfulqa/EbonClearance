@@ -1926,24 +1926,14 @@ function EC_HandleAutoOpenContainers()
         return
     end
     if InCombatLockdown() then
-        -- One-shot deferral announce per combat instance. Walk bags only on
-        -- the first BAG_UPDATE-during-combat that finds the queue non-empty;
-        -- subsequent BAG_UPDATEs in the same combat skip the scan entirely.
-        -- The flag clears on PLAYER_REGEN_ENABLED so the next combat
-        -- announces fresh.
+        -- One-shot deferral announce per combat instance. The earlier
+        -- implementation walked all 5 bags with a 30-line tooltip scan per
+        -- slot purely to print an exact count (~80 tooltip scans on the
+        -- first BAG_UPDATE-during-combat); the count itself wasn't worth
+        -- that cost. Skip the walk and let the user discover the deferral
+        -- once if needed; PLAYER_REGEN_ENABLED resumes the driver.
         if not EC_compCache.combatDeferredAnnounced then
-            local count = 0
-            for bag = 0, 4 do
-                local slots = GetContainerNumSlots(bag)
-                for slot = 1, slots do
-                    if EC_IsOpenable(bag, slot) then
-                        count = count + 1
-                    end
-                end
-            end
-            if count > 0 then
-                PrintNicef("Deferred %d container(s) until out of combat.", count)
-            end
+            PrintNice("Containers deferred until out of combat.")
             EC_compCache.combatDeferredAnnounced = true
         end
         return
@@ -3179,6 +3169,19 @@ end
 -- scavengerOut=true on the next enumeration -- the canonical
 -- "summon landed" signal.
 local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
+    -- v2.33.x: defensive DB.summonGreedy gate. The only caller today is
+    -- EC_PetCheckTick which already gates on DB.summonGreedy, so this
+    -- check is belt-and-braces. Added in response to SLG's report of
+    -- post-merchant summons firing with the option unchecked - static
+    -- analysis of v2.33.0 found no bypass path, but a defensive gate
+    -- inside the function makes the contract impossible to violate
+    -- from a future caller that forgets the gate. ADDON_GUIDE.md's
+    -- "EC_TryResummonScavenger only fires when EC_addonDismissed ==
+    -- true" invariant is now extended: also only fires when the user
+    -- has the summon option on.
+    if not DB or not DB.summonGreedy then
+        return
+    end
     -- v2.9.0: honour the user-dismiss-vs-leash grace window. If a recent
     -- transition was classified as a manual portrait dismiss, suppress the
     -- restore until the grace expires so the addon does not fight the user.

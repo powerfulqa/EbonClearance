@@ -57,14 +57,6 @@ local GetContainerItemLink = GetContainerItemLink
 local GetContainerNumSlots = GetContainerNumSlots
 local IsEquippedItem = IsEquippedItem
 
--- Set-membership helper. Local copy of EbonClearance.lua's IsInSet
--- (different upvalue scope; pure function so duplication is cheap and
--- avoids a cross-file lookup on every per-slot trace step). Matches
--- the same pattern used in EbonClearance_Vendor.lua.
-local function IsInSet(setTable, itemID)
-    return setTable and itemID and setTable[itemID] ~= nil
-end
-
 -- ===========================================================================
 -- Bag display: sell-border tint
 -- ===========================================================================
@@ -163,7 +155,7 @@ function EC_compCache.bagSlotWillSellCategory(bag, slot)
     return "rule"
 end
 
-function EC_compCache.applySellBorder(button, _, bag, slot)
+function EC_compCache.applySellBorder(button, bag, slot)
     local DB = NS.DB
     if not button then
         return
@@ -265,13 +257,14 @@ function EC_compCache.updateSellBordersForBagFrame(frame)
     end
     -- Slot buttons are reverse-indexed in the frame's name: button "Item1"
     -- maps to the LAST slot visually, so iterate the size and reverse the
-    -- index when building the global name.
+    -- index when building the global name. applySellBorder resolves the
+    -- per-slot verdict internally via bagSlotWillSellCategory, so callers
+    -- don't pre-compute it here.
     local apply = EC_compCache.applySellBorder
-    local willSell = EC_compCache.bagSlotWillSell
     for slot = 1, frame.size do
         local button = _G[name .. "Item" .. (frame.size - slot + 1)]
         if button then
-            apply(button, willSell(bag, slot), bag, slot)
+            apply(button, bag, slot)
         end
     end
 end
@@ -299,7 +292,6 @@ end
 -- idempotent through its own install flag.
 function EC_compCache.installHostBagBorderHook()
     local apply = EC_compCache.applySellBorder
-    local willSell = EC_compCache.bagSlotWillSell
 
     -- Attempt 1: legacy AceAddon-3.0-registered host. The slot class
     -- carries its own :GetBag()/:GetID()/:GetItem()/:IsCached() helpers
@@ -328,19 +320,19 @@ function EC_compCache.installHostBagBorderHook()
                 return
             end
             if slot.IsCached and slot:IsCached() then
-                apply(slot, false)
+                apply(slot)
                 return
             end
             local link = slot.GetItem and slot:GetItem()
             if not link then
-                apply(slot, false)
+                apply(slot)
                 return
             end
             local bag, id = slot:GetBag(), slot:GetID()
             if not (bag and id) then
                 return
             end
-            apply(slot, willSell(bag, id), bag, id)
+            apply(slot, bag, id)
         end
 
         hooksecurefunc(ItemSlot, "Update", refresh)
@@ -401,7 +393,7 @@ function EC_compCache.installHostBagBorderHook()
             if not slotButton then
                 return
             end
-            apply(slotButton, willSell(bagID, slotID), bagID, slotID)
+            apply(slotButton, bagID, slotID)
         end)
 
         EC_compCache._engineBagBorderHookInstalled = true
@@ -433,7 +425,7 @@ function EC_compCache.installHostBagBorderHook()
                         local name = framePrefix .. "Bag" .. bagID .. "Slot" .. slotID
                         local slot = _G[name]
                         if slot then
-                            apply(slot, willSell(bagID, slotID), bagID, slotID)
+                            apply(slot, bagID, slotID)
                         end
                     end
                 end
@@ -455,11 +447,10 @@ end
 -- slot button immediately, without waiting for the next bag event.
 NS.RefreshSellBorders = function()
     local apply = EC_compCache.applySellBorder
-    local willSell = EC_compCache.bagSlotWillSell
     for button in pairs(EC_compCache.sellBorderButtons) do
         local bag, slot = button._ec_sellBag, button._ec_sellSlot
         if bag and slot then
-            apply(button, willSell(bag, slot), bag, slot)
+            apply(button, bag, slot)
         end
     end
 end

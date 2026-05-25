@@ -3915,6 +3915,96 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
+-- ---------------------------------------------------------------------------
+-- Bug reported by SLG: "constantly summoning Greedy Scavenger after
+-- using a merchant even though I unchecked that option". Static
+-- analysis of v2.33.0 found no bypass path - the only caller of
+-- EC_TryResummonScavenger is EC_PetCheckTick which already gates on
+-- DB.summonGreedy. But the function ITSELF didn't check, leaving the
+-- contract one refactor away from breaking. A future caller that
+-- adds an EC_TryResummonScavenger invocation without remembering the
+-- outer gate reproduces SLG's symptom exactly.
+--
+-- v2.33.x: defensive DB.summonGreedy gate added at the top of
+-- EC_TryResummonScavenger. Cheap (one branch), local to the function,
+-- impossible to bypass from any caller. ADDON_GUIDE.md's
+-- "EC_TryResummonScavenger only fires when EC_addonDismissed == true"
+-- invariant is now extended: also only fires when the user has the
+-- summon option on.
+do
+    local fnStart = src:find("function EC_TryResummonScavenger%(")
+    local body
+    if fnStart then
+        body = src:sub(fnStart, fnStart + 1500)
+        -- Take just the first ~1500 chars; the gate has to be near the
+        -- top (before any side effects). If it's buried 20 lines deep
+        -- below other guards, that's still vulnerable to future
+        -- reordering.
+    end
+    check(
+        "EC_TryResummonScavenger self-gates on DB.summonGreedy near the top",
+        body ~= nil and body:find("if not DB or not DB%.summonGreedy then") ~= nil,
+        "the defensive gate must live inside EC_TryResummonScavenger itself, not just in its caller - SLG's report showed the unchecked-summon option being violated, and the gate inside the function makes the contract impossible to bypass from any future caller that forgets the outer EC_PetCheckTick gate"
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 65 (post-v2.33.1 audit): IsInSet must be defined in any file that
+-- calls it bare; the defensive `IsInSet and IsInSet(...)` guard is banned.
+-- ---------------------------------------------------------------------------
+-- Background. Stage 7 of the file split (commit a24be7d) moved the Process
+-- Bags engine to EbonClearance_Process.lua but silently dropped the file-
+-- local IsInSet helper. The bag walk's Keep List skip-gate was written as
+-- `if not skip and IsInSet and IsInSet(DB.blacklist, itemID) then` -
+-- the defensive guard short-circuited on the unresolved IsInSet (resolving
+-- to global nil) and the gate never fired. Keep-listed items appeared in
+-- Process Bags as Disenchant / Mill / Prospect / Lockpick candidates.
+--
+-- This test locks two invariants per file:
+--   (a) any file that calls IsInSet must also define it (or import as
+--       `local IsInSet = ...`).
+--   (b) the `IsInSet and IsInSet(` defensive pattern is banned, because
+--       it's the construct that hid the Stage 7 bug. Either define IsInSet
+--       in the file and drop the guard, or remove the call entirely.
+do
+    for _, path in ipairs(SOURCE_PATHS) do
+        local f = io.open(path, "r")
+        if f then
+            local s = f:read("*a")
+            f:close()
+
+            -- Strip block / line comments so doc text containing the
+            -- literal "IsInSet(" doesn't false-positive. Two passes:
+            -- 1) entire `-- ...` line comments (greedy to EOL)
+            -- 2) block comments `--[[ ... ]]` (rare in this codebase
+            --    but defensive)
+            local sCode = s:gsub("%-%-[^\n]*", ""):gsub("%-%-%[%[.-%]%]", "")
+
+            local hasCall = sCode:find("IsInSet%s*%(") ~= nil
+            local hasDef = sCode:find("local%s+function%s+IsInSet%s*%(") ~= nil
+                or sCode:find("local%s+IsInSet%s*=") ~= nil
+
+            if hasCall then
+                check(
+                    path .. " defines IsInSet because it calls it",
+                    hasDef,
+                    "any file that calls IsInSet must also define it as a file-local (or import via `local IsInSet = NS.IsInSet`). "
+                        .. "Stage 7 had EbonClearance_Process.lua calling IsInSet without defining it; the bare call resolved to global nil and the Keep List skip-gate silently failed."
+                )
+                check(
+                    path .. " does not use the `IsInSet and IsInSet(` defensive pattern",
+                    sCode:find("IsInSet%s+and%s+IsInSet%s*%(") == nil,
+                    "the `IsInSet and IsInSet(...)` defensive guard is banned because it hides the missing-definition bug. "
+                        .. "If IsInSet is defined in this file the guard is dead code; if it isn't, the guard silently neutralises the call. "
+                        .. "Either define IsInSet and drop the guard, or remove the call."
+                )
+            end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

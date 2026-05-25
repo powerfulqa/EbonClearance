@@ -169,6 +169,10 @@ local function EC_InstallGreedyMuteOnce()
     end
     EC_greedyFiltersInstalled = true
 
+    -- CHAT_MSG_SYSTEM dropped (post-audit): system messages never have the
+    -- pet as their author, so the filter would always fall through to the
+    -- substring-match tail and never produce a useful hide. The dispatch
+    -- still cost a gsub-laden EC_StripCodes + find on every system line.
     ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_SAY", EC_GreedyEventFilter)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_YELL", EC_GreedyEventFilter)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_MONSTER_WHISPER", EC_GreedyEventFilter)
@@ -178,7 +182,6 @@ local function EC_InstallGreedyMuteOnce()
     ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", EC_GreedyEventFilter)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_TEXT_EMOTE", EC_GreedyEventFilter)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_EMOTE", EC_GreedyEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", EC_GreedyEventFilter)
 end
 NS.InstallGreedyMuteOnce = EC_InstallGreedyMuteOnce
 
@@ -255,13 +258,21 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
         return
     end
 
+    -- Materialise the WorldFrame children + each child's regions into local
+    -- tables before iterating. The original `select(i, frame:GetChildren())`
+    -- inside a loop is O(numChildren) per iteration (varargs unpack is
+    -- linear), making the nested walk O(children^2 * regions^2) per tick.
+    -- In a busy raid (numChildren ~80 with floating combat text) that's
+    -- tens of thousands of select operations every 200 ms.
     local numChildren = WorldFrame and WorldFrame.GetNumChildren and WorldFrame:GetNumChildren() or 0
+    local children = numChildren > 0 and { WorldFrame:GetChildren() } or nil
     for i = 1, numChildren do
-        local child = select(i, WorldFrame:GetChildren())
+        local child = children[i]
         if child and child.GetObjectType and child:GetObjectType() == "Frame" and child:IsVisible() then
             local numRegions = child.GetNumRegions and child:GetNumRegions() or 0
+            local regions = numRegions > 0 and { child:GetRegions() } or nil
             for j = 1, numRegions do
-                local region = select(j, child:GetRegions())
+                local region = regions[j]
                 if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                     local text = region:GetText()
                     if text then

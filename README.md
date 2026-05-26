@@ -42,7 +42,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 - **Scavenger Settings.** Summon controls, chat / speech-bubble mute, auto-loot cycle threshold, auto-open containers, Fast Loot.
 - **Process Bags.** Disenchant / mill / prospect from your bags; configurable DE rarity cap, Soulbound inclusion toggle, per-character ignore list.
 - **Import / Export.** Sell List sharing strings, per-section source/target.
-- **Character Settings.** Restrict which characters the addon runs on. Toggle the bag-slot sell-border tint and pick its colour through the standard colour-picker dialog.
+- **Item Highlighting.** Toggle the bag-slot sell-border tint per category (Delete / Account Sell / Character Sell / Junk / Rule), pick each category's colour through the standard colour-picker dialog, and optionally show the numeric item ID on bag-item tooltips. (Per-character on/off lives on the minimap button + `/ec`, not in a panel.)
 - **Statistics.** Lifetime + session counters side-by-side, reset independently.
 - **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, Process Next.
 - **Minimap button.** Left: options, Middle: Process Bags, Right: toggle.

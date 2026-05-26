@@ -5,7 +5,14 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
-### v2.34.0
+### v2.34.1
+
+Patch release. One regression fix on the Statistics panel.
+
+- **Fix: `Most Sold Item` now resolves to the item name, not a bare `ItemID: NNN` fallback.** `ItemLabel` in `EbonClearance_MainPanel.lua` called `GetItemInfo(id)` and rendered `ItemID: <n>` whenever the function returned nil (cold client-side cache). Pre-v2.34.0 the sold-counts table was account-wide, so the "Most Sold Item" itemID was typically something the current session had already loaded via inventory / loot / merchant interactions on the active character. Post v2.34.0 per-character partition, each character inherits a snapshot of accumulated counts that may include items the current character has never personally seen this session - and those items aren't in the client cache at panel-open time. The display fallback was always present; the migration just made the cold-cache path the common case. Fix: trigger a `NS.scanTooltip:SetHyperlink("item:<n>")` warmup the moment GetItemInfo misses, and schedule a single re-render ~0.6 s later via `NS.Delay`. The first paint still shows the ItemID string, then the line updates to the resolved name once the client receives the data (typically 100-300 ms). A `_statsWarmupPending` flag on the panel prevents stacked re-renders if the panel is rapidly toggled. Closes the regression introduced by v2.34.0's per-character partition (filed in-game).
+- **No schema changes; no new SavedVariables fields.** File count still 23. Safe overwrite from v2.34.0.
+
+
 
 Substantive release. The headline is a long-latent saved-variables bug: `EbonClearanceDB` has been declared `## SavedVariables:` (account-wide) since the initial commit, even though the docs, the codebase, and the user mental model treated it as per-character. Every multi-character user has had their Keep / Sell / Delete lists, profiles, and auto-tag state silently shared across alts. Reported in-game as the auto-Keep-equipped tag leaking onto a freshly-logged main from an alt that had worn the item; root cause has been there for ~30 releases. Also includes a silent-failure bug in Process Bags' Keep List skip-gate (Stage 7 extraction regression), an affix cache-poison that diverged the tooltip protection label from the vendor cycle's actual behaviour, and an audit-driven cleanup pass with five perf fixes plus a handful of dead-code removals.
 

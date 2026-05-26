@@ -216,6 +216,10 @@ MainOptions:SetScript("OnShow", function(self)
         return bestID, bestCount
     end
 
+    -- Forward declared so ItemLabel's cache-warmup callback can call
+    -- RefreshStats by name. The assignment happens a few lines below.
+    local RefreshStats
+
     local function ItemLabel(id)
         if not id then
             return "None"
@@ -224,10 +228,34 @@ MainOptions:SetScript("OnShow", function(self)
         if name then
             return string.format("|cff24ffb6%s|r", name)
         end
+        -- GetItemInfo cold-cache. Pre-v2.34.0 the sold-counts table was
+        -- account-wide so the "Most Sold Item" was usually something the
+        -- current session had already loaded (loot, inventory, merchant
+        -- interactions on this character). Post per-character partition,
+        -- each character inherits the snapshot of accumulated counts -
+        -- which can include items the current character has never seen
+        -- this session, and those items haven't been requested from the
+        -- server yet. Trigger a SetHyperlink-driven cache fetch and
+        -- schedule one re-render so the name resolves the moment the
+        -- client receives the data (typically 100-300 ms). Falls back
+        -- to the ItemID string for this paint; the re-render replaces it.
+        if NS.scanTooltip and NS.scanTooltip.SetHyperlink then
+            NS.scanTooltip:ClearLines()
+            NS.scanTooltip:SetHyperlink("item:" .. tostring(id))
+        end
+        if not self._statsWarmupPending and NS.Delay then
+            self._statsWarmupPending = true
+            NS.Delay(0.6, function()
+                self._statsWarmupPending = nil
+                if self.IsShown and self:IsShown() and RefreshStats then
+                    RefreshStats()
+                end
+            end)
+        end
         return "ItemID: " .. tostring(id)
     end
 
-    local function RefreshStats()
+    RefreshStats = function()
         if not self.statsMoney then
             return
         end

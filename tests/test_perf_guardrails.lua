@@ -4203,6 +4203,100 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 68 (v2.35.x): Gold-per-hour fields are partitioned per-character.
+-- ---------------------------------------------------------------------------
+-- The new bestGPH / bestGPHAt / bestGPHZone fields must live in
+-- PER_CHAR_FIELDS so the v2.34.0 per-character partition migrates them
+-- correctly. Without this, the GPH record would be account-wide and
+-- every character would inherit the best from whichever character
+-- happened to set it last. See
+-- docs/specs/2026-05-26-gph-stats-design.md for the design.
+do
+    local gphFields = { "bestGPH", "bestGPHAt", "bestGPHZone" }
+    for _, name in ipairs(gphFields) do
+        check(
+            "PER_CHAR_FIELDS includes " .. name,
+            src:find(name .. "%s*=%s*true") ~= nil,
+            "the GPH best-record field " .. name .. " must be in PER_CHAR_FIELDS so it routes through the per-character namespace; otherwise every character would share one record and the v2.34.0 partition would be silently violated"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 69 (v2.35.x): MainPanel GPH logic wires the 5-minute gate
+-- and writes all three best-record fields atomically.
+-- ---------------------------------------------------------------------------
+-- The MainPanel RefreshStats body must:
+--   * Read EC_session.startedAt (or NS.session.startedAt) for elapsed time
+--   * Apply the 5-minute (300s) minimum-session gate before updating best
+--   * Write DB.bestGPH, DB.bestGPHAt, and DB.bestGPHZone together when
+--     the gate passes (no partial writes)
+--
+-- A regression that drops the 5-minute gate would let a 3-second
+-- burst inflate the best forever. A regression that writes only
+-- bestGPH without the timestamp / zone would render the second-line
+-- context wrong ("Best ... in <stale zone>, <stale date>").
+do
+    local f = io.open("EbonClearance_MainPanel.lua", "r")
+    local panelSrc
+    if f then
+        panelSrc = f:read("*a")
+        f:close()
+    end
+
+    check(
+        "MainPanel.lua found",
+        panelSrc ~= nil,
+        "test relies on reading the file directly; check the path or whether the panel has been renamed"
+    )
+
+    if panelSrc then
+        check(
+            "MainPanel reads session.startedAt for GPH elapsed time",
+            panelSrc:find("session%.startedAt") ~= nil,
+            "the session start timestamp must be read from EC_session.startedAt (or NS.session.startedAt) so the GPH rate calculation has the right base"
+        )
+
+        check(
+            "MainPanel applies the 5-minute (300s) gate before updating best",
+            panelSrc:find("elapsed%s*>=%s*300") ~= nil,
+            "the bestGPH update must require at least 300 seconds of session to filter early-session burst noise; a missing gate lets a 3-second burst inflate the best"
+        )
+
+        check(
+            "MainPanel writes DB.bestGPH on the best-update path",
+            panelSrc:find("DB%.bestGPH%s*=%s*sessionGPH") ~= nil,
+            "the bestGPH field must be written when the gate passes; otherwise the user's best record never updates"
+        )
+
+        check(
+            "MainPanel writes DB.bestGPHAt on the best-update path",
+            panelSrc:find("DB%.bestGPHAt%s*=%s*time%(%)") ~= nil,
+            "the bestGPHAt timestamp must be written together with bestGPH so the panel can render the 'X days ago' context; a stale bestGPHAt would describe the wrong session"
+        )
+
+        check(
+            "MainPanel writes DB.bestGPHZone on the best-update path",
+            panelSrc:find("DB%.bestGPHZone") ~= nil and panelSrc:find("GetRealZoneText") ~= nil,
+            "the bestGPHZone snapshot via GetRealZoneText() must be written together with bestGPH so the panel can render the 'in <zone>' context"
+        )
+
+        check(
+            "MainPanel uses a 10-second floor on session GPH rate calculation",
+            panelSrc:find("elapsed%s*>=%s*10") ~= nil,
+            "sub-10s extrapolation produces absurd Gold/Hour values (selling 1 grey in 1 second = thousands of g/h); the spec mandates a 10-second floor before the live rate displays"
+        )
+
+        check(
+            "Reset Lifetime button zeroes bestGPH/At/Zone",
+            panelSrc:find("DB%.bestGPH%s*=%s*0") ~= nil
+                and panelSrc:find('DB%.bestGPHZone%s*=%s*""') ~= nil,
+            "the Reset Lifetime button must wipe all three GPH best-record fields; partial reset (e.g., bestGPH back to 0 but stale bestGPHAt/Zone left in place) would render nonsensical 'Best 0g 0s 0c in <zone>' text on the next show"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

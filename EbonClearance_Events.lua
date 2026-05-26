@@ -249,6 +249,17 @@ local PER_CHAR_FIELDS = {
     activeProfileName = true,
     processIgnored = true,
     processCollapsedModes = true,
+    -- v2.35.x gold-per-hour stats. bestGPH stores the highest sustained
+    -- session GPH (copper/hour) the character has reached; bestGPHAt is
+    -- the wall-clock timestamp via `time()` so the panel can render a
+    -- humanised "N days ago" / absolute-date string; bestGPHZone is the
+    -- GetRealZoneText snapshot at the moment the best was set. All
+    -- three are written atomically by the RefreshStats best-update
+    -- gate (5-minute minimum session). See
+    -- docs/specs/2026-05-26-gph-stats-design.md.
+    bestGPH = true,
+    bestGPHAt = true,
+    bestGPHZone = true,
 }
 
 local function EC_DBCharKey()
@@ -1089,12 +1100,18 @@ end
 NS.EnsureDB = EnsureDB
 
 -- Session stats (in-memory only; reset on /reload or by user button).
+-- v2.35.x: `startedAt` is the GetTime() snapshot at session start. The
+-- MainPanel's RefreshStats reads it to compute Session Gold/Hour and to
+-- gate the bestGPH update on the 5-minute minimum duration. Initialised
+-- at file load (so /reload starts a fresh session timer) and rewritten
+-- by EC_ResetSession on the Reset Session Stats button.
 local EC_session = {
     copper = 0,
     sold = 0,
     deleted = 0,
     repairs = 0,
     repairCopper = 0,
+    startedAt = GetTime(),
 }
 NS.session = EC_session
 
@@ -1104,6 +1121,7 @@ local function EC_ResetSession()
     EC_session.deleted = 0
     EC_session.repairs = 0
     EC_session.repairCopper = 0
+    EC_session.startedAt = GetTime()
 end
 NS.ResetSession = EC_ResetSession
 

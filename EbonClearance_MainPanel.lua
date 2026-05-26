@@ -109,8 +109,23 @@ local function BuildMainPanel(panel, content, refreshStats)
     repairCost:SetPoint("TOPLEFT", repairs, "BOTTOMLEFT", 0, -6)
     panel.statsRepairCost = repairCost
 
+    -- v2.35.x: Session and Best Gold/Hour. The session line shows the
+    -- live rate plus elapsed time; the best line shows the per-character
+    -- record with the zone + when context on its own indented sub-line.
+    -- See docs/specs/2026-05-26-gph-stats-design.md for the data shape +
+    -- 5-minute gate rationale.
+    local sessionGPH = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    sessionGPH:SetPoint("TOPLEFT", repairCost, "BOTTOMLEFT", 0, -6)
+    panel.statsSessionGPH = sessionGPH
+
+    local bestGPH = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    bestGPH:SetPoint("TOPLEFT", sessionGPH, "BOTTOMLEFT", 0, -6)
+    EC_compCache.setPanelWidth(bestGPH, 16)
+    bestGPH:SetJustifyH("LEFT")
+    panel.statsBestGPH = bestGPH
+
     local avgWorth = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    avgWorth:SetPoint("TOPLEFT", repairCost, "BOTTOMLEFT", 0, -6)
+    avgWorth:SetPoint("TOPLEFT", bestGPH, "BOTTOMLEFT", 0, -6)
     panel.statsAvgWorth = avgWorth
 
     local mostSold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -142,6 +157,13 @@ local function BuildMainPanel(panel, content, refreshStats)
                 DB.inventoryWorthCount = 0
                 wipe(DB.soldItemCounts)
                 wipe(DB.deletedItemCounts)
+                -- v2.35.x: Reset Lifetime wipes the GPH best record too.
+                -- The user is opting in to a full lifetime reset; per the
+                -- spec (docs/specs/2026-05-26-gph-stats-design.md) the
+                -- best record is part of lifetime state and goes with it.
+                DB.bestGPH = 0
+                DB.bestGPHAt = 0
+                DB.bestGPHZone = ""
                 refreshStats()
                 PlaySound("igMainMenuOptionCheckBoxOn")
             end
@@ -282,6 +304,97 @@ MainOptions:SetScript("OnShow", function(self)
                 .. NS.CopperToColoredText(DB.totalRepairCopper or 0)
                 .. sessionMoneySuffix(NS.session.repairCopper)
         )
+
+        -- v2.35.x: Session + Best Gold/Hour. See
+        -- docs/specs/2026-05-26-gph-stats-design.md for the design.
+        --
+        -- The session line shows the live rate (copper/hour) computed
+        -- from session.copper / elapsed-seconds, with a 10-second floor
+        -- on the elapsed value so sub-second extrapolation doesn't
+        -- produce absurd numbers in the moment right after /reload.
+        -- The best line shows the per-character record + the zone +
+        -- when context. Only updates the best when the session has
+        -- run for at least 5 minutes (300s gate) - filters early-
+        -- session burst noise.
+        local startedAt = NS.session.startedAt or 0
+        local now = GetTime()
+        local elapsed = (startedAt > 0) and (now - startedAt) or 0
+        local function humanDuration(secs)
+            secs = math.floor(secs)
+            if secs < 60 then
+                return string.format("%ds", secs)
+            elseif secs < 3600 then
+                return string.format("%dm %ds", math.floor(secs / 60), secs % 60)
+            end
+            local h = math.floor(secs / 3600)
+            local m = math.floor((secs % 3600) / 60)
+            local s = secs % 60
+            return string.format("%dh %dm %ds", h, m, s)
+        end
+        local sessionGPH
+        if elapsed >= 10 then
+            sessionGPH = math.floor((NS.session.copper / elapsed) * 3600)
+        end
+        if self.statsSessionGPH then
+            if sessionGPH then
+                self.statsSessionGPH:SetText(
+                    "Session Gold/Hour: "
+                        .. NS.CopperToColoredText(sessionGPH)
+                        .. string.format("  |cff888888(%s)|r", humanDuration(elapsed))
+                )
+            else
+                self.statsSessionGPH:SetText(
+                    "Session Gold/Hour: |cff888888-  (computing...)|r"
+                )
+            end
+        end
+
+        -- Best-update gate: 5 minutes of session AND new high.
+        if sessionGPH and elapsed >= 300 and sessionGPH > (DB.bestGPH or 0) then
+            DB.bestGPH = sessionGPH
+            DB.bestGPHAt = time()
+            local zone = GetRealZoneText()
+            DB.bestGPHZone = (zone and zone ~= "") and zone or "Unknown"
+        end
+
+        if self.statsBestGPH then
+            local best = DB.bestGPH or 0
+            if best > 0 then
+                local at = DB.bestGPHAt or 0
+                local zone = DB.bestGPHZone
+                if not zone or zone == "" then
+                    zone = "Unknown"
+                end
+                local when
+                if at <= 0 then
+                    when = "unknown date"
+                else
+                    local secs = time() - at
+                    if secs < 60 then
+                        when = "just now"
+                    elseif secs < 3600 then
+                        local n = math.floor(secs / 60)
+                        when = string.format("%d minute%s ago", n, n == 1 and "" or "s")
+                    elseif secs < 86400 then
+                        local n = math.floor(secs / 3600)
+                        when = string.format("%d hour%s ago", n, n == 1 and "" or "s")
+                    elseif secs < 30 * 86400 then
+                        local n = math.floor(secs / 86400)
+                        when = string.format("%d day%s ago", n, n == 1 and "" or "s")
+                    else
+                        when = date("%Y-%m-%d", at)
+                    end
+                end
+                self.statsBestGPH:SetText(
+                    "Best Gold/Hour: "
+                        .. NS.CopperToColoredText(best)
+                        .. string.format("\n  |cff888888in %s, %s|r", zone, when)
+                )
+            else
+                self.statsBestGPH:SetText("Best Gold/Hour: |cff888888-|r")
+            end
+        end
+
         if self.statsAvgWorth then
             local cnt = DB.inventoryWorthCount or 0
             local total = DB.inventoryWorthTotal or 0

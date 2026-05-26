@@ -352,6 +352,23 @@ end
 -- v2.23.0: structured affix lookup for a live tooltip + itemID.
 -- Same shape as bagSlotAffixData but reads the FontString off the
 -- live tooltip frame (used by the bag-item tooltip annotation path).
+--
+-- v2.35.1 backfill: PE post-processes the LIVE GameTooltip - it
+-- strips the @affix@ markers and colourises the line purple before
+-- displaying. The offscreen scan tooltip (EbonClearanceScanTooltip)
+-- isn't touched. When scanTooltipForAffixDesc fails to read the
+-- description off the live tooltip (Path 1 misses because markers
+-- are gone; Path 2 misses because PE's item-side and spell-side
+-- text disagree at the same rank), backfill the description from
+-- bagSlotAffixData's per-itemString cache. That cache is populated
+-- by sell-border paints + /ec sellinfo + EC_IsSellable, so for users
+-- with slot tinting on the cache is warm by the time the tooltip
+-- fires. If the cache is cold, walk bags to find the matching slot
+-- and run bagSlotAffixData on it (which scans the offscreen tip
+-- with @affix@ markers intact and writes the cache). Without this
+-- backfill the tooltip silently labels Keep on items that the
+-- vendor cycle would actually sell - reported in-game as a
+-- tooltip-vs-vendor divergence.
 function EC_compCache.liveTooltipAffixData(tooltip, itemID)
     if not tooltip or not tooltip.GetName or not itemID then
         return nil
@@ -373,6 +390,37 @@ function EC_compCache.liveTooltipAffixData(tooltip, itemID)
         return nil
     end
     data.description = EC_compCache.scanTooltipForAffixDesc(tname)
+    if not data.description and tooltip.GetItem then
+        local _, link = tooltip:GetItem()
+        local itemString = link and link:match("item[%-?%d:]+")
+        if itemString then
+            -- Cache hit path: cheap, no scan.
+            local cached = EC_compCache.affixDataCache[itemString]
+            if type(cached) == "table" and cached.description then
+                data.description = cached.description
+            elseif link and GetContainerNumSlots and GetContainerItemLink then
+                -- Cache miss path: walk bags, find the slot with the
+                -- same link, run bagSlotAffixData on it. The first
+                -- successful match populates affixDataCache for this
+                -- itemString so subsequent hovers hit the cache path.
+                for bag = 0, 4 do
+                    local n = GetContainerNumSlots(bag) or 0
+                    for slot = 1, n do
+                        if GetContainerItemLink(bag, slot) == link then
+                            local bagData = EC_compCache.bagSlotAffixData(bag, slot)
+                            if bagData and bagData.description then
+                                data.description = bagData.description
+                            end
+                            break
+                        end
+                    end
+                    if data.description then
+                        break
+                    end
+                end
+            end
+        end
+    end
     return data
 end
 
@@ -413,6 +461,108 @@ end
 -- a different system from item affixes.
 EC_compCache.knownAffixDescriptions = {}
 
+-- v2.35.1: family + rank pair fallback for cases where the engraving
+-- spell's description text and the bag item's @affix@ line don't match
+-- exactly. Two failure modes in practice:
+--   1. PE's item-side and spell-side strings disagree at the SAME rank.
+--      User-reported example: a rank II "Overwhelming Force II" item
+--      reads "Increases your damage and healing done by 2%" while the
+--      engraving spell at the same rank reads "Increases damage and
+--      healing done by 4%" - different wording AND different magnitude
+--      for what PE labels as the same rank.
+--   2. The player has a different rank of the same affix family. The
+--      v2.34.x rank-V Relentless Crits report fell into this bucket
+--      (player had rank IV, item dropped at rank V).
+--
+-- These need DIFFERENT decisions at the rank-aware match step, but the
+-- USER-FACING label can collapse to a single message:
+--   * Case 1 (same rank, PE text disagrees) matches via the (family,
+--     rank) lookup -> player owns this rank -> rank-known label.
+--   * Case 2 (different rank entirely) misses the rank lookup -> player
+--     does not own this rank -> rank-needed label.
+-- The v2.35.1 tooltip uses two collector-focused labels (rank known
+-- vs rank needed); see Tooltip.lua for the exact strings.
+--
+-- knownAffixFamilyRanks is a nested map keyed by normalised family
+-- name, with the value being a set of integer ranks the player has
+-- learned for that family. Example after extracting rank II of two
+-- affixes:
+--   { ["overwhelming force"] = { [2] = true },
+--     ["inner light"]        = { [2] = true } }
+--
+-- The catalog is rebuilt by the spellbook walk + ExtractionService
+-- merge (see refreshKnownAffixes / refreshExtractionIfDirty below).
+-- Per-session, not persisted.
+EC_compCache.knownAffixFamilyRanks = {}
+
+-- v2.35.1: helper. Normalises an affix family name for cross-source
+-- comparison. Strips "of " prefix common on item-parsed names, strips
+-- trailing roman-numeral rank common on spellbook names, lowercases.
+-- For "of Overwhelming Force" and "Overwhelming Force II" the output
+-- is "overwhelming force" for both, which is the match key.
+function EC_compCache.normaliseAffixFamily(name)
+    if type(name) ~= "string" then
+        return ""
+    end
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    name = name:gsub("^[Oo]f%s+", "")
+    name = name:gsub("%s+[IVXLCDM]+$", "")
+    return name:lower()
+end
+
+-- v2.35.1: helper. Pulls (family, rank) out of a raw spell or
+-- ExtractionService record name (e.g. "Overwhelming Force II" ->
+-- "overwhelming force", 2). Returns nil family / nil rank when the
+-- input doesn't fit the pattern. The rank parse uses romanToInt so
+-- ranks I-V (and beyond) are all picked up.
+function EC_compCache.parseAffixNameRank(rawName)
+    if type(rawName) ~= "string" or rawName == "" then
+        return nil, nil
+    end
+    local trimmed = rawName:gsub("^%s+", ""):gsub("%s+$", "")
+    local rankStr = trimmed:match("%s+([IVXLCDM]+)$")
+    local rank = rankStr and EC_compCache.romanToInt and EC_compCache.romanToInt(rankStr) or nil
+    local family = EC_compCache.normaliseAffixFamily(trimmed)
+    if family == "" then
+        family = nil
+    end
+    return family, rank
+end
+
+-- v2.35.1: family-only lookup. Returns true iff the player has any rank
+-- of the named affix family in their learned set. Used as a softer
+-- fallback than playerHasAffixRank - reports "I have something from
+-- this family, just not necessarily this rank."
+function EC_compCache.playerHasAffixFamily(name)
+    if type(name) ~= "string" then
+        return false
+    end
+    local key = EC_compCache.normaliseAffixFamily(name)
+    if key == "" then
+        return false
+    end
+    local ranks = EC_compCache.knownAffixFamilyRanks
+        and EC_compCache.knownAffixFamilyRanks[key]
+    return ranks ~= nil and next(ranks) ~= nil
+end
+
+-- v2.35.1: exact (family, rank) lookup. Returns true iff the player
+-- has learned the specified rank of the named affix. Distinguishes
+-- "same rank, PE's text disagrees" from "different rank entirely"
+-- so the tooltip label can be accurate in both cases.
+function EC_compCache.playerHasAffixRank(name, rank)
+    if type(name) ~= "string" or type(rank) ~= "number" then
+        return false
+    end
+    local key = EC_compCache.normaliseAffixFamily(name)
+    if key == "" then
+        return false
+    end
+    local ranks = EC_compCache.knownAffixFamilyRanks
+        and EC_compCache.knownAffixFamilyRanks[key]
+    return ranks ~= nil and ranks[rank] == true
+end
+
 function EC_compCache.peDetected()
     return _G.ProjectEbonhold ~= nil
 end
@@ -441,6 +591,15 @@ EC_compCache.procIdToDescription = {}
 -- Avoids re-scanning hundreds of tooltip SetHyperlink calls on every
 -- refreshKnownAffixes invocation.
 EC_compCache.spellbookAffixCache = {}
+
+-- v2.35.1: parallel cache for the family + rank fallback. Maps spellID
+-- to a { family = "<normalised>", rank = N } table when the spell is
+-- an affix engraving, or false otherwise. Populated alongside
+-- spellbookAffixCache during the chunked walk; the two caches are kept
+-- in lockstep so a cache hit on `spellbookAffixCache` implies the
+-- family cache is also populated. Per-session, not persisted; /reload
+-- reseeds along with the description cache.
+EC_compCache.spellbookFamilyCache = {}
 
 -- v2.30.0 perf: debounce SPELLS_CHANGED / LEARNED_SPELL_IN_TAB events.
 -- Soul ash tree application and login can fire dozens of spell events in
@@ -485,7 +644,9 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
         return
     end
     local cache = EC_compCache.spellbookAffixCache
+    local familyCache = EC_compCache.spellbookFamilyCache
     local map = st.map
+    local families = st.families
     local spells = st.spells
     local idx = st.idx
     local scansLeft = EC_compCache.SPELLS_PER_CHUNK
@@ -496,6 +657,7 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
         if cached == nil then
             -- Uncached: tooltip scan required. Costs budget.
             cached = false
+            local familyCached = false
             tip:ClearLines()
             tip:SetHyperlink("spell:" .. spellId)
             for j = 1, tip:NumLines() do
@@ -508,16 +670,38 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
                         if desc and desc ~= "" then
                             cached = desc
                         end
+                        -- v2.35.1: capture (family, rank) from the spell
+                        -- title. Only stored when the "engrave this
+                        -- affix" prefix matched (i.e. this IS an affix
+                        -- engraving) - avoids polluting the families set
+                        -- with unrelated spellbook entries.
+                        if GetSpellInfo then
+                            local sname = GetSpellInfo(spellId)
+                            if sname then
+                                local fname, frank = EC_compCache.parseAffixNameRank(sname)
+                                if fname then
+                                    familyCached = { family = fname, rank = frank }
+                                end
+                            end
+                        end
                         break
                     end
                 end
             end
             cache[spellId] = cached
+            familyCache[spellId] = familyCached
             scansLeft = scansLeft - 1
         end
         -- Cached hits are free - no budget cost.
         if cached then
             map[cached] = true
+        end
+        local fc = familyCache[spellId]
+        if type(fc) == "table" and fc.family then
+            families[fc.family] = families[fc.family] or {}
+            if type(fc.rank) == "number" then
+                families[fc.family][fc.rank] = true
+            end
         end
         idx = idx + 1
     end
@@ -554,10 +738,30 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
                     if desc then
                         map[desc] = true
                     end
+                    -- v2.35.1: ExtractionService records carry the affix
+                    -- name in r.name (e.g. "Overwhelming Force II").
+                    -- Parse (family, rank) and add to the families map
+                    -- so the family + rank fallback has a complete view.
+                    -- The description-side map and the family-side map
+                    -- can disagree on a given drop: PE sometimes ships
+                    -- different effect text for the same rank, in which
+                    -- case description-match misses but family-rank
+                    -- match succeeds and the tooltip says "Keep (affix
+                    -- you have)".
+                    if r.name then
+                        local fname, frank = EC_compCache.parseAffixNameRank(tostring(r.name))
+                        if fname then
+                            families[fname] = families[fname] or {}
+                            if type(frank) == "number" then
+                                families[fname][frank] = true
+                            end
+                        end
+                    end
                 end
             end
         end
         EC_compCache.knownAffixDescriptions = map
+        EC_compCache.knownAffixFamilyRanks = families
         EC_compCache._affixScanState = nil
         self:Hide()
     end
@@ -594,9 +798,12 @@ function EC_compCache.refreshKnownAffixes()
     end
     -- Start (or restart) the chunked scan. Any in-flight scan is
     -- abandoned - its partial map is discarded and we start fresh.
+    -- v2.35.1: scan state grew a `families` set built in parallel to
+    -- `map` so the family-name fallback has fresh data at completion.
     EC_compCache._affixScanState = {
         spells = spells,
         map = {},
+        families = {},
         idx = 1,
     }
     EC_compCache._affixScanFrame:Show()
@@ -657,7 +864,16 @@ function EC_compCache.refreshExtractionIfDirty()
     -- scan the engraving-spell tooltip once (and cache the result).
     -- Same scan body as the OnUpdate path above so the two stay
     -- equivalent in what they extract.
+    --
+    -- v2.35.1: also incrementally populate the family + rank fallback
+    -- map alongside the description map. Records carry `r.name` so no
+    -- second tooltip scan is needed; just parse and add.
     local tip = NS.scanTooltip
+    local families = EC_compCache.knownAffixFamilyRanks
+    if type(families) ~= "table" then
+        families = {}
+        EC_compCache.knownAffixFamilyRanks = families
+    end
     if tip and tip.ClearLines and tip.SetHyperlink and tip.NumLines then
         for _, r in ipairs(svc.learnedAffixes) do
             if r and r.learned and r.id then
@@ -684,6 +900,15 @@ function EC_compCache.refreshExtractionIfDirty()
                 end
                 if desc then
                     map[desc] = true
+                end
+                if r.name then
+                    local fname, frank = EC_compCache.parseAffixNameRank(tostring(r.name))
+                    if fname then
+                        families[fname] = families[fname] or {}
+                        if type(frank) == "number" then
+                            families[fname][frank] = true
+                        end
+                    end
                 end
             end
         end

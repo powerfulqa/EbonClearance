@@ -362,7 +362,46 @@ local function EC_AnnotateTooltip(tooltip)
                     and EC_compCache.playerHasAffixDescription
                     and EC_compCache.playerHasAffixDescription(affix.description)
                     or false
-                local autoDupe = DB.affixAllowExactDupes and playerKnows
+                -- v2.35.1: family + rank fallback. PE's item-side and
+                -- spell-side strings sometimes disagree at the same rank
+                -- (e.g. an "Overwhelming Force II" item reads
+                -- "Increases your damage and healing done by 2%" while
+                -- the rank II engraving spell reads "Increases damage
+                -- and healing done by 4%"). The description match misses
+                -- but the player demonstrably has this rank.
+                -- knownAffixFamilyRanks tracks (family, rank) pairs from
+                -- spellbook names + ExtractionService records, so the
+                -- label can be correct even when description-text fails.
+                --
+                -- Two label outcomes - "do I need this specific rank?":
+                --   * description match OR (family, rank) match
+                --     -> "Keep (affix rank known)"
+                --   * neither (whether family is unknown OR known at a
+                --      different rank) -> "Keep (affix rank needed)"
+                --
+                -- Collector-focused framing: the user cares whether they
+                -- need this exact (family, rank) for their collection,
+                -- not whether they own a different rank of the same
+                -- family - that distinction was noise. playerHasAffixFamily
+                -- stays in Protection.lua as a helper for future use
+                -- (/ec sellinfo could surface it for diagnostic detail).
+                --
+                -- The autoDupe release path stays exact-rank-description
+                -- only - explicit user opt-in to "allow dupes" means
+                -- exact-rank-description match, not family.
+                local playerKnowsRank = (not playerKnows)
+                    and affix.name
+                    and affix.rank
+                    and EC_compCache.playerHasAffixRank
+                    and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
+                    or false
+                -- v2.35.1: autoDupe widens to release on description match
+                -- OR (family, rank) match. Keeps the sell-side and label
+                -- semantics in sync: when the tooltip says "rank known"
+                -- AND dupe-allow is on, the affix protection releases too
+                -- (matches what the user requested when shipping the
+                -- family + rank fallback).
+                local autoDupe = DB.affixAllowExactDupes and (playerKnows or playerKnowsRank)
                 if manualAllow or autoDupe then
                     -- Destination-list label wins. destinationLabel walks
                     -- the explicit-list precedence chain (Keep / Delete /
@@ -383,19 +422,45 @@ local function EC_AnnotateTooltip(tooltip)
                             statusLine = "|cff66ccff[EC]|r |cffffea80Override on - add to a list to sell|r"
                         end
                     else
-                        -- autoDupe only, not on any list. The dupe-
-                        -- allow setting is on, the player already has
-                        -- this affix, so future drops can sell.
-                        statusLine = "|cff66ccff[EC]|r |cffb6ffb6Will Sell (you have this affix)|r"
+                        -- autoDupe only, not on any list. v2.35.1: only
+                        -- label "Will Sell (you have this affix)" if an
+                        -- UPSTREAM "Will Sell" verdict already exists
+                        -- (quality-rule match or whitelist). The dupe-
+                        -- allow setting only RELEASES the affix
+                        -- protection from vetoing - it doesn't ADD a
+                        -- sell signal. Without an upstream Will Sell,
+                        -- the item won't actually vendor (no rule fires)
+                        -- and labelling it "Will Sell" creates a
+                        -- tooltip-vs-vendor divergence (reported in-
+                        -- game: Epic item, Epic rule disabled, not on
+                        -- any list, dupe-allow on, /ec sellinfo says
+                        -- "won't sell - no rule matched" but the
+                        -- tooltip said "Will Sell (you have this
+                        -- affix)"). Honest fallback when no rule fires
+                        -- is "rank known" - same as the dupe-allow-off
+                        -- case, because the dupe-allow has nothing to
+                        -- release.
+                        if statusLine and statusLine:find("Will Sell", 1, true) then
+                            statusLine = "|cff66ccff[EC]|r |cffb6ffb6Will Sell (you have this affix)|r"
+                        else
+                            statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (affix rank known)|r"
+                        end
                     end
-                elseif playerKnows then
-                    -- The player has extracted this affix, but the
-                    -- dupe-allow setting is off so protection still
-                    -- holds. Flipping that setting on (Protection
-                    -- Settings) makes drops sell.
-                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (affix you have)|r"
+                elseif playerKnows or playerKnowsRank then
+                    -- The player has this exact (family, rank) - either
+                    -- via description-text match (the v2.23.0 path) or
+                    -- via the v2.35.1 family+rank fallback when PE's
+                    -- text disagrees at the same rank. Dupe-allow off
+                    -- so protection still holds.
+                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (affix rank known)|r"
                 else
-                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (new affix)|r"
+                    -- Player doesn't have this specific (family, rank)
+                    -- pair in their collection. Could be a completely
+                    -- new family OR a different rank of a family they
+                    -- already own - the user's collection-side question
+                    -- is "do I need this exact rank?" and the answer
+                    -- is the same either way: yes.
+                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (affix rank needed)|r"
                 end
             end
         end

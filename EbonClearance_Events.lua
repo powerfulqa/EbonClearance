@@ -3845,7 +3845,33 @@ local function EC_IsSellable(bag, slot, junkOnly)
             -- gate, regardless of base item.
             local affixKey = affix.description and EC_compCache.normaliseAffixDesc(affix.description)
             local manualAllow = affixKey and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
-            local autoDupe = DB.affixAllowExactDupes and EC_compCache.playerHasAffixDescription(affix.description)
+            -- v2.35.1: autoDupe now releases on description match OR
+            -- family+rank match. The original v2.23.0 design checked
+            -- description-text only, which silently failed when PE's
+            -- item-side and spell-side text disagree at the same rank
+            -- (e.g. an "Overwhelming Force II" item reading "Increases
+            -- your damage and healing done by 2%" but the engraving
+            -- spell at rank II reading "Increases damage and healing
+            -- done by 4%"). Without this widening, items the player
+            -- demonstrably owns at this rank stayed protected even
+            -- with affixAllowExactDupes on - and the tooltip's family
+            -- + rank label said "Keep (affix rank known)" while
+            -- /ec sellinfo's trace path correctly reported WILL SELL
+            -- when the same affix was also manually allow-listed,
+            -- producing a confusing asymmetry. The family + rank
+            -- check uses the same knownAffixFamilyRanks catalog
+            -- populated by refreshKnownAffixes.
+            local descKnown = affix.description
+                and EC_compCache.playerHasAffixDescription
+                and EC_compCache.playerHasAffixDescription(affix.description)
+                or false
+            local rankKnown = (not descKnown)
+                and affix.name
+                and affix.rank
+                and EC_compCache.playerHasAffixRank
+                and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
+                or false
+            local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown)
             if not (manualAllow or autoDupe) then
                 return false
             end

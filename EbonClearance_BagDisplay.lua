@@ -624,13 +624,27 @@ function EC_compCache.describeSellability(bag, slot)
                 and EC_compCache.normaliseAffixDesc
                 and EC_compCache.normaliseAffixDesc(affix.description)
             local manualAllow = affixKey and ADB and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
-            local autoDupe = DB.affixAllowExactDupes
+            -- v2.35.1: autoDupe widened to release on description match
+            -- OR (family, rank) match. Mirrors the same widening in
+            -- EC_IsSellable + EC_AnnotateTooltip so /ec sellinfo
+            -- agrees with the merchant cycle and the tooltip on the
+            -- same item.
+            local descKnown = affix.description
                 and EC_compCache.playerHasAffixDescription
                 and EC_compCache.playerHasAffixDescription(affix.description)
+                or false
+            local rankKnown = (not descKnown)
+                and affix.name
+                and affix.rank
+                and EC_compCache.playerHasAffixRank
+                and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
+                or false
+            local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown)
             if manualAllow then
                 step("affixProtection", true, "affix present but allow-listed (manual)")
             elseif autoDupe then
-                step("affixProtection", true, "affix present but allow-listed (rank dupe)")
+                local how = descKnown and "rank dupe" or "rank dupe via family match"
+                step("affixProtection", true, "affix present but allow-listed (" .. how .. ")")
             else
                 affixProtected = true
                 step("affixProtection", false, "VETO - Rare/Epic random affix detected")

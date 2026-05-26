@@ -2237,14 +2237,18 @@ do
 end
 
 -- ---------------------------------------------------------------------------
--- Test 44 (v2.32.x): affix tooltip label scheme.
+-- Test 44 (v2.32.x, updated v2.35.1): affix tooltip label scheme.
 -- ---------------------------------------------------------------------------
--- The random-affix tooltip branch distinguishes three states using
--- plain-English "Keep" / "Will Sell" labels:
+-- The random-affix tooltip branch distinguishes states using plain-
+-- English "Keep" / "Will Sell" labels. v2.35.1 collapsed the
+-- player-doesn't-own-this-rank states into a single collector-focused
+-- "rank needed" label (the v2.32.x scheme split it into "new affix"
+-- and "other rank known" - the distinction was noise; the user's
+-- collection-side question is "do I need this exact rank?"):
 --
---   Player doesn't know affix          -> "Keep (new affix)"
---   Player knows it + setting OFF      -> "Keep (affix you have)"
---   Player knows it + setting ON       -> "Will Sell (you have this affix)"
+--   Player owns this (family, rank) + setting OFF -> "Keep (affix rank known)"
+--   Player owns this (family, rank) + setting ON  -> "Will Sell (you have this affix)"
+--   Player doesn't own this rank                  -> "Keep (affix rank needed)"
 --
 -- The label scheme avoids "Protected" / "Allowed" verbs (too abstract
 -- for a new player) and avoids the phrase "already known" (could be
@@ -2260,14 +2264,14 @@ do
         local ttCode = ttSrc:gsub("%-%-[^\n]*", "")
 
         check(
-            "Tooltip emits 'Keep (new affix)' (unknown-affix label)",
-            ttCode:find("Keep %(new affix%)") ~= nil,
-            "the unknown-affix case must use the 'Keep (new affix)' label so a new player reads the verdict + reason without jargon"
+            "Tooltip emits 'Keep (affix rank needed)' (rank-not-owned label)",
+            ttCode:find("Keep %(affix rank needed%)") ~= nil,
+            "the rank-not-owned case must use the v2.35.1 'Keep (affix rank needed)' label so the player reads the verdict + collector-side reason. Covers both 'completely new family' and 'have a different rank' - the v2.32.x scheme split those into two labels but the distinction was noise."
         )
         check(
-            "Tooltip emits 'Keep (affix you have)' (known + dupe-allow-off label)",
-            ttCode:find("Keep %(affix you have%)") ~= nil,
-            "items whose affix the player has already extracted but with dupe-allow off get the distinct 'affix you have' label"
+            "Tooltip emits 'Keep (affix rank known)' (rank-owned + dupe-allow-off label)",
+            ttCode:find("Keep %(affix rank known%)") ~= nil,
+            "items whose (family, rank) pair the player already owns - via description-text match OR via the v2.35.1 family+rank fallback - get the 'rank known' label when dupe-allow is off"
         )
         check(
             "Tooltip emits 'Will Sell (you have this affix)' (auto-dupe label)",
@@ -4293,6 +4297,142 @@ do
                 and panelSrc:find('DB%.bestGPHZone%s*=%s*""') ~= nil,
             "the Reset Lifetime button must wipe all three GPH best-record fields; partial reset (e.g., bestGPH back to 0 but stale bestGPHAt/Zone left in place) would render nonsensical 'Best 0g 0s 0c in <zone>' text on the next show"
         )
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 70 (v2.35.1): family-name fallback for the affix tooltip label.
+-- ---------------------------------------------------------------------------
+-- PE's item-side @affix@ line and spellbook-side engraving description can
+-- disagree at the same rank (e.g. "Overwhelming Force II" item reads
+-- "Increases your damage and healing done by 2%" while the engraving
+-- spell tooltip reads "Increases damage and healing done by 4%" - same
+-- rank, different wording AND different magnitude). The description-only
+-- catalog match silently fails in that case and the tooltip falls back to
+-- "Keep (new affix)" even though the player demonstrably owns the family.
+--
+-- v2.35.1 adds a family-name fallback: knownAffixFamilies set populated
+-- during the spellbook walk + ExtractionService merge, queried by
+-- playerHasAffixFamily when the description match misses. Distinct label
+-- "Keep (other rank known)" surfaces the family-only match so users
+-- aren't misled. Sell behaviour unchanged - autoDupe stays exact-rank.
+do
+    check(
+        "Protection.lua declares knownAffixFamilyRanks nested catalog",
+        src:find("EC_compCache%.knownAffixFamilyRanks%s*=%s*{}") ~= nil,
+        "the family + rank fallback needs a nested map keyed by normalised family name with a per-family set of integer ranks; the v2.35.1 hotfix needs the rank dimension to distinguish 'same rank PE-data-disagrees' from 'different rank entirely'"
+    )
+
+    check(
+        "Protection.lua defines normaliseAffixFamily helper",
+        src:find("function EC_compCache%.normaliseAffixFamily%(") ~= nil,
+        "normalisation must strip the leading 'of ' prefix common on item-parsed names AND the trailing roman-numeral rank common on spellbook names so both sources collapse to the same key"
+    )
+
+    check(
+        "Protection.lua defines parseAffixNameRank helper",
+        src:find("function EC_compCache%.parseAffixNameRank%(") ~= nil,
+        "the catalog populator needs to extract (family, rank) from raw spell / ExtractionService names like 'Overwhelming Force II'; parseAffixNameRank does this via the existing roman-numeral parser"
+    )
+
+    check(
+        "Protection.lua defines playerHasAffixFamily helper",
+        src:find("function EC_compCache%.playerHasAffixFamily%(") ~= nil,
+        "family-only lookup (any rank owned) drives the 'Keep (other rank known)' label - distinct from the exact (family, rank) check below"
+    )
+
+    check(
+        "Protection.lua defines playerHasAffixRank helper",
+        src:find("function EC_compCache%.playerHasAffixRank%(") ~= nil,
+        "exact (family, rank) lookup is the load-bearing addition - it catches the case where the player has rank N learned but PE's item-side text differs from the spell-side text. Without this, the v2.35.1 fix would keep mislabelling that case 'other rank known'"
+    )
+
+    check(
+        "Spellbook walk caches (family, rank) tables, not just family strings",
+        src:find("spellbookFamilyCache") ~= nil
+            and src:find("EC_compCache%.parseAffixNameRank%(sname%)") ~= nil,
+        "the spell tooltip walk must capture rank via parseAffixNameRank so the cached entry carries both family and rank; family-only caching would lose the rank dimension and force a re-scan"
+    )
+
+    check(
+        "ExtractionService merge captures (family, rank) from r.name",
+        src:find("EC_compCache%.parseAffixNameRank%(tostring%(r%.name%)%)") ~= nil,
+        "PE's ExtractionService records carry the affix name in r.name with the rank suffix; parseAffixNameRank extracts both during async (OnUpdate) AND synchronous (refreshExtractionIfDirty) merges so the family + rank catalog is complete from either entry path"
+    )
+
+    check(
+        "refreshKnownAffixes scan state initialises families = {}",
+        src:find("families%s*=%s*{}") ~= nil,
+        "the scan state must seed an empty families set so the chunked walk has somewhere to push family entries; without it the OnUpdate body errors on nil-index of st.families"
+    )
+
+    check(
+        "Spellbook walk completion assigns knownAffixFamilyRanks",
+        src:find("EC_compCache%.knownAffixFamilyRanks%s*=%s*families") ~= nil,
+        "the chunked walk must atomically publish the completed nested map to EC_compCache so subsequent playerHasAffixRank / playerHasAffixFamily lookups see the new data"
+    )
+
+    check(
+        "Tooltip.lua computes playerKnowsRank as the description-fail fallback",
+        src:find("playerKnowsRank") ~= nil
+            and src:find("playerHasAffixRank%(affix%.name,%s*affix%.rank%)") ~= nil,
+        "the (family, rank) check rescues the case where description match misses but the player demonstrably owns this rank (PE's item-side and spell-side text disagree at the same rank)"
+    )
+
+    check(
+        "Tooltip.lua collapses playerKnows / playerKnowsRank into 'Keep (affix rank known)'",
+        src:find("playerKnows%s+or%s+playerKnowsRank") ~= nil
+            and src:find("Keep %(affix rank known%)") ~= nil,
+        "exact-rank ownership via EITHER description match OR family-rank match must render the same 'Keep (affix rank known)' label - they mean the same thing collection-wise"
+    )
+
+    check(
+        "Tooltip.lua uses 'Keep (affix rank needed)' for not-this-rank cases",
+        src:find("Keep %(affix rank needed%)") ~= nil,
+        "the player-doesn't-own-this-rank label covers BOTH 'completely new family' and 'have a different rank' in one collector-focused message ('I need this rank'). Distinct from the older three-label scheme which split family-known-but-rank-differs into 'other rank known' - that distinction was noise; what matters is 'do I need this specific rank?'"
+    )
+
+    check(
+        "Tooltip.lua does NOT use the legacy 'Keep (new affix)' label",
+        src:find("Keep %(new affix%)") == nil,
+        "v2.35.1 collapses the new-family-and-different-rank distinction into 'Keep (affix rank needed)'; keeping the old 'new affix' label alongside would be redundant and confusing"
+    )
+
+    check(
+        "Tooltip.lua does NOT use the legacy 'Keep (other rank known)' label",
+        src:find("Keep %(other rank known%)") == nil,
+        "v2.35.1 collapses the family-known-but-different-rank case into 'Keep (affix rank needed)' - same outcome from a collection POV"
+    )
+
+    -- v2.35.1 follow-up: the autoDupe-only branch must gate the
+    -- "Will Sell (you have this affix)" label on an upstream
+    -- "Will Sell" verdict existing in statusLine. Without that gate,
+    -- the tooltip lies for any item whose quality rule is disabled or
+    -- whose itemID isn't on any sell list: dupe-allow only releases
+    -- the affix protection from vetoing, it doesn't add a sell signal,
+    -- so the merchant cycle won't actually sell the item. The user-
+    -- visible regression was an Epic item with Epic rule disabled
+    -- showing "Will Sell (you have this affix)" but /ec sellinfo
+    -- correctly reporting "won't sell - no rule matched".
+    do
+        local tooltipFile = io.open("EbonClearance_Tooltip.lua", "rb")
+        if tooltipFile then
+            local ttSrc = tooltipFile:read("*a") or ""
+            tooltipFile:close()
+            -- Find the autoDupe-only branch (the else after manualAllow
+            -- inside the `if manualAllow or autoDupe` block).
+            check(
+                "autoDupe-only Will-Sell label is gated on upstream Will-Sell verdict",
+                ttSrc:find('Will Sell %(you have this affix%)') ~= nil
+                    and ttSrc:find('statusLine and statusLine:find%("Will Sell"') ~= nil,
+                "the 'Will Sell (you have this affix)' label must only fire when an upstream 'Will Sell' verdict already exists in statusLine. Without this gate, the label fires for items that won't actually sell (quality rule disabled, not on any list) and creates a tooltip-vs-vendor divergence"
+            )
+            check(
+                "autoDupe-only fallback when no upstream sell verdict is 'Keep (affix rank known)'",
+                ttSrc:find('Keep %(affix rank known%)') ~= nil,
+                "when dupe-allow is on but no rule fires, the tooltip must say 'Keep (affix rank known)' - the dupe-allow only releases the affix protection, it doesn't make the item sellable on its own"
+            )
+        end
     end
 end
 

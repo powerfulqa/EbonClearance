@@ -471,18 +471,32 @@ HelpPanel.parent = "EbonClearance"
 -- OnClick calls this function with the entry's stable id.
 --
 -- Behaviour:
---   1. Find the section that owns this entry (walk EC_HELP_ENTRIES).
---   2. Set DB.helpSectionsCollapsed[ownerSection] = false so the section
+--   1. Find the section that owns this entry (walk EC_HELP_ENTRIES) and
+--      set DB.helpSectionsCollapsed[ownerSection] = false so the section
 --      auto-expands when the panel renders.
---   3. Stash HelpPanel._pendingScrollEntryId so refreshLayout's
---      post-pass scrolls the entry into view + flashes it.
---   4. Call InterfaceOptionsFrame_OpenToCategory(HelpPanel) twice
---      (the standard 3.3.5a workaround for the open-to-sub-panel bug
---      where the first call sometimes lands on the parent category).
+--   2. Call InterfaceOptionsFrame_OpenToCategory(HelpPanel) twice (the
+--      standard 3.3.5a workaround for the open-to-sub-panel bug where
+--      the first call sometimes lands on the parent category). This
+--      fires OnShow synchronously and refreshLayout positions widgets.
+--   3. Increment HelpPanel._scrollGeneration and capture it in a closure.
+--      Every delayed task (scroll, flash) checks its captured generation
+--      against the current one and no-ops if a subsequent OpenHelpEntry
+--      has superseded it.
+--   4. Schedule the scroll + flash via NS.Delay(0.7s). By then both
+--      FitScrollContent ticks (0.1s + 0.5s) have settled the outer scroll
+--      content's height so GetVerticalScrollRange is correct. The scroll
+--      math uses `currentScroll + (scrollTop - widgetTop)` so it produces
+--      the right absolute scroll value regardless of where the panel
+--      currently sits. The flash swaps the q FontString's inline yellow
+--      |cffffff00 for bright cyan |cff00ffff for ~0.6s, then restores.
+--
+-- refreshLayout is intentionally NOT involved in the deep-link side
+-- effects - it just positions widgets and fits the scroll content. All
+-- scroll/flash state lives here in the closure, gated by the generation
+-- counter.
 --
 -- If entryId is nil or no matching entry exists, the panel still opens
--- (no expand / scroll / flash). Safe failure mode for typos and stale
--- ids during development.
+-- (no scroll / flash). Safe failure mode for typos and stale ids.
 -- Locate the q FontString for a given entry id. renderItems carries the
 -- id directly on each q/a entry (assigned at build time), so this is
 -- now a single linear walk - no more counting indices through two

@@ -4611,6 +4611,36 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 79: every Help entry has a non-empty unique id.
+-- ---------------------------------------------------------------------------
+-- Settings panels deep-link into Help via these ids (see NS.AddHelpIcon /
+-- NS.OpenHelpEntry, added in later tasks). If two entries share an id,
+-- the deep-link is ambiguous; if an entry lacks an id, no panel can
+-- link to it. Counts unique ids and asserts no duplicates.
+do
+    local helpFile = io.open("EbonClearance_HelpPanel.lua", "rb")
+    if helpFile then
+        local hsrc = helpFile:read("*a") or ""
+        helpFile:close()
+        local idsSeen = {}
+        local duplicates = {}
+        for id in hsrc:gmatch('id = "([^"]+)"') do
+            if idsSeen[id] then
+                duplicates[#duplicates + 1] = id
+            end
+            idsSeen[id] = (idsSeen[id] or 0) + 1
+        end
+        local count = 0
+        for _ in pairs(idsSeen) do count = count + 1 end
+        check(
+            "Test 79: at least 40 unique help entry ids exist",
+            count >= 40 and #duplicates == 0,
+            "Help entries must have unique id fields. Count: " .. count .. " unique; duplicates: " .. table.concat(duplicates, ", ")
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Tests 84-85: Mill / Prospect tooltip-scan robustness.
 -- ---------------------------------------------------------------------------
 -- Two distinct bugs hid the PROSPECT section from Process Bags:

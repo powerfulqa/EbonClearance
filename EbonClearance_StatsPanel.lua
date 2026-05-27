@@ -34,7 +34,8 @@ StatsPanel:SetScript("OnShow", function(self)
         -- as the public contract with RefreshStats - keep the literals.
         local panel = buildSelf
         -- Heading. Same -16 y offset as Keep List / Sell List etc.
-        NS.MakeHeader(content, "Stats", -16)
+        local heading = NS.MakeHeader(content, "Stats", -16)
+        NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 8, 0, "what-does-ec-do")
 
         -- Lifetime + session stats. Each panel.statsX is the contract
         -- with RefreshStats (called from EbonClearance_Events.lua's data

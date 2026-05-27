@@ -278,7 +278,8 @@ local function BuildMainPanel(panel, content)
     -- (EbonClearance_StatsPanel.lua); the `panel` arg is unused here now
     -- but kept in the signature because EC_compCache.initPanel passes it.
     local addonVersion = NS.GetVersion()
-    NS.MakeHeader(content, "EbonClearance " .. addonVersion, -16)
+    local heading = NS.MakeHeader(content, "EbonClearance " .. addonVersion, -16)
+    NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 8, 0, "what-does-ec-do")
 
     -- Byline (required by LICENSE; do not remove in derivatives).
     local byline = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")

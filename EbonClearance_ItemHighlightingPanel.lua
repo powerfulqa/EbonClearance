@@ -141,23 +141,17 @@ CharPanel:SetScript("OnShow", function(self)
                 end
             end)
 
-            -- Per-row [?] help icon, deep-linking into the Help panel's
-            -- bag-borders entry (the same entry covers all five categories,
-            -- since the troubleshooting answer is identical per-row). The
-            -- swatch then anchors to the icon's RIGHT so they don't stack
-            -- on top of each other at the label's right edge.
-            local catHelp
-            if catCBText then
-                catHelp = NS.AddHelpIcon(self, catCBText, "LEFT", "RIGHT", 6, 0, "tshoot-bag-borders")
-            end
+            -- Per-row [?] help icons were removed in a later iteration:
+            -- every row pointed to the same `tshoot-bag-borders` Help entry
+            -- as the master "Show borders" toggle's [?], so they added
+            -- visual noise without conveying anything new. The master
+            -- [?] above the rows covers the whole feature.
 
             -- Per-category swatch and Change-colour button on the same
-            -- row, to the right of the label (and the [?] icon if present).
+            -- row, to the right of the label.
             local catSwatch = self:CreateTexture(nil, "OVERLAY")
             catSwatch:SetSize(16, 16)
-            local swatchAnchor = catHelp or catCBText or catCB
-            local swatchXOff = catHelp and 6 or 12
-            catSwatch:SetPoint("LEFT", swatchAnchor, "RIGHT", swatchXOff, 0)
+            catSwatch:SetPoint("LEFT", catCBText or catCB, "RIGHT", 12, 0)
             catSwatch:SetTexture("Interface\\Buttons\\WHITE8X8")
 
             local function updateCatSwatch()

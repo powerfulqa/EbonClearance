@@ -66,6 +66,24 @@ local EC_HELP_ENTRIES = {
         a = "/ec opens the settings. /ec help prints the full command list. /ec sellinfo explains why a bag item will or won't sell. /ec bugreport opens a diagnostic snapshot. /ec clean finds items appearing on multiple lists. /ecdebug shows a bag scan summary.",
         panel = nil,
     },
+    {
+        id = "stats-overview",
+        q = "What does the Stats panel show?",
+        a = "The Stats panel tracks your character's lifetime totals from using EbonClearance: money earned, items sold, items deleted, repairs and repair cost, plus current-session gold-per-hour and your best gold-per-hour record (with the zone where it happened and when). Reset Session clears the in-session deltas; Reset Lifetime wipes the lifetime totals (with a confirmation popup). Stats don't include items bought back from vendors.",
+        panel = "EbonClearanceOptionsStats",
+    },
+    {
+        id = "what-are-profiles",
+        q = "What are Profiles?",
+        a = "Profiles are named snapshots of your Sell List. Save your current Sell List as a profile, then later swap to a different one in a single click - handy if you have different play styles (a 'farming' profile that vendors everything cheap, a 'questing' profile that keeps quest rewards). Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>.",
+        panel = "EbonClearanceOptionsProfiles",
+    },
+    {
+        id = "what-is-import-export",
+        q = "What does Import / Export do?",
+        a = "Import/Export packs your EbonClearance setup into a copyable text string you can share with another character or another player. Export writes the current setup (Sell List, Keep List, Delete List, and account-wide settings) into the export box; copy it with Ctrl+C. Import reads a pasted string and applies it. Tick 'Full settings pack' to include protection toggles + merchant rules + everything, not just the lists.",
+        panel = "EbonClearanceOptionsImportExport",
+    },
 
     -- ===================================================================
     -- Section 2: Troubleshooting

@@ -43,7 +43,7 @@ local EC_HELP_ENTRIES = {
     },
     {
         q = "I just installed this. What should I do first?",
-        a = "Out of the box, EbonClearance auto-sells grey junk every time you visit a vendor. That's it. To go further: 1) Open Merchant Settings and turn on the rarities you want auto-sold (White / Green / Blue / Epic). 2) Alt+Right-Click any item you never want sold to put it on your Keep List. 3) Alt+Right-Click any item you always want sold to put it on your Sell List. Visit a merchant and it just works.",
+        a = "Out of the box, EbonClearance auto-sells grey junk every time you visit a vendor. That's it. To go further:\n1) Open Merchant Settings and turn on the rarities you want auto-sold (White / Green / Blue / Epic).\n2) Alt+Right-Click any item you never want sold to put it on your Keep List.\n3) Alt+Right-Click any item you always want sold to put it on your Sell List.\nVisit a merchant and it just works.",
         panel = "EbonClearanceOptionsMerchant",
     },
     {
@@ -130,7 +130,7 @@ local EC_HELP_ENTRIES = {
 
     {
         q = "Order of checks",
-        a = "When you visit a vendor, EbonClearance walks every bag item through these checks in order: 1) Has a vendor price? 2) Grey, on the Sell List, or matches a quality rule? 3) Currently equipped? 4) On the Keep List? 5) Has a protected affix? 6) Has a 'Chance on hit' proc? 7) A tome or recipe? The first 'no, keep it' stops the chain; the first 'yes, sell it' queues the item.",
+        a = "When you visit a vendor, EbonClearance walks every bag item through these checks in order:\n1) Has a vendor price?\n2) Grey, on the Sell List, or matches a quality rule?\n3) Currently equipped?\n4) On the Keep List?\n5) Has a protected affix?\n6) Has a 'Chance on hit' proc?\n7) A tome or recipe?\nThe first 'no, keep it' stops the chain; the first 'yes, sell it' queues the item.",
         panel = nil,
     },
     {
@@ -332,7 +332,7 @@ local EC_HELP_ENTRIES = {
 
     {
         q = "Found a bug? Here's how to report it",
-        a = "1) Type /ec bugreport. EbonClearance opens a window with a diagnostic snapshot. 2) Click in the window, press Ctrl+A to select all, then Ctrl+C to copy. 3) Click the button below to copy the EbonClearance Discord thread link. 4) Open the link in your browser, paste the report, and tag @serv so I see it.",
+        a = "1) Type /ec bugreport. EbonClearance opens a window with a diagnostic snapshot.\n2) Click in the window, press Ctrl+A to select all, then Ctrl+C to copy.\n3) Click the button below to copy the EbonClearance Discord thread link.\n4) Open the link in your browser, paste the report, and tag @serv so I see it.",
         url = "https://discord.com/channels/1429854156444794884/1491764725288009748",
     },
     {

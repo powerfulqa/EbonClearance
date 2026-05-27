@@ -38,13 +38,243 @@ local EC_compCache = NS.compCache
 local MainOptions = CreateFrame("Frame", "EbonClearanceOptionsMain", InterfaceOptionsFramePanelContainer)
 MainOptions.name = "EbonClearance"
 
+-- ---------------------------------------------------------------------------
+-- NS.RefreshStats / NS.ResetLifetimeStats - namespace-exposed helpers.
+-- ---------------------------------------------------------------------------
+-- Stage 8e-ix-b of the file split: the stats refresh + lifetime-reset
+-- logic was a closure local to MainOptions:OnShow. Stats widgets are
+-- moving to EbonClearance_StatsPanel.lua (Task 4) and the data-change
+-- handlers in EbonClearance_Events.lua need to drive a refresh without
+-- knowing which panel owns the FontStrings. Hoisting these to file
+-- scope and exposing them on NS gives callers a stable entry point.
+-- The stats widgets now hang on _G["EbonClearanceOptionsStats"]; both
+-- functions look it up and no-op if the panel isn't built yet.
 
-local function BuildMainPanel(panel, content, refreshStats)
+local function GetMostItem(countTable)
+    local bestID, bestCount = nil, 0
+    if type(countTable) ~= "table" then
+        return nil, 0
+    end
+    for id, cnt in pairs(countTable) do
+        if type(id) == "number" and type(cnt) == "number" and cnt > bestCount then
+            bestID, bestCount = id, cnt
+        end
+    end
+    return bestID, bestCount
+end
+
+-- ItemLabel: resolve an itemID to a coloured name string, with a
+-- cache-warmup deferred re-render for cold-cache cases. The warmup
+-- flag hangs on the stats panel itself so a hidden panel doesn't
+-- accumulate pending refreshes.
+local function ItemLabel(id)
+    if not id then
+        return "None"
+    end
+    local name = GetItemInfo(id)
+    if name then
+        return string.format("|cff24ffb6%s|r", name)
+    end
+    -- GetItemInfo cold-cache. Post per-character partition (v2.34.0),
+    -- each character inherits the snapshot of accumulated counts -
+    -- which can include items the current character has never seen
+    -- this session, and those items haven't been requested from the
+    -- server yet. Trigger a SetHyperlink-driven cache fetch and
+    -- schedule one re-render so the name resolves the moment the
+    -- client receives the data (typically 100-300 ms). Falls back
+    -- to the ItemID string for this paint; the re-render replaces it.
+    if NS.scanTooltip and NS.scanTooltip.SetHyperlink then
+        NS.scanTooltip:ClearLines()
+        NS.scanTooltip:SetHyperlink("item:" .. tostring(id))
+    end
+    local statsPanel = _G["EbonClearanceOptionsStats"]
+    if statsPanel and not statsPanel._statsWarmupPending and NS.Delay then
+        statsPanel._statsWarmupPending = true
+        NS.Delay(0.6, function()
+            statsPanel._statsWarmupPending = nil
+            if statsPanel.IsShown and statsPanel:IsShown() and NS.RefreshStats then
+                NS.RefreshStats()
+            end
+        end)
+    end
+    return "ItemID: " .. tostring(id)
+end
+
+function NS.RefreshStats()
+    local panel = _G["EbonClearanceOptionsStats"]
+    if not panel or not panel.statsMoney then
+        return
+    end
     local DB = NS.DB
+    if not DB then
+        return
+    end
+    local function sessionSuffix(n)
+        return string.format("  |cff888888(session +%s)|r", tostring(n or 0))
+    end
+    local function sessionMoneySuffix(c)
+        return "  |cff888888(session +" .. NS.CopperToColoredText(c or 0) .. "|cff888888)|r"
+    end
+    panel.statsMoney:SetText(
+        "Total Money Made: " .. NS.CopperToColoredText(DB.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
+    )
+    panel.statsSold:SetText(
+        "Total Items Sold: " .. tostring(DB.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
+    )
+    panel.statsDeleted:SetText(
+        "Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
+    )
+    panel.statsRepairs:SetText(
+        "Total Repairs: " .. tostring(DB.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
+    )
+    panel.statsRepairCost:SetText(
+        "Total Repair Cost: "
+            .. NS.CopperToColoredText(DB.totalRepairCopper or 0)
+            .. sessionMoneySuffix(NS.session.repairCopper)
+    )
+
+    -- v2.35.x: Session + Best Gold/Hour. See
+    -- docs/specs/2026-05-26-gph-stats-design.md for the design.
+    --
+    -- The session line shows the live rate (copper/hour) computed
+    -- from session.copper / elapsed-seconds, with a 10-second floor
+    -- on the elapsed value so sub-second extrapolation doesn't
+    -- produce absurd numbers in the moment right after /reload.
+    -- The best line shows the per-character record + the zone +
+    -- when context. Only updates the best when the session has
+    -- run for at least 5 minutes (300s gate) - filters early-
+    -- session burst noise.
+    local startedAt = NS.session.startedAt or 0
+    local now = GetTime()
+    local elapsed = (startedAt > 0) and (now - startedAt) or 0
+    local function humanDuration(secs)
+        secs = math.floor(secs)
+        if secs < 60 then
+            return string.format("%ds", secs)
+        elseif secs < 3600 then
+            return string.format("%dm %ds", math.floor(secs / 60), secs % 60)
+        end
+        local h = math.floor(secs / 3600)
+        local m = math.floor((secs % 3600) / 60)
+        local s = secs % 60
+        return string.format("%dh %dm %ds", h, m, s)
+    end
+    local sessionGPH
+    if elapsed >= 10 then
+        sessionGPH = math.floor((NS.session.copper / elapsed) * 3600)
+    end
+    if panel.statsSessionGPH then
+        if sessionGPH then
+            panel.statsSessionGPH:SetText(
+                "Session Gold/Hour: "
+                    .. NS.CopperToColoredText(sessionGPH)
+                    .. string.format("  |cff888888(%s)|r", humanDuration(elapsed))
+            )
+        else
+            panel.statsSessionGPH:SetText(
+                "Session Gold/Hour: |cff888888-  (computing...)|r"
+            )
+        end
+    end
+
+    -- Best-update gate: 5 minutes of session AND new high.
+    if sessionGPH and elapsed >= 300 and sessionGPH > (DB.bestGPH or 0) then
+        DB.bestGPH = sessionGPH
+        DB.bestGPHAt = time()
+        local zone = GetRealZoneText()
+        DB.bestGPHZone = (zone and zone ~= "") and zone or "Unknown"
+    end
+
+    if panel.statsBestGPH then
+        local best = DB.bestGPH or 0
+        if best > 0 then
+            local at = DB.bestGPHAt or 0
+            local zone = DB.bestGPHZone
+            if not zone or zone == "" then
+                zone = "Unknown"
+            end
+            local when
+            if at <= 0 then
+                when = "unknown date"
+            else
+                local secs = time() - at
+                if secs < 60 then
+                    when = "just now"
+                elseif secs < 3600 then
+                    local n = math.floor(secs / 60)
+                    when = string.format("%d minute%s ago", n, n == 1 and "" or "s")
+                elseif secs < 86400 then
+                    local n = math.floor(secs / 3600)
+                    when = string.format("%d hour%s ago", n, n == 1 and "" or "s")
+                elseif secs < 30 * 86400 then
+                    local n = math.floor(secs / 86400)
+                    when = string.format("%d day%s ago", n, n == 1 and "" or "s")
+                else
+                    when = date("%Y-%m-%d", at)
+                end
+            end
+            panel.statsBestGPH:SetText(
+                "Best Gold/Hour: "
+                    .. NS.CopperToColoredText(best)
+                    .. string.format("\n  |cff888888in %s, %s|r", zone, when)
+            )
+        else
+            panel.statsBestGPH:SetText("Best Gold/Hour: |cff888888-|r")
+        end
+    end
+
+    if panel.statsAvgWorth then
+        local cnt = DB.inventoryWorthCount or 0
+        local total = DB.inventoryWorthTotal or 0
+        local avg = 0
+        if cnt > 0 then
+            avg = math.floor((total / cnt) + 0.5)
+        end
+        panel.statsAvgWorth:SetText("Average Inventory Worth: " .. NS.CopperToColoredText(avg))
+    end
+
+    if panel.statsMostSold then
+        local mostID, mostCount = GetMostItem(DB.soldItemCounts)
+        if mostID then
+            panel.statsMostSold:SetText("Most Sold Item: " .. ItemLabel(mostID) .. " (x" .. tostring(mostCount) .. ")")
+        else
+            panel.statsMostSold:SetText("Most Sold Item: None")
+        end
+    end
+end
+
+function NS.ResetLifetimeStats()
+    local DB = NS.DB
+    if not DB then
+        return
+    end
+    DB.totalCopper = 0
+    DB.totalItemsSold = 0
+    DB.totalItemsDeleted = 0
+    DB.totalRepairs = 0
+    DB.totalRepairCopper = 0
+    DB.inventoryWorthTotal = 0
+    DB.inventoryWorthCount = 0
+    wipe(DB.soldItemCounts)
+    wipe(DB.deletedItemCounts)
+    -- v2.35.x: Reset Lifetime wipes the GPH best record too.
+    -- The user is opting in to a full lifetime reset; per the
+    -- spec (docs/specs/2026-05-26-gph-stats-design.md) the
+    -- best record is part of lifetime state and goes with it.
+    DB.bestGPH = 0
+    DB.bestGPHAt = 0
+    DB.bestGPHZone = ""
+end
+
+
+local function BuildMainPanel(panel, content)
     -- v2.12.0: widgets are created on `content` (the scroll-frame child)
     -- so vertical overflow is handled by the scroll bar. Stat refs are
     -- still stored on `panel` (the outer Interface Options panel) so
-    -- RefreshStats's self.statsX reads keep working across re-OnShows.
+    -- RefreshStats's panel.statsX reads keep working across re-OnShows.
+    -- The Reset buttons call NS.RefreshStats / NS.ResetLifetimeStats
+    -- directly, so no refresh callback needs threading through this
+    -- function any more.
     local addonVersion = NS.GetVersion()
     NS.MakeHeader(content, "EbonClearance " .. addonVersion, -16)
 
@@ -148,23 +378,12 @@ local function BuildMainPanel(panel, content, refreshStats)
         local dialog = StaticPopup_Show("EC_CONFIRM_RESET_LIFETIME")
         if dialog then
             dialog.data = function()
-                DB.totalCopper = 0
-                DB.totalItemsSold = 0
-                DB.totalItemsDeleted = 0
-                DB.totalRepairs = 0
-                DB.totalRepairCopper = 0
-                DB.inventoryWorthTotal = 0
-                DB.inventoryWorthCount = 0
-                wipe(DB.soldItemCounts)
-                wipe(DB.deletedItemCounts)
-                -- v2.35.x: Reset Lifetime wipes the GPH best record too.
-                -- The user is opting in to a full lifetime reset; per the
-                -- spec (docs/specs/2026-05-26-gph-stats-design.md) the
-                -- best record is part of lifetime state and goes with it.
-                DB.bestGPH = 0
-                DB.bestGPHAt = 0
-                DB.bestGPHZone = ""
-                refreshStats()
+                if NS.ResetLifetimeStats then
+                    NS.ResetLifetimeStats()
+                end
+                if NS.RefreshStats then
+                    NS.RefreshStats()
+                end
                 PlaySound("igMainMenuOptionCheckBoxOn")
             end
         end
@@ -181,7 +400,9 @@ local function BuildMainPanel(panel, content, refreshStats)
         if dialog then
             dialog.data = function()
                 NS.ResetSession()
-                refreshStats()
+                if NS.RefreshStats then
+                    NS.RefreshStats()
+                end
                 PlaySound("igMainMenuOptionCheckBoxOn")
             end
         end
@@ -217,208 +438,22 @@ local function BuildMainPanel(panel, content, refreshStats)
 end
 
 MainOptions:SetScript("OnShow", function(self)
-    local DB = NS.DB
-    local ADB = NS.ADB
-    -- Stats helpers stay inside OnShow because RefreshStats captures `self`
-    -- via closure and gets passed in two slots (the EC_compCache.initPanel
-    -- refresh callback, and as the refresh fn handed to BuildMainPanel so
-    -- the stat fields update after the merchant cycle). Re-declaring on
-    -- each OnShow is cheap; the closures are reclaimed once initPanel
-    -- returns.
-    local function GetMostItem(countTable)
-        local bestID, bestCount = nil, 0
-        if type(countTable) ~= "table" then
-            return nil, 0
+    -- RefreshStats / ResetLifetimeStats now live on NS at file scope
+    -- (see top of this file). The OnShow just composes BuildMainPanel +
+    -- a refresh through EC_compCache.initPanel; the Reset buttons inside
+    -- BuildMainPanel call NS.RefreshStats / NS.ResetLifetimeStats directly.
+    EC_compCache.initPanel(self, function()
+        if NS.RefreshStats then
+            NS.RefreshStats()
         end
-        for id, cnt in pairs(countTable) do
-            if type(id) == "number" and type(cnt) == "number" and cnt > bestCount then
-                bestID, bestCount = id, cnt
-            end
-        end
-        return bestID, bestCount
-    end
-
-    -- Forward declared so ItemLabel's cache-warmup callback can call
-    -- RefreshStats by name. The assignment happens a few lines below.
-    local RefreshStats
-
-    local function ItemLabel(id)
-        if not id then
-            return "None"
-        end
-        local name = GetItemInfo(id)
-        if name then
-            return string.format("|cff24ffb6%s|r", name)
-        end
-        -- GetItemInfo cold-cache. Pre-v2.34.0 the sold-counts table was
-        -- account-wide so the "Most Sold Item" was usually something the
-        -- current session had already loaded (loot, inventory, merchant
-        -- interactions on this character). Post per-character partition,
-        -- each character inherits the snapshot of accumulated counts -
-        -- which can include items the current character has never seen
-        -- this session, and those items haven't been requested from the
-        -- server yet. Trigger a SetHyperlink-driven cache fetch and
-        -- schedule one re-render so the name resolves the moment the
-        -- client receives the data (typically 100-300 ms). Falls back
-        -- to the ItemID string for this paint; the re-render replaces it.
-        if NS.scanTooltip and NS.scanTooltip.SetHyperlink then
-            NS.scanTooltip:ClearLines()
-            NS.scanTooltip:SetHyperlink("item:" .. tostring(id))
-        end
-        if not self._statsWarmupPending and NS.Delay then
-            self._statsWarmupPending = true
-            NS.Delay(0.6, function()
-                self._statsWarmupPending = nil
-                if self.IsShown and self:IsShown() and RefreshStats then
-                    RefreshStats()
-                end
-            end)
-        end
-        return "ItemID: " .. tostring(id)
-    end
-
-    RefreshStats = function()
-        if not self.statsMoney then
-            return
-        end
-        local function sessionSuffix(n)
-            return string.format("  |cff888888(session +%s)|r", tostring(n or 0))
-        end
-        local function sessionMoneySuffix(c)
-            return "  |cff888888(session +" .. NS.CopperToColoredText(c or 0) .. "|cff888888)|r"
-        end
-        self.statsMoney:SetText(
-            "Total Money Made: " .. NS.CopperToColoredText(DB.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
-        )
-        self.statsSold:SetText(
-            "Total Items Sold: " .. tostring(DB.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
-        )
-        self.statsDeleted:SetText(
-            "Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
-        )
-        self.statsRepairs:SetText(
-            "Total Repairs: " .. tostring(DB.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
-        )
-        self.statsRepairCost:SetText(
-            "Total Repair Cost: "
-                .. NS.CopperToColoredText(DB.totalRepairCopper or 0)
-                .. sessionMoneySuffix(NS.session.repairCopper)
-        )
-
-        -- v2.35.x: Session + Best Gold/Hour. See
-        -- docs/specs/2026-05-26-gph-stats-design.md for the design.
-        --
-        -- The session line shows the live rate (copper/hour) computed
-        -- from session.copper / elapsed-seconds, with a 10-second floor
-        -- on the elapsed value so sub-second extrapolation doesn't
-        -- produce absurd numbers in the moment right after /reload.
-        -- The best line shows the per-character record + the zone +
-        -- when context. Only updates the best when the session has
-        -- run for at least 5 minutes (300s gate) - filters early-
-        -- session burst noise.
-        local startedAt = NS.session.startedAt or 0
-        local now = GetTime()
-        local elapsed = (startedAt > 0) and (now - startedAt) or 0
-        local function humanDuration(secs)
-            secs = math.floor(secs)
-            if secs < 60 then
-                return string.format("%ds", secs)
-            elseif secs < 3600 then
-                return string.format("%dm %ds", math.floor(secs / 60), secs % 60)
-            end
-            local h = math.floor(secs / 3600)
-            local m = math.floor((secs % 3600) / 60)
-            local s = secs % 60
-            return string.format("%dh %dm %ds", h, m, s)
-        end
-        local sessionGPH
-        if elapsed >= 10 then
-            sessionGPH = math.floor((NS.session.copper / elapsed) * 3600)
-        end
-        if self.statsSessionGPH then
-            if sessionGPH then
-                self.statsSessionGPH:SetText(
-                    "Session Gold/Hour: "
-                        .. NS.CopperToColoredText(sessionGPH)
-                        .. string.format("  |cff888888(%s)|r", humanDuration(elapsed))
-                )
-            else
-                self.statsSessionGPH:SetText(
-                    "Session Gold/Hour: |cff888888-  (computing...)|r"
-                )
-            end
-        end
-
-        -- Best-update gate: 5 minutes of session AND new high.
-        if sessionGPH and elapsed >= 300 and sessionGPH > (DB.bestGPH or 0) then
-            DB.bestGPH = sessionGPH
-            DB.bestGPHAt = time()
-            local zone = GetRealZoneText()
-            DB.bestGPHZone = (zone and zone ~= "") and zone or "Unknown"
-        end
-
-        if self.statsBestGPH then
-            local best = DB.bestGPH or 0
-            if best > 0 then
-                local at = DB.bestGPHAt or 0
-                local zone = DB.bestGPHZone
-                if not zone or zone == "" then
-                    zone = "Unknown"
-                end
-                local when
-                if at <= 0 then
-                    when = "unknown date"
-                else
-                    local secs = time() - at
-                    if secs < 60 then
-                        when = "just now"
-                    elseif secs < 3600 then
-                        local n = math.floor(secs / 60)
-                        when = string.format("%d minute%s ago", n, n == 1 and "" or "s")
-                    elseif secs < 86400 then
-                        local n = math.floor(secs / 3600)
-                        when = string.format("%d hour%s ago", n, n == 1 and "" or "s")
-                    elseif secs < 30 * 86400 then
-                        local n = math.floor(secs / 86400)
-                        when = string.format("%d day%s ago", n, n == 1 and "" or "s")
-                    else
-                        when = date("%Y-%m-%d", at)
-                    end
-                end
-                self.statsBestGPH:SetText(
-                    "Best Gold/Hour: "
-                        .. NS.CopperToColoredText(best)
-                        .. string.format("\n  |cff888888in %s, %s|r", zone, when)
-                )
-            else
-                self.statsBestGPH:SetText("Best Gold/Hour: |cff888888-|r")
-            end
-        end
-
-        if self.statsAvgWorth then
-            local cnt = DB.inventoryWorthCount or 0
-            local total = DB.inventoryWorthTotal or 0
-            local avg = 0
-            if cnt > 0 then
-                avg = math.floor((total / cnt) + 0.5)
-            end
-            self.statsAvgWorth:SetText("Average Inventory Worth: " .. NS.CopperToColoredText(avg))
-        end
-
-        local mostID, mostCount = GetMostItem(DB.soldItemCounts)
-        if mostID then
-            self.statsMostSold:SetText("Most Sold Item: " .. ItemLabel(mostID) .. " (x" .. tostring(mostCount) .. ")")
-        else
-            self.statsMostSold:SetText("Most Sold Item: None")
-        end
-    end
-
-    EC_compCache.initPanel(self, RefreshStats, function(self, content)
+    end, function(buildSelf, content)
         -- v2.12.0: scroll-wrap the Main panel so the Slash Commands block
         -- at the bottom doesn't overlap the OK/Cancel button strip when
         -- the Interface Options frame is shorter than the panel content.
         -- Scavenger and Merchant Settings are wrapped the same way.
-        BuildMainPanel(self, content, RefreshStats)
-        RefreshStats()
+        BuildMainPanel(buildSelf, content)
+        if NS.RefreshStats then
+            NS.RefreshStats()
+        end
     end, true)
 end)

@@ -39,7 +39,8 @@ DeletePanel:SetScript("OnShow", function(self)
             self.listUI:Refresh()
         end
     end, function(self)
-        NS.MakeHeader(self, "Deletion Settings", -16)
+        local heading = NS.MakeHeader(self, "Deletion Settings", -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
         local delDesc = NS.MakeLabel(
             self,
             "Items on this list are destroyed when bags are scanned. This cannot be undone.",
@@ -113,7 +114,8 @@ BlacklistPanel:SetScript("OnShow", function(self)
         -- Sell List rhythm (header + description + hint + list). DB field names
         -- unchanged so all event handlers, tooltip annotations, and slash commands
         -- continue to work without modification.
-        NS.MakeHeader(self, "Keep List", -16)
+        local heading = NS.MakeHeader(self, "Keep List", -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
         local blDesc = NS.MakeLabel(
             self,
             "Items the addon should never touch. Good for things you'd rather sell at the auction house yourself.",

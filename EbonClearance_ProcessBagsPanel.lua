@@ -490,7 +490,10 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         EC_compCache.armedSlot = nil
         EC_compCache.refreshProcessPanel()
     end, function(self, content)
-        NS.MakeHeader(content, "Process Bags", -16)
+        local heading = NS.MakeHeader(content, "Process Bags", -16)
+        if NS.AddHelpIcon then
+            NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 6, 0, "process-bags-overview")
+        end
         local desc = NS.MakeLabel(
             content,
             "Disenchant, mill, prospect, or pick locks in bulk. |cffffd870Left-click|r a row to select it. |cffffd870Right-click|r a row to hide it (|cffffb84dClear Ignored|r brings them back). Click |cffffb84dProcess Next|r to cast on the selected row.",
@@ -536,6 +539,9 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             EC_compCache.refreshProcessPanel()
         end)
         self.includeSoulboundCB = sbCB
+        if sbText and NS.AddHelpIcon then
+            NS.AddHelpIcon(content, sbText, "LEFT", "RIGHT", 6, 0, "process-disenchant")
+        end
 
         -- DE quality cap dropdown
         local ddLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -569,12 +575,25 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             UIDropDownMenu_SetText(dd, qualityNames[DB.processMaxDEQuality or 4] or "Epic")
         end
 
-        -- Clear-ignored button. Sits to the right of the DE dropdown.
-        -- Hidden when there's nothing to clear so the panel doesn't
-        -- carry chrome for a never-used state.
+        -- Help icon for the disenchant settings row (soulbound checkbox
+        -- above + quality cap dropdown). Sits between the dropdown and
+        -- the Clear Ignored button; the clear button re-anchors below.
+        local ddHelp
+        if NS.AddHelpIcon then
+            ddHelp = NS.AddHelpIcon(content, dd, "LEFT", "RIGHT", 0, 2, "process-disenchant")
+        end
+
+        -- Clear-ignored button. Sits to the right of the DE dropdown
+        -- (after the help icon, when present). Hidden when there's
+        -- nothing to clear so the panel doesn't carry chrome for a
+        -- never-used state.
         local clearBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         clearBtn:SetSize(150, 20)
-        clearBtn:SetPoint("LEFT", dd, "RIGHT", 8, 2)
+        if ddHelp then
+            clearBtn:SetPoint("LEFT", ddHelp, "RIGHT", 4, 0)
+        else
+            clearBtn:SetPoint("LEFT", dd, "RIGHT", 8, 2)
+        end
         clearBtn:SetText("Clear Ignored (0)")
         clearBtn:Hide()
         clearBtn:SetScript("OnClick", function()

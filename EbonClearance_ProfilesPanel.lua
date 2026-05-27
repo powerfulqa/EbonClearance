@@ -44,7 +44,8 @@ ProfilesPanel:SetScript("OnShow", function(self)
             self:RefreshProfileList()
         end
     end, function(self)
-        NS.MakeHeader(self, "Profiles", -16)
+        local heading = NS.MakeHeader(self, "Profiles", -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "slash-commands")
         local descLabel = NS.MakeLabel(
             self,
             "Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots.",
@@ -651,7 +652,8 @@ end
 ImportExportPanel:SetScript("OnShow", function(self)
     local DB = NS.DB
     EC_compCache.initPanel(self, nil, function(self)
-        NS.MakeHeader(self, "Import / Export", -16)
+        local heading = NS.MakeHeader(self, "Import / Export", -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "slash-commands")
 
         -- === EXPORT SECTION ===
         -- Each section owns its own scope radio so it's obvious which list a

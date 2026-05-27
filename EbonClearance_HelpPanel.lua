@@ -465,10 +465,11 @@ HelpPanel.parent = "EbonClearance"
 -- If entryId is nil or no matching entry exists, the panel still opens
 -- (no expand / scroll / flash). Safe failure mode for typos and stale
 -- ids during development.
--- Locate the q FontString for a given entry id by walking
--- EC_HELP_ENTRIES (content entries only, in order) and matching
--- against the Nth "q" widget in HelpPanel._helpRenderItems.
--- Returns nil if the panel hasn't been built yet OR the id is unknown.
+-- Locate the q FontString for a given entry id. renderItems carries the
+-- id directly on each q/a entry (assigned at build time), so this is
+-- now a single linear walk - no more counting indices through two
+-- parallel lists. Returns nil if the panel hasn't been built yet OR
+-- the id is unknown.
 local function findEntryWidget(entryId)
     if not entryId then
         return nil
@@ -477,26 +478,9 @@ local function findEntryWidget(entryId)
     if not items then
         return nil
     end
-    local contentIdx, targetIdx = 0, nil
-    for _, entry in ipairs(EC_HELP_ENTRIES) do
-        if not entry.section then
-            contentIdx = contentIdx + 1
-            if entry.id == entryId then
-                targetIdx = contentIdx
-                break
-            end
-        end
-    end
-    if not targetIdx then
-        return nil
-    end
-    local qSeen = 0
     for _, item in ipairs(items) do
-        if item.kind == "q" then
-            qSeen = qSeen + 1
-            if qSeen == targetIdx then
-                return item.widget
-            end
+        if item.kind == "q" and item.id == entryId then
+            return item.widget
         end
     end
     return nil
@@ -546,14 +530,18 @@ function NS.OpenHelpEntry(entryId)
     HelpPanel._scrollGeneration = (HelpPanel._scrollGeneration or 0) + 1
     local gen = HelpPanel._scrollGeneration
 
-    -- Single deferred scroll + flash. By 0.7s, refreshLayout has run
-    -- (immediately on OnShow), both FitScrollContent passes have fired
-    -- (0.1s + 0.5s), and the outer scroll content's range is settled.
-    -- Earlier scroll attempts (the previous 0.2s/0.6s/0.9s triple-fire
-    -- approach) caused visible whiplash because the scroll fired BEFORE
-    -- FitScrollContent's later pass resized the content, snapping the
-    -- scrollbar back to 0.
-    NS.Delay(0.7, function()
+    -- Deferred scroll. The first pass at +0.7s runs after refreshLayout
+    -- (immediately on OnShow) and both FitScrollContent ticks (0.1s +
+    -- 0.5s) have settled the outer scroll content's range. The second
+    -- pass at +1.3s is a confirmation: when MULTIPLE sections are now
+    -- expanded (each prior [?] click added one), the target entry's
+    -- absolute Y position depends on how much content sits above it, and
+    -- that fully settles only after FitScrollContent has re-measured
+    -- with all expansions visible. Both passes are gated by the
+    -- generation counter so a superseding click instantly cancels both.
+    -- doScroll itself is idempotent - if positions are already settled,
+    -- the second pass is a no-op repeat of the same SetVerticalScroll.
+    local function doScroll()
         if HelpPanel._scrollGeneration ~= gen then
             return
         end
@@ -582,16 +570,27 @@ function NS.OpenHelpEntry(entryId)
             offset = range
         end
         scrollFrame:SetVerticalScroll(offset)
+    end
 
-        -- Flash: yellow tint pulse for ~0.5s, then restore.
-        if widget.SetTextColor then
-            widget:SetTextColor(1, 1, 0.4)
-            NS.Delay(0.5, function()
-                if HelpPanel._scrollGeneration == gen and widget.SetTextColor then
-                    widget:SetTextColor(1, 1, 1)
-                end
-            end)
+    NS.Delay(0.7, doScroll)
+    NS.Delay(1.3, doScroll)
+
+    -- Flash: yellow tint pulse for ~0.5s, then restore. Fires once at
+    -- +0.7s when the user first sees the target land.
+    NS.Delay(0.7, function()
+        if HelpPanel._scrollGeneration ~= gen then
+            return
         end
+        local widget = findEntryWidget(entryId)
+        if not widget or not widget.SetTextColor then
+            return
+        end
+        widget:SetTextColor(1, 1, 0.4)
+        NS.Delay(0.5, function()
+            if HelpPanel._scrollGeneration == gen and widget.SetTextColor then
+                widget:SetTextColor(1, 1, 1)
+            end
+        end)
     end)
 end
 
@@ -964,8 +963,8 @@ HelpPanel:SetScript("OnShow", function(self)
                 end
                 afs:SetText(entry.a)
 
-                renderItems[#renderItems + 1] = { kind = "q", widget = qfs, section = currentSection }
-                renderItems[#renderItems + 1] = { kind = "a", widget = afs, section = currentSection }
+                renderItems[#renderItems + 1] = { kind = "q", widget = qfs, section = currentSection, id = entry.id }
+                renderItems[#renderItems + 1] = { kind = "a", widget = afs, section = currentSection, id = entry.id }
 
                 if entry.url then
                     -- Copyable URL button. Clicking pops up the EC_COPY_URL

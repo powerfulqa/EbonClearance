@@ -65,6 +65,7 @@ local SOURCE_PATHS = {
     "EbonClearance_Minimap.lua",
     "EbonClearance_Tooltip.lua",
     "EbonClearance_BagContextMenu.lua",
+    "EbonClearance_HelpPanel.lua",
 }
 
 local pieces = {}
@@ -4431,6 +4432,94 @@ do
                 "autoDupe-only fallback when no upstream sell verdict is 'Keep (affix rank known)'",
                 ttSrc:find('Keep %(affix rank known%)') ~= nil,
                 "when dupe-allow is on but no rule fires, the tooltip must say 'Keep (affix rank known)' - the dupe-allow only releases the affix protection, it doesn't make the item sellable on its own"
+            )
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 71-77: v2.36.x Help / FAQ panel invariants.
+-- ---------------------------------------------------------------------------
+-- The Help panel ships a flat EC_HELP_ENTRIES table that drives the
+-- rendered FAQ. The build callback splits the list on section markers
+-- and renders each entry as a question + answer pair plus optional
+-- "Open <panel>" button. These tests pin the structural invariants
+-- (file present, section markers exist, frame exists, per-character
+-- collapse state is partitioned correctly, slash help line exists,
+-- chrome backdrop is applied) so a future contributor who renames a
+-- helper or trims an entry by mistake gets a loud failure.
+do
+    local helpFile = io.open("EbonClearance_HelpPanel.lua", "rb")
+    local helpSrc = nil
+    if helpFile then
+        helpSrc = helpFile:read("*a") or ""
+        helpFile:close()
+    end
+
+    check(
+        "Test 71: EbonClearance_HelpPanel.lua exists",
+        helpSrc ~= nil,
+        "Help / FAQ panel source file must be present at repo root"
+    )
+
+    if helpSrc then
+        check(
+            "Test 72: HelpPanel registers EbonClearanceOptionsHelp Interface Options frame",
+            helpSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsHelp"') ~= nil
+                and helpSrc:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsHelp"%]') ~= nil,
+            "Help panel must create a frame named EbonClearanceOptionsHelp and register it with InterfaceOptions_AddCategory so /ec help can jump to it"
+        )
+
+        check(
+            "Test 73: HelpPanel declares all five section markers",
+            helpSrc:find('section = "gettingStarted"') ~= nil
+                and helpSrc:find('section = "troubleshooting"') ~= nil
+                and helpSrc:find('section = "gates"') ~= nil
+                and helpSrc:find('section = "labels"') ~= nil
+                and helpSrc:find('section = "discord"') ~= nil,
+            "The five sections (gettingStarted, troubleshooting, gates, labels, discord) must each appear as a section marker entry in EC_HELP_ENTRIES so the build callback groups content correctly"
+        )
+
+        -- Count q/a pairs - rough invariant on entry table size.
+        local entryCount = 0
+        for _ in helpSrc:gmatch("\n%s*q = ") do
+            entryCount = entryCount + 1
+        end
+        check(
+            "Test 74: HelpPanel has at least 40 content entries",
+            entryCount >= 40,
+            "EC_HELP_ENTRIES must contain at least 40 q+a content entries (5 gettingStarted + 10 troubleshooting + 16 gates + 22 labels + 3 discord was the v2.36.x baseline); found " .. tostring(entryCount)
+        )
+
+        check(
+            "Test 75: HelpPanel applies the v2.32.x list-panel chrome backdrop",
+            helpSrc:find("applyChromeBackdrop") ~= nil
+                and helpSrc:find('bgFile = "Interface\\\\Tooltips\\\\UI%-Tooltip%-Background"') ~= nil
+                and helpSrc:find('edgeFile = "Interface\\\\Tooltips\\\\UI%-Tooltip%-Border"') ~= nil
+                and helpSrc:find("edgeSize = 12") ~= nil,
+            "Help panel must wrap its content area in a chrome-backdropped frame using the same UI-Tooltip-Border + edgeSize=12 + brown tint pattern as Process Bags / Sell List / Keep List / Profiles"
+        )
+    end
+
+    -- Test 76: PER_CHAR_FIELDS must declare helpSectionsCollapsed so the
+    -- v2.34.x partition routes the per-character key correctly. Without
+    -- this entry, the collapse state would be account-wide and the
+    -- v2.34.x SavedVariables-partition migration would not migrate it.
+    do
+        local eventsFile = io.open("EbonClearance_Events.lua", "rb")
+        if eventsFile then
+            local eventsSrc = eventsFile:read("*a") or ""
+            eventsFile:close()
+            check(
+                "Test 76: PER_CHAR_FIELDS includes helpSectionsCollapsed",
+                eventsSrc:find("helpSectionsCollapsed = true") ~= nil,
+                "PER_CHAR_FIELDS in EbonClearance_Events.lua must include `helpSectionsCollapsed = true` so the per-character partition migrates the collapse state correctly"
+            )
+
+            check(
+                "Test 77: /ec help mentions the Help panel",
+                eventsSrc:find("Help panel in Interface Options") ~= nil,
+                "The /ec help slash-command output must include a pointer to the new Help panel so players know it exists"
             )
         end
     end

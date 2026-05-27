@@ -260,6 +260,12 @@ local PER_CHAR_FIELDS = {
     bestGPH = true,
     bestGPHAt = true,
     bestGPHZone = true,
+    -- v2.36.x Help / FAQ panel per-section collapse state. Stored
+    -- per-character so each character can independently choose which
+    -- sections (troubleshooting / gates / labels) are expanded vs
+    -- collapsed. Matches the processCollapsedModes precedent. See
+    -- docs/specs/2026-05-26-help-faq-panel-design.md.
+    helpSectionsCollapsed = true,
 }
 
 local function EC_DBCharKey()
@@ -5043,6 +5049,9 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         )
         PrintNice("|cffaaaaaaTip: Alt+Shift+Right-Click a bag item for the same explanation.|r")
         PrintNice("|cffffff00/ecdebug|r  Show debug info and a bag scan")
+        PrintNice(
+            "|cffaaaaaaSee the Help panel in Interface Options for a full FAQ + label reference.|r"
+        )
         return
     end
 

@@ -107,7 +107,7 @@ read_globals = {
     "IsMouseButtonDown", "GetUnitSpeed",
 
     -- Blizzard constants / static popup buttons
-    "YES", "NO",
+    "YES", "NO", "OKAY",
     -- Locale strings used by the auto-open container tooltip scan
     "ITEM_OPENABLE", "LOCKED",
     -- Cursor positioning for the bag right-click popup

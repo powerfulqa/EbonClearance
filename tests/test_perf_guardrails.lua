@@ -4491,13 +4491,14 @@ do
         )
 
         check(
-            "Test 73: HelpPanel declares all five section markers",
+            "Test 73: HelpPanel declares all six section markers",
             helpSrc:find('section = "gettingStarted"') ~= nil
                 and helpSrc:find('section = "troubleshooting"') ~= nil
                 and helpSrc:find('section = "gates"') ~= nil
                 and helpSrc:find('section = "labels"') ~= nil
+                and helpSrc:find('section = "processBags"') ~= nil
                 and helpSrc:find('section = "discord"') ~= nil,
-            "The five sections (gettingStarted, troubleshooting, gates, labels, discord) must each appear as a section marker entry in EC_HELP_ENTRIES so the build callback groups content correctly"
+            "The six sections (gettingStarted, troubleshooting, gates, labels, processBags, discord) must each appear as a section marker entry in EC_HELP_ENTRIES so the build callback groups content correctly"
         )
 
         -- Count q/a pairs - rough invariant on entry table size.

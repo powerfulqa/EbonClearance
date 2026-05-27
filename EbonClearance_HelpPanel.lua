@@ -380,7 +380,43 @@ local EC_HELP_ENTRIES = {
     },
 
     -- ===================================================================
-    -- Section 5: Reporting bugs
+    -- Section 5: Process Bags
+    -- ===================================================================
+    { section = "processBags", title = "Process Bags" },
+
+    {
+        id = "process-bags-overview",
+        q = "What does Process Bags do?",
+        a = "Process Bags is a bulk processor for materials in your bags. Open it from /ec, pick a mode (Disenchant, Mill, Prospect, or Pick Locks), and EbonClearance arms your cursor with the matching spell or item. Click bag slots in sequence; the addon respects the spell's cooldown and skips items that don't qualify. Useful for turning a stack of green drops into Enchant dust without 30 manual right-clicks. Note: items on your Keep List are intentionally hidden from this panel.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
+        id = "process-disenchant",
+        q = "Disenchant mode",
+        a = "Requires the Enchanting profession. Arms Disenchant on your cursor. Click bag slots holding Uncommon (Green) or Rare (Blue) Weapons / Armor to turn them into Enchanting dust, essences, and shards. Items without Enchanting eligibility are skipped.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
+        id = "process-mill",
+        q = "Mill mode",
+        a = "Requires the Inscription profession. Arms Milling on your cursor. Click bag slots holding stacks of 5+ herbs to turn them into pigments. Stacks smaller than 5 are skipped.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
+        id = "process-prospect",
+        q = "Prospect mode",
+        a = "Requires the Jewelcrafting profession. Arms Prospecting on your cursor. Click bag slots holding stacks of 5+ ore to turn them into gems and rare prospects. Stacks smaller than 5 are skipped.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
+        id = "process-picklocks",
+        q = "Pick Locks mode",
+        a = "Requires the Rogue Pick Lock ability. Arms Pick Lock on your cursor. Click bag slots holding lockboxes (Junkboxes, Mageweave Pouches, Heavy Junkboxes, etc.) to open them.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+
+    -- ===================================================================
+    -- Section 6: Reporting bugs
     -- ===================================================================
     { section = "discord", title = "Reporting bugs" },
 
@@ -481,6 +517,7 @@ HelpPanel:SetScript("OnShow", function(self)
             troubleshooting = true,
             gates = true,
             labels = true,
+            processBags = true,
             discord = true,
         }
     end
@@ -490,7 +527,7 @@ HelpPanel:SetScript("OnShow", function(self)
     -- rather than scrolling past a wall of expanded content. Existing
     -- per-character collapse toggles are preserved (only keys missing
     -- from the saved table get the collapsed default).
-    for _, key in ipairs({ "gettingStarted", "troubleshooting", "gates", "labels", "discord" }) do
+    for _, key in ipairs({ "gettingStarted", "troubleshooting", "gates", "labels", "processBags", "discord" }) do
         if type(DB.helpSectionsCollapsed[key]) ~= "boolean" then
             DB.helpSectionsCollapsed[key] = true
         end

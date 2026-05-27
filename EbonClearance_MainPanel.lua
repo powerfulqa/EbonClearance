@@ -6,9 +6,13 @@
 -- Stage 8e-ix-a of the multi-stage file split (docs/CODE_REVIEW.md item 4).
 -- The top-level "EbonClearance" panel - the entry point users hit
 -- first when opening Interface Options. Hosts the welcome blurb,
--- session stats (gold made / items sold / items deleted / repair
--- spend), lifetime stats, slash command reference, and the master
--- "Enabled" toggle.
+-- feature orientation, the Alt+Right-Click tip, and the slash
+-- command reference. Stats moved to EbonClearance_StatsPanel.lua
+-- in v2.36.x (sub-panel split). The NS.RefreshStats / NS.ResetLifetimeStats
+-- helpers still live in this file so Events.lua data-change handlers
+-- have a stable namespace entry point; they write to the Stats panel
+-- via _G["EbonClearanceOptionsStats"] and no-op until that panel is
+-- built.
 --
 -- Moved into this file:
 --   * local MainOptions = CreateFrame(...) frame creation
@@ -269,12 +273,10 @@ end
 
 local function BuildMainPanel(panel, content)
     -- v2.12.0: widgets are created on `content` (the scroll-frame child)
-    -- so vertical overflow is handled by the scroll bar. Stat refs are
-    -- still stored on `panel` (the outer Interface Options panel) so
-    -- RefreshStats's panel.statsX reads keep working across re-OnShows.
-    -- The Reset buttons call NS.RefreshStats / NS.ResetLifetimeStats
-    -- directly, so no refresh callback needs threading through this
-    -- function any more.
+    -- so vertical overflow is handled by the scroll bar.
+    -- v2.36.x: stats widgets + Reset buttons moved to the Stats sub-panel
+    -- (EbonClearance_StatsPanel.lua); the `panel` arg is unused here now
+    -- but kept in the signature because EC_compCache.initPanel passes it.
     local addonVersion = NS.GetVersion()
     NS.MakeHeader(content, "EbonClearance " .. addonVersion, -16)
 
@@ -317,100 +319,11 @@ local function BuildMainPanel(panel, content)
     end
     mainTip:SetText("|cff888888Right-click any bag item with Alt held for quick actions.|r")
 
-    -- Stats fontstrings. Stacked vertically; each attaches its ref to `panel`
-    -- so RefreshStats can find them across subsequent OnShow calls.
-    local money = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    money:SetPoint("TOPLEFT", mainTip, "BOTTOMLEFT", 0, -16)
-    panel.statsMoney = money
-
-    local sold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    sold:SetPoint("TOPLEFT", money, "BOTTOMLEFT", 0, -6)
-    panel.statsSold = sold
-
-    local deleted = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    deleted:SetPoint("TOPLEFT", sold, "BOTTOMLEFT", 0, -6)
-    panel.statsDeleted = deleted
-
-    local repairs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    repairs:SetPoint("TOPLEFT", deleted, "BOTTOMLEFT", 0, -6)
-    panel.statsRepairs = repairs
-
-    local repairCost = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    repairCost:SetPoint("TOPLEFT", repairs, "BOTTOMLEFT", 0, -6)
-    panel.statsRepairCost = repairCost
-
-    -- v2.35.x: Session and Best Gold/Hour. The session line shows the
-    -- live rate plus elapsed time; the best line shows the per-character
-    -- record with the zone + when context on its own indented sub-line.
-    -- See docs/specs/2026-05-26-gph-stats-design.md for the data shape +
-    -- 5-minute gate rationale.
-    local sessionGPH = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    sessionGPH:SetPoint("TOPLEFT", repairCost, "BOTTOMLEFT", 0, -6)
-    panel.statsSessionGPH = sessionGPH
-
-    local bestGPH = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    bestGPH:SetPoint("TOPLEFT", sessionGPH, "BOTTOMLEFT", 0, -6)
-    EC_compCache.setPanelWidth(bestGPH, 16)
-    bestGPH:SetJustifyH("LEFT")
-    panel.statsBestGPH = bestGPH
-
-    local avgWorth = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    avgWorth:SetPoint("TOPLEFT", bestGPH, "BOTTOMLEFT", 0, -6)
-    panel.statsAvgWorth = avgWorth
-
-    local mostSold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    mostSold:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -6)
-    EC_compCache.setPanelWidth(mostSold, 16)
-    mostSold:SetJustifyH("LEFT")
-    panel.statsMostSold = mostSold
-
-    local statsNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statsNote:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -4)
-    EC_compCache.setPanelWidth(statsNote, 16)
-    statsNote:SetJustifyH("LEFT")
-    statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
-
-    local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", content, "UIPanelButtonTemplate")
-    resetBtn:SetSize(170, 22)
-    resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -8)
-    resetBtn:SetText("Reset Lifetime Stats")
-    resetBtn:SetScript("OnClick", function()
-        local dialog = StaticPopup_Show("EC_CONFIRM_RESET_LIFETIME")
-        if dialog then
-            dialog.data = function()
-                if NS.ResetLifetimeStats then
-                    NS.ResetLifetimeStats()
-                end
-                if NS.RefreshStats then
-                    NS.RefreshStats()
-                end
-                PlaySound("igMainMenuOptionCheckBoxOn")
-            end
-        end
-    end)
-
-    -- Session delta is inlined into each lifetime stat line by RefreshStats (NS.session).
-    -- The Reset Session button sits side-by-side with Reset Lifetime to avoid adding vertical space.
-    local resetSessionBtn = CreateFrame("Button", "EbonClearanceResetSessionBtn", content, "UIPanelButtonTemplate")
-    resetSessionBtn:SetSize(170, 22)
-    resetSessionBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
-    resetSessionBtn:SetText("Reset Session Stats")
-    resetSessionBtn:SetScript("OnClick", function()
-        local dialog = StaticPopup_Show("EC_CONFIRM_RESET_SESSION")
-        if dialog then
-            dialog.data = function()
-                NS.ResetSession()
-                if NS.RefreshStats then
-                    NS.RefreshStats()
-                end
-                PlaySound("igMainMenuOptionCheckBoxOn")
-            end
-        end
-    end)
-
     -- Slash commands reference.
+    -- Stats widgets + Reset buttons moved to EbonClearance_StatsPanel.lua
+    -- in v2.36.x; this anchor chain now goes mainTip -> cmdHeader.
     local cmdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cmdHeader:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -16)
+    cmdHeader:SetPoint("TOPLEFT", mainTip, "BOTTOMLEFT", 0, -20)
     cmdHeader:SetText("Slash Commands")
 
     local cmdText = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -438,10 +351,11 @@ local function BuildMainPanel(panel, content)
 end
 
 MainOptions:SetScript("OnShow", function(self)
-    -- RefreshStats / ResetLifetimeStats now live on NS at file scope
-    -- (see top of this file). The OnShow just composes BuildMainPanel +
-    -- a refresh through EC_compCache.initPanel; the Reset buttons inside
-    -- BuildMainPanel call NS.RefreshStats / NS.ResetLifetimeStats directly.
+    -- RefreshStats / ResetLifetimeStats live on NS at file scope (see
+    -- top of this file) and write to the Stats sub-panel via
+    -- _G["EbonClearanceOptionsStats"]. The Main panel no longer renders
+    -- stats itself (v2.36.x split), but we still trigger a refresh on
+    -- show so the Stats panel stays up to date when users tab over.
     EC_compCache.initPanel(self, function()
         if NS.RefreshStats then
             NS.RefreshStats()

@@ -2826,12 +2826,27 @@ do
             "BuildMainPanel must move along with the MainOptions OnShow that calls it"
         )
         local code = (mpSrc:gsub("\n%-%-[^\n]*", ""))
+        -- v2.36.x: the Reset Session button moved off MainPanel onto the
+        -- new StatsPanel (along with every other stats widget). The check
+        -- below now targets the StatsPanel source. MainPanel must still
+        -- NOT call EC_ResetSession as a bare global.
         check(
-            "EbonClearance_MainPanel.lua uses NS.ResetSession (not bare EC_ResetSession)",
-            code:find("NS%.ResetSession%(") ~= nil
-                and code:find("[^.%w_]EC_ResetSession%(") == nil,
-            "the Reset Session button must call NS.ResetSession (the local lives in EbonClearance_Events.lua)"
+            "EbonClearance_MainPanel.lua does not call EC_ResetSession as a bare global",
+            code:find("[^.%w_]EC_ResetSession%(") == nil,
+            "MainPanel must not reach into Events.lua's file-scope local; use NS.ResetSession if needed"
         )
+        local statsPanelFile = io.open("EbonClearance_StatsPanel.lua", "rb")
+        if statsPanelFile then
+            local statsPanelSrc = statsPanelFile:read("*a") or ""
+            statsPanelFile:close()
+            local statsCode = (statsPanelSrc:gsub("\n%-%-[^\n]*", ""))
+            check(
+                "EbonClearance_StatsPanel.lua uses NS.ResetSession (not bare EC_ResetSession)",
+                statsCode:find("NS%.ResetSession%(") ~= nil
+                    and statsCode:find("[^.%w_]EC_ResetSession%(") == nil,
+                "the Reset Session button (now on the Stats panel) must call NS.ResetSession (the local lives in EbonClearance_Events.lua)"
+            )
+        end
         check(
             "EbonClearance_MainPanel.lua uses NS.CopperToColoredText",
             code:find("NS%.CopperToColoredText%(") ~= nil

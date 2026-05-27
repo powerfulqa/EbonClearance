@@ -82,10 +82,27 @@ StatsPanel:SetScript("OnShow", function(self)
         statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
         panel.statsNote = statsNote
 
+        -- Reset Session button. Clears the in-memory session deltas (the
+        -- "session +X" suffixes next to each stat) without touching the
+        -- lifetime totals. NS.ResetSession lives in EbonClearance_Events.lua.
+        local resetSessionBtn = CreateFrame("Button", "EbonClearanceResetSessionBtn", content, "UIPanelButtonTemplate")
+        resetSessionBtn:SetSize(170, 22)
+        resetSessionBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -10)
+        resetSessionBtn:SetText("Reset Session Stats")
+        resetSessionBtn:SetScript("OnClick", function()
+            if NS.ResetSession then
+                NS.ResetSession()
+            end
+            if NS.RefreshStats then
+                NS.RefreshStats()
+            end
+        end)
+
         -- Reset Lifetime button (same global name + behaviour as before).
+        -- Anchored next to Reset Session so both buttons sit on the same row.
         local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", content, "UIPanelButtonTemplate")
         resetBtn:SetSize(170, 22)
-        resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -10)
+        resetBtn:SetPoint("LEFT", resetSessionBtn, "RIGHT", 8, 0)
         resetBtn:SetText("Reset Lifetime Stats")
         resetBtn:SetScript("OnClick", function()
             local dialog = StaticPopup_Show("EC_CONFIRM_RESET_LIFETIME")

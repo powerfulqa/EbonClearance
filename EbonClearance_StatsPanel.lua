@@ -124,4 +124,6 @@ StatsPanel:SetScript("OnShow", function(self)
     end)
 end)
 
-InterfaceOptions_AddCategory(_G["EbonClearanceOptionsStats"])
+-- v2.36.x: registered with InterfaceOptions_AddCategory from
+-- EbonClearance_Events.lua (right after the Main panel) so the sub-panel
+-- sort order (Main / Stats / Merchant / ...) is controlled at one place.

@@ -4543,6 +4543,10 @@ StaticPopupDialogs["EC_WELCOME"] = {
 
 
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsMain"])
+-- v2.36.x: Stats sub-panel registered here so its sort position (between
+-- Main and Merchant) is controlled in one place. The Stats panel file
+-- itself does not call InterfaceOptions_AddCategory.
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsStats"])
 
 
 -- CreateListUI, the 5 list-row factories, and EC_AddScanByQualityRow live in

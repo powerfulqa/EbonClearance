@@ -4564,11 +4564,19 @@ do
     )
 
     if statsSrc then
+        -- Test 80a: the Stats frame is created in EbonClearance_StatsPanel.lua,
+        -- but InterfaceOptions_AddCategory is called from EbonClearance_Events.lua
+        -- so the sub-panel sort position (between Main and Merchant) is
+        -- controlled at one place. Verify both halves.
+        local evFile = io.open("EbonClearance_Events.lua", "rb")
+        local evSrc = evFile and evFile:read("*a") or ""
+        if evFile then evFile:close() end
         check(
             "Test 80a: Stats panel registers EbonClearanceOptionsStats frame",
             statsSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsStats"') ~= nil
-                and statsSrc:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsStats"%]') ~= nil,
-            "Stats panel must create a frame named EbonClearanceOptionsStats and register it with InterfaceOptions_AddCategory"
+                and evSrc:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsStats"%]') ~= nil
+                and evSrc:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsMain"%][%s%S]-InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsStats"%][%s%S]-InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsMerchant"%]') ~= nil,
+            "Stats panel must create a frame named EbonClearanceOptionsStats (in StatsPanel.lua) and Events.lua must register it via InterfaceOptions_AddCategory right after the Main panel (sort order: Main / Stats / ...)"
         )
 
         check(

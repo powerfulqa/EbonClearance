@@ -86,6 +86,9 @@ ScavengerPanel:SetScript("OnShow", function(self)
             PlaySound("igMainMenuOptionCheckBoxOn")
         end)
         self.sumCB = sumCB
+        if st then
+            NS.AddHelpIcon(content, st, "LEFT", "RIGHT", 6, 0, "tshoot-goblin-not-summoning")
+        end
 
         local combatOnlyCB = NS.AddCheckbox(
             content,
@@ -147,19 +150,21 @@ ScavengerPanel:SetScript("OnShow", function(self)
             -16
         )
         self.cycleCB = cycleCB
+        local cycleCBText = _G[cycleCB:GetName() .. "Text"]
+        if cycleCBText then
+            NS.AddHelpIcon(content, cycleCBText, "LEFT", "RIGHT", 6, 0, "tshoot-goblin-not-summoning")
+        end
 
-        local cycleNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        cycleNote:SetPoint("TOPLEFT", cycleCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(cycleNote, 60)
-        cycleNote:SetJustifyH("LEFT")
-        cycleNote:SetText(
-            "|cff888888When your bags fill up: Greedy goes away, the Goblin Merchant pops up. Right-click the merchant to sell, then Greedy comes back automatically.|r"
-        )
-
+        -- threshSlider used to anchor to a multi-line cycleNote FontString
+        -- that explained the bags-fill / Goblin Merchant summon mechanic.
+        -- Task 17 stripped that note - the [?] icon next to the cycle
+        -- toggle now deep-links to the same Help entry. The slider re-
+        -- anchors to cycleCB directly with -16 below to keep separation
+        -- between the toggle and the slider's label.
         local threshSlider = NS.AddSlider(
             content,
             "EbonClearanceBagThresholdSlider",
-            cycleNote,
+            cycleCB,
             "Bag slots remaining before selling",
             0,
             10,

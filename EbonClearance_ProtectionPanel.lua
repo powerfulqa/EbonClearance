@@ -26,8 +26,12 @@
 --     Issue B fix (Test 42 invariant)
 --
 -- The panel does NOT use AddCheckbox / AddSlider; it builds checkboxes
--- inline because the layout has explanatory notes interleaved between
--- the toggles that don't fit AddCheckbox's flat row format.
+-- inline because two of the toggles (dupeAffixCB / allTomeCB) carry
+-- dynamic status-feedback FontStrings that the flat-row AddCheckbox
+-- format can't host. The explanatory notes that used to sit under
+-- every toggle were stripped in Task 15 of the help-link refactor;
+-- each toggle now links to its Help-panel entry via NS.AddHelpIcon
+-- next to the label.
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
@@ -132,17 +136,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
         self.autoEquipCB = autoEquipCB
-
-        local autoEquipNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        autoEquipNote:SetPoint("TOPLEFT", autoEquipCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(autoEquipNote, 60)
-        autoEquipNote:SetJustifyH("LEFT")
-        if autoEquipNote.SetWordWrap then
-            autoEquipNote:SetWordWrap(true)
+        if aeText then
+            NS.AddHelpIcon(content, aeText, "LEFT", "RIGHT", 6, 0, "gate-equipped-never-sells")
         end
-        autoEquipNote:SetText(
-            "|cff888888Anything you wear is kept automatically. Alt+Right-Click to remove an item from the Keep List.|r"
-        )
 
         -- v2.11.0 auto-protect upgrades. The companion to v2.10.0's auto-
         -- protect-equipped: this one watches BAG_UPDATE for items whose iLvl
@@ -157,7 +153,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             content,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        autoUpgradeCB:SetPoint("TOPLEFT", autoEquipNote, "BOTTOMLEFT", -26, -10)
+        autoUpgradeCB:SetPoint("TOPLEFT", autoEquipCB, "BOTTOMLEFT", 0, -10)
         autoUpgradeCB:SetChecked(DB.autoProtectUpgrades)
         local auText = _G[autoUpgradeCB:GetName() .. "Text"]
         if auText then
@@ -176,17 +172,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
         self.autoUpgradeCB = autoUpgradeCB
-
-        local autoUpgradeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        autoUpgradeNote:SetPoint("TOPLEFT", autoUpgradeCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(autoUpgradeNote, 60)
-        autoUpgradeNote:SetJustifyH("LEFT")
-        if autoUpgradeNote.SetWordWrap then
-            autoUpgradeNote:SetWordWrap(true)
+        if auText then
+            NS.AddHelpIcon(content, auText, "LEFT", "RIGHT", 6, 0, "tshoot-upgrade-keep")
         end
-        autoUpgradeNote:SetText(
-            "|cff888888Items with a higher item level than what you're wearing get kept.|r"
-        )
 
         -- v2.13.0 Equipment Manager protection. Catches the dual-spec /
         -- off-set gap: items assigned to your alternate Blizzard equipment
@@ -195,7 +183,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- One-shot sync at toggle, then EQUIPMENT_SETS_CHANGED reactive.
         local autoSetCB =
             CreateFrame("CheckButton", "EbonClearanceAutoProtectSetsCB", content, "InterfaceOptionsCheckButtonTemplate")
-        autoSetCB:SetPoint("TOPLEFT", autoUpgradeNote, "BOTTOMLEFT", -26, -10)
+        autoSetCB:SetPoint("TOPLEFT", autoUpgradeCB, "BOTTOMLEFT", 0, -10)
         autoSetCB:SetChecked(DB.autoProtectEquipmentSets)
         local asText = _G[autoSetCB:GetName() .. "Text"]
         if asText then
@@ -214,17 +202,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
         self.autoSetCB = autoSetCB
-
-        local autoSetNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        autoSetNote:SetPoint("TOPLEFT", autoSetCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(autoSetNote, 60)
-        autoSetNote:SetJustifyH("LEFT")
-        if autoSetNote.SetWordWrap then
-            autoSetNote:SetWordWrap(true)
+        if asText then
+            NS.AddHelpIcon(content, asText, "LEFT", "RIGHT", 6, 0, "label-keep-gear-set")
         end
-        autoSetNote:SetText(
-            "|cff888888Every item in your saved gear sets is kept. Removing a set doesn't unkeep its items - Alt+Right-Click to remove them.|r"
-        )
 
         -- v2.19.0 PE roguelite affix protection. The base itemID of an
         -- affixed item (e.g. "Thorbia's Gauntlets of Fortified by Pain IV")
@@ -241,7 +221,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             content,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        autoAffixCB:SetPoint("TOPLEFT", autoSetNote, "BOTTOMLEFT", -26, -10)
+        autoAffixCB:SetPoint("TOPLEFT", autoSetCB, "BOTTOMLEFT", 0, -10)
         autoAffixCB:SetChecked(DB.protectAffixedRareItems)
         local aaText = _G[autoAffixCB:GetName() .. "Text"]
         if aaText then
@@ -266,17 +246,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
         self.autoAffixCB = autoAffixCB
-
-        local autoAffixNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        autoAffixNote:SetPoint("TOPLEFT", autoAffixCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(autoAffixNote, 60)
-        autoAffixNote:SetJustifyH("LEFT")
-        if autoAffixNote.SetWordWrap then
-            autoAffixNote:SetWordWrap(true)
+        if aaText then
+            NS.AddHelpIcon(content, aaText, "LEFT", "RIGHT", 6, 0, "gate-affix-protection")
         end
-        autoAffixNote:SetText(
-            "|cff888888Items like |cffffb84d'of Fortified by Pain IV'|r|cff888888 are never sold or deleted, even if they're on a list.|r"
-        )
 
         -- v2.23.0 child toggle: exact-rank duplicate gate on the affix
         -- protection. Reads PE's PerkService.GetGrantedPerks /
@@ -290,10 +262,11 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             content,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        -- Indent further right than the parent toggle: anchor under the
-        -- parent's note (which already has +26 indent) with no horizontal
-        -- offset, so the child sits a column to the right.
-        dupeAffixCB:SetPoint("TOPLEFT", autoAffixNote, "BOTTOMLEFT", 0, -8)
+        -- Indent further right than the parent toggle so the child sits
+        -- a column to the right. (Pre-Task 15 this used the parent's
+        -- explanatory note as an indented anchor; the note is gone now,
+        -- so we apply the +26 indent directly against the parent CB.)
+        dupeAffixCB:SetPoint("TOPLEFT", autoAffixCB, "BOTTOMLEFT", 26, -8)
         dupeAffixCB:SetChecked(DB.affixAllowExactDupes)
         local daText = _G[dupeAffixCB:GetName() .. "Text"]
         if daText then
@@ -314,7 +287,16 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
         self.dupeAffixCB = dupeAffixCB
+        if daText then
+            NS.AddHelpIcon(content, daText, "LEFT", "RIGHT", 6, 0, "gate-allow-rank-dupes")
+        end
 
+        -- Status-feedback FontString. After Task 15 the explanatory text
+        -- for the active case lives in the Help panel ([?] icon above);
+        -- this note now only carries the disabled-state status messages
+        -- ("PE not detected" / "Turn on affix protection above"). The
+        -- procCB below still anchors to its BOTTOMLEFT so the layout
+        -- shifts up when the note is empty in the active case.
         local dupeAffixNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         dupeAffixNote:SetPoint("TOPLEFT", dupeAffixCB, "BOTTOMLEFT", 26, -2)
         EC_compCache.setPanelWidth(dupeAffixNote, 86)
@@ -325,9 +307,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         self.dupeAffixNote = dupeAffixNote
 
         -- Greys-out the child CB when the parent toggle is off OR when PE
-        -- isn't detected, and swaps the explanatory note for a "PE not
-        -- detected" status line in that case. Called on init, on the
-        -- parent CB's OnClick, and on every refresh-callback fire.
+        -- isn't detected, and swaps in a status line for that case.
+        -- Called on init, on the parent CB's OnClick, and on every
+        -- refresh-callback fire.
         local function UpdateDupeAffixEnabled()
             local peOn = EC_compCache.peDetected and EC_compCache.peDetected()
             local parentOn = DB.protectAffixedRareItems == true
@@ -336,9 +318,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 if daText then
                     daText:SetTextColor(1, 1, 1)
                 end
-                dupeAffixNote:SetText(
-                    "|cff888888If you already have the affix at this rank, drops follow your normal sell rules. Different ranks stay protected so you can still collect them all.|r"
-                )
+                dupeAffixNote:SetText("")
             else
                 dupeAffixCB:Disable()
                 if daText then
@@ -400,17 +380,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             pcText:SetJustifyH("LEFT")
         end
         self.procCB = procCB
-
-        local procNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        procNote:SetPoint("TOPLEFT", procCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(procNote, 60)
-        procNote:SetJustifyH("LEFT")
-        if procNote.SetWordWrap then
-            procNote:SetWordWrap(true)
+        if pcText then
+            NS.AddHelpIcon(content, pcText, "LEFT", "RIGHT", 6, 0, "gate-chance-on-hit")
         end
-        procNote:SetText(
-            "|cff888888Items with a |cffffb84d'Chance on hit:'|r|cff888888 effect are kept unless you add them to a list yourself.|r"
-        )
 
         -- v2.26.0 child toggle: exact-proc duplicate gate on the chance-
         -- on-hit protection. When ON AND a bag item's proc description
@@ -448,7 +420,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             content,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        unlearnedTomeCB:SetPoint("TOPLEFT", procNote, "BOTTOMLEFT", -26, -10)
+        unlearnedTomeCB:SetPoint("TOPLEFT", procCB, "BOTTOMLEFT", 0, -10)
         unlearnedTomeCB:SetChecked(DB.protectUnlearnedTomes)
         local utText = _G[unlearnedTomeCB:GetName() .. "Text"]
         if utText then
@@ -457,29 +429,22 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             utText:SetJustifyH("LEFT")
         end
         self.unlearnedTomeCB = unlearnedTomeCB
-
-        local unlearnedTomeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        unlearnedTomeNote:SetPoint("TOPLEFT", unlearnedTomeCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(unlearnedTomeNote, 60)
-        unlearnedTomeNote:SetJustifyH("LEFT")
-        if unlearnedTomeNote.SetWordWrap then
-            unlearnedTomeNote:SetWordWrap(true)
+        if utText then
+            NS.AddHelpIcon(content, utText, "LEFT", "RIGHT", 6, 0, "gate-tome-recipe")
         end
-        unlearnedTomeNote:SetText(
-            "|cff888888Tomes and recipes you don't know yet are kept. To sell one anyway, Alt+Right-Click |cffffb84d-> Allow Sell|r|cff888888. Adding it to the Sell List alone won't override the protection.|r"
-        )
 
         -- Child toggle: extends protection to already-known items.
-        -- Indented under the parent's note (matches the affix-dupe
-        -- pattern - +0 x-offset under the +26-indented note puts the
-        -- child a column further right than the parent).
+        -- Indented +26 from the parent CB so it sits a column further
+        -- right (matches the affix-dupe pattern; pre-Task 15 this
+        -- inherited the indent from the parent's explanatory note, but
+        -- the note was stripped and the indent is now applied directly).
         local allTomeCB = CreateFrame(
             "CheckButton",
             "EbonClearanceProtectAllTomesCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        allTomeCB:SetPoint("TOPLEFT", unlearnedTomeNote, "BOTTOMLEFT", 0, -8)
+        allTomeCB:SetPoint("TOPLEFT", unlearnedTomeCB, "BOTTOMLEFT", 26, -8)
         allTomeCB:SetChecked(DB.protectAllTomes)
         local atText = _G[allTomeCB:GetName() .. "Text"]
         if atText then
@@ -488,7 +453,16 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             atText:SetJustifyH("LEFT")
         end
         self.allTomeCB = allTomeCB
+        if atText then
+            NS.AddHelpIcon(content, atText, "LEFT", "RIGHT", 6, 0, "label-tome-have")
+        end
 
+        -- Status-feedback FontString. After Task 15 the explanatory text
+        -- for the active case lives in the Help panel ([?] icon above);
+        -- this note now only carries the disabled-state status message
+        -- ("Turn on the protection above"). FitScrollContent uses this
+        -- as the bottom-most widget so the scroll area still sizes
+        -- correctly when the note is empty.
         local allTomeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         allTomeNote:SetPoint("TOPLEFT", allTomeCB, "BOTTOMLEFT", 26, -2)
         EC_compCache.setPanelWidth(allTomeNote, 86)
@@ -516,9 +490,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 if atText then
                     atText:SetTextColor(1, 1, 1)
                 end
-                allTomeNote:SetText(
-                    "|cff888888Useful for saving spares for alts (different characters know different tomes / recipes) or selling them at the auction house yourself.|r"
-                )
+                allTomeNote:SetText("")
             else
                 allTomeCB:Disable()
                 if atText then

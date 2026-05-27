@@ -4526,6 +4526,59 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 80: v2.36.x Stats sub-panel split.
+-- ---------------------------------------------------------------------------
+-- Stats widgets (statsMoney, statsSold, statsDeleted, statsRepairs,
+-- statsRepairCost, statsSessionGPH, statsBestGPH, statsAvgWorth,
+-- statsMostSold, statsNote, EbonClearanceResetStatsBtn) used to live on
+-- the Main panel. v2.36.x moves them to a dedicated Stats panel so the
+-- Main panel can read as a welcome page and Stats has room to grow.
+do
+    local statsFile = io.open("EbonClearance_StatsPanel.lua", "rb")
+    local statsSrc = nil
+    if statsFile then
+        statsSrc = statsFile:read("*a") or ""
+        statsFile:close()
+    end
+
+    check(
+        "Test 80: EbonClearance_StatsPanel.lua exists",
+        statsSrc ~= nil,
+        "Stats sub-panel source file must be present at repo root"
+    )
+
+    if statsSrc then
+        check(
+            "Test 80a: Stats panel registers EbonClearanceOptionsStats frame",
+            statsSrc:find('CreateFrame%("Frame", "EbonClearanceOptionsStats"') ~= nil
+                and statsSrc:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsStats"%]') ~= nil,
+            "Stats panel must create a frame named EbonClearanceOptionsStats and register it with InterfaceOptions_AddCategory"
+        )
+
+        check(
+            "Test 80b: Stats panel attaches statsMoney + statsSessionGPH + statsBestGPH fields",
+            statsSrc:find("panel%.statsMoney") ~= nil
+                and statsSrc:find("panel%.statsSessionGPH") ~= nil
+                and statsSrc:find("panel%.statsBestGPH") ~= nil,
+            "Stats panel must hang the same panel.statsX attachments that MainPanel used to, so RefreshStats can write to them after the split"
+        )
+    end
+
+    -- MainPanel post-split should NO LONGER create stats widgets.
+    local mainFile = io.open("EbonClearance_MainPanel.lua", "rb")
+    if mainFile then
+        local mainSrc = mainFile:read("*a") or ""
+        mainFile:close()
+        check(
+            "Test 80c: MainPanel no longer creates statsMoney FontString",
+            mainSrc:find('panel%.statsMoney = money') == nil
+                and mainSrc:find("statsMoney = content:CreateFontString") == nil,
+            "After v2.36.x split, MainPanel must not attach statsMoney; that lives on the new Stats panel"
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

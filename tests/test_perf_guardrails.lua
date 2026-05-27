@@ -4642,6 +4642,27 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 82: NS.AddHelpIcon widget primitive exists in PanelWidgets.lua.
+-- ---------------------------------------------------------------------------
+-- v2.36.x: settings panels deep-link into the Help panel via small [?]
+-- icons. The widget primitive lives in EbonClearance_PanelWidgets.lua
+-- alongside NS.MakeHeader / NS.MakeLabel / NS.AddCheckbox.
+do
+    local f = io.open("EbonClearance_PanelWidgets.lua", "rb")
+    if f then
+        local src = f:read("*a") or ""
+        f:close()
+        check(
+            "Test 82: NS.AddHelpIcon helper is defined",
+            src:find("NS%.AddHelpIcon") ~= nil
+                and src:find("function .*MakeHelpIcon") ~= nil
+                and src:find("NS%.OpenHelpEntry") ~= nil,
+            "EbonClearance_PanelWidgets.lua must define MakeHelpIcon and expose it as NS.AddHelpIcon. The OnClick must call NS.OpenHelpEntry(entryId) if it exists."
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Tests 84-85: Mill / Prospect tooltip-scan robustness.
 -- ---------------------------------------------------------------------------
 -- Two distinct bugs hid the PROSPECT section from Process Bags:

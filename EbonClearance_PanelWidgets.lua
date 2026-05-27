@@ -114,6 +114,63 @@ local function MakeLabel(parent, text, x, y)
 end
 NS.MakeLabel = MakeLabel
 
+-- MakeHelpIcon: small clickable [?] anchored next to a setting widget.
+-- Clicking deep-links into the Help panel via NS.OpenHelpEntry(entryId),
+-- which opens Help, expands the section containing the target entry,
+-- scrolls the entry to the top of the viewport, and briefly flashes it.
+-- See EbonClearance_HelpPanel.lua for NS.OpenHelpEntry.
+--
+-- Args:
+--   parent       - frame to parent the icon to
+--   anchorWidget - widget to anchor next to (the setting's label or row)
+--   anchorPoint  - anchor point ON the icon (typically "LEFT")
+--   relPoint     - anchor point on the target widget (typically "RIGHT")
+--   xOff, yOff   - pixel offset (defaults 4, 0 if nil)
+--   entryId      - stable id of the Help entry to deep-link to (e.g. "gate-keep-list-blocks")
+--
+-- Returns the Button frame so the caller can chain further anchors.
+local function MakeHelpIcon(parent, anchorWidget, anchorPoint, relPoint, xOff, yOff, entryId)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(20, 18)
+    btn:SetPoint(anchorPoint, anchorWidget, relPoint, xOff or 4, yOff or 0)
+    btn:RegisterForClicks("LeftButtonUp")
+
+    local fs = btn:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    fs:SetAllPoints(btn)
+    fs:SetJustifyH("CENTER")
+    fs:SetJustifyV("MIDDLE")
+    fs:SetText("|cffffff00[?]|r")
+    btn:SetFontString(fs)
+
+    -- Hover highlight + GameTooltip prompt.
+    btn:SetScript("OnEnter", function(self)
+        fs:SetText("|cffffffaa[?]|r")
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Click for help", 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    btn:SetScript("OnLeave", function()
+        fs:SetText("|cffffff00[?]|r")
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
+
+    btn:SetScript("OnClick", function()
+        if NS.OpenHelpEntry then
+            NS.OpenHelpEntry(entryId)
+        end
+        if PlaySound then
+            PlaySound("igMainMenuOptionCheckBoxOn")
+        end
+    end)
+
+    return btn
+end
+NS.AddHelpIcon = MakeHelpIcon
+
 local function AddCheckbox(parent, name, anchor, labelText, getter, setter, yOff)
     local cb = CreateFrame("CheckButton", name, parent, "InterfaceOptionsCheckButtonTemplate")
     cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOff or -6)

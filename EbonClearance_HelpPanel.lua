@@ -676,16 +676,34 @@ HelpPanel:SetScript("OnShow", function(self)
             end
         end
         if prevFull and NS.FitScrollContent then
-            NS.FitScrollContent(chrome:GetParent(), prevFull)
+            -- Two-stage fit: (1) size chromeOuter to fit the last rendered
+            -- widget, then (2) size the OUTER scroll content (chromeOuter's
+            -- parent, returned by initPanel's wrapScroll) to fit chromeOuter.
+            -- Without step (2), the outer scroll content stays at the
+            -- SetHeight(1) it gets in EC_WrapPanelInScrollFrame, so
+            -- GetVerticalScrollRange returns 0 and SetVerticalScroll can't
+            -- actually move the scroll - which silently broke deep-link
+            -- scroll-to-entry from settings panels' [?] icons.
+            local chromeOuter = chrome:GetParent()
+            local scrollContent = chromeOuter and chromeOuter:GetParent()
+            NS.FitScrollContent(chromeOuter, prevFull)
+            if scrollContent then
+                NS.FitScrollContent(scrollContent, chromeOuter)
+            end
         end
 
-        -- Consume any pending deep-link target from NS.OpenHelpEntry.
-        -- Scrolls the target entry to the top of the outer scroll viewport
-        -- and briefly flashes its q FontString. NS.Delay's two-pass pattern
-        -- (matching FitScrollContent) waits for FontString heights to settle.
+        -- Pending deep-link target from NS.OpenHelpEntry. The id is NOT
+        -- consumed here - InterfaceOptionsFrame_OpenToCategory's
+        -- double-call workaround fires OnShow twice in rapid succession,
+        -- and if the first refreshLayout cleared the id, the second
+        -- refreshLayout (which runs AFTER the scroll-content height has
+        -- settled enough to make SetVerticalScroll work) would have
+        -- nothing to scroll to. Instead we leave the id in place; each
+        -- refreshLayout re-schedules the (idempotent) scroll, and a
+        -- single delayed cleanup task clears the id ~1s after the first
+        -- pass so a future fresh open starts clean.
         if panel._pendingScrollEntryId then
             local targetId = panel._pendingScrollEntryId
-            panel._pendingScrollEntryId = nil
 
             -- Locate the renderItem whose entry has this id. renderItems is
             -- built from EC_HELP_ENTRIES in order: section markers, then
@@ -743,8 +761,15 @@ HelpPanel:SetScript("OnShow", function(self)
                         scrollFrame:SetVerticalScroll(offset)
                     end
                     if NS.Delay then
-                        NS.Delay(0.1, doScroll)
-                        NS.Delay(0.5, doScroll)
+                        -- Three passes: the first two (0.2s + 0.6s) cover
+                        -- both FitScrollContent ticks (which fire at 0.1s +
+                        -- 0.5s) so the scrollRange is settled before we
+                        -- read it. The third pass at 0.9s catches the case
+                        -- where a second OnShow re-fired between the
+                        -- earlier passes and reset things.
+                        NS.Delay(0.2, doScroll)
+                        NS.Delay(0.6, doScroll)
+                        NS.Delay(0.9, doScroll)
                     else
                         doScroll()
                     end
@@ -757,6 +782,24 @@ HelpPanel:SetScript("OnShow", function(self)
                         if targetWidget and targetWidget.SetTextColor then
                             targetWidget:SetTextColor(1, 1, 1)
                         end
+                    end)
+                end
+            end
+
+            -- Schedule cleanup ONCE (subsequent refreshLayouts during the
+            -- same deep-link won't re-schedule). The id is cleared ~1s
+            -- after the first refreshLayout that saw it, well after the
+            -- scroll passes have fired. Without this, a fresh future
+            -- deep-link with no entryId (the defensive fall-through in
+            -- NS.OpenHelpEntry) would re-trigger the same scroll.
+            if not panel._pendingScrollCleanupScheduled then
+                panel._pendingScrollCleanupScheduled = true
+                if NS.Delay then
+                    NS.Delay(1.0, function()
+                        if panel._pendingScrollEntryId == targetId then
+                            panel._pendingScrollEntryId = nil
+                        end
+                        panel._pendingScrollCleanupScheduled = false
                     end)
                 end
             end

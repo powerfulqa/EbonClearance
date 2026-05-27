@@ -582,8 +582,18 @@ function NS.OpenHelpEntry(entryId)
         scrollFrame:SetVerticalScroll(offset)
     end
 
+    -- Single scroll pass at +0.7s. The id-based widget lookup
+    -- (findEntryWidget matches item.id directly, no counting through
+    -- two parallel lists) gives a stable widget reference that
+    -- survives multiple refreshLayouts. By +0.7s, refreshLayout has
+    -- run (OnShow fires synchronously from OpenToCategory) and both
+    -- FitScrollContent ticks (0.1s, 0.5s) have settled the outer
+    -- scroll content's height + range. A previous attempt at a
+    -- second +1.3s confirmation pass caused visible whiplash when
+    -- something between the passes reset the scroll and the second
+    -- pass bailed (widget hidden) - one pass at +0.7s is the
+    -- sweet spot for both responsiveness and correctness.
     NS.Delay(0.7, doScroll)
-    NS.Delay(1.3, doScroll)
 
     -- Flash: yellow tint pulse for ~0.5s, then restore. Fires once at
     -- +0.7s when the user first sees the target land.

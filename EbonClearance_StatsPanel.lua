@@ -22,12 +22,17 @@ local StatsPanel = CreateFrame("Frame", "EbonClearanceOptionsStats", InterfaceOp
 StatsPanel.name = "Stats"
 StatsPanel.parent = "EbonClearance"
 
-StatsPanel:SetScript("OnShow", function(panel)
-    EC_compCache.initPanel(panel, function(self)
+StatsPanel:SetScript("OnShow", function(self)
+    EC_compCache.initPanel(self, function(refreshSelf)
         if NS.RefreshStats then
             NS.RefreshStats()
         end
-    end, function(self, content)
+    end, function(buildSelf, content)
+        -- Alias buildSelf as `panel` so the explicit panel.statsX = fs
+        -- assignments below stay literal. The test suite scans for
+        -- `panel.statsMoney`, `panel.statsSessionGPH`, `panel.statsBestGPH`
+        -- as the public contract with RefreshStats - keep the literals.
+        local panel = buildSelf
         -- Heading. Same -16 y offset as Keep List / Sell List etc.
         NS.MakeHeader(content, "Stats", -16)
 
@@ -83,11 +88,16 @@ StatsPanel:SetScript("OnShow", function(panel)
         resetBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -10)
         resetBtn:SetText("Reset Lifetime Stats")
         resetBtn:SetScript("OnClick", function()
-            if NS.ResetLifetimeStats then
-                NS.ResetLifetimeStats()
-            end
-            if NS.RefreshStats then
-                NS.RefreshStats()
+            local dialog = StaticPopup_Show("EC_CONFIRM_RESET_LIFETIME")
+            if dialog then
+                dialog.data = function()
+                    if NS.ResetLifetimeStats then
+                        NS.ResetLifetimeStats()
+                    end
+                    if NS.RefreshStats then
+                        NS.RefreshStats()
+                    end
+                end
             end
         end)
 

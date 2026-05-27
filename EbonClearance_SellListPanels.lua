@@ -33,7 +33,8 @@ WhitelistPanel:SetScript("OnShow", function(self)
             self.listUI:Refresh()
         end
     end, function(self)
-        NS.MakeHeader(self, "Sell List", -16)
+        local heading = NS.MakeHeader(self, "Sell List", -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
 
         -- Panel-specific description only. Cross-cutting info (grey junk
         -- auto-sell, quality threshold) lives on the Main panel to avoid
@@ -86,7 +87,8 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
             self.listUI:Refresh()
         end
     end, function(self)
-        NS.MakeHeader(self, "Account Sell List", -16)
+        local heading = NS.MakeHeader(self, "Account Sell List", -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "share-sell-list-across-chars")
         local descLabel = NS.MakeLabel(
             self,
             "Items |cffffff00every|r character on this account should sell. Good for shared trash like reagents or seasonal drops.",

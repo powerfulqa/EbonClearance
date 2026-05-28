@@ -473,7 +473,92 @@ function EC_compCache.refreshProcessPanel()
     EC_compCache.rearmProcessButton()
 end
 
+-- v2.37.3: combat-lockdown defensive path. The Process Bags panel
+-- contains a SecureActionButton (the "Process Next" cast button), and
+-- SecureActionButtonTemplate creation + the SetAttribute calls inside
+-- the build callback are protected during combat lockdown. Two bugs
+-- reported in-game on v2.37.x:
+--   (1) Switching FROM Process Bags TO another EC list panel during
+--       combat leaves the Process Bags rows bleeding through behind
+--       the new panel - the Interface Options framework's Hide()
+--       propagation breaks on the secure-button-having panel.
+--   (2) First-time open of Process Bags via the sidebar during combat
+--       (which bypasses the minimap middle-click defer) aborts the
+--       build callback partway, leaving self.inited=true but most
+--       widgets unbuilt. Subsequent opens take the refresh path and
+--       the panel stays empty.
+--
+-- Fix (1) - OnHide: hide the scroll content frame explicitly so the
+--   rows can't render even if the framework's Hide didn't propagate.
+-- Fix (2) - OnShow: if we're not yet built AND in combat lockdown,
+--   show a placeholder message and arm a one-shot retry on
+--   PLAYER_REGEN_ENABLED that Hides + Shows the panel to re-trigger
+--   OnShow once lockdown clears.
+local function EC_ensureCombatPlaceholder(self)
+    if self.combatPlaceholder then
+        return self.combatPlaceholder
+    end
+    local fs = self:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    fs:SetPoint("CENTER")
+    fs:SetJustifyH("CENTER")
+    fs:SetText("|cffffb84dProcess Bags will load when combat ends.|r")
+    fs:Hide()
+    self.combatPlaceholder = fs
+    return fs
+end
+
+local function EC_armCombatExitRetry(self)
+    if self._combatExitRetryFrame then
+        return
+    end
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_REGEN_ENABLED")
+    f:SetScript("OnEvent", function()
+        f:UnregisterAllEvents()
+        self._combatExitRetryFrame = nil
+        if self.combatPlaceholder then
+            self.combatPlaceholder:Hide()
+        end
+        if not self.inited and self:IsShown() then
+            -- Re-fire OnShow now that lockdown is clear so initPanel's
+            -- build callback can run the secure-attribute calls.
+            self:Hide()
+            self:Show()
+        end
+    end)
+    self._combatExitRetryFrame = f
+end
+
+ProcessBagsPanel:SetScript("OnHide", function(self)
+    -- Belt-and-braces hide: when the Interface Options framework can't
+    -- propagate hide cleanly through the secure-button-having panel,
+    -- the scroll content frame keeps its rows visible behind whichever
+    -- panel shows next. Explicit Hide() on the scroll background
+    -- propagates to its rowScroll + rowContent + every row child.
+    if self.processScrollBg then
+        self.processScrollBg:Hide()
+    end
+end)
+
 ProcessBagsPanel:SetScript("OnShow", function(self)
+    -- v2.37.3: defer first-time build until out of combat. The secure
+    -- attributes set inside the build callback (castBtn type, macro,
+    -- click registration) are protected and will silently abort the
+    -- build mid-way during lockdown, leaving the panel in a half-
+    -- initialised state that subsequent OnShow refresh-paths can't
+    -- recover from.
+    if not self.inited and InCombatLockdown and InCombatLockdown() then
+        local placeholder = EC_ensureCombatPlaceholder(self)
+        placeholder:Show()
+        EC_armCombatExitRetry(self)
+        return
+    end
+    -- v2.37.3: re-show the scroll content that OnHide explicitly
+    -- hid above. Without this, returning to Process Bags after a
+    -- panel switch would leave the rows hidden.
+    if self.processScrollBg then
+        self.processScrollBg:Show()
+    end
     local DB = NS.DB
     EC_compCache.initPanel(self, function(self)
         if self.includeSoulboundCB then

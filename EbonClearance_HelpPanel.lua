@@ -139,6 +139,12 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsCharacter",
     },
     {
+        id = "tshoot-item-level-overlay",
+        q = "Show item levels on your gear slots",
+        a = "Tick 'Show item level on slots' in the panel below to paint the iLvl in the bottom-right corner of every equippable item. The setting has 3 sub-toggles: bags (default on when the master flips on), character sheet & inspect, and merchant. Consumables and quest items are skipped. Quality-coloured.",
+        panel = "EbonClearanceOptionsCharacter",
+    },
+    {
         id = "tshoot-disable-per-char",
         q = "How do I disable EbonClearance on one specific character?",
         a = "Right-click the minimap button on that character to toggle the addon off, or type /ec and use the toggle on the Main panel. The setting is per-character; other characters stay enabled.",
@@ -361,6 +367,24 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
+        id = "label-already-known",
+        q = "Already known by this character",
+        a = "A grey line under the EC verdict. Appears on any tome or recipe your character has already learned, even when tome/recipe protection is off. Quick visual cue when you're deciding whether to vendor a duplicate or save it for an alt.",
+        panel = nil,
+    },
+    {
+        id = "label-list-affix-gated",
+        q = "(affix-gated) tag on a list entry",
+        a = "A small grey tag in the Sell / Keep / Delete list panels. Shows the item carries a random affix. The list rule applies to the base itemID, but each drop has its own affix roll - protection still filters per-drop, so adding the itemID to a Sell List does not blanket-sell every future drop. Tag appears the first time you hover the item after adding it (or right away if you add it via Alt+Right-Click).",
+        panel = nil,
+    },
+    {
+        id = "label-list-hit-proc",
+        q = "(Hit-proc) tag on a list entry",
+        a = "Same idea as (affix-gated) but for items carrying a chance-on-hit proc. The list rule covers the base itemID, but each drop has its own proc - protection still filters per-drop. Adding an itemID with a proc to a Sell List does not blanket-sell every future drop.",
+        panel = nil,
+    },
+    {
         id = "label-will-sell",
         q = "Will Sell",
         a = "Item is on your Sell List. EbonClearance will vendor it the next time you visit a merchant.",
@@ -478,6 +502,12 @@ local EC_HELP_ENTRIES = {
         id = "bug-dm-vs-thread",
         q = "Direct message vs. the thread",
         a = "Post in the thread - other players hit the same bugs and the public answer helps everyone.",
+        panel = nil,
+    },
+    {
+        id = "bug-affix-debug",
+        q = "Affix detection bug? Record an event trail",
+        a = "If a tooltip says 'Keep (affix rank known)' but the merchant cycle still sells the item, run |cffffff00/ec affixdebug on|r to start recording. Reproduce the bug (hover the item, hit the vendor, etc.), then run |cffffff00/ec affixdebug dump|r - a copyable window opens with the event log. Paste that into the bug report. Sub-commands: on, off, status, dump, clear.",
         panel = nil,
     },
 }

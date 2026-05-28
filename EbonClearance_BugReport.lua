@@ -330,73 +330,207 @@ local function EC_BuildBugReport()
     add("Random-affix allow list (per-description): " .. tostring(allowedAffixCount))
     add("Known affix descriptions in session set: " .. tostring(knownAffixCount))
     add("Allow exact-rank duplicates: " .. (DB.affixAllowExactDupes and "yes" or "no"))
+    -- v2.37.0 (Borrow A): surface the affix debug log status. When the
+    -- log has rows, prompt the reporter to also include /ec affixdebug
+    -- dump so the maintainer gets the structured event trail.
+    local affixDebugRows = (ADB and ADB.affixDebug and type(ADB.affixDebug.rows) == "table") and #ADB.affixDebug.rows or 0
+    add("Affix debug log: "
+        .. ((ADB and ADB.affixDebugEnabled) and "ON" or "off")
+        .. ", "
+        .. tostring(affixDebugRows)
+        .. " row(s) recorded"
+        .. (affixDebugRows > 0 and " - run /ec affixdebug dump and include that output too" or "")
+    )
 
     add("")
     add("--- Bags ---")
     add("Free Slots: " .. tostring(NS.GetFreeBagSlots()))
+
+    -- v2.37.0: installed addons section. Walks GetNumAddOns() and
+    -- lists every LOADED addon by title + version. Maintainer can
+    -- spot bag-management / vendor / loot addons that may race with
+    -- EC's hooks, which makes "the addon isn't doing X" reports
+    -- diagnosable from the first read rather than after a back-and-
+    -- forth about the user's setup. Disabled addons are excluded -
+    -- they're not running and can't conflict.
+    add("")
+    add("--- Loaded Addons ---")
+    local n = GetNumAddOns and GetNumAddOns() or 0
+    if n == 0 then
+        add("(GetNumAddOns unavailable)")
+    else
+        local entries = {}
+        for i = 1, n do
+            local name, title, _, _, _, reason, _ = GetAddOnInfo(i)
+            local loaded = IsAddOnLoaded and IsAddOnLoaded(i)
+            if loaded then
+                local meta = GetAddOnMetadata and GetAddOnMetadata(i, "Version") or nil
+                local rawTitle = (title and title ~= "") and title or (name or "?")
+                -- Strip Blizzard's colour escapes so the report stays
+                -- pasteable into plain-text contexts.
+                local cleanTitle = rawTitle:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                entries[#entries + 1] = {
+                    name = name or "?",
+                    title = cleanTitle,
+                    version = meta or "",
+                }
+            end
+        end
+        table.sort(entries, function(a, b) return a.name < b.name end)
+        if #entries == 0 then
+            add("(no addons reported as loaded)")
+        else
+            add("Loaded: " .. tostring(#entries))
+            for _, e in ipairs(entries) do
+                if e.version ~= "" then
+                    add("  " .. e.name .. " (" .. e.title .. ") v" .. e.version)
+                else
+                    add("  " .. e.name .. " (" .. e.title .. ")")
+                end
+            end
+        end
+    end
 
     return table.concat(lines, "\n")
 end
 
 local EC_bugReportFrame = nil
 
-local function EC_ShowBugReport()
-    if not EC_bugReportFrame then
-        local f = CreateFrame("Frame", "EbonClearanceBugReportFrame", UIParent)
-        f:SetSize(460, 360)
-        f:SetPoint("CENTER")
-        f:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true,
-            tileSize = 32,
-            edgeSize = 32,
-            insets = { left = 8, right = 8, top = 8, bottom = 8 },
-        })
-        f:SetMovable(true)
-        f:EnableMouse(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", f.StartMoving)
-        f:SetScript("OnDragStop", f.StopMovingOrSizing)
-        f:SetFrameStrata("DIALOG")
-        tinsert(UISpecialFrames, "EbonClearanceBugReportFrame")
-
-        local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-        title:SetPoint("TOP", 0, -14)
-        title:SetText("EbonClearance Bug Report")
-
-        local hint = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-        hint:SetText("|cff888888Press Ctrl+A then Ctrl+C to copy this report.|r")
-
-        local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-        closeBtn:SetPoint("TOPRIGHT", -4, -4)
-
-        local scroll = CreateFrame("ScrollFrame", "EbonClearanceBugReportScroll", f, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 16, -50)
-        scroll:SetPoint("BOTTOMRIGHT", -32, 16)
-
-        local editBox = CreateFrame("EditBox", "EbonClearanceBugReportBox", scroll)
-        editBox:SetAutoFocus(false)
-        editBox:SetMultiLine(true)
-        editBox:SetFontObject("GameFontHighlightSmall")
-        editBox:SetWidth(400)
-        editBox:SetText("")
-        editBox:SetScript("OnEscapePressed", function(s)
-            s:ClearFocus()
-        end)
-        scroll:SetScrollChild(editBox)
-
-        f.editBox = editBox
-        EC_bugReportFrame = f
+-- v2.37.0: the BugReport display frame is now shared between the
+-- /ec bugreport snapshot path and the new /ec affixdebug dump path.
+-- Title FontString is hoisted to the frame so callers can swap the
+-- header text; the rest of the frame chrome (size, scroll, edit box,
+-- close button, drag) is identical between both call sites.
+local function EC_EnsureCopyFrame()
+    if EC_bugReportFrame then
+        return EC_bugReportFrame
     end
+    local f = CreateFrame("Frame", "EbonClearanceBugReportFrame", UIParent)
+    f:SetSize(460, 360)
+    f:SetPoint("CENTER")
+    f:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets = { left = 8, right = 8, top = 8, bottom = 8 },
+    })
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetFrameStrata("DIALOG")
+    tinsert(UISpecialFrames, "EbonClearanceBugReportFrame")
 
-    local report = EC_BuildBugReport()
-    EC_bugReportFrame.editBox:SetText(report)
-    EC_bugReportFrame:Show()
-    EC_bugReportFrame.editBox:HighlightText()
-    EC_bugReportFrame.editBox:SetFocus()
-    NS.PrintNice("Bug report generated. Copy the text from the window.")
+    local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    title:SetPoint("TOP", 0, -14)
+    title:SetText("EbonClearance Bug Report")
+    f.title = title
+
+    local hint = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
+    hint:SetText("|cff888888Press Ctrl+A then Ctrl+C to copy this report.|r")
+
+    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
+
+    local scroll = CreateFrame("ScrollFrame", "EbonClearanceBugReportScroll", f, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 16, -50)
+    scroll:SetPoint("BOTTOMRIGHT", -32, 16)
+
+    local editBox = CreateFrame("EditBox", "EbonClearanceBugReportBox", scroll)
+    editBox:SetAutoFocus(false)
+    editBox:SetMultiLine(true)
+    editBox:SetFontObject("GameFontHighlightSmall")
+    editBox:SetWidth(400)
+    editBox:SetText("")
+    editBox:SetScript("OnEscapePressed", function(s)
+        s:ClearFocus()
+    end)
+    scroll:SetScrollChild(editBox)
+
+    f.editBox = editBox
+    EC_bugReportFrame = f
+    return f
+end
+
+local function EC_ShowCopyFrame(titleText, bodyText, chatHint)
+    local f = EC_EnsureCopyFrame()
+    if f.title and titleText then
+        f.title:SetText(titleText)
+    end
+    f.editBox:SetText(bodyText or "")
+    f:Show()
+    f.editBox:HighlightText()
+    f.editBox:SetFocus()
+    if chatHint then
+        NS.PrintNice(chatHint)
+    end
+end
+
+local function EC_ShowBugReport()
+    EC_ShowCopyFrame(
+        "EbonClearance Bug Report",
+        EC_BuildBugReport(),
+        "Bug report generated. Copy the text from the window."
+    )
+end
+
+-- v2.37.0 (Borrow A): serialise ADB.affixDebug to a human-readable
+-- dump. Rows are emitted one per line in chronological order with
+-- their kind, timestamp, and key/value pairs from the data table.
+-- Output is plain text (not JSON) so it pastes cleanly into Discord
+-- threads / GitHub issues without code-fence escaping headaches.
+local function EC_BuildAffixDebugDump()
+    local lines = {}
+    local function add(s)
+        lines[#lines + 1] = s
+    end
+    add("=== EbonClearance Affix Debug Dump ===")
+    add("Generated: " .. (date and date("%Y-%m-%d %H:%M:%S") or "?"))
+    add("Player: " .. (UnitName("player") or "?") .. "-" .. (GetRealmName() or "?"))
+    add("Addon: " .. (NS.GetVersion and NS.GetVersion() or "?"))
+
+    local ADB = NS.ADB
+    local dump = ADB and ADB.affixDebug
+    if not dump or type(dump.rows) ~= "table" or #dump.rows == 0 then
+        add("")
+        add("No rows recorded. Enable with |cffffff00/ec affixdebug on|r, reproduce, then re-run dump.")
+        return table.concat(lines, "\n")
+    end
+    add("Enabled: " .. (ADB.affixDebugEnabled and "yes" or "no (still showing previously recorded rows)"))
+    add("Rows: " .. tostring(#dump.rows))
+    add("Sequence high: " .. tostring(dump.sequence or 0))
+    add("")
+    for _, row in ipairs(dump.rows) do
+        local stamp = row.date or string.format("t+%.2f", row.time or 0)
+        local parts = {}
+        if type(row.data) == "table" then
+            for k, v in pairs(row.data) do
+                parts[#parts + 1] = string.format("%s=%s", tostring(k), tostring(v))
+            end
+            table.sort(parts)
+        end
+        add(string.format(
+            "#%-5d [%s] %s | %s",
+            row.n or 0,
+            stamp,
+            row.kind or "?",
+            table.concat(parts, ", ")
+        ))
+    end
+    return table.concat(lines, "\n")
+end
+
+local function EC_ShowAffixDebugDump()
+    EC_ShowCopyFrame(
+        "EbonClearance Affix Debug Dump",
+        EC_BuildAffixDebugDump(),
+        "Affix debug dump generated. Copy the text from the window."
+    )
 end
 
 NS.ShowBugReport = EC_ShowBugReport
+NS.ShowAffixDebugDump = EC_ShowAffixDebugDump

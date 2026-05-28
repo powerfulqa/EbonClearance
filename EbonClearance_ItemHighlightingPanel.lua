@@ -54,22 +54,28 @@ CharPanel:SetScript("OnShow", function(self)
         if self.showItemIDCB then
             self.showItemIDCB:SetChecked(DB.showItemIDOnTooltip)
         end
-    end, function(self)
-        NS.MakeHeader(self, "Item Highlighting", -16)
+    end, function(self, content)
+        -- v2.37.0 (Borrow C polish): the panel is scroll-wrapped because
+        -- the iLvl section + slider pushed total content past the
+        -- Interface Options sub-panel's natural height. Widgets parent
+        -- to `content` (the scroll-wrapped child) so resize follows the
+        -- panel; `self.xxxCB = ...` storage stays on the panel frame
+        -- so the OnShow refresh callback can still find the widgets.
+        NS.MakeHeader(content, "Item Highlighting", -16)
         -- v2.30.x: panel repurposed from "Character Settings" to focus
         -- entirely on bag-item highlighting. The per-character enable
         -- allowlist was removed (minimap toggle covers that use case);
         -- DB.enableOnlyListedChars is force-disabled in EnsureDB and
         -- DB.allowedChars sits dormant in the SV for downgrade safety.
         local bagDesc = NS.MakeLabel(
-            self,
+            content,
             "Coloured borders around bag items so you can see what will sell, what's junk, and what's protected - at a glance. Icons are untouched.",
             16,
             -44
         )
 
         local sbCB =
-            CreateFrame("CheckButton", "EbonClearanceSellBorderCB", self, "InterfaceOptionsCheckButtonTemplate")
+            CreateFrame("CheckButton", "EbonClearanceSellBorderCB", content, "InterfaceOptionsCheckButtonTemplate")
         sbCB:SetPoint("TOPLEFT", bagDesc, "BOTTOMLEFT", 0, -8)
         sbCB:SetChecked(DB.sellBorderEnabled)
 
@@ -92,7 +98,7 @@ CharPanel:SetScript("OnShow", function(self)
         end)
         self.sellBorderCB = sbCB
         if sbText then
-            NS.AddHelpIcon(self, sbText, "LEFT", "RIGHT", 6, 0, "tshoot-bag-borders")
+            NS.AddHelpIcon(content, sbText, "LEFT", "RIGHT", 6, 0, "tshoot-bag-borders")
         end
 
         -- v2.30.x: per-category colour pickers. One enable checkbox +
@@ -122,7 +128,7 @@ CharPanel:SetScript("OnShow", function(self)
             local catCB = CreateFrame(
                 "CheckButton",
                 "EbonClearanceSellBorderCB_" .. key,
-                self,
+                content,
                 "InterfaceOptionsCheckButtonTemplate"
             )
             local xOff = (i == 1) and 18 or 0
@@ -150,7 +156,7 @@ CharPanel:SetScript("OnShow", function(self)
 
             -- Per-category swatch and Change-colour button on the same
             -- row, to the right of the label.
-            local catSwatch = self:CreateTexture(nil, "OVERLAY")
+            local catSwatch = content:CreateTexture(nil, "OVERLAY")
             catSwatch:SetSize(16, 16)
             catSwatch:SetPoint("LEFT", catCBText or catCB, "RIGHT", 12, 0)
             catSwatch:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -168,7 +174,7 @@ CharPanel:SetScript("OnShow", function(self)
             local catBtn = CreateFrame(
                 "Button",
                 "EbonClearanceSellBorderColorBtn_" .. key,
-                self,
+                content,
                 "UIPanelButtonTemplate"
             )
             catBtn:SetSize(110, 22)
@@ -228,20 +234,168 @@ CharPanel:SetScript("OnShow", function(self)
             lastRowAnchor = catCB
         end
 
+        -- v2.37.0 (Borrow C): item-level text overlay. Master toggle +
+        -- 3 sub-toggles for the surfaces it can paint (bags / paperdoll
+        -- / merchant). Sub-toggles disable when the master is off so
+        -- the player doesn't accidentally configure a hidden state.
+        -- First-enable seeding (bags on, others off) happens in EnsureDB
+        -- so it's idempotent across /reload + survives Reset Lifetime.
+        -- The -18 x-offset un-nests this section header from the
+        -- indented per-category rows above.
+        local iLvlHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        iLvlHeader:SetPoint("TOPLEFT", lastRowAnchor, "BOTTOMLEFT", -18, -16)
+        iLvlHeader:SetText("Item level on equipment slots")
+
+        local iLvlMainCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceILvlMainCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        iLvlMainCB:SetPoint("TOPLEFT", iLvlHeader, "BOTTOMLEFT", 0, -6)
+        iLvlMainCB:SetChecked(DB.itemLevelOverlay.enabled)
+        local iLvlMainText = _G[iLvlMainCB:GetName() .. "Text"]
+        if iLvlMainText then
+            iLvlMainText:SetText("Show item level on slots")
+            iLvlMainText:SetJustifyH("LEFT")
+        end
+        if iLvlMainText then
+            NS.AddHelpIcon(content, iLvlMainText, "LEFT", "RIGHT", 6, 0, "tshoot-item-level-overlay")
+        end
+
+        local ITEM_LEVEL_SUB_TOGGLES = {
+            { key = "bags", label = "On bags (and bank)" },
+            { key = "paperdoll", label = "On character sheet & inspect" },
+            { key = "merchant", label = "On merchant window" },
+        }
+        local iLvlSubCBs = {}
+
+        local function syncILvlSubsEnabled()
+            for _, sub in ipairs(ITEM_LEVEL_SUB_TOGGLES) do
+                local cb = iLvlSubCBs[sub.key]
+                if cb then
+                    if DB.itemLevelOverlay.enabled then
+                        cb:Enable()
+                    else
+                        cb:Disable()
+                    end
+                    cb:SetChecked(DB.itemLevelOverlay[sub.key])
+                end
+            end
+        end
+
+        iLvlMainCB:SetScript("OnClick", function()
+            DB.itemLevelOverlay.enabled = iLvlMainCB:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            syncILvlSubsEnabled()
+            if NS.RefreshItemLevelOverlay then
+                NS.RefreshItemLevelOverlay()
+            end
+        end)
+
+        local lastILvlAnchor = iLvlMainCB
+        for i, sub in ipairs(ITEM_LEVEL_SUB_TOGGLES) do
+            local cb = CreateFrame(
+                "CheckButton",
+                "EbonClearanceILvlCB_" .. sub.key,
+                content,
+                "InterfaceOptionsCheckButtonTemplate"
+            )
+            local xOff = (i == 1) and 18 or 0
+            cb:SetPoint("TOPLEFT", lastILvlAnchor, "BOTTOMLEFT", xOff, -4)
+            cb:SetChecked(DB.itemLevelOverlay[sub.key])
+            local cbText = _G[cb:GetName() .. "Text"]
+            if cbText then
+                cbText:SetText(sub.label)
+                cbText:SetJustifyH("LEFT")
+            end
+            cb:SetScript("OnClick", function()
+                DB.itemLevelOverlay[sub.key] = cb:GetChecked() and true or false
+                PlaySound("igMainMenuOptionCheckBoxOn")
+                if NS.RefreshItemLevelOverlay then
+                    NS.RefreshItemLevelOverlay()
+                end
+            end)
+            iLvlSubCBs[sub.key] = cb
+            lastILvlAnchor = cb
+        end
+        syncILvlSubsEnabled()
+
+        -- v2.37.0 (Borrow C polish): font-size slider for the iLvl text.
+        -- Default 12 (matches the original NumberFontNormalSmall size);
+        -- player can scale down to 6 for crowded bag layouts or up to
+        -- 20 for high-DPI displays. The slider greys out alongside the
+        -- sub-toggles when the master is off.
+        local iLvlSlider = CreateFrame(
+            "Slider",
+            "EbonClearanceILvlFontSizeSlider",
+            content,
+            "OptionsSliderTemplate"
+        )
+        iLvlSlider:SetPoint("TOPLEFT", lastILvlAnchor, "BOTTOMLEFT", 0, -18)
+        iLvlSlider:SetWidth(180)
+        iLvlSlider:SetMinMaxValues(6, 20)
+        iLvlSlider:SetValueStep(1)
+        iLvlSlider:SetValue(DB.itemLevelOverlay.fontSize or 12)
+        if iLvlSlider.SetObeyStepOnDrag then
+            iLvlSlider:SetObeyStepOnDrag(true)
+        end
+        _G[iLvlSlider:GetName() .. "Low"]:SetText("6")
+        _G[iLvlSlider:GetName() .. "High"]:SetText("20")
+        local iLvlSliderText = _G[iLvlSlider:GetName() .. "Text"]
+        if iLvlSliderText then
+            iLvlSliderText:SetText("Item level font size: " .. (DB.itemLevelOverlay.fontSize or 12))
+        end
+        iLvlSlider:SetScript("OnValueChanged", function(slider, value)
+            value = math.floor((value or 12) + 0.5)
+            if value < 6 then
+                value = 6
+            elseif value > 20 then
+                value = 20
+            end
+            DB.itemLevelOverlay.fontSize = value
+            if iLvlSliderText then
+                iLvlSliderText:SetText("Item level font size: " .. value)
+            end
+            if NS.RefreshItemLevelOverlay then
+                NS.RefreshItemLevelOverlay()
+            end
+        end)
+
+        local function syncILvlSliderEnabled()
+            if DB.itemLevelOverlay.enabled then
+                iLvlSlider:Enable()
+            else
+                iLvlSlider:Disable()
+            end
+        end
+        syncILvlSliderEnabled()
+        -- Tie the slider's enable state to the master toggle so the
+        -- player can't drag the font size while the feature is off.
+        local oldMainOnClick = iLvlMainCB:GetScript("OnClick")
+        iLvlMainCB:SetScript("OnClick", function(...)
+            if oldMainOnClick then
+                oldMainOnClick(...)
+            end
+            syncILvlSliderEnabled()
+        end)
+
+        lastRowAnchor = iLvlSlider
+
         -- Tooltip section. Opt-in itemID annotation that appends the
         -- numeric item ID to the EC tooltip status line. Defaults OFF;
         -- power users (bug reports, list authoring by ID) flip this on.
         -- The -18 x-offset un-nests this section from the indented
         -- per-category rows above so the header aligns with the master
         -- sell-border toggle.
-        local tipHeader = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        local tipHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         tipHeader:SetPoint("TOPLEFT", lastRowAnchor, "BOTTOMLEFT", -18, -16)
         tipHeader:SetText("Tooltip")
 
         local idCB = CreateFrame(
             "CheckButton",
             "EbonClearanceShowItemIDCB",
-            self,
+            content,
             "InterfaceOptionsCheckButtonTemplate"
         )
         idCB:SetPoint("TOPLEFT", tipHeader, "BOTTOMLEFT", 0, -6)
@@ -275,7 +429,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- Discoverability hint. The toggle takes effect on the NEXT
         -- tooltip render, not on already-visible ones - tell the user
         -- so they don't assume a /reload is required.
-        local idHint = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        local idHint = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         idHint:SetPoint("TOPLEFT", idCB, "BOTTOMLEFT", 4, -2)
         idHint:SetText("|cff888888Move your cursor off and back on to refresh open tooltips.|r")
 
@@ -293,13 +447,25 @@ CharPanel:SetScript("OnShow", function(self)
                     cb:SetChecked(DB.sellBorderCategories[cat.key].enabled)
                 end
             end
+            -- v2.37.0 (Borrow C): re-sync the item-level overlay toggles
+            -- when the panel reshows. Same need as the sell-border row
+            -- re-sync above: a settings import or external DB mutation
+            -- could have changed DB.itemLevelOverlay since panel build.
+            if iLvlMainCB and iLvlMainCB.SetChecked then
+                iLvlMainCB:SetChecked(DB.itemLevelOverlay.enabled)
+                syncILvlSubsEnabled()
+            end
         end
 
-        -- v2.30.x: the "Allowed Characters" list UI was removed when
-        -- the per-character allowlist feature was decommissioned. The
-        -- panel now ends after the five per-category colour pickers.
-        -- The panel isn't scroll-wrapped (~244 px of content, well
-        -- under the Interface Options container's natural height) so
-        -- no FitScrollContent call is needed.
-    end)
+        -- v2.37.0 (Borrow C polish): size the scroll content frame to
+        -- fit the bottom-most widget so the scroll bar engages when the
+        -- Interface Options container is shorter than the rendered
+        -- panel (the iLvl section + slider + Tooltip section together
+        -- can exceed the natural panel height). idHint is the lowest
+        -- widget; FitScrollContent measures its bottom edge against
+        -- the content frame's TOPLEFT.
+        if NS.FitScrollContent then
+            NS.FitScrollContent(content, idHint)
+        end
+    end, true)
 end)

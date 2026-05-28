@@ -4913,6 +4913,168 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 88: v2.37.0 Borrows from Ivo's EC fork + Ebon_QoL.
+-- ---------------------------------------------------------------------------
+-- Three independent borrows landed in v2.37.0:
+--   A. AffixDebugDump diagnostic event logger + /ec affixdebug slash
+--      sub-command + /ec bugreport integration.
+--   B. "Already known by this character" tooltip annotation on tomes /
+--      recipes the player has learned. Reuses the existing
+--      tomeIsKnownCache from EbonClearance_Protection.lua.
+--   C. Item-level text overlay on equippable gear, gated by a master
+--      toggle + 3 surface sub-toggles (bags / paperdoll / merchant).
+-- See docs/specs/2026-05-28-keep-highlighting-design.md.
+do
+    local protf = io.open("EbonClearance_Protection.lua", "rb")
+    local evf2 = io.open("EbonClearance_Events.lua", "rb")
+    local ttf = io.open("EbonClearance_Tooltip.lua", "rb")
+    local bdf2 = io.open("EbonClearance_BagDisplay.lua", "rb")
+    local ihf2 = io.open("EbonClearance_ItemHighlightingPanel.lua", "rb")
+    if protf and evf2 and ttf and bdf2 and ihf2 then
+        local protSrc = protf:read("*a") or ""
+        protf:close()
+        local evSrc = evf2:read("*a") or ""
+        evf2:close()
+        local ttSrc = ttf:read("*a") or ""
+        ttf:close()
+        local bdSrc2 = bdf2:read("*a") or ""
+        bdf2:close()
+        local ihSrc2 = ihf2:read("*a") or ""
+        ihf2:close()
+
+        -- Borrow A: AffixDebugDump function + the six call sites
+        local hasFn = protSrc:find("local function AffixDebugDump") ~= nil
+            and protSrc:find("EC_compCache%.AffixDebugDump = AffixDebugDump") ~= nil
+        local kindCount = 0
+        for _ in protSrc:gmatch('AffixDebugDump%("bag%.affix%.cache"') do
+            kindCount = kindCount + 1
+        end
+        for _ in protSrc:gmatch('AffixDebugDump%("bag%.affix%.scan"') do
+            kindCount = kindCount + 1
+        end
+        for _ in protSrc:gmatch('AffixDebugDump%("spellbook%.affix%.hit"') do
+            kindCount = kindCount + 1
+        end
+        for _ in protSrc:gmatch('AffixDebugDump%("extraction%.affix%.hit"') do
+            kindCount = kindCount + 1
+        end
+        for _ in protSrc:gmatch('AffixDebugDump%("knownAffixes%.start"') do
+            kindCount = kindCount + 1
+        end
+        for _ in protSrc:gmatch('AffixDebugDump%("knownAffixes%.done"') do
+            kindCount = kindCount + 1
+        end
+        local slashOK = evSrc:find('if cmd == "affixdebug" then') ~= nil
+            and evSrc:find("affixDebugEnabled") ~= nil
+        check(
+            "Test 88: Borrow A - AffixDebugDump fn + 6 kind probes + /ec affixdebug slash",
+            hasFn and kindCount == 6 and slashOK,
+            "AffixDebugDump must be defined, exposed on EC_compCache, called at all six probe sites (bag.affix.cache, bag.affix.scan, spellbook.affix.hit, extraction.affix.hit, knownAffixes.start, knownAffixes.done), and surfaced via /ec affixdebug. Found "
+                .. tostring(kindCount)
+                .. " call sites (expected 6)."
+        )
+
+        -- Borrow B: "Already known by this character" tooltip line.
+        check(
+            "Test 88a: Borrow B - 'Already known by this character' tooltip annotation",
+            ttSrc:find("Already known by this character") ~= nil
+                and ttSrc:find("liveTooltipIsTome") ~= nil
+                and ttSrc:find("liveTooltipPlayerKnowsTome") ~= nil
+                and ttSrc:find('you have%)", 1, true') ~= nil,
+            "EC_AnnotateTooltip must add the 'Already known by this character' line for tome/recipe items the player has learned, gated on liveTooltipIsTome + liveTooltipPlayerKnowsTome, and dedupe against the existing tome-protection block's '(... you have)' label so the same info doesn't render twice."
+        )
+
+        -- v2.37.0 polish: affix protection wins over chance-on-hit in
+        -- the tooltip annotation when both apply on the same item. PE
+        -- rule: chance-on-hit can't be extracted from an affixed item
+        -- (must extract affix first), so the affix label is the
+        -- meaningful one. Test pins the dedupe pattern that prevents
+        -- the chance-on-hit block from overwriting an affix label.
+        check(
+            "Test 88a-precedence: affix label wins over chance-on-hit in tooltip",
+            ttSrc:find('affixKept = statusLine and statusLine:find%("%%%(affix rank"') ~= nil
+                and ttSrc:find("elseif affixKept then") ~= nil,
+            "EC_AnnotateTooltip's chance-on-hit block must detect an affix-rank Keep label already present in statusLine and skip the chance-on-hit override. Without this, items carrying both an affix AND a chance-on-hit proc show 'Keep (chance-on-hit proc)' instead of the more meaningful affix label."
+        )
+
+        -- Borrow C: DB schema + renderer + equipLoc whitelist.
+        local schemaOK = evSrc:find("DB%.itemLevelOverlay%.enabled = false") ~= nil
+            and evSrc:find("DB%.itemLevelOverlay%.bags = true") ~= nil
+            and evSrc:find("DB%.itemLevelOverlay%.paperdoll = false") ~= nil
+            and evSrc:find("DB%.itemLevelOverlay%.merchant = false") ~= nil
+        local rendererOK = bdSrc2:find("function EC_compCache%.applyItemLevelOverlay") ~= nil
+            and bdSrc2:find("EC_ITEM_LEVEL_EQUIP_LOCS") ~= nil
+            and bdSrc2:find("NS%.RefreshItemLevelOverlay") ~= nil
+        check(
+            "Test 88b: Borrow C - DB schema + renderer + equipLoc whitelist",
+            schemaOK and rendererOK,
+            "EnsureDB must seed DB.itemLevelOverlay {enabled=false, bags=true, paperdoll=false, merchant=false}; BagDisplay must define applyItemLevelOverlay + the EC_ITEM_LEVEL_EQUIP_LOCS whitelist + NS.RefreshItemLevelOverlay. Without the schema, the panel toggles read nil and the renderer bails."
+        )
+
+        -- Borrow C UI: master + 3 sub-toggles + the sync helper.
+        check(
+            "Test 88c: Borrow C - Item Highlighting panel surfaces master + 3 sub-toggles",
+            ihSrc2:find("EbonClearanceILvlMainCB") ~= nil
+                and ihSrc2:find('"EbonClearanceILvlCB_" %.%. sub%.key') ~= nil
+                and ihSrc2:find('{ key = "bags"') ~= nil
+                and ihSrc2:find('{ key = "paperdoll"') ~= nil
+                and ihSrc2:find('{ key = "merchant"') ~= nil
+                and ihSrc2:find("syncILvlSubsEnabled") ~= nil,
+            "Item Highlighting panel must create the master toggle frame (EbonClearanceILvlMainCB), build the 3 sub-toggle frames via the SUB_TOGGLES loop with keys bags/paperdoll/merchant, and define the syncILvlSubsEnabled helper that greys the subs out when the master is off."
+        )
+
+        -- v2.37.0 polish: Borrow C extras - font-size slider, host bag-UI
+        -- hook (Bagnon/ElvUI), and panel scroll-wrap so the new section
+        -- doesn't push existing content off the visible area.
+        check(
+            "Test 88d: Borrow C polish - font-size slider + host hook + scroll-wrap",
+            ihSrc2:find("EbonClearanceILvlFontSizeSlider") ~= nil
+                and bdSrc2:find("function EC_compCache%.installHostBagItemLevelHook") ~= nil
+                and bdSrc2:find("EC_applyItemLevelFont") ~= nil
+                and ihSrc2:find("function%(self, content%)") ~= nil
+                and ihSrc2:find("end, true%)") ~= nil
+                and ihSrc2:find("NS%.FitScrollContent%(content,") ~= nil,
+            "Borrow C polish must: (a) add EbonClearanceILvlFontSizeSlider in Item Highlighting; (b) define EC_compCache.installHostBagItemLevelHook so the bags surface paints under Bagnon/ElvUI; (c) re-apply font via EC_applyItemLevelFont so slider changes propagate; (d) scroll-wrap the panel via initPanel's wrapScroll arg + FitScrollContent so the new section doesn't push existing content off the visible area."
+        )
+
+        -- v2.37.0: parallel (Hit-proc) tag on chance-on-hit-carrying
+        -- list entries. Mirrors the (affix-gated) tag's plumbing -
+        -- account-scoped table, stamped at list-add + tooltip
+        -- backfill, rendered in ListWidget.
+        local menuf = io.open("EbonClearance_BagContextMenu.lua", "rb")
+        local lwf = io.open("EbonClearance_ListWidget.lua", "rb")
+        if menuf and lwf then
+            local menuSrc = menuf:read("*a") or ""
+            menuf:close()
+            local lwSrc = lwf:read("*a") or ""
+            lwf:close()
+            check(
+                "Test 88e: (Hit-proc) tag - schema + add-stamp + tooltip backfill + render",
+                evSrc:find('if type%(ADB%.chanceOnHitListedItems%) ~= "table" then') ~= nil
+                    and menuSrc:find("ADB%.chanceOnHitListedItems%[itemID%] = true") ~= nil
+                    and ttSrc:find("ADB%.chanceOnHitListedItems%[id%] = true") ~= nil
+                    and lwSrc:find("procSet and procSet%[id%]") ~= nil
+                    and lwSrc:find('%(Hit%-proc%)') ~= nil,
+                "Chance-on-hit list entries get a '(Hit-proc)' tag mirroring the affix-gated plumbing: EnsureAccountDB seeds the table; BagContextMenu stamps on add; Tooltip backfills on hover; ListWidget reads the set and appends the tag."
+            )
+        end
+
+        -- v2.37.0: /ec affixdebug must also appear in the Main panel's
+        -- slash command reference (not only the /ec help chat output).
+        local mpf = io.open("EbonClearance_MainPanel.lua", "rb")
+        if mpf then
+            local mpSrc = mpf:read("*a") or ""
+            mpf:close()
+            check(
+                "Test 88f: /ec affixdebug listed in Main panel slash command reference",
+                mpSrc:find("/ec affixdebug") ~= nil,
+                "The Main panel's Slash Commands section must list /ec affixdebug alongside the other commands so players can discover it without typing /ec help."
+            )
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

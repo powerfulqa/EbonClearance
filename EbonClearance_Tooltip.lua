@@ -505,8 +505,29 @@ local function EC_AnnotateTooltip(tooltip)
             or IsInSet(DB.whitelist, id)
             or (ADB and IsInSet(ADB.whitelist, id))
             or (IsInSet(DB.deleteList, id) and DB.enableDeletion)
+        -- v2.37.0: backfill the chance-on-hit-meta flag for itemIDs
+        -- already on a list. Mirrors the affixedListedItems backfill
+        -- above so pre-v2.37 entries get tagged the moment the player
+        -- hovers the item. The list panels render "(Hit-proc)" once
+        -- the flag is set.
+        if onExplicit and ADB then
+            ADB.chanceOnHitListedItems = ADB.chanceOnHitListedItems or {}
+            ADB.chanceOnHitListedItems[id] = true
+        end
+        -- v2.37.0 polish: affix protection wins over chance-on-hit when
+        -- both apply. PE rule: a chance-on-hit can't be extracted from
+        -- an item that already has an affix (you have to extract the
+        -- affix first), and players typically value the affix more.
+        -- So leave the "Keep (affix rank known/needed)" label alone
+        -- instead of overwriting with "Keep (chance-on-hit proc)". The
+        -- sell-side + delete-side decisions in EC_IsSellable and
+        -- BuildQueue already check affix first, so this aligns the
+        -- tooltip with the existing behaviour.
+        local affixKept = statusLine and statusLine:find("%(affix rank", 1, false)
         if onExplicit then
             -- Explicit list verdict stands; leave statusLine alone.
+        elseif affixKept then
+            -- Affix protection took the verdict already; leave it.
         elseif ADB.allowedItems and ADB.allowedItems[id] then
             -- Allow Sell is on. If a quality-rule already produced a
             -- "Will Sell (...)" verdict, leave it alone. Otherwise
@@ -578,6 +599,25 @@ local function EC_AnnotateTooltip(tooltip)
 
     if statusLine then
         tooltip:AddLine(statusLine)
+    end
+    -- v2.37.0 (Borrow B): grey "already known" annotation on tome /
+    -- recipe items the current character has already learned.
+    -- Surfaces the existing tomeIsKnownCache as a user-visible cue
+    -- independent of the protection toggles - players running with
+    -- protectUnlearnedTomes off AND protectAllTomes off still see
+    -- the cue. Skipped when the EC status line already carries a
+    -- "(... you have)" suffix from the tome-protection block above
+    -- so the annotation doesn't double up. Per-character via the
+    -- cache's character-scoped lifecycle (the tooltip scan runs on
+    -- THIS character's spellbook + recipe list).
+    if id
+        and EC_compCache.liveTooltipIsTome
+        and EC_compCache.liveTooltipPlayerKnowsTome
+        and EC_compCache.liveTooltipIsTome(tooltip, id)
+        and EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
+        and not (statusLine and statusLine:find(" you have)", 1, true))
+    then
+        tooltip:AddLine("|cff888888Already known by this character|r")
     end
     -- Opt-in item-ID annotation. Surfaces the numeric itemID under the
     -- EC verdict line for users filing bug reports or authoring Keep /

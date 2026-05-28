@@ -408,6 +408,10 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         -- instead of dereferencing ADB.affixedListedItems three times
         -- per visible row.
         local affixSet = (ADB and ADB.affixedListedItems) or nil
+        -- v2.37.0: parallel set for the "(Hit-proc)" annotation.
+        -- Stamped by the menu's add-to-list flow + the tooltip
+        -- backfill, then read once here per Refresh.
+        local procSet = (ADB and ADB.chanceOnHitListedItems) or nil
 
         -- Tooltip-prime helper. SetHyperlink for an uncached item
         -- queues an async server request; the response populates the
@@ -444,8 +448,15 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, rowY)
                 -- v2.27.0: append "(affix-gated)" tag when the entry
                 -- was added because the item carries a random affix.
+                -- v2.37.0: append "(Hit-proc)" tag when the entry's
+                -- base itemID carries a chance-on-hit proc. Same
+                -- per-drop semantics as affix-gated: the chance-on-hit
+                -- protection still filters per-drop even though the
+                -- itemID is on a list. Both tags can render on the
+                -- same row when an item has both signals.
                 local affixTag = (affixSet and affixSet[id]) and " |cffaaaaaa(affix-gated)|r" or ""
-                row.text:SetText(string.format("|cffb6ffb6%d|r  %s%s", id, name, affixTag))
+                local procTag = (procSet and procSet[id]) and " |cffaaaaaa(Hit-proc)|r" or ""
+                row.text:SetText(string.format("|cffb6ffb6%d|r  %s%s%s", id, name, affixTag, procTag))
                 row.rm:SetScript("OnClick", function()
                     local t = NS.GetListTable(setTableName)
                     if t then

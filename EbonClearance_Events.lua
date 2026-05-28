@@ -396,6 +396,17 @@ local function EnsureAccountDB()
     if type(ADB.affixedListedItems) ~= "table" then
         ADB.affixedListedItems = {}
     end
+    -- v2.37.0: parallel meta to affixedListedItems, but for chance-on-
+    -- hit proc items. Stamped at list-add time and during the tooltip
+    -- backfill in EC_AnnotateTooltip so the list panels can render a
+    -- "(Hit-proc)" tag on rows whose base itemID carries a proc -
+    -- reminds the user that the chance-on-hit protection still applies
+    -- per-drop even though the base itemID is on a list. Account-
+    -- scoped because the chance-on-hit flag is an item property (same
+    -- shape as affixedListedItems above).
+    if type(ADB.chanceOnHitListedItems) ~= "table" then
+        ADB.chanceOnHitListedItems = {}
+    end
     -- One-shot migration from the v2.26.0 field `allowedProcs`.
     -- rawget avoids the EnsureDefaults pattern's auto-create when
     -- the legacy field has already been migrated away.
@@ -1068,6 +1079,38 @@ local function EnsureDB()
     -- is no extra hook cost when the toggle is off.
     if type(DB.showItemIDOnTooltip) ~= "boolean" then
         DB.showItemIDOnTooltip = false
+    end
+    -- v2.37.0 (Borrow C): item-level text overlay on equippable gear.
+    -- Master toggle + 3 sub-toggle surfaces. Bags is on by default the
+    -- first time the master flips on; paperdoll + merchant default off.
+    -- Once seeded, the user's sub-toggle choices persist across master
+    -- toggles. Only equipLoc-whitelisted gear shows text; consumables
+    -- and quest items are skipped. Spec at
+    -- docs/specs/2026-05-28-keep-highlighting-design.md (Borrow C).
+    if type(DB.itemLevelOverlay) ~= "table" then
+        DB.itemLevelOverlay = {}
+    end
+    if type(DB.itemLevelOverlay.enabled) ~= "boolean" then
+        DB.itemLevelOverlay.enabled = false
+    end
+    if type(DB.itemLevelOverlay.bags) ~= "boolean" then
+        DB.itemLevelOverlay.bags = true
+    end
+    if type(DB.itemLevelOverlay.paperdoll) ~= "boolean" then
+        DB.itemLevelOverlay.paperdoll = false
+    end
+    if type(DB.itemLevelOverlay.merchant) ~= "boolean" then
+        DB.itemLevelOverlay.merchant = false
+    end
+    -- Font size for the iLvl text. Clamped to a sensible range so a
+    -- corrupt SV can't render the number invisible (sub-6) or
+    -- catastrophically large (>20). 12 matches the default
+    -- NumberFontNormalSmall size.
+    if type(DB.itemLevelOverlay.fontSize) ~= "number"
+        or DB.itemLevelOverlay.fontSize < 6
+        or DB.itemLevelOverlay.fontSize > 20
+    then
+        DB.itemLevelOverlay.fontSize = 12
     end
     if type(DB.keepBagsOpen) ~= "boolean" then
         -- v2.12.0: flipped from true to false per UX feedback - the
@@ -5114,6 +5157,49 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         return
     end
 
+    if cmd == "affixdebug" then
+        -- v2.37.0 (Borrow A): toggle / inspect / clear the affix-pipeline
+        -- event log. The log is account-wide (ADB.affixDebug) so the
+        -- enable flag survives /reload. Sub-actions:
+        --   /ec affixdebug on      - start recording
+        --   /ec affixdebug off     - stop recording
+        --   /ec affixdebug status  - show current state + row count
+        --   /ec affixdebug dump    - open a window with the JSON dump
+        --   /ec affixdebug clear   - wipe the recorded rows
+        local sub = (rest:match("^(%S+)") or ""):lower()
+        if not ADB then
+            PrintNice("|cffff4444Affix debug requires the account DB; try again after the addon finishes loading.|r")
+            return
+        end
+        if sub == "on" then
+            ADB.affixDebugEnabled = true
+            PrintNice("|cffb6ffb6Affix debug: ON.|r Reproduce the issue, then run |cffffff00/ec affixdebug dump|r.")
+        elseif sub == "off" then
+            ADB.affixDebugEnabled = false
+            PrintNice("|cffb6ffb6Affix debug: OFF.|r")
+        elseif sub == "clear" then
+            ADB.affixDebug = nil
+            PrintNice("|cffb6ffb6Affix debug log cleared.|r")
+        elseif sub == "status" or sub == "" then
+            local rows = (ADB.affixDebug and ADB.affixDebug.rows) or {}
+            PrintNicef(
+                "Affix debug: %s, %d row(s) recorded.",
+                ADB.affixDebugEnabled and "|cffb6ffb6ON|r" or "|cff888888off|r",
+                #rows
+            )
+            PrintNice("|cffaaaaaaSub-commands: on | off | status | dump | clear|r")
+        elseif sub == "dump" then
+            if NS.ShowAffixDebugDump then
+                NS.ShowAffixDebugDump()
+            else
+                PrintNice("|cffff4444Affix debug dump window is unavailable.|r")
+            end
+        else
+            PrintNicef("|cffff4444Unknown sub-command:|r %s. Try on / off / status / dump / clear.", sub)
+        end
+        return
+    end
+
     if cmd == "sellinfo" then
         EnsureDB()
         -- Optional positional args: bag, slot. Defaults to the first
@@ -5144,6 +5230,9 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         )
         PrintNice("|cffffff00/ec clean upgrades apply|r  Remove those old 'Upgrade' items (with confirmation)")
         PrintNice("|cffffff00/ec bugreport|r  Generate a report to share when something's wrong")
+        PrintNice(
+            "|cffffff00/ec affixdebug on|off|status|dump|clear|r  Record affix-detection events for bug reports"
+        )
         PrintNice(
             "|cffffff00/ec sellinfo [bag slot]|r  Explain why an item will or won't sell (defaults to first non-empty slot)"
         )
@@ -5429,6 +5518,9 @@ f:SetScript("OnEvent", function(self, event, ...)
             -- double-firing is harmless.
             if EC_compCache.installHostBagBorderHook then
                 EC_compCache.installHostBagBorderHook()
+            end
+            if EC_compCache.installHostBagItemLevelHook then
+                EC_compCache.installHostBagItemLevelHook()
             end
         end
     elseif event == "PLAYER_LOGOUT" then
@@ -5786,9 +5878,15 @@ f:SetScript("OnEvent", function(self, event, ...)
             if EC_compCache.installHostBagBorderHook then
                 EC_compCache.installHostBagBorderHook()
             end
+            if EC_compCache.installHostBagItemLevelHook then
+                EC_compCache.installHostBagItemLevelHook()
+            end
             EC_Delay(2, function()
                 if EC_compCache.installHostBagBorderHook then
                     EC_compCache.installHostBagBorderHook()
+                end
+                if EC_compCache.installHostBagItemLevelHook then
+                    EC_compCache.installHostBagItemLevelHook()
                 end
             end)
             -- v2.23.0: initial spellbook scan for known affixes. The

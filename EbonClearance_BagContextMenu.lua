@@ -308,6 +308,16 @@ local function EC_ShowItemContextMenu(button)
                             ADB.affixedListedItems = ADB.affixedListedItems or {}
                             ADB.affixedListedItems[itemID] = true
                         end
+                        -- v2.37.0: parallel "(Hit-proc)" tag for
+                        -- chance-on-hit items. The proc protection in
+                        -- EC_IsSellable still filters per-drop (each
+                        -- drop has its own proc roll); the tag
+                        -- reminds the user even though the base
+                        -- itemID is on a list.
+                        if hasProc then
+                            ADB.chanceOnHitListedItems = ADB.chanceOnHitListedItems or {}
+                            ADB.chanceOnHitListedItems[itemID] = true
+                        end
                         frame:Hide()
                     end)
                     btn:Enable()

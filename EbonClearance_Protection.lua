@@ -60,6 +60,48 @@ local function scanTip()
     return NS.scanTooltip
 end
 
+-- v2.37.0 (Borrow A): structured affix-pipeline event logger. Off by
+-- default; gated on ADB.affixDebugEnabled. When on, records up to
+-- ADB.affixDebugMaxRows events (default 1000) to ADB.affixDebug for
+-- export via /ec affixdebug dump. Hooked at the six places where
+-- affix decisions get made (bag cache hits/scans, spellbook walks,
+-- extraction merges, refresh start/end). Player who hits a tooltip-
+-- vs-vendor divergence flips the flag, reproduces, then exports the
+-- structured log via /ec affixdebug dump - faster to diagnose than
+-- post-hoc code reading. WoW addons can't write arbitrary files so
+-- this records to ADB which the client serialises to SavedVariables
+-- on /reload or logout. No overhead when the flag is off (one nil
+-- check + early return).
+local function AffixDebugDump(kind, data)
+    local adb = NS.ADB
+    if type(adb) ~= "table" or not adb.affixDebugEnabled then
+        return
+    end
+    adb.affixDebug = adb.affixDebug or {}
+    local dump = adb.affixDebug
+    dump.rows = dump.rows or {}
+    dump.sequence = (dump.sequence or 0) + 1
+    local row = {
+        n = dump.sequence,
+        kind = kind,
+        time = GetTime and GetTime() or 0,
+        data = data,
+    }
+    if date then
+        row.date = date("%Y-%m-%d %H:%M:%S")
+    end
+    local rows = dump.rows
+    rows[#rows + 1] = row
+    local maxRows = tonumber(adb.affixDebugMaxRows) or 1000
+    if maxRows < 100 then
+        maxRows = 100
+    end
+    while #rows > maxRows do
+        table.remove(rows, 1)
+    end
+end
+EC_compCache.AffixDebugDump = AffixDebugDump
+
 -- ---------------------------------------------------------------------------
 -- v2.19.0: PE roguelite affix detection
 -- ---------------------------------------------------------------------------
@@ -297,6 +339,14 @@ function EC_compCache.bagSlotAffixData(bag, slot)
     if itemString then
         local cached = EC_compCache.affixDataCache[itemString]
         if cached ~= nil then
+            AffixDebugDump("bag.affix.cache", {
+                bag = bag,
+                slot = slot,
+                itemID = itemID,
+                itemString = itemString,
+                cached = cached and "hit" or "miss",
+                description = type(cached) == "table" and cached.description or nil,
+            })
             return cached or nil -- `false` means "scanned, no affix"
         end
     end
@@ -342,6 +392,16 @@ function EC_compCache.bagSlotAffixData(bag, slot)
     if itemString then
         EC_compCache.affixDataCache[itemString] = data
     end
+    AffixDebugDump("bag.affix.scan", {
+        bag = bag,
+        slot = slot,
+        itemID = itemID,
+        itemString = itemString,
+        title = titleText,
+        name = data.name,
+        rank = data.rank,
+        description = data.description,
+    })
     return data
 end
 
@@ -691,6 +751,14 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
             cache[spellId] = cached
             familyCache[spellId] = familyCached
             scansLeft = scansLeft - 1
+            if cached then
+                AffixDebugDump("spellbook.affix.hit", {
+                    spellId = spellId,
+                    description = cached,
+                    family = type(familyCached) == "table" and familyCached.family or nil,
+                    rank = type(familyCached) == "table" and familyCached.rank or nil,
+                })
+            end
         end
         -- Cached hits are free - no budget cost.
         if cached then
@@ -748,21 +816,42 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
                     -- case description-match misses but family-rank
                     -- match succeeds and the tooltip says "Keep (affix
                     -- you have)".
+                    local extractionFamily, extractionRank
                     if r.name then
                         local fname, frank = EC_compCache.parseAffixNameRank(tostring(r.name))
                         if fname then
+                            extractionFamily = fname
+                            extractionRank = frank
                             families[fname] = families[fname] or {}
                             if type(frank) == "number" then
                                 families[fname][frank] = true
                             end
                         end
                     end
+                    AffixDebugDump("extraction.affix.hit", {
+                        procId = r.id,
+                        name = r.name,
+                        description = desc or nil,
+                        family = extractionFamily,
+                        rank = extractionRank,
+                    })
                 end
             end
         end
         EC_compCache.knownAffixDescriptions = map
         EC_compCache.knownAffixFamilyRanks = families
         EC_compCache._affixScanState = nil
+        local descCount, familyCount = 0, 0
+        for _ in pairs(map) do
+            descCount = descCount + 1
+        end
+        for _ in pairs(families) do
+            familyCount = familyCount + 1
+        end
+        AffixDebugDump("knownAffixes.done", {
+            descriptions = descCount,
+            families = familyCount,
+        })
         self:Hide()
     end
 end)
@@ -796,6 +885,9 @@ function EC_compCache.refreshKnownAffixes()
             end
         end
     end
+    AffixDebugDump("knownAffixes.start", {
+        spellCount = #spells,
+    })
     -- Start (or restart) the chunked scan. Any in-flight scan is
     -- abandoned - its partial map is discarded and we start fresh.
     -- v2.35.1: scan state grew a `families` set built in parallel to

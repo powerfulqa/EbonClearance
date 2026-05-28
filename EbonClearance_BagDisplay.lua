@@ -461,6 +461,450 @@ NS.RefreshSellBorders = function()
 end
 
 -- ===========================================================================
+-- v2.37.0 (Borrow C): item-level text overlay
+-- ===========================================================================
+-- Quality-coloured "N" text in the bottom-right corner of slot buttons
+-- holding equippable gear. Three surfaces, each independently toggled
+-- by Item Highlighting: bags (container + bank), paperdoll (character
+-- sheet + inspect), merchant (vendor + buyback). The equipLoc
+-- whitelist filters consumables / quest items / non-gear so the text
+-- only appears where iLvl is meaningful. Master toggle defaults OFF;
+-- when first enabled, bags seeds ON and the other two surfaces stay
+-- OFF until the player ticks them. See
+-- docs/specs/2026-05-28-keep-highlighting-design.md (Borrow C).
+
+local EC_ITEM_LEVEL_EQUIP_LOCS = {
+    INVTYPE_HEAD = true,
+    INVTYPE_NECK = true,
+    INVTYPE_SHOULDER = true,
+    INVTYPE_CHEST = true,
+    INVTYPE_ROBE = true,
+    INVTYPE_WAIST = true,
+    INVTYPE_LEGS = true,
+    INVTYPE_FEET = true,
+    INVTYPE_WRIST = true,
+    INVTYPE_HAND = true,
+    INVTYPE_FINGER = true,
+    INVTYPE_TRINKET = true,
+    INVTYPE_CLOAK = true,
+    INVTYPE_WEAPON = true,
+    INVTYPE_SHIELD = true,
+    INVTYPE_2HWEAPON = true,
+    INVTYPE_WEAPONMAINHAND = true,
+    INVTYPE_WEAPONOFFHAND = true,
+    INVTYPE_HOLDABLE = true,
+    INVTYPE_RANGED = true,
+    INVTYPE_THROWN = true,
+    INVTYPE_RANGEDRIGHT = true,
+    INVTYPE_RELIC = true,
+}
+
+EC_compCache.itemLevelTexts = setmetatable({}, { __mode = "k" })
+
+-- v2.37.0 (Borrow C polish): user-configurable font size for the iLvl
+-- text. SetFontObject locks in the Blizzard font, then SetFont rewrites
+-- the size to the player's chosen value (clamped 6-20 in EnsureDB).
+-- Called from EC_ensureItemLevelText on first paint and from
+-- NS.RefreshItemLevelOverlay so the slider change takes effect on
+-- already-painted slots.
+local function EC_applyItemLevelFont(fs)
+    if not fs then
+        return
+    end
+    fs:SetFontObject("NumberFontNormalSmall")
+    local fontFile, _, fontFlags = fs:GetFont()
+    if not fontFile then
+        return
+    end
+    local DB = NS.DB
+    local size = (DB and DB.itemLevelOverlay and DB.itemLevelOverlay.fontSize) or 12
+    if size < 6 then
+        size = 6
+    elseif size > 20 then
+        size = 20
+    end
+    fs:SetFont(fontFile, size, fontFlags or "")
+end
+
+local function EC_ensureItemLevelText(button)
+    if not button then
+        return nil
+    end
+    local existing = EC_compCache.itemLevelTexts[button]
+    if existing then
+        return existing
+    end
+    -- OVERLAY sublevel 7 (max) so the text renders above the host bag
+    -- UI's own per-slot overlays (quality borders, stack-count text,
+    -- new-item glow). Without an explicit sublevel the default 0 puts
+    -- the FontString under those textures on hosts that paint on
+    -- OVERLAY too, which read as "the iLvl toggle did nothing" on
+    -- the bags surface.
+    local fs = button:CreateFontString(nil, "OVERLAY", nil, 7)
+    EC_applyItemLevelFont(fs)
+    fs:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+    fs:SetJustifyH("RIGHT")
+    fs:SetJustifyV("BOTTOM")
+    fs:SetShadowColor(0, 0, 0, 0.95)
+    fs:SetShadowOffset(1, -1)
+    fs:Hide()
+    EC_compCache.itemLevelTexts[button] = fs
+    return fs
+end
+
+-- Returns iLvl iff the link points to equippable gear via the equipLoc
+-- whitelist. Shirts (INVTYPE_BODY) and tabards (INVTYPE_TABARD) are
+-- deliberately excluded because their iLvl is cosmetic / meaningless.
+function EC_compCache.getGearItemLevel(itemLink)
+    if not itemLink then
+        return nil
+    end
+    local _, _, _, itemLevel, _, _, _, _, equipLoc = GetItemInfo(itemLink)
+    if not itemLevel or itemLevel <= 0 then
+        return nil
+    end
+    if not equipLoc or not EC_ITEM_LEVEL_EQUIP_LOCS[equipLoc] then
+        return nil
+    end
+    return itemLevel
+end
+
+function EC_compCache.getGearQualityRGB(itemLink, fallbackQuality)
+    local quality = fallbackQuality
+    if not quality and itemLink then
+        local _, _, q = GetItemInfo(itemLink)
+        quality = q
+    end
+    if quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality] then
+        local c = ITEM_QUALITY_COLORS[quality]
+        return c.r, c.g, c.b
+    end
+    return 1, 1, 1
+end
+
+local function EC_itemLevelSurfaceEnabled(surface)
+    local DB = NS.DB
+    if not (DB and DB.itemLevelOverlay and DB.itemLevelOverlay.enabled) then
+        return false
+    end
+    return DB.itemLevelOverlay[surface] and true or false
+end
+
+function EC_compCache.applyItemLevelOverlay(button, itemLink, fallbackQuality, surface)
+    if not button then
+        return
+    end
+    button._ec_iLvlSurface = surface
+    local fs = EC_ensureItemLevelText(button)
+    if not fs then
+        return
+    end
+    if not EC_itemLevelSurfaceEnabled(surface) then
+        fs:Hide()
+        return
+    end
+    local iLvl = EC_compCache.getGearItemLevel(itemLink)
+    if not iLvl then
+        fs:Hide()
+        return
+    end
+    local r, g, b = EC_compCache.getGearQualityRGB(itemLink, fallbackQuality)
+    fs:SetText(tostring(iLvl))
+    fs:SetTextColor(r, g, b)
+    fs:Show()
+end
+
+local function EC_applyContainerItemLevel(frame)
+    if not (frame and frame.size) then
+        return
+    end
+    local name = frame:GetName()
+    if not name then
+        return
+    end
+    local bag = frame:GetID()
+    if not bag then
+        return
+    end
+    for slot = 1, frame.size do
+        local button = _G[name .. "Item" .. (frame.size - slot + 1)]
+        if button then
+            local link = GetContainerItemLink(bag, slot)
+            local _, _, _, q = GetContainerItemInfo(bag, slot)
+            EC_compCache.applyItemLevelOverlay(button, link, q, "bags")
+        end
+    end
+end
+if _G.ContainerFrame_Update then
+    hooksecurefunc("ContainerFrame_Update", EC_applyContainerItemLevel)
+end
+
+-- v2.37.0 (Borrow C polish): host bag-UI adapter for the item-level
+-- overlay. Mirrors EC_compCache.installHostBagBorderHook above - same
+-- two host patterns (legacy AceAddon-3.0 host with ItemSlot class;
+-- engine-table-exposure host with Bags module), same idempotent
+-- install flags, same one-shot repaint of already-visible bag frames.
+-- Without this, players running with a host bag UI installed see iLvl
+-- text only on character sheet + merchant; the bags surface paints
+-- nothing because the default ContainerFrame_Update hook never fires
+-- (the host replaced the underlying bag display).
+function EC_compCache.installHostBagItemLevelHook()
+    local apply = EC_compCache.applyItemLevelOverlay
+
+    local function tryLegacyHost()
+        if EC_compCache._hostBagItemLevelHookInstalled then
+            return
+        end
+        local LibStub = _G.LibStub
+        if not LibStub then
+            return
+        end
+        local ok, ace = pcall(LibStub, "AceAddon-3.0", true)
+        if not ok or not ace or not ace.GetAddon then
+            return
+        end
+        local ok2, host = pcall(ace.GetAddon, ace, "Bagnon")
+        if not ok2 or not host or not host.ItemSlot then
+            return
+        end
+        local ItemSlot = host.ItemSlot
+        local function refresh(slot)
+            if not (slot and slot.GetBag and slot.GetID) then
+                return
+            end
+            local bag, id = slot:GetBag(), slot:GetID()
+            if not (bag and id) then
+                return
+            end
+            local link
+            if slot.GetItem then
+                link = slot:GetItem()
+            end
+            if not link then
+                link = GetContainerItemLink(bag, id)
+            end
+            local _, _, _, q = GetContainerItemInfo(bag, id)
+            apply(slot, link, q, "bags")
+        end
+        hooksecurefunc(ItemSlot, "Update", refresh)
+        if ItemSlot.UpdateBorder then
+            hooksecurefunc(ItemSlot, "UpdateBorder", refresh)
+        end
+        EC_compCache._hostBagItemLevelHookInstalled = true
+        if host.frames then
+            for _, frame in pairs(host.frames) do
+                if frame and frame.UpdateEverything and frame.IsVisible and frame:IsVisible() then
+                    pcall(frame.UpdateEverything, frame)
+                end
+            end
+        end
+    end
+
+    local function tryEngineHost()
+        if EC_compCache._engineBagItemLevelHookInstalled then
+            return
+        end
+        local hostTable = _G.ElvUI
+        if type(hostTable) ~= "table" then
+            return
+        end
+        local ok, engine = pcall(unpack, hostTable)
+        if not ok or type(engine) ~= "table" or type(engine.GetModule) ~= "function" then
+            return
+        end
+        local ok2, B = pcall(engine.GetModule, engine, "Bags")
+        if not ok2 or type(B) ~= "table" or type(B.UpdateSlot) ~= "function" then
+            return
+        end
+        hooksecurefunc(B, "UpdateSlot", function(_self, frame, bagID, slotID)
+            if not frame or type(frame.Bags) ~= "table" then
+                return
+            end
+            local bag = frame.Bags[bagID]
+            if not bag then
+                return
+            end
+            local slotButton = bag[slotID]
+            if not slotButton then
+                return
+            end
+            local link = GetContainerItemLink(bagID, slotID)
+            local _, _, _, q = GetContainerItemInfo(bagID, slotID)
+            apply(slotButton, link, q, "bags")
+        end)
+        EC_compCache._engineBagItemLevelHookInstalled = true
+        if B.UpdateAllBagSlots then
+            pcall(B.UpdateAllBagSlots, B)
+        end
+    end
+
+    tryLegacyHost()
+    tryEngineHost()
+end
+
+local function EC_applyBankItemLevel()
+    if not (BankFrame and BankFrame:IsShown()) then
+        return
+    end
+    local numSlots = NUM_BANKGENERIC_SLOTS or 28
+    for index = 1, numSlots do
+        local button = _G["BankFrameItem" .. index]
+        if button then
+            local link = GetContainerItemLink(-1, index)
+            local _, _, _, q = GetContainerItemInfo(-1, index)
+            EC_compCache.applyItemLevelOverlay(button, link, q, "bags")
+        end
+    end
+end
+if BankFrame and BankFrame.HookScript then
+    BankFrame:HookScript("OnShow", EC_applyBankItemLevel)
+end
+
+local function EC_applyPaperDollItemLevel(button)
+    if not button then
+        return
+    end
+    local slotID = button:GetID()
+    if not slotID or slotID == 0 then
+        return
+    end
+    local link = GetInventoryItemLink("player", slotID)
+    local quality = GetInventoryItemQuality and GetInventoryItemQuality("player", slotID) or nil
+    EC_compCache.applyItemLevelOverlay(button, link, quality, "paperdoll")
+end
+if _G.PaperDollItemSlotButton_Update then
+    hooksecurefunc("PaperDollItemSlotButton_Update", EC_applyPaperDollItemLevel)
+end
+
+local function EC_applyInspectItemLevel(button)
+    if not button then
+        return
+    end
+    local slotID = button:GetID()
+    if not slotID or slotID == 0 then
+        return
+    end
+    local unit = (InspectFrame and InspectFrame.unit) or (UnitExists("target") and "target") or nil
+    if not unit then
+        return
+    end
+    local link = GetInventoryItemLink(unit, slotID)
+    local quality = GetInventoryItemQuality and GetInventoryItemQuality(unit, slotID) or nil
+    EC_compCache.applyItemLevelOverlay(button, link, quality, "paperdoll")
+end
+if _G.InspectPaperDollItemSlotButton_Update then
+    hooksecurefunc("InspectPaperDollItemSlotButton_Update", EC_applyInspectItemLevel)
+end
+
+local function EC_applyMerchantItemLevel()
+    if not (MerchantFrame and MerchantFrame:IsShown()) then
+        return
+    end
+    local page = MerchantFrame.page or 1
+    local isBuyback = MerchantFrame.selectedTab == 2
+    local perPage = isBuyback and (BUYBACK_ITEMS_PER_PAGE or 12) or (MERCHANT_ITEMS_PER_PAGE or 10)
+    for index = 1, perPage do
+        local button = _G["MerchantItem" .. index .. "ItemButton"]
+        if button then
+            local itemIndex = ((page - 1) * perPage) + index
+            local link
+            if isBuyback and GetBuybackItemLink then
+                link = GetBuybackItemLink(itemIndex)
+            elseif GetMerchantItemLink then
+                link = GetMerchantItemLink(itemIndex)
+            end
+            EC_compCache.applyItemLevelOverlay(button, link, nil, "merchant")
+        end
+    end
+end
+if _G.MerchantFrame_Update then
+    hooksecurefunc("MerchantFrame_Update", EC_applyMerchantItemLevel)
+end
+
+local EC_PAPERDOLL_SLOTS = {
+    "HeadSlot", "NeckSlot", "ShoulderSlot", "BackSlot", "ChestSlot",
+    "WristSlot", "HandsSlot", "WaistSlot", "LegsSlot", "FeetSlot",
+    "Finger0Slot", "Finger1Slot", "Trinket0Slot", "Trinket1Slot",
+    "MainHandSlot", "SecondaryHandSlot", "RangedSlot",
+}
+
+-- v2.37.0 (Borrow C): repaint every registered button. Called from the
+-- Item Highlighting panel toggles so changes take effect immediately
+-- without waiting for the next BAG_UPDATE / paperdoll event. Iterates
+-- the weak-keyed registry to clear stale text on disabled surfaces,
+-- then re-fires the per-surface walker for whichever surfaces are
+-- currently enabled.
+NS.RefreshItemLevelOverlay = function()
+    -- Re-apply the font first so a slider change rewrites the size on
+    -- every existing FontString (including ones that won't be repainted
+    -- below because their surface is now disabled - we still want the
+    -- next time they show to use the right size).
+    for _, fs in pairs(EC_compCache.itemLevelTexts) do
+        EC_applyItemLevelFont(fs)
+    end
+    for button, fs in pairs(EC_compCache.itemLevelTexts) do
+        if fs and not EC_itemLevelSurfaceEnabled(button._ec_iLvlSurface or "bags") then
+            fs:Hide()
+        end
+    end
+    if EC_itemLevelSurfaceEnabled("bags") then
+        for i = 1, (NUM_CONTAINER_FRAMES or 13) do
+            local frame = _G["ContainerFrame" .. i]
+            if frame and frame:IsShown() then
+                EC_applyContainerItemLevel(frame)
+            end
+        end
+        EC_applyBankItemLevel()
+    end
+    if EC_itemLevelSurfaceEnabled("paperdoll") then
+        if CharacterFrame and CharacterFrame:IsShown() then
+            for _, slotName in ipairs(EC_PAPERDOLL_SLOTS) do
+                local button = _G["Character" .. slotName]
+                if button then
+                    EC_applyPaperDollItemLevel(button)
+                end
+            end
+        end
+    end
+    if EC_itemLevelSurfaceEnabled("merchant") then
+        EC_applyMerchantItemLevel()
+    end
+    -- v2.37.0 polish: nudge the host bag-UI frameworks to repaint so a
+    -- player who just ticked the "On bags" sub-toggle doesn't have to
+    -- open + close their bags to see iLvl text appear on the visible
+    -- slots. The host's per-slot Update method (which our hook
+    -- intercepts) only fires when the host decides to refresh - usually
+    -- on bag-open / inventory-change events. Calling the host's
+    -- broad-repaint method here forces a refresh now.
+    if EC_itemLevelSurfaceEnabled("bags") then
+        local LibStub = _G.LibStub
+        if LibStub then
+            local ok, ace = pcall(LibStub, "AceAddon-3.0", true)
+            if ok and ace and ace.GetAddon then
+                local ok2, host = pcall(ace.GetAddon, ace, "Bagnon")
+                if ok2 and host and host.frames then
+                    for _, frame in pairs(host.frames) do
+                        if frame and frame.UpdateEverything and frame.IsVisible and frame:IsVisible() then
+                            pcall(frame.UpdateEverything, frame)
+                        end
+                    end
+                end
+            end
+        end
+        local hostTable = _G.ElvUI
+        if type(hostTable) == "table" then
+            local ok, engine = pcall(unpack, hostTable)
+            if ok and type(engine) == "table" and type(engine.GetModule) == "function" then
+                local ok2, B = pcall(engine.GetModule, engine, "Bags")
+                if ok2 and type(B) == "table" and B.UpdateAllBagSlots then
+                    pcall(B.UpdateAllBagSlots, B)
+                end
+            end
+        end
+    end
+end
+
+-- ===========================================================================
 -- Sellability trace: per-item predicate inspector
 -- ===========================================================================
 -- Walks the same decision chain EC_IsSellable runs, in the same order, and

@@ -4795,6 +4795,53 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 86: Delete List wins over sell signals (cycle + trace agreement).
+-- ---------------------------------------------------------------------------
+-- Pre-v2.37.0 BuildQueue checked EC_IsSellable first and only fell
+-- through to the Delete-List branch when the item was not sellable. A
+-- grey item on the Delete List was queued as a sell because greyAutoSell
+-- returned true. The bag tint + tooltip annotation followed the inverse
+-- order ("delete" tint wins) so the cycle and the UI disagreed. v2.37.0
+-- reversed BuildQueue's per-slot dispatch: the Delete-List branch fires
+-- first, and the sell branch only runs when the slot did not queue a
+-- delete. describeSellability got a parallel Delete-List step + a
+-- WILL DELETE summary override so /ec sellinfo agrees with the cycle.
+do
+    local evf = io.open("EbonClearance_Events.lua", "rb")
+    local bdf = io.open("EbonClearance_BagDisplay.lua", "rb")
+    if evf and bdf then
+        local evSrc = evf:read("*a") or ""
+        evf:close()
+        local bdSrc = bdf:read("*a") or ""
+        bdf:close()
+
+        -- BuildQueue: the Delete-List `IsInSet(DB.deleteList, id)` check
+        -- must appear before the `EC_IsSellable(bag, slot,` call inside
+        -- the bag-walk loop.
+        local fnStart = evSrc:find("local function BuildQueue%(")
+        local fnEnd = fnStart and evSrc:find("\nend\n", fnStart) or nil
+        local body = fnStart and fnEnd and evSrc:sub(fnStart, fnEnd) or ""
+        local deleteCheckPos = body:find('IsInSet%(DB%.deleteList,')
+        local sellableCheckPos = body:find("EC_IsSellable%(bag, slot,")
+        check(
+            "Test 86: BuildQueue checks Delete List BEFORE EC_IsSellable",
+            deleteCheckPos ~= nil
+                and sellableCheckPos ~= nil
+                and deleteCheckPos < sellableCheckPos,
+            "BuildQueue must check IsInSet(DB.deleteList, id) before calling EC_IsSellable so explicit destructive intent wins over sell signals (greyAutoSell, Sell List, quality rules). Pre-v2.37.0 had the order reversed and the Delete List silently lost to greyAutoSell on grey items."
+        )
+
+        check(
+            "Test 86a: describeSellability surfaces a Delete-List verdict + WILL DELETE summary",
+            bdSrc:find("deleteListVerdict") ~= nil
+                and bdSrc:find("WILL DELETE at the next vendor visit") ~= nil
+                and bdSrc:find("local willDelete = onDeleteList and deletionEnabled") ~= nil,
+            "describeSellability must add a deleteListVerdict step and override the summary with WILL DELETE when the item is on Delete List + Enable Deletion is on. Otherwise /ec sellinfo would silently disagree with the tooltip + cycle."
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

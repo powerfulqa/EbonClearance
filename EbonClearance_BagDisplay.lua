@@ -513,6 +513,27 @@ function EC_compCache.describeSellability(bag, slot)
     local hasSellPrice = sellPrice and sellPrice > 0
     step("hasSellPrice", hasSellPrice, hasSellPrice and "yes" or "no (item cannot be vendored)")
 
+    -- Delete List wins over every sell signal (v2.37.0). Check it first
+    -- so the trace agrees with the bag tint + tooltip annotation, and
+    -- with BuildQueue's per-slot dispatch which now checks Delete List
+    -- before the sell branch. When the item is on the Delete List + the
+    -- Enable Deletion master toggle is on, the cycle queues this slot
+    -- as `type = "delete"` and ignores any sell signal further down.
+    local onDeleteList = DB and IsInSet(DB.deleteList, itemID) or false
+    local deletionEnabled = DB and DB.enableDeletion == true
+    local willDelete = onDeleteList and deletionEnabled
+    if willDelete then
+        step("deleteListVerdict", true, "WILL DELETE - on Delete List, Enable Deletion is on")
+    elseif onDeleteList then
+        step(
+            "deleteListVerdict",
+            true,
+            "on Delete List but Enable Deletion is OFF - falling through to sell rules"
+        )
+    else
+        step("deleteListVerdict", true, "not on Delete List")
+    end
+
     local isJunk = (quality == 0) and hasSellPrice
     step("greyAutoSell", isJunk, isJunk and "yes (grey with sell price)" or "n/a")
 
@@ -694,7 +715,14 @@ function EC_compCache.describeSellability(bag, slot)
     local wouldSell = positiveSignal and not vetoed and not locked
 
     local summary
-    if wouldSell then
+    if willDelete then
+        -- Delete-List path wins over every sell verdict. The cycle queues
+        -- this slot as a delete regardless of any sell signal further
+        -- down. Steps above still run for educational value (the player
+        -- can see what WOULD have happened if the item weren't on the
+        -- Delete List), but the summary reflects the actual outcome.
+        summary = "|cffff4444WILL DELETE at the next vendor visit|r"
+    elseif wouldSell then
         summary = "|cff00ff00WILL SELL at the next vendor visit|r"
     elseif not positiveSignal then
         summary = "|cffffb84dwon't sell - no rule matched|r"
@@ -704,7 +732,7 @@ function EC_compCache.describeSellability(bag, slot)
         summary = "|cffff4444won't sell|r"
     end
 
-    return { steps = steps, wouldSell = wouldSell, summary = summary }
+    return { steps = steps, wouldSell = wouldSell, willDelete = willDelete, summary = summary }
 end
 
 function EC_compCache.printSellabilityTrace(bag, slot)

@@ -3939,29 +3939,27 @@ local function BuildQueue(junkOnly)
     queueIndex = 1
     goldThisVendoring = 0
     -- Single bag walk that produces both the sell and delete queue entries.
-    -- Sell pass first: grey items (quality 0) always match via isJunk;
-    -- whitelist / quality threshold only fire when the merchant allows them.
-    -- If the sell pass rejects a slot AND deletion is enabled, fall through
-    -- to the delete-list check using its own slot fetch (EC_IsSellable returns
-    -- a bare `false` on negative predicate, so we don't have its itemID here).
+    --
+    -- v2.37.0 reversed the per-slot dispatch order. Pre-v2.37.0 the sell
+    -- pass ran first and only fell through to the delete-list check when
+    -- EC_IsSellable returned false. Result: a grey item on the Delete
+    -- List had isJunk = true, got queued as "sell", and the user's
+    -- explicit "destroy this" intent silently lost to greyAutoSell. The
+    -- bag-slot tint + tooltip annotation already followed the inverse
+    -- precedence ("delete" tint wins over sell verdicts) so the cycle's
+    -- order disagreed with what the UI was telling the player. Now the
+    -- Delete-List check fires first per slot: an item on the list (with
+    -- Enable Deletion on, passing the affix protection check) is queued
+    -- as "delete" regardless of any sell signal. Sell branch only runs
+    -- when the slot didn't queue a delete. Matches the bag-tint logic
+    -- in EbonClearance_BagDisplay.lua's bagSlotWillSellCategory (delete
+    -- first) and the new Delete-List step in describeSellability.
     local deletionOn = DB.enableDeletion == true
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
-            local sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
-            if sellable then
-                queue[#queue + 1] = {
-                    type = "sell",
-                    bag = bag,
-                    slot = slot,
-                    itemID = itemID,
-                    count = itemCount,
-                    price = sellPrice or 0,
-                }
-                if sellPrice and sellPrice > 0 then
-                    goldThisVendoring = goldThisVendoring + EC_GetItemPrice(link, itemID, sellPrice, itemCount)
-                end
-            elseif deletionOn then
+            local queuedDelete = false
+            if deletionOn then
                 local id = GetContainerItemID(bag, slot)
                 -- v2.13.8: dropped the IsEquippedItem(id) guard from
                 -- this path. The original intent was "don't auto-
@@ -4042,7 +4040,25 @@ local function BuildQueue(junkOnly)
                                 itemID = id,
                                 count = count,
                             }
+                            queuedDelete = true
                         end
+                    end
+                end
+            end
+            if not queuedDelete then
+                local sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
+                if sellable then
+                    queue[#queue + 1] = {
+                        type = "sell",
+                        bag = bag,
+                        slot = slot,
+                        itemID = itemID,
+                        count = itemCount,
+                        price = sellPrice or 0,
+                    }
+                    if sellPrice and sellPrice > 0 then
+                        goldThisVendoring = goldThisVendoring
+                            + EC_GetItemPrice(link, itemID, sellPrice, itemCount)
                     end
                 end
             end

@@ -5,6 +5,22 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.37.2
+
+Patch release. Stats panel polish + a deletion tracker that mirrors the sell side.
+
+- **Stats: Sold by Quality row format.** Per-rarity rows now render as `Poor: x200  -  129g 66s 20c` instead of the dense `Poor: 200 129g 66s 20c`. The grey `x`-prefixed count + ` - ` separator + money matches the Top 5 row format for visual consistency. Reported in-game ("just a long line of numbers").
+- **New: Deleted by Quality section.** Per-rarity counts of items the addon has deleted from your bags via the Delete List path. Mirrors Sold by Quality but with no copper column (deletion produces no money). One new account-wide field (`DB.deletedItemsByQuality`), stamped at the worker delete-action site. Wiped by Reset Lifetime Stats.
+- **New: Top 5 Most Deleted section.** Mirrors Top 5 Most Sold. Reuses the existing `DB.deletedItemCounts` table (populated since v2.34.x), so existing users with deletion history will see entries immediately after upgrading.
+- **Fix: Stats panel scroll-wrap.** The v2.37 sections grew the Stats panel beyond the Interface Options container's natural height; content past that boundary clipped and didn't reflow on UI rescale. Switched the panel to `wrapScroll=true` matching the Main / Scavenger / Merchant / Item Highlighting panels' pattern. The bottom of the panel (Reset buttons) is now reachable via the scroll bar.
+- **Schema:** one new additive account-wide field (`deletedItemsByQuality`); no removals. Safe overwrite from v2.37.1.
+
+### v2.37.1
+
+Patch release. One fix.
+
+- **Fix: the four new v2.37.0 Stats panel sections weren't rendering their content.** Sold by Quality, Top 5 Most Sold, Process Bags Totals, and Top Zones showed only their bolded header followed by `...`, even when the underlying DB fields were being captured correctly. Root cause: `SetWordWrap(false)` on the new multi-line FontStrings collapsed the `\n`-separated row content into a single truncated line. Fix: drop the `SetWordWrap(false)` calls so the default (TRUE) lets the explicit line breaks render. Reported in-game on v2.37.0 release day - "nothing has been entered there after 5 minutes of farming" - the data was there, the panel just wasn't showing it. No schema change; safe overwrite from v2.37.0.
+
 ### v2.37.0
 
 Minor release. Three new Stats surfaces, one new bag-border category, four Merchant Settings help links, one load-bearing fix to vendor dispatch ordering, and three community-inspired additions (affix event log + already-known tooltip + item-level overlay) credited to **Ivo** in [NOTICE.md](NOTICE.md).

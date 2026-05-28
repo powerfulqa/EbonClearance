@@ -44,7 +44,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 - **Process Bags.** Disenchant / mill / prospect from your bags; configurable DE rarity cap, Soulbound inclusion toggle, per-character ignore list.
 - **Import / Export.** Sell List sharing strings, per-section source/target.
 - **Item Highlighting.** Toggle the bag-slot sell-border tint per category (Delete / Keep / Account Sell / Character Sell / Junk / Rule), pick each category's colour through the standard colour-picker dialog, opt into the item-level overlay (with sub-toggles for bags / character sheet & inspect / merchant + a font-size slider), and optionally show the numeric item ID on bag-item tooltips. (Per-character on/off lives on the minimap button + `/ec`, not in a panel.)
-- **Statistics.** Lifetime + session counters side-by-side, reset independently.
+- **Statistics.** Lifetime + session counters side-by-side, reset independently. Includes per-rarity breakdowns of sells and deletions, top-5 most-sold and most-deleted items, lifetime Process Bags counters (Disenchant / Mill / Prospect / Pick Lock), and a top-zones leaderboard by lifetime gold earned at vendor.
 - **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, Process Next.
 - **Minimap button.** Left: options, Middle: Process Bags, Right: toggle.
 - **Alt+Right-Click any bag item** for a quick-action menu.

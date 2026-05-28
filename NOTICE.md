@@ -83,6 +83,54 @@ specific gameplay loop both addons are solving for.
 
 ---
 
+## Community contributions
+
+Where players have shared modifications, prototypes, or companion
+addons that informed EC's design, the credit is recorded here.
+
+**Ivo (v2.37.0).** Ivo shared his personally-modified EC fork plus a
+small standalone companion addon he wrote for his own use, and gave
+permission for the patterns to be adapted back into upstream. Three
+v2.37.0 features started from his work:
+
+- **Affix-pipeline event log.** The `AffixDebugDump` structured event
+  logger in `EbonClearance_Protection.lua`, with the six probe sites
+  along the affix-decision pipeline and the `/ec affixdebug` slash
+  sub-command, is adapted from Ivo's diagnostic prototype. The EC
+  implementation broadens the scope (account-wide flag, slash UX,
+  copyable dump window, `/ec bugreport` integration) but the core
+  shape - "log the affix pipeline's decisions to SavedVariables so a
+  player who hits a divergence can ship the structured trail" - is
+  his idea.
+
+- **"Already known by this character" tooltip annotation.** His
+  companion addon detected already-learned tomes / recipes via a
+  hidden tooltip scan for `ITEM_SPELL_KNOWN`. EC already had the
+  underlying detection (`tomeIsKnownCache`) for its protection rules;
+  Ivo's contribution is the idea of surfacing that detection as a
+  user-visible cue independent of the protection toggles. EC's
+  implementation uses the tooltip-annotation surface (allowed under
+  the project's "no icon overlays on bag items" rule) rather than
+  the icon-overlay form his prototype used.
+
+- **Item-level overlay on equippable gear slots.** Same idea, similar
+  rendering shape (quality-coloured text in the bottom-right corner
+  with the equipLoc whitelist filter). The EC implementation adds an
+  opt-in master toggle with three independently togglable surface
+  sub-toggles (bags / paperdoll / merchant) and a font-size slider,
+  ships the master toggle defaulting off so existing players pick up
+  no visual change without action, and narrows the project's prior
+  "no icon overlays" rule to allow informational text overlays gated
+  behind explicit player opt-in.
+
+Thanks Ivo. The companion addon he wrote was treated as inspiration
+only; no code from it was copied into EC verbatim, and the EC
+implementations were written against the same Blizzard 3.3.5a APIs
+that the prototype used. His prototype remains entirely his own work
+to ship or not, separate from EC's release schedule.
+
+---
+
 ## Source-available licence pattern
 
 EbonClearance ships under a custom **source-available attribution

@@ -16,7 +16,8 @@ A **Project Ebonhold-aware** bag manager. Out of the box it sells your junk and 
 - **Process Bags panel** for disenchant / mill / prospect / pick-lock. One button drives the casts; bind a key and hold to drain a stack. Honours every protection.
 - **Tooltip annotations** show what the addon will do *before* it does it: `Will Sell (<reason>)`, `Keep (<reason>)`, `Won't Sell (<reason>)`, `Will Delete`. No surprises at the merchant.
 - **Per-item sellability inspector** (`/ec sellinfo` or Alt+Shift+Right-Click) traces the entire decision chain in chat. "Why isn't this selling?" is always one click away.
-- **Per-category bag-slot border tints** in five colours (Delete / Account Sell / Character Sell / Junk / Rule-match), with per-category enable + colour picker. Slot-frame ring only, not an icon overlay.
+- **Per-category bag-slot border tints** in six colours (Delete / Keep / Account Sell / Character Sell / Junk / Rule-match), with per-category enable + colour picker. Slot-frame ring only.
+- **Item-level overlay** (opt-in). Quality-coloured iLvl in the bottom-right corner of equippable gear slots, with player-adjustable font size. Three independently togglable surfaces: bags, character sheet & inspect, merchant.
 - **Profile import/export** for sharing whole settings packs (lists + per-rarity rules) between characters or with other players.
 - **Reactive layout**, minimap button + LDB launcher, keybindings, first-run welcome, session + lifetime stats.
 
@@ -42,7 +43,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 - **Scavenger Settings.** Summon controls, chat / speech-bubble mute, auto-loot cycle threshold, auto-open containers, Fast Loot.
 - **Process Bags.** Disenchant / mill / prospect from your bags; configurable DE rarity cap, Soulbound inclusion toggle, per-character ignore list.
 - **Import / Export.** Sell List sharing strings, per-section source/target.
-- **Item Highlighting.** Toggle the bag-slot sell-border tint per category (Delete / Account Sell / Character Sell / Junk / Rule), pick each category's colour through the standard colour-picker dialog, and optionally show the numeric item ID on bag-item tooltips. (Per-character on/off lives on the minimap button + `/ec`, not in a panel.)
+- **Item Highlighting.** Toggle the bag-slot sell-border tint per category (Delete / Keep / Account Sell / Character Sell / Junk / Rule), pick each category's colour through the standard colour-picker dialog, opt into the item-level overlay (with sub-toggles for bags / character sheet & inspect / merchant + a font-size slider), and optionally show the numeric item ID on bag-item tooltips. (Per-character on/off lives on the minimap button + `/ec`, not in a panel.)
 - **Statistics.** Lifetime + session counters side-by-side, reset independently.
 - **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, Process Next.
 - **Minimap button.** Left: options, Middle: Process Bags, Right: toggle.
@@ -61,8 +62,9 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec clean apply` | Auto-resolve list conflicts using precedence Keep List > Delete List > Sell List |
 | `/ec clean upgrades` | Report stale `Keep (upgrade)` Keep List entries that are no longer above your equipped iLvl (v2.33.1+ auto-cleans these on every bag update; this command is now mainly for one-shot inspection) |
 | `/ec clean upgrades apply` | Manually remove stale `Keep (upgrade)` entries (with confirmation) |
-| `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report |
+| `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report (includes a list of your loaded addons for conflict diagnosis) |
 | `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell - per-predicate chain trace (also available via Alt+Shift+Right-Click on the item) |
+| `/ec affixdebug on\|off\|status\|dump\|clear` | Record affix-detection events for bug reports; `dump` opens a copyable window with the event log |
 | `/ec help` | Print the full slash-command reference in chat |
 | `/ecdebug` | Show debug info and run a bag scan |
 
@@ -78,7 +80,7 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 - [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md) is the prescriptive guide for coding in this addon. Read it first: it covers 3.3.5a client gotchas, the file's architecture, naming conventions, the state machine, UI patterns and the decision not to embed Ace3.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) is a short list of known follow-up cleanups that weren't part of the last pass.
 
-A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 23 `.lua` files after the v2.32.0 file-split; the entry hub is `EbonClearance_Events.lua`.)
+A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 25 `.lua` files after the v2.32.0 file-split + the v2.36.0 Help / Stats panel splits; the entry hub is `EbonClearance_Events.lua`.)
 
 ## Changelog
 

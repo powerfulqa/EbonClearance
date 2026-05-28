@@ -407,6 +407,18 @@ local function EnsureAccountDB()
     if type(ADB.chanceOnHitListedItems) ~= "table" then
         ADB.chanceOnHitListedItems = {}
     end
+    -- v2.37.0 (Borrow A): defaults for the affix-pipeline event logger.
+    -- affixDebugEnabled stays nil until the player runs /ec affixdebug
+    -- on (treated as "off" by every read site). affixDebugMaxRows is
+    -- seeded so a player who wants to capture a long session can edit
+    -- the SV directly to lift the cap without having to discover the
+    -- nil-default via reading source. The runtime clamps to >= 100 so
+    -- a corrupt low value can't render the log useless. affixDebug
+    -- (the row table itself) is lazy - only allocated when a probe
+    -- fires while the flag is on.
+    if type(ADB.affixDebugMaxRows) ~= "number" or ADB.affixDebugMaxRows < 100 then
+        ADB.affixDebugMaxRows = 1000
+    end
     -- One-shot migration from the v2.26.0 field `allowedProcs`.
     -- rawget avoids the EnsureDefaults pattern's auto-create when
     -- the legacy field has already been migrated away.
@@ -5164,7 +5176,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         --   /ec affixdebug on      - start recording
         --   /ec affixdebug off     - stop recording
         --   /ec affixdebug status  - show current state + row count
-        --   /ec affixdebug dump    - open a window with the JSON dump
+        --   /ec affixdebug dump    - open a window with the plain-text event log
         --   /ec affixdebug clear   - wipe the recorded rows
         local sub = (rest:match("^(%S+)") or ""):lower()
         if not ADB then

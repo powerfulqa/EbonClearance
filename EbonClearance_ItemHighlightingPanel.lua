@@ -284,15 +284,13 @@ CharPanel:SetScript("OnShow", function(self)
             end
         end
 
-        iLvlMainCB:SetScript("OnClick", function()
-            DB.itemLevelOverlay.enabled = iLvlMainCB:GetChecked() and true or false
-            PlaySound("igMainMenuOptionCheckBoxOn")
-            syncILvlSubsEnabled()
-            if NS.RefreshItemLevelOverlay then
-                NS.RefreshItemLevelOverlay()
-            end
-        end)
-
+        -- Master OnClick wired AFTER the slider is built so the sync
+        -- helpers for both the sub-toggles and the slider can fire in
+        -- the same handler. v2.37.0 polish: the previous shape did two
+        -- separate SetScript calls and chained via GetScript, which
+        -- doesn't behave reliably for anonymous Lua closures on
+        -- 3.3.5a - the first handler could be silently dropped. One
+        -- handler = no chain, no surprises.
         local lastILvlAnchor = iLvlMainCB
         for i, sub in ipairs(ITEM_LEVEL_SUB_TOGGLES) do
             local cb = CreateFrame(
@@ -370,14 +368,20 @@ CharPanel:SetScript("OnShow", function(self)
             end
         end
         syncILvlSliderEnabled()
-        -- Tie the slider's enable state to the master toggle so the
-        -- player can't drag the font size while the feature is off.
-        local oldMainOnClick = iLvlMainCB:GetScript("OnClick")
-        iLvlMainCB:SetScript("OnClick", function(...)
-            if oldMainOnClick then
-                oldMainOnClick(...)
-            end
+
+        -- Now wire the master OnClick. Runs everything that depends on
+        -- the master state: save the toggle, sync sub-toggle enable
+        -- state, sync slider enable state, repaint visible slots.
+        -- Single SetScript call - no chain via GetScript (which can
+        -- swallow anonymous closures on 3.3.5a).
+        iLvlMainCB:SetScript("OnClick", function()
+            DB.itemLevelOverlay.enabled = iLvlMainCB:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            syncILvlSubsEnabled()
             syncILvlSliderEnabled()
+            if NS.RefreshItemLevelOverlay then
+                NS.RefreshItemLevelOverlay()
+            end
         end)
 
         lastRowAnchor = iLvlSlider

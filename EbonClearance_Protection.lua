@@ -315,12 +315,17 @@ function EC_compCache.normaliseAffixDesc(s)
     s = s:gsub("|r", "")
     -- Strip lingering @affix@ markers in case any survived.
     s = s:gsub("@affix@", "")
-    -- v2.37.x: normalize curly quotes / dashes that PE item text and
-    -- WoW spell text differ on. U+2019 (right single quote) is the
-    -- usual offender - item descriptions say "your target's movement"
-    -- while spell descriptions might use straight U+0027. Both sides
-    -- end up at the same key after this, so the same-rank-text-
-    -- disagrees fallback can still match by family.
+    -- v2.37.x: PE's item data returns names with a literal backslash
+    -- before apostrophes (e.g. "Mender\'s Surge III"). GetSpellInfo
+    -- returns the same names without the backslash ("Mender's Surge
+    -- III"). Strip the backslash so both sides converge on the same
+    -- key. The escape isn't a deliberate Lua string literal; it's
+    -- baked into PE's localised item-name table at the byte level.
+    s = s:gsub("\\", "")
+    -- Also normalize curly quotes / dashes that some sources may
+    -- emit. Defensive - the backslash strip above is the actual
+    -- v2.37.x fix; this covers the orthogonal case where PE's text
+    -- uses U+2019 instead of U+0027.
     s = s:gsub("\226\128\152", "'"):gsub("\226\128\153", "'")
     s = s:gsub("\226\128\147", "-"):gsub("\226\128\148", "-")
     s = s:gsub("^%s+", ""):gsub("%s+$", "")
@@ -588,16 +593,19 @@ function EC_compCache.normaliseAffixFamily(name)
     name = name:gsub("^%s+", ""):gsub("%s+$", "")
     name = name:gsub("^[Oo]f%s+", "")
     name = name:gsub("%s+[IVXLCDM]+$", "")
-    -- v2.37.x: normalize curly apostrophes / hyphens so item-derived
-    -- family keys ("Mender's Surge" from a parsed item title) match
-    -- spell-derived ones ("Mender's Surge" from GetSpellInfo). PE's
-    -- item titles use U+2019 (right single quote, UTF-8 0xE2 0x80
-    -- 0x99); WoW's spell DB returns U+0027 straight apostrophes.
-    -- Without this, the family+rank fallback - which exists exactly
-    -- to recover when description text disagrees across the item /
-    -- spell tooltips - silently misses on any affix containing an
-    -- apostrophe ("Mender's Surge", "Keeper's Sting", "Julie's
-    -- Blessing").
+    -- v2.37.x: PE's item data emits names with a literal backslash
+    -- before apostrophes ("Mender\'s Surge III" comes out of
+    -- GetItemInfo with the backslash baked into the byte stream).
+    -- GetSpellInfo returns the same names without the backslash
+    -- ("Mender's Surge III"). Stripping the backslash here lets
+    -- item-side parsing and spell-side parsing converge on the
+    -- same family key. Confirmed via the v2.37.x affix-debug dump:
+    -- the affixdump command's `name=[of Mender\'s Surge]` line
+    -- showed the literal backslash that wasn't present in the
+    -- spell-side extraction.affix.hit rows.
+    name = name:gsub("\\", "")
+    -- Defensive: also map curly apostrophes / dashes to the straight
+    -- ASCII versions in case PE's data isn't consistent across items.
     name = name:gsub("\226\128\152", "'"):gsub("\226\128\153", "'")
     name = name:gsub("\226\128\147", "-"):gsub("\226\128\148", "-")
     return name:lower()

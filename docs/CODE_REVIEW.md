@@ -98,18 +98,42 @@ scoped to be a single-session change unless flagged otherwise.
 > Items 1 (chat-filter consolidation) and 3 (TUNING constants) remain.
 > Item 2 was reused to renumber the former L10n stub item, since it's
 > still parked. Item 4 (file split) was added post-v2.29.0 audit when
-> the 200-locals cap became a recurring active constraint. Numbering
-> now: 1 chat-filter, 2 L10n stub, 3 TUNING, 4 file split.
+> the 200-locals cap became a recurring active constraint; it shipped
+> across multiple stages and moved to Resolved in v2.37.4. Numbering
+> now: 1 chat-filter, 2 L10n stub, 3 TUNING.
+
+## Audit decisions (won't fix)
+
+### ChatEdit_InsertLink raw global override (v2.37.4 audit issue #2)
+
+`EbonClearance_Events.lua` overrides the global `ChatEdit_InsertLink`
+function with a wrapper that short-circuits the original when an EC
+ID-input box has focus (shift-click on a bag item inserts the itemID
+into the EC field instead of leaking the link into the chat editbox).
+
+The audit flagged this as one of the few raw global overrides remaining,
+worth checking whether `hooksecurefunc` could replace it. **It cannot.**
+`hooksecurefunc` always runs the original first, so swapping to it
+would defeat the whole purpose of the wrapper - the link would always
+leak into the chat editbox before the EC handler ran. The wrap-with-
+original + early-return pattern is the only correct shape here.
+
+Resolution: keep as a raw override. `.luacheckrc` already allow-lists
+the assignment by name. Added a comment block at the override site
+explaining why `hooksecurefunc` is not a drop-in swap, so future
+auditors don't try to "fix" it again.
+
+---
 
 ### 1. Consolidate the two chat-filter systems - medium impact, medium risk
 
 Two independent filter installations coexist:
 
-- [`EC_InstallGreedyMuteOnce`](../EbonClearance.lua) installs
+- [`EC_InstallGreedyMuteOnce`](../EbonClearance_Companion.lua) installs
   `EC_GreedyEventFilter` across 10 chat events.
-- [`ApplyGreedyChatFilter`](../EbonClearance.lua) installs
+- [`ApplyGreedyChatFilter`](../EbonClearance_Companion.lua) installs
   `GreedyScavengerChatFilter` across the events listed in
-  [`CHAT_FILTER_EVENTS`](../EbonClearance.lua).
+  [`CHAT_FILTER_EVENTS`](../EbonClearance_Companion.lua).
 
 Both currently run; the mute behaviour is layered (each filter early-
 returns when its condition isn't met). Consolidating to one system
@@ -179,28 +203,18 @@ code.
 
 ---
 
-### 4. File split (in progress) - multi-stage internal refactor
+### File split - DONE (post-v2.29.0 through commit `defa02e`)
 
-The single-file architecture crossed the documented 8K-LOC trigger
-during v2.22.0 (Process Bags) and reached ~11,800 LOC by v2.29.0. The
-post-v2.29.0 audit (see the plan file's §16) confirmed the file is in
-good shape internally - no urgent perf or quality findings - but the
-200-locals cap is now an active design constraint: it forced 2 helpers
-onto `EC_compCache` during v2.29.0 alone for cap-relief reasons, not
-namespacing reasons. `EC_compCache` has grown to 50+ entries, many of
-which are de-facto module-namespace inhabitants. The split crystallises
-what's already happening organically.
+Moved to Resolved in v2.37.4. The single-file architecture crossed the
+documented 8K-LOC trigger during v2.22.0 (Process Bags) and reached
+~11,800 LOC by v2.29.0. The split ran from Stage 1 (namespace bootstrap)
+through Stage 9 (final rename of `EbonClearance.lua` to
+`EbonClearance_Events.lua`) over a series of commits between v2.29.0
+and v2.30.0. The addon now ships as 25 split files; the historical
+stage-by-stage table is preserved below for reference.
 
-The refactor is staged across commits, NOT releases. Stages are
-internal engineering work with no user-facing behaviour change; they
-ship to `master` as soon as the in-game smoke checklist passes but
-do NOT get their own version tags. `ADDON_VERSION` and the `.toc`
-Version stay frozen at whatever the last user-facing release was
-(currently v2.29.0) for the entire duration of the split. The next
-version bump happens whenever the next feature release lands.
-
-Each stage is independently shippable and bisectable. Do NOT mix
-feature work into a split stage - keep diffs move-only where possible.
+Each stage was independently shippable and bisectable. No user-facing
+behaviour change at any stage.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -230,24 +244,11 @@ feature work into a split stage - keep diffs move-only where possible.
 | 9 | Rename `EbonClearance.lua` -> `EbonClearance_Events.lua`; close out the multi-stage file split. `git mv` preserves history; .toc / release.yml sed targets / test.yml luac list / 3 test SOURCE_PATHS arrays / 12 `io.open` sites in test_perf_guardrails.lua / .luacheckrc / stylua.toml / CLAUDE.md all updated in lockstep. The new file's header comment notes the rename + cites the release.yml sed pattern that's still filename-anchored to `EbonClearance_Events.lua`. Test 55 locks: no stale `EbonClearance.lua` file in working tree; ADDON_VERSION lives in `EbonClearance_Events.lua`; .toc references the new name + has no stale bare-old reference; release.yml's sed targets the new name + has no stale bare-old reference. Sweep of residuals (auto-open driver, Fast Loot, vendor-cycle remnants) is deferred - the rename itself is the load-bearing change; residuals can be teased into their target files in subsequent commits without bumping a stage | **DONE** (commit `defa02e`) |
 
 Cross-file references resolve at call time via `NS.foo` table-index
-lookup, so load order between feature files doesn't matter (Core must
-still load first because it owns the namespace shape and the EnsureDB
-migrations). See docs/ADDON_GUIDE.md "File split - in progress" for
-the full target-architecture table.
-
-Tests stay whole-codebase: the three invariant test files will be
-updated at Stage 2 to concatenate the split files at test time, so
-every existing `src:find` check continues to apply unchanged across
-the split boundary.
-
-LICENSE §2(b) requires the file-header attribution block. It stays
-on whichever file is loaded first in the `.toc` - currently
-`EbonClearance.lua`, will move to `EbonClearance_Core.lua` in Stage 2.
-
-Re-evaluate the stage cadence if a stage proves harder than expected,
-but don't abandon mid-refactor: a half-split codebase (some features
-in `_Companion.lua`, the rest still in the monolith) is genuinely
-worse than either endpoint.
+lookup, so load order between feature files doesn't matter (Core loads
+first because it owns the namespace shape and the EnsureDB migrations).
+Tests stay whole-codebase: the three invariant test files concatenate
+the split files at test time. LICENSE §2(b)'s file-header attribution
+block lives on `EbonClearance_Core.lua` (loaded first per the .toc).
 
 ---
 

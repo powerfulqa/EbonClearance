@@ -126,6 +126,28 @@ function EC_compCache.makeListRowFactory(content, setTableName)
     }
 end
 
+-- v2.37.4 (audit issue #4): Clear All wipes a list table directly, which
+-- bypasses EC_RemoveItemFromList's per-id side-meta prune. Snapshot the
+-- itemIDs before wipe so each one can be prune-checked individually
+-- (each call no-ops cheaply when the itemID is still on another list scope).
+local function EC_ClearListWithPrune(t)
+    if not t then
+        return
+    end
+    if not NS.PruneSideMetaForItem then
+        wipe(t)
+        return
+    end
+    local cleared = {}
+    for id in pairs(t) do
+        cleared[#cleared + 1] = id
+    end
+    wipe(t)
+    for i = 1, #cleared do
+        NS.PruneSideMetaForItem(cleared[i])
+    end
+end
+
 -- v2.18.0: CreateListUI header-row extraction. Builds the title
 -- FontString + ID-input EditBox + Add Button + Clear All Button.
 -- Also wires the input's focus-tracking handlers (NS.activeIDBox is the
@@ -528,10 +550,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         local dialog = StaticPopup_Show("EC_CONFIRM_CLEAR_LIST", titleText)
         if dialog then
             dialog.data = function()
-                local target = NS.GetListTable(setTableName)
-                if target then
-                    wipe(target)
-                end
+                EC_ClearListWithPrune(NS.GetListTable(setTableName))
                 Refresh()
                 NS.PrintNicef('Cleared every item from "|cffffff00%s|r".', titleText)
                 PlaySound("igMainMenuOptionCheckBoxOn")

@@ -5071,6 +5071,43 @@ do
                 "The Main panel's Slash Commands section must list /ec affixdebug alongside the other commands so players can discover it without typing /ec help."
             )
         end
+
+        -- v2.37.4: Process Bags chrome restoration on second OnShow.
+        -- The v2.37.3 OnHide handler hides processScrollBg as a "belt-
+        -- and-braces" measure against combat-lockdown bleed-through;
+        -- without a matching Show() in the OnShow refresh path the
+        -- chrome stays hidden after a panel-switch round-trip. The
+        -- refresh callback must Show processScrollBg on every entry.
+        local pbpf = io.open("EbonClearance_ProcessBagsPanel.lua", "rb")
+        if pbpf then
+            local pbpSrc = pbpf:read("*a") or ""
+            pbpf:close()
+            check(
+                "Test 88h: Process Bags refresh callback re-shows processScrollBg",
+                pbpSrc:find("self%.processScrollBg:Show%(%)") ~= nil
+                    and pbpSrc:find("self%.processScrollBg:Hide%(%)") ~= nil,
+                "OnHide hides processScrollBg; without a matching Show in the OnShow refresh path the panel chrome stays hidden on subsequent opens."
+            )
+        end
+
+        -- v2.37.4 (audit issue #4): side-meta prune for affixedListedItems
+        -- and chanceOnHitListedItems. The helper must exist, be exposed on
+        -- NS, get called from EC_RemoveItemFromList, and the Clear All
+        -- path in ListWidget must snapshot keys before wipe + call the
+        -- helper per id.
+        local lwf2 = io.open("EbonClearance_ListWidget.lua", "rb")
+        if lwf2 then
+            local lwSrc2 = lwf2:read("*a") or ""
+            lwf2:close()
+            check(
+                "Test 88g: side-meta prune helper present + wired on remove + wired on Clear All",
+                evSrc:find("local function EC_PruneSideMetaForItem%(") ~= nil
+                    and evSrc:find("NS%.PruneSideMetaForItem%s*=%s*EC_PruneSideMetaForItem") ~= nil
+                    and evSrc:find("EC_PruneSideMetaForItem%(itemID%)") ~= nil
+                    and lwSrc2:find("NS%.PruneSideMetaForItem%(cleared%[i%]%)") ~= nil,
+                "Removing the last list entry for an itemID must clear ADB.affixedListedItems[id] and ADB.chanceOnHitListedItems[id] so the side meta doesn't accumulate orphans. Clear All must snapshot itemIDs before wipe and prune per id."
+            )
+        end
     end
 end
 

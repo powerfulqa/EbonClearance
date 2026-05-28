@@ -553,6 +553,13 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         EC_armCombatExitRetry(self)
         return
     end
+    -- v2.37.4: hide the combat placeholder if it's lingering (the
+    -- combat-exit retry handler also clears it, but a fresh OnShow
+    -- from a non-lockdown state must clear it too in case the panel
+    -- was opened-during-combat then closed without the retry firing).
+    if self.combatPlaceholder then
+        self.combatPlaceholder:Hide()
+    end
     -- v2.37.3: combat-lockdown bleed-through from Process Bags into
     -- other EC panels is a known WoW protection-model quirk. Attempts
     -- to hide / fade / cover the panel from either side were all
@@ -563,6 +570,17 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
     -- larger refactor of the Process Bags UI shape.
     local DB = NS.DB
     EC_compCache.initPanel(self, function(self)
+        -- v2.37.4: counterpart to the OnHide processScrollBg:Hide().
+        -- The OnHide handler (added in v2.37.3) was framed as
+        -- "belt-and-braces with no cost" but had a cost: subsequent
+        -- OnShow calls take the refresh path here (because inited is
+        -- true) and the row scroll background stays hidden, leaving
+        -- the panel looking empty even though it's built. Re-Show on
+        -- every refresh so a panel-switch round-trip restores the
+        -- chrome.
+        if self.processScrollBg then
+            self.processScrollBg:Show()
+        end
         if self.includeSoulboundCB then
             self.includeSoulboundCB:SetChecked(DB.processIncludeSoulbound)
         end

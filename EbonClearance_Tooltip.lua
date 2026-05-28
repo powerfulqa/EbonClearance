@@ -347,7 +347,12 @@ local function EC_AnnotateTooltip(tooltip)
                     or IsInSet(DB.deleteList, id)
                 if onAnyList and ADB then
                     ADB.affixedListedItems = ADB.affixedListedItems or {}
-                    ADB.affixedListedItems[id] = true
+                    if not ADB.affixedListedItems[id] then
+                        ADB.affixedListedItems[id] = true
+                        if NS.RefreshAllListPanels then
+                            NS.RefreshAllListPanels()
+                        end
+                    end
                 end
                 local affixKey = affix.description and EC_compCache.normaliseAffixDesc(affix.description)
                 local manualAllow = affixKey and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
@@ -534,7 +539,12 @@ local function EC_AnnotateTooltip(tooltip)
         -- the flag is set.
         if onExplicit and ADB then
             ADB.chanceOnHitListedItems = ADB.chanceOnHitListedItems or {}
-            ADB.chanceOnHitListedItems[id] = true
+            if not ADB.chanceOnHitListedItems[id] then
+                ADB.chanceOnHitListedItems[id] = true
+                if NS.RefreshAllListPanels then
+                    NS.RefreshAllListPanels()
+                end
+            end
         end
         -- v2.37.0 polish: affix protection wins over chance-on-hit when
         -- both apply. PE rule: a chance-on-hit can't be extracted from

@@ -3,14 +3,12 @@
 -- Source:  https://github.com/powerfulqa/EbonClearance
 -- License: see LICENSE; attribution preservation is required.
 --
--- Stage 9 of the multi-stage file split (docs/CODE_REVIEW.md item 4):
--- this file was renamed from EbonClearance.lua to EbonClearance_Events.lua
--- once the file split was substantively complete. The rename clarifies the
--- file's actual remaining responsibility: the event hub, slash commands,
--- Bindings.xml handlers, and the glue that ties Core / Companion /
--- Protection / Vendor / Process / the panel files together. ADDON_VERSION
--- still lives in this file (the release workflow's sed rule was updated
--- to target the new name in lockstep with the rename).
+-- Responsibility: event hub, slash commands, Bindings.xml handlers, and
+-- the glue that ties Core / Companion / Protection / Vendor / Process /
+-- the panel files together. ADDON_VERSION lives in this file; the
+-- release workflow's sed rule (.github/workflows/release.yml) targets
+-- it by filename. See docs/CODE_REVIEW.md "Resolved -> file split" for
+-- the history of how this file got carved out of the original monolith.
 --
 -- Shared namespace for the addon. WoW passes (addonName, namespaceTable) as
 -- the varargs to every .lua file in an addon; the same table is shared
@@ -62,9 +60,7 @@ local ADDON_URL = NS.ADDON_URL
 -- .toc Version field so any future drift fails CI before shipping.
 -- DO NOT move this constant out of EbonClearance_Events.lua without first
 -- updating the CI workflow's sed rule that targets this file by name
--- (.github/workflows/release.yml). The rule was retargeted from
--- EbonClearance.lua to EbonClearance_Events.lua during Stage 9 of the
--- file split.
+-- (.github/workflows/release.yml).
 local ADDON_VERSION = "v2.37.3"
 local function EC_GetVersion()
     if ADDON_VERSION:match("^v%d+%.%d+%.%d+") then
@@ -1539,6 +1535,14 @@ local function EC_RecordInventoryWorthSample()
     DB.inventoryWorthCount = (DB.inventoryWorthCount or 0) + 1
 end
 
+-- v2.37.4 (audit issue #2): this is one of the few raw global overrides
+-- left in the addon. hooksecurefunc is NOT a drop-in swap here because
+-- the hook below intentionally SHORT-CIRCUITS the original handler when
+-- an EC ID-input box is focused (the shift-click insert goes into the
+-- EC field, not the chat input). hooksecurefunc always runs the original
+-- first, so swapping to it would leak the link into the chat editbox.
+-- The .luacheckrc allow-lists this assignment by name. Wrap-with-original
+-- + early-return stays.
 local EC_Original_ChatEdit_InsertLink = ChatEdit_InsertLink
 
 local function EC_ExtractItemID(link)
@@ -2515,6 +2519,22 @@ local EC_CTX_PANEL_FOR = {
     deleteList = "EbonClearanceOptionsDeletion",
 }
 
+-- v2.37.4: refresh every list panel that's been opened at least once. Used
+-- by the tooltip backfill in EC_AnnotateTooltip when it stamps a NEW
+-- side-meta entry (affixedListedItems / chanceOnHitListedItems) so the
+-- (affix-gated) / (Hit-proc) tag appears immediately on the visible row
+-- instead of needing the user to close and reopen the panel. Walking the
+-- four list-panel name globals is cheap (each Refresh is O(visible rows)).
+local function EC_RefreshAllListPanels()
+    for _, panelName in pairs(EC_CTX_PANEL_FOR) do
+        local panel = _G[panelName]
+        if panel and panel.listUI and panel.listUI.Refresh then
+            panel.listUI:Refresh()
+        end
+    end
+end
+NS.RefreshAllListPanels = EC_RefreshAllListPanels
+
 -- v2.10.0: optional `quiet` flag suppresses the success / dedupe / conflict
 -- chat lines and returns true on a successful add, false on dedupe, conflict
 -- or unresolved list. Used by the auto-protect-equipped one-shot sync (which
@@ -2784,6 +2804,39 @@ function EC_compCache.buildElvUIBagButtons()
     end)
 end
 
+-- v2.37.4 (audit issue #4): the (affix-gated) and (Hit-proc) tags shown
+-- on list-panel rows read ADB.affixedListedItems / ADB.chanceOnHitListedItems.
+-- Those tables were stamped at add-time + on tooltip backfill but never
+-- cleared on remove, so orphan entries accumulated over time. Clears both
+-- meta entries when the itemID is absent from every list this character
+-- can see (per-character sell/keep/delete + account sell). Alt characters
+-- that still have the itemID on one of their lists will see the tag get
+-- re-stamped on next tooltip hover via the EC_AnnotateTooltip backfill, so
+-- this is safe to call from a single character's remove path.
+local function EC_PruneSideMetaForItem(itemID)
+    if not itemID or not ADB then
+        return
+    end
+    if DB then
+        if (DB.whitelist and DB.whitelist[itemID])
+            or (DB.blacklist and DB.blacklist[itemID])
+            or (DB.deleteList and DB.deleteList[itemID])
+        then
+            return
+        end
+    end
+    if ADB.whitelist and ADB.whitelist[itemID] then
+        return
+    end
+    if type(ADB.affixedListedItems) == "table" then
+        ADB.affixedListedItems[itemID] = nil
+    end
+    if type(ADB.chanceOnHitListedItems) == "table" then
+        ADB.chanceOnHitListedItems[itemID] = nil
+    end
+end
+NS.PruneSideMetaForItem = EC_PruneSideMetaForItem
+
 local function EC_RemoveItemFromList(setName, itemID, label)
     if not itemID then
         return
@@ -2793,6 +2846,7 @@ local function EC_RemoveItemFromList(setName, itemID, label)
         return
     end
     t[itemID] = nil
+    EC_PruneSideMetaForItem(itemID)
     -- v2.10.0: keep the auto-protected source map in lockstep so the
     -- tooltip annotation can never claim "(auto-protected: equipped)" for
     -- an item the user has explicitly removed. Cleared regardless of

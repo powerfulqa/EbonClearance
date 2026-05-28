@@ -3,28 +3,19 @@
 -- Source:  https://github.com/powerfulqa/EbonClearance
 -- License: see LICENSE; attribution preservation is required.
 --
--- Stage 2 of the multi-stage file split tracked in docs/CODE_REVIEW.md
--- item 4. This file owns the chunks that have no dependencies on anything
--- else in the addon AND that EbonClearance.lua used to define at the top
--- of its own main chunk:
+-- Owns the chunks that have no dependencies on anything else in the addon:
 --
 --   * Provenance globals (EBONCLEARANCE_* and __EbonClearance_* writes
 --     required by LICENSE §2(d)).
 --   * The EC_Fingerprint salted djb2 helper. Exposed as NS.Fingerprint.
 --   * The EC_compCache junk-drawer table. Exposed as NS.compCache.
 --
--- Things that did NOT move in this stage:
---   * ADDON_VERSION - CI's release workflow `sed` rule targets the
---     `local ADDON_VERSION = "..."` line in EbonClearance.lua by name.
---     Moving it would require updating .github/workflows; deferred to
---     a later split stage.
---   * The watermark global write (depends on ADDON_VERSION).
---   * EC_GetVersion (depends on ADDON_VERSION).
---   * STATE / EC_lootCycleState and the API cached upvalues - those are
---     still in EbonClearance.lua and will move in a later stage.
+-- ADDON_VERSION, EC_GetVersion, the watermark write, STATE / EC_lootCycleState,
+-- and the API cached upvalues live in EbonClearance_Events.lua because the
+-- release workflow's sed rule targets that file by name.
 --
--- This file loads BEFORE EbonClearance.lua per the .toc, so anything
--- it puts on NS is reachable to EbonClearance.lua's main chunk at load.
+-- This file loads FIRST per the .toc, so anything it puts on NS is reachable
+-- to every other split file's main chunk at load.
 
 local NS = select(2, ...)
 
@@ -35,9 +26,8 @@ local NS = select(2, ...)
 -- elsewhere in the 3.3.5a addon ecosystem; see NOTICE.md for the prior-art
 -- acknowledgement. EBONCLEARANCE_IDENT is set inline (no local) because the
 -- display-name string only appears in this one assignment; ADDON_AUTHOR and
--- ADDON_URL stay as locals because the settings byline (still in
--- EbonClearance.lua, reached via NS.ADDON_AUTHOR / NS.ADDON_URL) reads them
--- too.
+-- ADDON_URL stay as locals because the settings byline in
+-- EbonClearance_Events.lua reads them via NS.ADDON_AUTHOR / NS.ADDON_URL.
 local ADDON_AUTHOR = "Serv"
 local ADDON_URL = "https://github.com/powerfulqa/EbonClearance"
 _G["EBONCLEARANCE_IDENT"] = "EbonClearance"

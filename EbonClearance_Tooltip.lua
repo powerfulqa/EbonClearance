@@ -395,6 +395,28 @@ local function EC_AnnotateTooltip(tooltip)
                     and EC_compCache.playerHasAffixRank
                     and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
                     or false
+                -- v2.37.x diagnostic: log the lookup result so a future
+                -- "rank needed" misfire report can be debugged from the
+                -- affix-debug dump rather than by guessing. Includes
+                -- the raw + normalised family key so apostrophe /
+                -- character mismatches between item titles and spell
+                -- names are visible. Fires per tooltip hover; gated
+                -- on the same ADB.affixDebugEnabled flag.
+                if EC_compCache.AffixDebugDump then
+                    EC_compCache.AffixDebugDump("tooltip.affix.lookup", {
+                        itemID = id,
+                        rawName = affix.name,
+                        rank = affix.rank,
+                        normFamily = EC_compCache.normaliseAffixFamily
+                            and EC_compCache.normaliseAffixFamily(affix.name) or nil,
+                        rawDescription = affix.description,
+                        normDescription = affix.description
+                            and EC_compCache.normaliseAffixDesc
+                            and EC_compCache.normaliseAffixDesc(affix.description) or nil,
+                        playerKnowsDesc = playerKnows,
+                        playerKnowsRank = playerKnowsRank,
+                    })
+                end
                 -- v2.35.1: autoDupe widens to release on description match
                 -- OR (family, rank) match. Keeps the sell-side and label
                 -- semantics in sync: when the tooltip says "rank known"

@@ -315,6 +315,14 @@ function EC_compCache.normaliseAffixDesc(s)
     s = s:gsub("|r", "")
     -- Strip lingering @affix@ markers in case any survived.
     s = s:gsub("@affix@", "")
+    -- v2.37.x: normalize curly quotes / dashes that PE item text and
+    -- WoW spell text differ on. U+2019 (right single quote) is the
+    -- usual offender - item descriptions say "your target's movement"
+    -- while spell descriptions might use straight U+0027. Both sides
+    -- end up at the same key after this, so the same-rank-text-
+    -- disagrees fallback can still match by family.
+    s = s:gsub("\226\128\152", "'"):gsub("\226\128\153", "'")
+    s = s:gsub("\226\128\147", "-"):gsub("\226\128\148", "-")
     s = s:gsub("^%s+", ""):gsub("%s+$", "")
     s = s:gsub("[%.%!%?]+$", "")
     return s:lower()
@@ -580,6 +588,18 @@ function EC_compCache.normaliseAffixFamily(name)
     name = name:gsub("^%s+", ""):gsub("%s+$", "")
     name = name:gsub("^[Oo]f%s+", "")
     name = name:gsub("%s+[IVXLCDM]+$", "")
+    -- v2.37.x: normalize curly apostrophes / hyphens so item-derived
+    -- family keys ("Mender's Surge" from a parsed item title) match
+    -- spell-derived ones ("Mender's Surge" from GetSpellInfo). PE's
+    -- item titles use U+2019 (right single quote, UTF-8 0xE2 0x80
+    -- 0x99); WoW's spell DB returns U+0027 straight apostrophes.
+    -- Without this, the family+rank fallback - which exists exactly
+    -- to recover when description text disagrees across the item /
+    -- spell tooltips - silently misses on any affix containing an
+    -- apostrophe ("Mender's Surge", "Keeper's Sting", "Julie's
+    -- Blessing").
+    name = name:gsub("\226\128\152", "'"):gsub("\226\128\153", "'")
+    name = name:gsub("\226\128\147", "-"):gsub("\226\128\148", "-")
     return name:lower()
 end
 

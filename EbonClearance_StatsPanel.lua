@@ -184,7 +184,16 @@ StatsPanel:SetScript("OnShow", function(self)
         if NS.RefreshStats then
             NS.RefreshStats()
         end
-    end)
+        -- v2.37.x: size the scroll content frame to fit the bottom-most
+        -- widget so the panel scrolls when the stack grows past the
+        -- Interface Options container's natural height. resetBtn is
+        -- the last widget; FitScrollContent measures its bottom edge
+        -- against the content frame's TOPLEFT. Same pattern as the
+        -- Main / Scavenger / Merchant / Item Highlighting panels.
+        if NS.FitScrollContent then
+            NS.FitScrollContent(content, resetBtn)
+        end
+    end, true)
 end)
 
 -- v2.36.x: registered with InterfaceOptions_AddCategory from

@@ -4842,6 +4842,77 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 87: v2.37.0 Keep List bag-border highlighting.
+-- ---------------------------------------------------------------------------
+-- v2.37.0 adds a sixth sell-border category, "keep", that paints a
+-- distinct slot border on items the player manually added to the Keep
+-- List (DB.blacklist minus DB.blacklistAuto entries). Pure visual-
+-- reassurance feature - no behaviour change, just a new colour gated
+-- by the existing per-category enable + colour-picker UI.
+--
+-- The four sub-tests verify the four touch points stay in lockstep:
+-- defaults init, resolver order, panel row, Help entry. See
+-- docs/specs/2026-05-28-keep-highlighting-design.md.
+do
+    local evf = io.open("EbonClearance_Events.lua", "rb")
+    local bdf = io.open("EbonClearance_BagDisplay.lua", "rb")
+    local ihf = io.open("EbonClearance_ItemHighlightingPanel.lua", "rb")
+    local hpf = io.open("EbonClearance_HelpPanel.lua", "rb")
+    if evf and bdf and ihf and hpf then
+        local evSrc = evf:read("*a") or ""
+        evf:close()
+        local bdSrc = bdf:read("*a") or ""
+        bdf:close()
+        local ihSrc = ihf:read("*a") or ""
+        ihf:close()
+        local hpSrc = hpf:read("*a") or ""
+        hpf:close()
+
+        check(
+            "Test 87: EnsureDB seeds DB.sellBorderCategories.keep with enabled=false default",
+            evSrc:find("keep = { enabled = false, color = {") ~= nil
+                and evSrc:find("delete = defaultCat%(") ~= nil
+                and evSrc:find("accountSell = defaultCat%(") ~= nil,
+            "EnsureDB's CAT_DEFAULTS must include a 'keep' entry. Keep ships enabled=false (opt-in) while every other category uses defaultCat() (enabled=true). The asymmetry keeps existing v2.36.x setups visually identical on upgrade - the player has to tick the Keep row to pick up the new tint."
+        )
+
+        -- The Keep check must sit between the Delete check and the
+        -- IsSellable bail. Keep-listed items return false from
+        -- EC_IsSellable (that's the protection mechanism), so the
+        -- resolver has to short-circuit before that bail to surface
+        -- the "keep" verdict.
+        local fnStart = bdSrc:find("function EC_compCache%.bagSlotWillSellCategory%(")
+        local fnEnd = fnStart and bdSrc:find("\nend\n", fnStart) or nil
+        local body = fnStart and fnEnd and bdSrc:sub(fnStart, fnEnd) or ""
+        local deletePos = body:find("IsInSet%(DB%.deleteList,")
+        local keepPos = body:find("IsInSet%(DB%.blacklist,")
+        local sellablePos = body:find("NS%.IsSellable%(bag, slot,")
+        check(
+            "Test 87a: bagSlotWillSellCategory checks Keep List between Delete and IsSellable",
+            deletePos ~= nil
+                and keepPos ~= nil
+                and sellablePos ~= nil
+                and deletePos < keepPos
+                and keepPos < sellablePos,
+            "Keep-listed items return false from EC_IsSellable, so the 'keep' verdict has to be resolved BEFORE that bail. Order must be: deleteList -> blacklist (Keep) -> IsSellable -> remaining categories. The blacklistAuto guard excludes auto-protected entries from the manual-only border scope."
+        )
+
+        check(
+            "Test 87b: Item Highlighting panel registers a 'keep' category row",
+            ihSrc:find('{ key = "keep", label = "Keep List') ~= nil,
+            "Item Highlighting panel's SELL_BORDER_CATEGORIES table must include a 'keep' row so the player can toggle the new border and repaint its colour. Adding the category to EnsureDB without surfacing it in the panel makes it invisible to the user."
+        )
+
+        check(
+            "Test 87c: tshoot-bag-borders Help entry mentions Keep",
+            hpSrc:find("tshoot%-bag%-borders") ~= nil
+                and hpSrc:find('"They\'re off by default%..-Delete, Keep, Account Sell') ~= nil,
+            "The tshoot-bag-borders Help entry's category list must include Keep alongside the existing categories so the deep-link from the new row's [?] points at accurate text."
+        )
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

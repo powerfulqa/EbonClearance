@@ -105,6 +105,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- two Sell lists, then Junk, then per-rarity rule.
         local SELL_BORDER_CATEGORIES = {
             { key = "delete", label = "Delete List (red)" },
+            { key = "keep", label = "Keep List (white)" },
             { key = "accountSell", label = "Account Sell List (green)" },
             { key = "charSell", label = "Character Sell List (cyan)" },
             { key = "junk", label = "Junk - greys (low-alpha grey)" },

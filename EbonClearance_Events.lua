@@ -539,6 +539,37 @@ local function EnsureDB()
         DB.deletedItemCounts = {}
     end
 
+    -- v2.37.0: per-quality breakdown of lifetime sells. Keyed by item
+    -- rarity (0=Poor through 7=Heirloom). Captured at the sell-success
+    -- site in both the manual (UseContainerItem hook) and worker
+    -- (auto-cycle) paths so the Stats panel can render a "Sold by
+    -- Quality" rollup. Counts are stack-event counts (matching
+    -- DB.totalItemsSold / DB.soldItemCounts semantics for the
+    -- respective path), copper is summed per-event.
+    if type(DB.soldItemsByQuality) ~= "table" then
+        DB.soldItemsByQuality = {}
+    end
+    if type(DB.soldCopperByQuality) ~= "table" then
+        DB.soldCopperByQuality = {}
+    end
+    -- v2.37.0: Process Bags lifetime cast counters. Keyed by the
+    -- localised spell name UNIT_SPELLCAST_SUCCEEDED emits ("Disenchant",
+    -- "Milling", "Prospecting", "Pick Lock"). Counts EVERY successful
+    -- cast of these spells - both Process Bags-driven and manual
+    -- casts. "Opening" is excluded (fires on every right-click box
+    -- open, which would over-attribute).
+    if type(DB.processCastCounts) ~= "table" then
+        DB.processCastCounts = {}
+    end
+    -- v2.37.0: lifetime gold earned per zone. Keyed by the localised
+    -- GetRealZoneText string at sell time (or "Unknown" when the zone
+    -- text isn't available, e.g. mid-load). Both the manual sell hook
+    -- and the worker-cycle FinishRun add to this so the Stats panel
+    -- can render a "Top Zones" rollup matching the wallet totals.
+    if type(DB.copperByZone) ~= "table" then
+        DB.copperByZone = {}
+    end
+
     if type(DB.repairGear) ~= "boolean" then
         DB.repairGear = true
     end
@@ -979,6 +1010,16 @@ local function EnsureDB()
         end
         local CAT_DEFAULTS = {
             delete = defaultCat(1.0, 0.20, 0.20, 0.9), -- red - highest visibility
+            -- v2.37.0: Keep List verdict. Soft cool white, distinct from
+            -- the warm-toned sell verdicts. Reads as "pristine /
+            -- protected" - the visual-reassurance use case from
+            -- docs/specs/2026-05-28-keep-highlighting-design.md.
+            -- Default OFF: every existing category defaults ON, but
+            -- Keep is opt-in so the player picks up no NEW slot colour
+            -- on the v2.37.0 upgrade unless they explicitly enable it.
+            -- This matches the v2.37.0 principle of "don't change
+            -- existing players' setups without their action".
+            keep = { enabled = false, color = { r = 0.95, g = 0.95, b = 1.00, a = 0.9 } },
             accountSell = defaultCat(0.4, 1.0, 0.4, 0.9), -- bright green
             charSell = defaultCat(0.4, 0.7, 1.0, 0.9), -- cyan / sky blue
             junk = defaultCat(0.7, 0.7, 0.7, 0.7), -- low-alpha grey
@@ -3654,7 +3695,7 @@ function EC_manualSell.installHookOnce()
         end
         local snap = EC_manualSell.snapshot[bag * 1000 + slot]
         if snap and snap.link then
-            local sellPrice = select(11, GetItemInfo(snap.link))
+            local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(snap.link)
             if sellPrice and sellPrice > 0 then
                 local copper = sellPrice * (snap.count or 1)
                 if DB then
@@ -3664,6 +3705,19 @@ function EC_manualSell.installHookOnce()
                         DB.soldItemCounts = DB.soldItemCounts or {}
                         DB.soldItemCounts[snap.itemID] = (DB.soldItemCounts[snap.itemID] or 0) + 1
                     end
+                    if quality then
+                        DB.soldItemsByQuality = DB.soldItemsByQuality or {}
+                        DB.soldItemsByQuality[quality] = (DB.soldItemsByQuality[quality] or 0) + 1
+                        DB.soldCopperByQuality = DB.soldCopperByQuality or {}
+                        DB.soldCopperByQuality[quality] = (DB.soldCopperByQuality[quality] or 0) + copper
+                    end
+                    -- v2.37.0: attribute the sell to the current zone.
+                    local zone = GetRealZoneText and GetRealZoneText() or nil
+                    if not zone or zone == "" then
+                        zone = "Unknown"
+                    end
+                    DB.copperByZone = DB.copperByZone or {}
+                    DB.copperByZone[zone] = (DB.copperByZone[zone] or 0) + copper
                 end
                 EC_session.copper = EC_session.copper + copper
                 EC_session.sold = EC_session.sold + 1
@@ -4048,6 +4102,11 @@ local function BuildQueue(junkOnly)
             if not queuedDelete then
                 local sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
                 if sellable then
+                    -- v2.37.0: capture rarity at queue-build time so the
+                    -- worker path can attribute the sell to a quality
+                    -- bucket without re-querying GetItemInfo at action
+                    -- execution.
+                    local quality = link and select(3, GetItemInfo(link)) or nil
                     queue[#queue + 1] = {
                         type = "sell",
                         bag = bag,
@@ -4055,6 +4114,7 @@ local function BuildQueue(junkOnly)
                         itemID = itemID,
                         count = itemCount,
                         price = sellPrice or 0,
+                        quality = quality,
                     }
                     if sellPrice and sellPrice > 0 then
                         goldThisVendoring = goldThisVendoring
@@ -4083,6 +4143,16 @@ local function FinishRun()
     EC_session.copper = EC_session.copper + (goldThisVendoring or 0)
     EC_batchTotalSold = EC_batchTotalSold + #queue
     EC_batchTotalGold = EC_batchTotalGold + (goldThisVendoring or 0)
+    -- v2.37.0: attribute the auto-cycle haul to the current zone so the
+    -- Stats panel's "Top Zones" rollup tracks worker sells too.
+    if (goldThisVendoring or 0) > 0 then
+        local zone = GetRealZoneText and GetRealZoneText() or nil
+        if not zone or zone == "" then
+            zone = "Unknown"
+        end
+        DB.copperByZone = DB.copperByZone or {}
+        DB.copperByZone[zone] = (DB.copperByZone[zone] or 0) + goldThisVendoring
+    end
 
     -- Check if merchant is still open - delay re-scan so server can process sold items
     if MerchantFrame and MerchantFrame:IsShown() then
@@ -4175,6 +4245,13 @@ local function DoNextAction()
         DB.soldItemCounts = DB.soldItemCounts or {}
         if action.itemID then
             DB.soldItemCounts[action.itemID] = (DB.soldItemCounts[action.itemID] or 0) + (action.count or 1)
+        end
+        if action.quality then
+            local copper = (action.price or 0) * (action.count or 1)
+            DB.soldItemsByQuality = DB.soldItemsByQuality or {}
+            DB.soldItemsByQuality[action.quality] = (DB.soldItemsByQuality[action.quality] or 0) + (action.count or 1)
+            DB.soldCopperByQuality = DB.soldCopperByQuality or {}
+            DB.soldCopperByQuality[action.quality] = (DB.soldCopperByQuality[action.quality] or 0) + copper
         end
     elseif action.type == "delete" then
         ClearCursor()
@@ -5546,6 +5623,15 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_compCache.lastProfLootCastAt = GetTime()
         end
         EC_compCache.lastPlayerCastAt = GetTime()
+        -- v2.37.0: Process Bags lifetime cast counters. Counts every
+        -- successful Disenchant / Milling / Prospecting / Pick Lock,
+        -- whether the cast came from the Process Bags secure button
+        -- or a manual cast bar. "Opening" is excluded - it fires on
+        -- every container right-click and would over-attribute.
+        if DB and spellName and EC_compCache.PROF_LOOT_SPELLS[spellName] and spellName ~= "Opening" then
+            DB.processCastCounts = DB.processCastCounts or {}
+            DB.processCastCounts[spellName] = (DB.processCastCounts[spellName] or 0) + 1
+        end
         -- v2.25.0: Pick Lock completion - BAG_UPDATE doesn't fire for a
         -- lockbox's lock-state change (slot contents unchanged), and
         -- ITEM_LOCK_CHANGED doesn't reliably fire either. UNIT_SPELLCAST_SUCCEEDED

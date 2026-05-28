@@ -72,12 +72,65 @@ StatsPanel:SetScript("OnShow", function(self)
         panel.statsBestGPH = bestGPH
         local avgWorth = makeStatRow(-6, bestGPH)
         panel.statsAvgWorth = avgWorth
-        local mostSold = makeStatRow(-6, avgWorth)
+        -- v2.37.0: Sold-by-Quality breakdown. Multi-line FontString; the
+        -- row height grows with the number of quality buckets that have
+        -- nonzero counts (RefreshStats emits 1-8 indented rows). Width
+        -- is registered via setPanelWidth so live panel-resize keeps
+        -- the text flush.
+        local qualityBreakdown = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        qualityBreakdown:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -10)
+        EC_compCache.setPanelWidth(qualityBreakdown, 16)
+        qualityBreakdown:SetJustifyH("LEFT")
+        qualityBreakdown:SetJustifyV("TOP")
+        if qualityBreakdown.SetWordWrap then
+            qualityBreakdown:SetWordWrap(false)
+        end
+        panel.statsQualityBreakdown = qualityBreakdown
+        -- v2.37.0: panel.statsMostSold is now a multi-line "Top 5 Most
+        -- Sold" widget. The name is preserved because Test 80 docs
+        -- reference it as a contract surface; the format changed from
+        -- single-line "Most Sold Item: ..." to a heading + up to five
+        -- ranked rows. RefreshStats writes the full block via
+        -- table.concat with "\n" so it grows row by row.
+        local mostSold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        mostSold:SetPoint("TOPLEFT", qualityBreakdown, "BOTTOMLEFT", 0, -10)
+        EC_compCache.setPanelWidth(mostSold, 16)
+        mostSold:SetJustifyH("LEFT")
+        mostSold:SetJustifyV("TOP")
+        if mostSold.SetWordWrap then
+            mostSold:SetWordWrap(false)
+        end
         panel.statsMostSold = mostSold
+
+        -- v2.37.0: Process Bags lifetime totals (Disenchant / Mill /
+        -- Prospect / Pick Lock). Multi-line; RefreshStats emits a
+        -- header plus one row per nonzero counter.
+        local processTotals = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        processTotals:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -10)
+        EC_compCache.setPanelWidth(processTotals, 16)
+        processTotals:SetJustifyH("LEFT")
+        processTotals:SetJustifyV("TOP")
+        if processTotals.SetWordWrap then
+            processTotals:SetWordWrap(false)
+        end
+        panel.statsProcessTotals = processTotals
+
+        -- v2.37.0: Top zones by lifetime gold earned. RefreshStats emits
+        -- a header plus up to five ranked zone rows (gold-desc) so the
+        -- player can see where they've grossed the most.
+        local topZones = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        topZones:SetPoint("TOPLEFT", processTotals, "BOTTOMLEFT", 0, -10)
+        EC_compCache.setPanelWidth(topZones, 16)
+        topZones:SetJustifyH("LEFT")
+        topZones:SetJustifyV("TOP")
+        if topZones.SetWordWrap then
+            topZones:SetWordWrap(false)
+        end
+        panel.statsTopZones = topZones
 
         -- Footnote about buyback exclusion.
         local statsNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        statsNote:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -4)
+        statsNote:SetPoint("TOPLEFT", topZones, "BOTTOMLEFT", 0, -4)
         EC_compCache.setPanelWidth(statsNote, 16)
         statsNote:SetJustifyH("LEFT")
         statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")

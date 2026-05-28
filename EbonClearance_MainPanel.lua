@@ -54,18 +54,59 @@ MainOptions.name = "EbonClearance"
 -- The stats widgets now hang on _G["EbonClearanceOptionsStats"]; both
 -- functions look it up and no-op if the panel isn't built yet.
 
-local function GetMostItem(countTable)
-    local bestID, bestCount = nil, 0
+-- GetTopNItems: return up to N {id, count} pairs ordered by count desc.
+-- v2.37.0 superset of the old GetMostItem (which returned only the top
+-- entry). The Stats panel renders the top 5 most-sold items; passing
+-- n=1 reproduces the v2.36.x single-line "Most Sold Item" behaviour.
+local function GetTopNItems(countTable, n)
     if type(countTable) ~= "table" then
-        return nil, 0
+        return {}
     end
+    local entries = {}
     for id, cnt in pairs(countTable) do
-        if type(id) == "number" and type(cnt) == "number" and cnt > bestCount then
-            bestID, bestCount = id, cnt
+        if type(id) == "number" and type(cnt) == "number" and cnt > 0 then
+            entries[#entries + 1] = { id = id, count = cnt }
         end
     end
-    return bestID, bestCount
+    table.sort(entries, function(a, b)
+        if a.count == b.count then
+            return a.id < b.id
+        end
+        return a.count > b.count
+    end)
+    local top = {}
+    for i = 1, math.min(n or 1, #entries) do
+        top[i] = entries[i]
+    end
+    return top
 end
+
+-- v2.37.0: quality bucket order + display names + colours. WoW's
+-- ITEM_QUALITY_COLORS table exists in 3.3.5a but its colour codes
+-- don't always include the leading "ff" alpha pair our format
+-- strings expect; hardcoding keeps the rendering stable. Heirloom
+-- (7) reuses the Artifact (6) gold tone, matching the legacy
+-- in-game tooltip palette.
+local QUALITY_NAMES = {
+    [0] = "Poor",
+    [1] = "Common",
+    [2] = "Uncommon",
+    [3] = "Rare",
+    [4] = "Epic",
+    [5] = "Legendary",
+    [6] = "Artifact",
+    [7] = "Heirloom",
+}
+local QUALITY_HEX = {
+    [0] = "9d9d9d",
+    [1] = "ffffff",
+    [2] = "1eff00",
+    [3] = "0070dd",
+    [4] = "a335ee",
+    [5] = "ff8000",
+    [6] = "e6cc80",
+    [7] = "e6cc80",
+}
 
 -- ItemLabel: resolve an itemID to a coloured name string, with a
 -- cache-warmup deferred re-render for cold-cache cases. The warmup
@@ -237,13 +278,103 @@ function NS.RefreshStats()
         panel.statsAvgWorth:SetText("Average Inventory Worth: " .. NS.CopperToColoredText(avg))
     end
 
-    if panel.statsMostSold then
-        local mostID, mostCount = GetMostItem(DB.soldItemCounts)
-        if mostID then
-            panel.statsMostSold:SetText("Most Sold Item: " .. ItemLabel(mostID) .. " (x" .. tostring(mostCount) .. ")")
-        else
-            panel.statsMostSold:SetText("Most Sold Item: None")
+    if panel.statsQualityBreakdown then
+        local items = DB.soldItemsByQuality or {}
+        local copper = DB.soldCopperByQuality or {}
+        local rows = { "|cffffd200Sold by Quality|r" }
+        local any = false
+        for q = 0, 7 do
+            local cnt = items[q]
+            if cnt and cnt > 0 then
+                any = true
+                rows[#rows + 1] = string.format(
+                    "  |cff%s%s|r: %d  %s",
+                    QUALITY_HEX[q] or "ffffff",
+                    QUALITY_NAMES[q] or ("Quality " .. q),
+                    cnt,
+                    NS.CopperToColoredText(copper[q] or 0)
+                )
+            end
         end
+        if not any then
+            rows[#rows + 1] = "  |cff888888None yet|r"
+        end
+        panel.statsQualityBreakdown:SetText(table.concat(rows, "\n"))
+    end
+
+    if panel.statsMostSold then
+        local top = GetTopNItems(DB.soldItemCounts, 5)
+        if #top == 0 then
+            panel.statsMostSold:SetText("|cffffd200Top 5 Most Sold|r\n  |cff888888None yet|r")
+        else
+            local rows = { "|cffffd200Top 5 Most Sold|r" }
+            for i = 1, #top do
+                rows[#rows + 1] = string.format(
+                    "  %d. %s  |cff888888x%d|r",
+                    i,
+                    ItemLabel(top[i].id),
+                    top[i].count
+                )
+            end
+            panel.statsMostSold:SetText(table.concat(rows, "\n"))
+        end
+    end
+
+    if panel.statsProcessTotals then
+        local counts = DB.processCastCounts or {}
+        local rows = { "|cffffd200Process Bags Totals|r" }
+        local any = false
+        -- Fixed display order: Disenchant, Milling, Prospecting, Pick Lock.
+        -- Mirrors the Process Bags panel's section order.
+        local order = { "Disenchant", "Milling", "Prospecting", "Pick Lock" }
+        local labels = {
+            Disenchant = "Disenchanted",
+            Milling = "Milled",
+            Prospecting = "Prospected",
+            ["Pick Lock"] = "Lockboxes Picked",
+        }
+        for _, k in ipairs(order) do
+            local n = counts[k] or 0
+            if n > 0 then
+                any = true
+                rows[#rows + 1] = string.format("  %s: %d", labels[k], n)
+            end
+        end
+        if not any then
+            rows[#rows + 1] = "  |cff888888None yet|r"
+        end
+        panel.statsProcessTotals:SetText(table.concat(rows, "\n"))
+    end
+
+    if panel.statsTopZones then
+        local zones = DB.copperByZone or {}
+        local entries = {}
+        for name, copper in pairs(zones) do
+            if type(name) == "string" and type(copper) == "number" and copper > 0 then
+                entries[#entries + 1] = { name = name, copper = copper }
+            end
+        end
+        table.sort(entries, function(a, b)
+            if a.copper == b.copper then
+                return a.name < b.name
+            end
+            return a.copper > b.copper
+        end)
+        local rows = { "|cffffd200Top Zones (gold earned)|r" }
+        if #entries == 0 then
+            rows[#rows + 1] = "  |cff888888None yet|r"
+        else
+            local cap = math.min(#entries, 5)
+            for i = 1, cap do
+                rows[#rows + 1] = string.format(
+                    "  %d. %s  %s",
+                    i,
+                    entries[i].name,
+                    NS.CopperToColoredText(entries[i].copper)
+                )
+            end
+        end
+        panel.statsTopZones:SetText(table.concat(rows, "\n"))
     end
 end
 
@@ -261,6 +392,18 @@ function NS.ResetLifetimeStats()
     DB.inventoryWorthCount = 0
     wipe(DB.soldItemCounts)
     wipe(DB.deletedItemCounts)
+    if DB.soldItemsByQuality then
+        wipe(DB.soldItemsByQuality)
+    end
+    if DB.soldCopperByQuality then
+        wipe(DB.soldCopperByQuality)
+    end
+    if DB.processCastCounts then
+        wipe(DB.processCastCounts)
+    end
+    if DB.copperByZone then
+        wipe(DB.copperByZone)
+    end
     -- v2.35.x: Reset Lifetime wipes the GPH best record too.
     -- The user is opting in to a full lifetime reset; per the
     -- spec (docs/specs/2026-05-26-gph-stats-design.md) the

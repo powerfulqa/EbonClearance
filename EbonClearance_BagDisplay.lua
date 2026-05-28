@@ -123,6 +123,17 @@ function EC_compCache.bagSlotWillSellCategory(bag, slot)
     if DB.enableDeletion and IsInSet(DB.deleteList, itemID) then
         return "delete"
     end
+    -- v2.37.0: Keep List verdict. Keep-listed items also return false
+    -- from EC_IsSellable (that's how the protection works), so the
+    -- check has to happen BEFORE the sellable bail. The auto-tag
+    -- (DB.blacklistAuto) filter excludes equipped / upgrade / set-
+    -- tagged entries; the "keep" tint is for MANUAL Keep List adds
+    -- only - the visual-reassurance use case targets explicit user
+    -- intent, not addon-driven auto-protections. See
+    -- docs/specs/2026-05-28-keep-highlighting-design.md.
+    if IsInSet(DB.blacklist, itemID) and not (DB.blacklistAuto and DB.blacklistAuto[itemID]) then
+        return "keep"
+    end
     -- Everything below this point requires the item to be sellable per
     -- the normal predicate chain. Filters out protected items,
     -- equipped items, items without a sell price, etc.

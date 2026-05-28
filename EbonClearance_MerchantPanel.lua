@@ -176,6 +176,13 @@ MerchantPanel:SetScript("OnShow", function(self)
             PlaySound("igMainMenuOptionCheckBoxOn")
         end)
         self.repairCB = repairCB
+        if rt then
+            -- Same trick as Scavenger: text frame is 420 wide for wrap
+            -- support but the label only takes ~150px. Anchor LEFT-to-LEFT
+            -- using GetStringWidth so the [?] sits right after the label.
+            local strW = (rt.GetStringWidth and rt:GetStringWidth()) or 0
+            NS.AddHelpIcon(content, rt, "LEFT", "LEFT", strW + 6, 0, "gate-repair")
+        end
 
         -- Guild-bank funded repair. Indented under the master repair toggle so
         -- the visual hierarchy reads "repair, and prefer guild bank if I can".
@@ -197,6 +204,10 @@ MerchantPanel:SetScript("OnShow", function(self)
             PlaySound("igMainMenuOptionCheckBoxOn")
         end)
         self.guildRepairCB = guildRepairCB
+        if grt then
+            local strW = (grt.GetStringWidth and grt:GetStringWidth()) or 0
+            NS.AddHelpIcon(content, grt, "LEFT", "LEFT", strW + 6, 0, "gate-guild-bank-repair")
+        end
 
         local keepBagsCB =
             CreateFrame("CheckButton", "EbonClearanceKeepBagsOpenCB", content, "InterfaceOptionsCheckButtonTemplate")
@@ -213,6 +224,10 @@ MerchantPanel:SetScript("OnShow", function(self)
             PlaySound("igMainMenuOptionCheckBoxOn")
         end)
         self.keepBagsCB = keepBagsCB
+        if kbt then
+            local strW = (kbt.GetStringWidth and kbt:GetStringWidth()) or 0
+            NS.AddHelpIcon(content, kbt, "LEFT", "LEFT", strW + 6, 0, "gate-keep-bags-open")
+        end
 
         local speedSlider = NS.AddSlider(
             content,
@@ -247,6 +262,13 @@ MerchantPanel:SetScript("OnShow", function(self)
             -16
         )
         self.fastModeCB = fastModeCB
+        do
+            local fmt = _G[fastModeCB:GetName() .. "Text"]
+            if fmt then
+                local strW = (fmt.GetStringWidth and fmt:GetStringWidth()) or 0
+                NS.AddHelpIcon(content, fmt, "LEFT", "LEFT", strW + 6, 0, "gate-fast-mode")
+            end
+        end
 
         local fastModeNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         fastModeNote:SetPoint("TOPLEFT", fastModeCB, "BOTTOMLEFT", 26, -2)

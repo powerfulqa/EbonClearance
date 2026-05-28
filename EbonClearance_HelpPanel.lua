@@ -135,7 +135,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "tshoot-bag-borders",
         q = "The bag-slot border colors aren't showing.",
-        a = "They're off by default. Tick 'Enable sell-border tints' in the panel below, then turn on the categories you want colored (Delete, Account Sell, Character Sell, Junk, Rule).",
+        a = "They're off by default. Tick 'Show borders' in the panel below, then turn on the categories you want colored (Delete, Keep, Account Sell, Character Sell, Junk, Rule).",
         panel = "EbonClearanceOptionsCharacter",
     },
     {
@@ -196,6 +196,30 @@ local EC_HELP_ENTRIES = {
         id = "gate-bind-type",
         q = "Bind-type filter",
         a = "An extra restriction per rarity: Any (sells both trade-able and soulbound), BoE only (only sells trade-able items), or BoP only (only sells soulbound). Items without any bind line (consumables, reagents) are only included when set to 'Any'.",
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
+        id = "gate-repair",
+        q = "Repair gear while selling",
+        a = "When on, EbonClearance pays to repair your gear at every merchant visit that has a repair option. Saves the manual click. Only repairs from your own gold by default; turn on 'Repair from guild bank' below to spend guild funds when available.",
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
+        id = "gate-guild-bank-repair",
+        q = "Repair from guild bank",
+        a = "When on AND 'Repair gear while selling' is also on, EbonClearance prefers guild-bank funds for the repair (when you have guild-repair permission) and falls back to your own gold if the guild bank can't cover it. No effect when 'Repair gear while selling' is off.",
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
+        id = "gate-keep-bags-open",
+        q = "Keep bags open after a vendor",
+        a = "When on, your bags stay open after EbonClearance finishes its sell + delete sweep at a merchant. Useful if you want to review what got sold or pick something up to buy back. When off, bags close on their own once the cycle finishes.",
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
+        id = "gate-fast-mode",
+        q = "Fast Mode",
+        a = "Speeds up the sell cycle (0.05s between items instead of the default 0.1s) and raises the per-visit cap from 80 to 160 items. Useful when you have full bags of grey junk and want them gone in seconds. The faster pace can occasionally disconnect on laggy realms; turn it off if you see disconnects after vendoring.",
         panel = "EbonClearanceOptionsMerchant",
     },
     {
@@ -405,31 +429,31 @@ local EC_HELP_ENTRIES = {
     {
         id = "process-bags-overview",
         q = "What does Process Bags do?",
-        a = "Process Bags is a bulk processor for materials in your bags. Open it from /ec, pick a mode (Disenchant, Mill, Prospect, or Pick Locks), and EbonClearance arms your cursor with the matching spell or item. Click bag slots in sequence; the addon respects the spell's cooldown and skips items that don't qualify. Useful for turning a stack of green drops into Enchant dust without 30 manual right-clicks. Note: items on your Keep List are intentionally hidden from this panel.",
+        a = "Process Bags is a bulk processor for materials in your bags. Open it from /ec, pick a mode (Disenchant, Mill, Prospect, or Pick Locks), and the panel shows every item that qualifies. Click the Cast button on the panel to process the current item; click again for the next one. The addon respects the spell's cooldown and skips items that don't qualify. Useful for turning a stack of green drops into Enchant dust without 30 manual right-clicks. Note: items on your Keep List are intentionally hidden from this panel.",
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-disenchant",
         q = "Disenchant mode",
-        a = "Requires the Enchanting profession. Arms Disenchant on your cursor. Click bag slots holding Uncommon (Green) or Rare (Blue) Weapons / Armor to turn them into Enchanting dust, essences, and shards. Items without Enchanting eligibility are skipped.",
+        a = "Requires the Enchanting profession. The panel lists eligible Uncommon (Green) and Rare (Blue) Weapons / Armor. Click the Cast button to disenchant the current item into dust, essences, and shards; click again for the next one. Items without Enchanting eligibility are skipped.",
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-mill",
         q = "Mill mode",
-        a = "Requires the Inscription profession. Arms Milling on your cursor. Click bag slots holding stacks of 5+ herbs to turn them into pigments. Stacks smaller than 5 are skipped.",
+        a = "Requires the Inscription profession. The panel lists stacks of 5+ herbs. Click the Cast button to mill the current stack into pigments; click again for the next stack. Stacks smaller than 5 are skipped.",
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-prospect",
         q = "Prospect mode",
-        a = "Requires the Jewelcrafting profession. Arms Prospecting on your cursor. Click bag slots holding stacks of 5+ ore to turn them into gems and rare prospects. Stacks smaller than 5 are skipped.",
+        a = "Requires the Jewelcrafting profession. The panel lists stacks of 5+ ore. Click the Cast button to prospect the current stack into gems and rare prospects; click again for the next stack. Stacks smaller than 5 are skipped.",
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-picklocks",
         q = "Pick Locks mode",
-        a = "Requires the Rogue Pick Lock ability. Arms Pick Lock on your cursor. Click bag slots holding lockboxes (Junkboxes, Mageweave Pouches, Heavy Junkboxes, etc.) to open them.",
+        a = "Requires the Rogue Pick Lock ability. The panel lists lockboxes (Junkboxes, Mageweave Pouches, Heavy Junkboxes, etc.). Click the Cast button to open the current lockbox; click again for the next one.",
         panel = "EbonClearanceOptionsProcessBags",
     },
 

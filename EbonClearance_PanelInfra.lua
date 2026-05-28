@@ -294,43 +294,6 @@ NS.FitScrollContent = EC_FitScrollContent
 function EC_compCache.initPanel(self, refresh, build, wrapScroll)
     NS.EnsureDB()
     EC_UpdatePanelWidth()
-    -- v2.37.3: opaque backdrop on non-Process-Bags EC panels so
-    -- bleed-through from Process Bags' stuck-visible widgets is
-    -- COVERED rather than fought. The Process Bags panel contains a
-    -- SecureActionButton ("Process Next"); during combat lockdown
-    -- WoW protects the entire panel chain - Hide(), SetAlpha(),
-    -- SetPoint(), every operation that would visually suppress it -
-    -- so the panel and its children keep rendering even after the
-    -- framework's OpenToCategory call to switch to a sibling panel.
-    -- Attempting to override from Process Bags' side (Hide on
-    -- scrollBg, SetAlpha on individual children) silently no-ops in
-    -- this state.
-    --
-    -- Workaround: give every OTHER EC panel an opaque backdrop
-    -- texture covering its full extent at BACKGROUND layer. Those
-    -- panels are NOT secure-tainted so we can manipulate them
-    -- freely. When the framework Shows one of them on top of the
-    -- stuck-visible Process Bags, the opaque texture covers the
-    -- bleed-through from below. The texture is created once per
-    -- panel (idempotent guard via self.ec_opaqueBackdrop) and stays
-    -- on the panel for the rest of the session.
-    --
-    -- Process Bags itself does NOT get this backdrop - applying a
-    -- texture to a secure-tainted panel might itself be protected,
-    -- and there's no need anyway (nothing renders behind it that
-    -- needs covering).
-    if self ~= _G["EbonClearanceOptionsProcessBags"]
-        and self.CreateTexture
-        and not self.ec_opaqueBackdrop
-    then
-        local bg = self:CreateTexture(nil, "BACKGROUND", nil, -8)
-        bg:SetAllPoints(self)
-        -- Solid dark colour; matches Interface Options' general
-        -- darker chrome without picking up parchment artwork. Alpha
-        -- 1.0 - fully opaque - is the whole point of the fix.
-        bg:SetTexture(0.05, 0.05, 0.07, 1)
-        self.ec_opaqueBackdrop = bg
-    end
     if self.inited then
         if refresh then
             refresh(self)

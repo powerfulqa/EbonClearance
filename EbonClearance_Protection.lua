@@ -96,8 +96,21 @@ local function AffixDebugDump(kind, data)
     if maxRows < 100 then
         maxRows = 100
     end
-    while #rows > maxRows do
-        table.remove(rows, 1)
+    -- v2.37.x audit fix: trim oldest entries in O(N), not O(N^2).
+    -- The previous `while #rows > maxRows do table.remove(rows, 1) end`
+    -- shifted every element left on each remove; a debug burst that
+    -- overflowed the cap by N rows did N * #rows ~= O(maxRows^2) work
+    -- in a single frame. Now: if we're over cap, shift each tail
+    -- element to its new slot once, then nil the trailing entries.
+    local over = #rows - maxRows
+    if over > 0 then
+        local n = #rows
+        for i = 1, maxRows do
+            rows[i] = rows[i + over]
+        end
+        for i = maxRows + 1, n do
+            rows[i] = nil
+        end
     end
 end
 EC_compCache.AffixDebugDump = AffixDebugDump

@@ -198,7 +198,7 @@ local function EC_AnnotateTooltip(tooltip)
                 else
                     matchesILvl = (cap == 0) or (hasVisibleILvl and ilvl <= cap)
                 end
-                if matchesILvl and EC_compCache.isQuestItem(id) then
+                if matchesILvl and EC_compCache.isQuestItem and EC_compCache.isQuestItem(id) then
                     -- v2.13.x: quest-item safety-net honesty. After the
                     -- v2.13.x narrowing, EC_IsSellable returns false when
                     -- a qualityPass auto-rule would catch a quest-class
@@ -528,7 +528,7 @@ local function EC_AnnotateTooltip(tooltip)
             -- Explicit list verdict stands; leave statusLine alone.
         elseif affixKept then
             -- Affix protection took the verdict already; leave it.
-        elseif ADB.allowedItems and ADB.allowedItems[id] then
+        elseif ADB and ADB.allowedItems and ADB.allowedItems[id] then
             -- Allow Sell is on. If a quality-rule already produced a
             -- "Will Sell (...)" verdict, leave it alone. Otherwise
             -- prompt the user to pick a list.
@@ -581,7 +581,7 @@ local function EC_AnnotateTooltip(tooltip)
         -- destination-list label.
         if IsInSet(DB.blacklist, id) then
             -- Keep List wins; leave the earlier Keep label alone.
-        elseif ADB.allowedItems and ADB.allowedItems[id] then
+        elseif ADB and ADB.allowedItems and ADB.allowedItems[id] then
             -- destinationLabel walks the explicit-list precedence chain.
             -- Returns nil when no list claims it; the fallback picks an
             -- existing quality-rule "Will Sell" verdict if there is one,

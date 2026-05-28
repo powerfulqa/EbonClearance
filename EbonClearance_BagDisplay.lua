@@ -769,7 +769,12 @@ local function EC_applyPaperDollItemLevel(button)
         return
     end
     local link = GetInventoryItemLink("player", slotID)
-    local quality = GetInventoryItemQuality and GetInventoryItemQuality("player", slotID) or nil
+    -- v2.37.x audit fix: GetInventoryItemQuality doesn't exist in
+    -- 3.3.5a (Cataclysm+ API), so the previous defensive call always
+    -- short-circuited to nil. Derive quality from the link instead;
+    -- getGearQualityRGB does the same fallback internally but reading
+    -- it once here keeps the call uniform with the bags surface.
+    local quality = link and select(3, GetItemInfo(link)) or nil
     EC_compCache.applyItemLevelOverlay(button, link, quality, "paperdoll")
 end
 if _G.PaperDollItemSlotButton_Update then
@@ -789,7 +794,9 @@ local function EC_applyInspectItemLevel(button)
         return
     end
     local link = GetInventoryItemLink(unit, slotID)
-    local quality = GetInventoryItemQuality and GetInventoryItemQuality(unit, slotID) or nil
+    -- v2.37.x audit fix: same as the paperdoll path above - derive
+    -- quality from the link rather than via the Cataclysm-only API.
+    local quality = link and select(3, GetItemInfo(link)) or nil
     EC_compCache.applyItemLevelOverlay(button, link, quality, "paperdoll")
 end
 if _G.InspectPaperDollItemSlotButton_Update then

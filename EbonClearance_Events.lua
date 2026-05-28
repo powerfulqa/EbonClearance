@@ -1502,19 +1502,11 @@ end
 NS.PrintNice = PrintNice
 NS.PrintNicef = PrintNicef
 
--- Price provider seam. Vendor price is the only source today; probes for
--- Auctionator-WotLK / Auctioneer can be dropped in here without touching
--- callers. The _-prefixed args are reserved for those probes -- rename them
--- when activating a probe.
+-- Price provider seam. Returns vendor sellPrice * count. The signature
+-- keeps the leading itemLink + itemID args (underscore-prefixed today)
+-- so future price-source plumbing can plug in here without rewriting
+-- callers.
 local function EC_GetItemPrice(_itemLink, _itemID, sellPrice, count)
-    -- if _G.Auctionator_GetPrice then
-    --     local v = _G.Auctionator_GetPrice(_itemLink)
-    --     if v and v > 0 then return v * (count or 1) end
-    -- end
-    -- if _G.AucAdvanced and _G.AucAdvanced.API and _G.AucAdvanced.API.GetMarketValue then
-    --     local v = _G.AucAdvanced.API.GetMarketValue(_itemLink)
-    --     if v and v > 0 then return v * (count or 1) end
-    -- end
     return (sellPrice or 0) * (count or 1)
 end
 

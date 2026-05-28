@@ -553,11 +553,37 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         EC_armCombatExitRetry(self)
         return
     end
-    -- v2.37.3: matching alpha restore for the SetAlpha(0) that
-    -- initPanel applies when switching AWAY from Process Bags. Belt-
-    -- and-braces Show() on the scroll content in case the framework's
-    -- earlier Hide() on this panel did succeed and propagated through.
+    -- v2.37.3: matching alpha + visibility restore for the fade-out
+    -- that initPanel applies when switching AWAY from Process Bags
+    -- (see the long comment block in EbonClearance_PanelInfra.lua's
+    -- initPanel). Walk children + regions and SetAlpha(1) + Show()
+    -- each one (skipping the secure cast button to avoid touching
+    -- protected state). Order matches the fade-out order so any
+    -- widget that was hidden gets re-shown here.
     self:SetAlpha(1)
+    do
+        local kids = { self:GetChildren() }
+        for _, child in ipairs(kids) do
+            local isSecureMacro = child.GetAttribute and child:GetAttribute("type") == "macro"
+            if not isSecureMacro then
+                if child.SetAlpha then
+                    child:SetAlpha(1)
+                end
+                if child.Show then
+                    pcall(child.Show, child)
+                end
+            end
+        end
+        local regions = { self:GetRegions() }
+        for _, region in ipairs(regions) do
+            if region.SetAlpha then
+                region:SetAlpha(1)
+            end
+            if region.Show then
+                pcall(region.Show, region)
+            end
+        end
+    end
     if self.processScrollBg then
         self.processScrollBg:Show()
     end

@@ -295,29 +295,55 @@ function EC_compCache.initPanel(self, refresh, build, wrapScroll)
     NS.EnsureDB()
     EC_UpdatePanelWidth()
     -- v2.37.3: belt-and-braces fade for the Process Bags panel when
-    -- the player switches AWAY from it. The framework's Hide() on the
-    -- Process Bags panel is BLOCKED during combat lockdown because the
-    -- panel contains a SecureActionButton ("Process Next") - the call
-    -- silently no-ops, neither the framework's hide propagation nor
-    -- our OnHide handler fires, and the panel's widgets (rows, "Next:"
-    -- label, the cast button, the refresh button) all stay visible
-    -- behind whichever panel shows next.
+    -- switching AWAY from it. The framework's Hide() on the Process
+    -- Bags panel is BLOCKED during combat lockdown because the panel
+    -- contains a SecureActionButton ("Process Next") - the call
+    -- silently no-ops, the framework's hide propagation never fires,
+    -- and the panel's widgets stay visible behind whichever panel
+    -- shows next.
     --
-    -- SetAlpha() is NOT in the protected-call set the way Show/Hide
-    -- is, so it works even when the panel is secure-tainted. Children
-    -- inherit the parent's alpha multiplicatively, so a single
-    -- SetAlpha(0) on the panel makes every descendant visually
-    -- disappear without touching their Shown state. The matching
-    -- SetAlpha(1) inside Process Bags' OnShow handler restores
-    -- visibility when the player returns to that panel.
+    -- Strategy: hide every non-secure child + region of the panel
+    -- directly. SetAlpha on the panel itself might be protected
+    -- (3.3.5a's secure-frame protection is broader than just Show/
+    -- Hide); SetAlpha on individual non-secure descendants is safe.
+    -- We also SetAlpha(0) the secure castBtn's siblings + Hide() the
+    -- non-secure ones for full coverage. The matching restore inside
+    -- Process Bags' OnShow handler walks the same children and brings
+    -- them back.
     --
     -- Triggered from the OTHER side: whenever any non-Process-Bags
     -- EC panel's OnShow runs through initPanel, fade out Process
-    -- Bags. This runs every panel switch regardless of combat state;
-    -- the cost is one SetAlpha call.
+    -- Bags. Runs every panel switch regardless of combat state.
     local pbp = _G["EbonClearanceOptionsProcessBags"]
     if pbp and pbp ~= self then
         pbp:SetAlpha(0)
+        -- Walk children; hide / alpha-zero every one that isn't the
+        -- secure cast button (which is protected and Hide() / SetAlpha
+        -- may be blocked on it during combat). The cast button alone
+        -- would still be visible at panel coordinates - but it's a
+        -- single small widget and the rows / labels / buttons that
+        -- were the bulk of the visual bleed-through are gone.
+        local kids = { pbp:GetChildren() }
+        for _, child in ipairs(kids) do
+            local isSecureMacro = child.GetAttribute and child:GetAttribute("type") == "macro"
+            if not isSecureMacro then
+                if child.SetAlpha then
+                    child:SetAlpha(0)
+                end
+                if child.Hide then
+                    pcall(child.Hide, child)
+                end
+            end
+        end
+        local regions = { pbp:GetRegions() }
+        for _, region in ipairs(regions) do
+            if region.SetAlpha then
+                region:SetAlpha(0)
+            end
+            if region.Hide then
+                pcall(region.Hide, region)
+            end
+        end
     end
     if self.inited then
         if refresh then

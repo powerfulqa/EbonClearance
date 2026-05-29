@@ -5072,6 +5072,24 @@ do
             )
         end
 
+        -- v2.37.6: /ec perf self-diagnostic. The command must exist
+        -- in the slash dispatch, list cache sizes for the major
+        -- per-itemID caches, and be discoverable from the Main panel
+        -- slash reference + /ec help output.
+        local mpf2 = io.open("EbonClearance_MainPanel.lua", "rb")
+        if mpf2 then
+            local mpSrc2 = mpf2:read("*a") or ""
+            mpf2:close()
+            check(
+                "Test 88j: /ec perf wired + discoverable",
+                evSrc:find('if cmd == "perf"') ~= nil
+                    and evSrc:find("GetAddOnMemoryUsage") ~= nil
+                    and evSrc:find("affixDataCache") ~= nil
+                    and mpSrc2:find("/ec perf") ~= nil,
+                "/ec perf must exist in the slash dispatch, surface GetAddOnMemoryUsage, count the per-itemID caches, and appear in the Main panel slash reference."
+            )
+        end
+
         -- v2.37.5: Random-affix bag-slot border category. New entry
         -- in DB.sellBorderCategories.affix (default OFF), wired through
         -- bagSlotWillSellCategory + listed in the Item Highlighting

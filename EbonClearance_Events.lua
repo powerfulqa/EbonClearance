@@ -5290,6 +5290,83 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         return
     end
 
+    if cmd == "perf" then
+        -- v2.37.6: self-diagnostic for "is EC bloated / hot?". Surfaces
+        -- the four numbers that actually answer the question: addon
+        -- memory footprint, addon CPU cost (when scriptProfile is on),
+        -- the per-itemID cache sizes (bounded by unique items seen),
+        -- and the user's list sizes. Also flags affixdebug if it's
+        -- been left on after a diagnostic session.
+        local function countKeys(t)
+            if type(t) ~= "table" then
+                return 0
+            end
+            local n = 0
+            for _ in pairs(t) do
+                n = n + 1
+            end
+            return n
+        end
+        if UpdateAddOnMemoryUsage then
+            UpdateAddOnMemoryUsage()
+        end
+        local memKb = GetAddOnMemoryUsage and GetAddOnMemoryUsage("EbonClearance") or 0
+        PrintNice("|cffffff00=== EbonClearance perf ===|r")
+        PrintNicef("Memory: |cffb6ffb6%.1f KB|r", memKb)
+        local profileOn = GetCVarBool and GetCVarBool("scriptProfile")
+        if profileOn then
+            if UpdateAddOnCPUUsage then
+                UpdateAddOnCPUUsage()
+            end
+            local cpuMs = GetAddOnCPUUsage and GetAddOnCPUUsage("EbonClearance") or 0
+            local fps = (GetFramerate and GetFramerate()) or 60
+            if fps < 1 then
+                fps = 1
+            end
+            PrintNicef(
+                "CPU: |cffb6ffb6%.1f ms total|r (%.3f ms/frame avg at %.0f FPS)",
+                cpuMs, cpuMs / fps, fps
+            )
+        else
+            PrintNice(
+                "|cff888888CPU profile is off. Enable with /console set scriptProfile 1 then /reload to see CPU numbers here.|r"
+            )
+        end
+        PrintNicef(
+            "Caches: %d affix / %d hit-proc / %d tome / %d processable / %d bind / %d item-affix",
+            countKeys(EC_compCache.affixDataCache),
+            countKeys(EC_compCache.chanceOnHitCache),
+            countKeys(EC_compCache.tomeCache),
+            countKeys(EC_compCache.processCache),
+            countKeys(EC_compCache.bindCache),
+            countKeys(EC_compCache.itemAffixLookupCache)
+        )
+        if DB then
+            PrintNicef(
+                "Lists: %d sell / %d keep / %d delete / %d account-sell",
+                countKeys(DB.whitelist),
+                countKeys(DB.blacklist),
+                countKeys(DB.deleteList),
+                (ADB and countKeys(ADB.whitelist)) or 0
+            )
+        end
+        if ADB then
+            PrintNicef(
+                "Side meta: %d (affix-gated) / %d (Hit-proc)",
+                countKeys(ADB.affixedListedItems),
+                countKeys(ADB.chanceOnHitListedItems)
+            )
+            if ADB.affixDebugEnabled then
+                local rows = (ADB.affixDebug and ADB.affixDebug.rows) or {}
+                PrintNicef(
+                    "|cffffb84daffixdebug ON|r - %d rows logged. Turn off with /ec affixdebug off when you're done.",
+                    #rows
+                )
+            end
+        end
+        return
+    end
+
     if cmd == "help" or cmd == "?" then
         -- Full reference; the Main panel only shows a 4-line summary so it
         -- fits the default Interface Options sub-panel height. Chat has no
@@ -5314,6 +5391,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             "|cffffff00/ec sellinfo [bag slot]|r  Explain why an item will or won't sell (defaults to first non-empty slot)"
         )
         PrintNice("|cffaaaaaaTip: Alt+Shift+Right-Click a bag item for the same explanation.|r")
+        PrintNice("|cffffff00/ec perf|r  Show EC's memory, CPU, cache and list sizes")
         PrintNice("|cffffff00/ecdebug|r  Show debug info and a bag scan")
         PrintNice(
             "|cffaaaaaaSee the Help panel in Interface Options for a full FAQ + label reference.|r"

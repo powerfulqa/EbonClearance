@@ -532,6 +532,7 @@ local function BuildMainPanel(panel, content)
             .. "|cffffff00/ec sellinfo [bag slot]|r  Explain why an item will or won't sell |cffaaaaaa(or Alt+Shift+Right-Click)|r\n"
             .. "|cffffff00/ec bugreport|r  Generate a report to share when something's wrong\n"
             .. "|cffffff00/ec affixdebug on|off|status|dump|clear|r  Record affix events for bug reports\n"
+            .. "|cffffff00/ec perf|r  Show EC's memory, CPU, cache and list sizes\n"
             .. "|cffffff00/ec help|r  Show all commands in chat"
     )
 

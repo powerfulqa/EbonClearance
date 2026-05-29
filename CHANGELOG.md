@@ -5,6 +5,13 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.37.6
+
+Patch release. Adds a `/ec perf` self-diagnostic so the "is EC bloated?" question has a one-line answer.
+
+- **New: `/ec perf` slash sub-command.** Prints EC's memory footprint (always), CPU cost (when `scriptProfile` is enabled, with a one-line how-to when it's off), per-itemID cache sizes (affix data, hit-proc, tome, processable, bind, item-affix lookup), per-list entry counts (Sell / Keep / Delete / Account Sell), and side-meta counts ((affix-gated) / (Hit-proc)). Flags if `/ec affixdebug` is still on. Listed in the Main panel slash command reference and in `/ec help`. Test 88j locks the wiring.
+- **No schema changes.** Safe overwrite from v2.37.5.
+
 ### v2.37.5
 
 Patch release. One small additive feature: an opt-in bag-slot border for random-affix items.

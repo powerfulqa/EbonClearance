@@ -134,11 +134,26 @@ function EC_compCache.bagSlotWillSellCategory(bag, slot)
     if IsInSet(DB.blacklist, itemID) and not (DB.blacklistAuto and DB.blacklistAuto[itemID]) then
         return "keep"
     end
+    -- v2.37.5: random-affix marker. Cached once because we want it to
+    -- act as a fallback in two places: (a) when the item is protected
+    -- (sellable=false, returned nil before this fix) and (b) when the
+    -- item would otherwise fall through to the gold "rule" default.
+    -- Explicit user Sell List adds below still take precedence so the
+    -- player's deliberate categorisation overrides the at-a-glance
+    -- marker.
+    local affixCat = DB.sellBorderCategories and DB.sellBorderCategories.affix
+    local hasAffixForBorder = affixCat
+        and affixCat.enabled
+        and EC_compCache.bagSlotAffixData
+        and EC_compCache.bagSlotAffixData(bag, slot) ~= nil
     -- Everything below this point requires the item to be sellable per
     -- the normal predicate chain. Filters out protected items,
     -- equipped items, items without a sell price, etc.
     local sellable = NS.IsSellable(bag, slot, false)
     if not sellable then
+        if hasAffixForBorder then
+            return "affix"
+        end
         return nil
     end
     local ADB = NS.ADB
@@ -154,6 +169,11 @@ function EC_compCache.bagSlotWillSellCategory(bag, slot)
     local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
     if quality == 0 and sellPrice and sellPrice > 0 then
         return "junk"
+    end
+    -- v2.37.5: affix overrides the default "rule" tint so the marker
+    -- isn't lost on rare/epic affixed items that match a quality rule.
+    if hasAffixForBorder then
+        return "affix"
     end
     -- Default: the per-rarity rule sweep matched. Gold tint by default
     -- (the v2.29 single-colour default).

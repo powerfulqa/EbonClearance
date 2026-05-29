@@ -1050,6 +1050,13 @@ local function EnsureDB()
             charSell = defaultCat(0.4, 0.7, 1.0, 0.9), -- cyan / sky blue
             junk = defaultCat(0.7, 0.7, 0.7, 0.7), -- low-alpha grey
             rule = defaultCat(1.0, 0.82, 0.0, 0.9), -- gold (matches v2.29 single-colour default)
+            -- v2.37.5: random-affix items get their own at-a-glance
+            -- marker so the player can spot affixed drops in bags
+            -- without hovering each one. Default OFF (opt-in, like
+            -- Keep List). Purple maps to the "magical / corruption"
+            -- visual idiom; distinct from the warm-toned sell verdicts
+            -- and the cool-toned Keep List.
+            affix = { enabled = false, color = { r = 0.78, g = 0.40, b = 1.00, a = 0.9 } },
         }
         local function clamp01b(v, fallback)
             if type(v) ~= "number" or v ~= v then

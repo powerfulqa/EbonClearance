@@ -114,6 +114,7 @@ CharPanel:SetScript("OnShow", function(self)
             { key = "keep", label = "Keep List (white)" },
             { key = "accountSell", label = "Account Sell List (green)" },
             { key = "charSell", label = "Character Sell List (cyan)" },
+            { key = "affix", label = "Random affix items (purple)" },
             { key = "junk", label = "Junk - greys (low-alpha grey)" },
             { key = "rule", label = "Quality rule match (gold)" },
         }

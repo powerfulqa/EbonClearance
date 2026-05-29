@@ -5072,6 +5072,28 @@ do
             )
         end
 
+        -- v2.37.5: Random-affix bag-slot border category. New entry
+        -- in DB.sellBorderCategories.affix (default OFF), wired through
+        -- bagSlotWillSellCategory + listed in the Item Highlighting
+        -- panel's SELL_BORDER_CATEGORIES array. The detection reuses
+        -- EC_compCache.bagSlotAffixData.
+        local bdf = io.open("EbonClearance_BagDisplay.lua", "rb")
+        local ihpf = io.open("EbonClearance_ItemHighlightingPanel.lua", "rb")
+        if bdf and ihpf then
+            local bdSrc = bdf:read("*a") or ""
+            bdf:close()
+            local ihpSrc = ihpf:read("*a") or ""
+            ihpf:close()
+            check(
+                "Test 88i: random-affix border category wired + listed in UI",
+                evSrc:find("affix%s*=%s*{%s*enabled%s*=%s*false") ~= nil
+                    and bdSrc:find("hasAffixForBorder") ~= nil
+                    and bdSrc:find('return "affix"') ~= nil
+                    and ihpSrc:find('key%s*=%s*"affix"') ~= nil,
+                "DB defaults must seed affix as opt-in; bagSlotWillSellCategory must return 'affix' for affixed items; ItemHighlightingPanel must list the row in SELL_BORDER_CATEGORIES."
+            )
+        end
+
         -- v2.37.4: Process Bags chrome restoration on second OnShow.
         -- The v2.37.3 OnHide handler hides processScrollBg as a "belt-
         -- and-braces" measure against combat-lockdown bleed-through;

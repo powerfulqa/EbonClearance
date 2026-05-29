@@ -5,6 +5,13 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.37.5
+
+Patch release. One small additive feature: an opt-in bag-slot border for random-affix items.
+
+- **New: Random-affix border category.** A new entry in Item Highlighting's Sell Border categories tints any bag slot whose item carries a random affix (the in-game roguelite "modifier" system). Default OFF (opt-in, like the v2.37.0 Keep List border) so existing players' setups don't change on upgrade. Default colour is purple. Priority: explicit Sell / Keep / Delete list adds still win, so the marker only shows on items you haven't categorised yet - which is exactly the case that needs a decision. Also fires for affix-protected items where `IsSellable` returns false, so you can spot a "needs decision" affixed item that the addon won't auto-sell. Detection reuses the existing `EC_compCache.bagSlotAffixData` - no new tooltip scans. Test 88i locks the wiring.
+- **Schema:** one new field, `DB.sellBorderCategories.affix`, additive with the nil-default migration pattern. Safe overwrite from v2.37.4.
+
 ### v2.37.4
 
 Patch release. One regression fix from v2.37.3 (the headline), one polish for the v2.37.0 list-tag rendering, plus internal hygiene from three deferred audit items + the multi-stage file split moved to Resolved in the code-review backlog.

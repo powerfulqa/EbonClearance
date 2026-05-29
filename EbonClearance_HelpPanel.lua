@@ -135,7 +135,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "tshoot-bag-borders",
         q = "The bag-slot border colors aren't showing.",
-        a = "They're off by default. Tick 'Show borders' in the panel below, then turn on the categories you want colored (Delete, Keep, Account Sell, Character Sell, Junk, Rule).",
+        a = "They're off by default. Tick 'Show borders' in the panel below, then turn on the categories you want colored (Delete, Keep, Account Sell, Character Sell, Affix, Junk, Rule).",
         panel = "EbonClearanceOptionsCharacter",
     },
     {

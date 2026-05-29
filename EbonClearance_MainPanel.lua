@@ -517,30 +517,115 @@ local function BuildMainPanel(panel, content)
     cmdHeader:SetPoint("TOPLEFT", mainTip, "BOTTOMLEFT", 0, -20)
     cmdHeader:SetText("Slash Commands")
 
-    local cmdText = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    cmdText:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 0, -6)
-    EC_compCache.setPanelWidth(cmdText, 16)
-    cmdText:SetJustifyH("LEFT")
-    if cmdText.SetWordWrap then
-        cmdText:SetWordWrap(true)
+    -- v2.37.6: per-row slash command list. Each row gets a [Run] button
+    -- when the command works without arguments (or with the safe default
+    -- form). Argument-required commands (profile, affixdebug) stay
+    -- text-only: a single button can't pick a sub-command for the user.
+    -- Labels start at the same x regardless of whether the row has a
+    -- button, so the two columns line up.
+    local SLASH_ROWS = {
+        { label = "|cffffff00/ec|r  Open settings |cffaaaaaa(you are here)|r" },
+        { run = "profile list", label = "|cffffff00/ec profile list|r  Show your saved profiles" },
+        {
+            label = "|cffffff00/ec profile [save|load|delete] <name>|r  Manage profiles by name |cffaaaaaa(or use the Profiles panel)|r",
+        },
+        {
+            run = "clean",
+            label = "|cffffff00/ec clean|r  Find items on more than one list |cffaaaaaa(add 'apply' to fix)|r",
+        },
+        {
+            run = "clean upgrades",
+            label = "|cffffff00/ec clean upgrades|r  Find old 'Upgrade'-tagged Keep List items |cffaaaaaa(add 'apply' to remove)|r",
+        },
+        {
+            run = "sellinfo",
+            label = "|cffffff00/ec sellinfo|r  Explain why an item will or won't sell |cffaaaaaa(or Alt+Shift+Right-Click)|r",
+        },
+        {
+            run = "bugreport",
+            label = "|cffffff00/ec bugreport|r  Generate a report to share when something's wrong",
+        },
+        {
+            run = "affixdebug status",
+            label = "|cffffff00/ec affixdebug status|r  Show recording state + row count",
+        },
+        {
+            run = "affixdebug on",
+            label = "|cffffff00/ec affixdebug on|r  Start recording affix events for a bug report",
+        },
+        {
+            run = "affixdebug off",
+            label = "|cffffff00/ec affixdebug off|r  Stop recording",
+        },
+        {
+            run = "affixdebug dump",
+            label = "|cffffff00/ec affixdebug dump|r  Open the event-log window",
+        },
+        {
+            run = "affixdebug clear",
+            label = "|cffffff00/ec affixdebug clear|r  Wipe recorded rows",
+        },
+        { run = "perf", label = "|cffffff00/ec perf|r  Show EC's memory, CPU, cache and list sizes" },
+    }
+
+    -- Layout strategy: each label is its OWN FontString with setPanelWidth,
+    -- so when the panel scales the label re-wraps and its height grows /
+    -- shrinks naturally. The Run button anchors to the label's TOPLEFT
+    -- (offset to the left of the label column), so a label that wraps to
+    -- 2+ lines doesn't push the button down - the button stays aligned
+    -- with the first line. The next row anchors to the previous label's
+    -- BOTTOMLEFT, so wrapping pushes everything below it down cleanly.
+    local LABEL_COL_X = 54 -- button width (48) + 6 px gap; labels start at this x
+    local PANEL_RIGHT_PAD = 16 -- same right margin the original cmdText used
+    local prevAnchor = cmdHeader
+    for i, row in ipairs(SLASH_ROWS) do
+        local gap = (i == 1) and -8 or -10
+        -- First row indents LABEL_COL_X to clear the button column;
+        -- subsequent rows inherit the X position from the previous label
+        -- (no further offset, otherwise they'd staircase to the right).
+        local xOffset = (i == 1) and LABEL_COL_X or 0
+
+        local fs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        fs:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", xOffset, gap)
+        fs:SetJustifyH("LEFT")
+        if fs.SetWordWrap then
+            fs:SetWordWrap(true)
+        end
+        -- Width = panel width - (left inset for label column) - (right pad).
+        -- setPanelWidth subtracts the given xOffset from EC_PANEL_WIDTH and
+        -- re-applies on resize, so the wrapped height tracks panel scale.
+        EC_compCache.setPanelWidth(fs, LABEL_COL_X + PANEL_RIGHT_PAD)
+        fs:SetText(row.label)
+
+        if row.run then
+            local btn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+            btn:SetSize(48, 20)
+            -- LEFT-to-LEFT vertically-centres the button against the
+            -- label's centre line, so single-line labels (the common
+            -- case) read as perfectly aligned. The button still sits in
+            -- the column to the left of the label via -LABEL_COL_X.
+            -- For a wrapped multi-line label, the button centres on the
+            -- whole wrapped block, which is acceptable visual drift.
+            btn:SetPoint("LEFT", fs, "LEFT", -LABEL_COL_X, 0)
+            btn:SetText("Run")
+            local runCmd = row.run
+            btn:SetScript("OnClick", function()
+                local handler = SlashCmdList and SlashCmdList["EBONCLEARANCE"]
+                if handler then
+                    handler(runCmd)
+                end
+                PlaySound("igMainMenuOptionCheckBoxOn")
+            end)
+        end
+
+        prevAnchor = fs
     end
-    cmdText:SetText(
-        "|cffffff00/ec|r  Open settings\n"
-            .. "|cffffff00/ec profile [list|save|load|delete <name>]|r  Save and load setting profiles\n"
-            .. "|cffffff00/ec clean [apply]|r  Find items on more than one list and fix them\n"
-            .. "|cffffff00/ec clean upgrades [apply]|r  Remove old 'Upgrade'-tagged items from Keep List\n"
-            .. "|cffffff00/ec sellinfo [bag slot]|r  Explain why an item will or won't sell |cffaaaaaa(or Alt+Shift+Right-Click)|r\n"
-            .. "|cffffff00/ec bugreport|r  Generate a report to share when something's wrong\n"
-            .. "|cffffff00/ec affixdebug on|off|status|dump|clear|r  Record affix events for bug reports\n"
-            .. "|cffffff00/ec perf|r  Show EC's memory, CPU, cache and list sizes\n"
-            .. "|cffffff00/ec help|r  Show all commands in chat"
-    )
 
     -- v2.12.0: size the scroll content to fit the bottom-most widget so
     -- the scroll bar engages when the Interface Options frame is too
     -- short to show everything (matches the Scavenger / Merchant /
     -- Profiles / Import-Export panels' pattern).
-    NS.FitScrollContent(content, cmdText)
+    NS.FitScrollContent(content, prevAnchor)
 end
 
 MainOptions:SetScript("OnShow", function(self)

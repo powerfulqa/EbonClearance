@@ -5088,6 +5088,17 @@ do
                     and mpSrc2:find("/ec perf") ~= nil,
                 "/ec perf must exist in the slash dispatch, surface GetAddOnMemoryUsage, count the per-itemID caches, and appear in the Main panel slash reference."
             )
+            -- v2.37.6: clickable Run buttons for slash commands. The
+            -- Main panel's Slash Commands section now stacks per-row
+            -- frames; runnable commands get a Run button that calls
+            -- SlashCmdList["EBONCLEARANCE"] with the command string.
+            check(
+                "Test 88k: Main panel SLASH_ROWS table + Run-button wiring present",
+                mpSrc2:find("SLASH_ROWS%s*=%s*{") ~= nil
+                    and mpSrc2:find('SlashCmdList%["EBONCLEARANCE"%]') ~= nil
+                    and mpSrc2:find('btn:SetText%("Run"%)') ~= nil,
+                "The Main panel must define the SLASH_ROWS table, create Run buttons, and dispatch via SlashCmdList[\"EBONCLEARANCE\"] so players can click commands instead of typing."
+            )
         end
 
         -- v2.37.5: Random-affix bag-slot border category. New entry

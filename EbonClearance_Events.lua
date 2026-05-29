@@ -5368,33 +5368,15 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
     end
 
     if cmd == "help" or cmd == "?" then
-        -- Full reference; the Main panel only shows a 4-line summary so it
-        -- fits the default Interface Options sub-panel height. Chat has no
-        -- height constraint, so the long list lives here instead.
-        PrintNice("|cffffff00=== EbonClearance Commands ===|r")
-        PrintNice("|cffffff00/ec|r  Open settings")
-        PrintNice("|cffffff00/ec profile list|r  Show your saved profiles")
-        PrintNice("|cffffff00/ec profile save <name>|r  Save your current Sell List as a profile")
-        PrintNice("|cffffff00/ec profile load <name>|r  Load a saved profile")
-        PrintNice("|cffffff00/ec profile delete <name>|r  Delete a profile")
-        PrintNice("|cffffff00/ec clean|r  Find items that appear on more than one list")
-        PrintNice("|cffffff00/ec clean apply|r  Fix list conflicts automatically (Keep > Delete > Sell)")
+        -- v2.37.6: slimmed to a 2-line redirect. The Main panel's Slash
+        -- Commands section is now the canonical reference (each command
+        -- has a click-to-run button), so the chat dump that used to
+        -- live here is duplication. Keeps the command so the
+        -- conventional /<addon> help expectation still gives a useful
+        -- response.
+        PrintNice("|cffffff00EbonClearance|r: type |cffffff00/ec|r to open settings.")
         PrintNice(
-            "|cffffff00/ec clean upgrades|r  Find old 'Upgrade'-tagged Keep List items that aren't upgrades any more"
-        )
-        PrintNice("|cffffff00/ec clean upgrades apply|r  Remove those old 'Upgrade' items (with confirmation)")
-        PrintNice("|cffffff00/ec bugreport|r  Generate a report to share when something's wrong")
-        PrintNice(
-            "|cffffff00/ec affixdebug on|off|status|dump|clear|r  Record affix-detection events for bug reports"
-        )
-        PrintNice(
-            "|cffffff00/ec sellinfo [bag slot]|r  Explain why an item will or won't sell (defaults to first non-empty slot)"
-        )
-        PrintNice("|cffaaaaaaTip: Alt+Shift+Right-Click a bag item for the same explanation.|r")
-        PrintNice("|cffffff00/ec perf|r  Show EC's memory, CPU, cache and list sizes")
-        PrintNice("|cffffff00/ecdebug|r  Show debug info and a bag scan")
-        PrintNice(
-            "|cffaaaaaaSee the Help panel in Interface Options for a full FAQ + label reference.|r"
+            "|cffaaaaaaThe Slash Commands section there has every command with click-to-run buttons. The Help panel in Interface Options has the full FAQ.|r"
         )
         return
     end

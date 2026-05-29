@@ -7,9 +7,11 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 
 ### v2.37.6
 
-Patch release. Adds a `/ec perf` self-diagnostic so the "is EC bloated?" question has a one-line answer.
+Patch release. Adds a `/ec perf` self-diagnostic and clickable Run buttons for slash commands.
 
 - **New: `/ec perf` slash sub-command.** Prints EC's memory footprint (always), CPU cost (when `scriptProfile` is enabled, with a one-line how-to when it's off), per-itemID cache sizes (affix data, hit-proc, tome, processable, bind, item-affix lookup), per-list entry counts (Sell / Keep / Delete / Account Sell), and side-meta counts ((affix-gated) / (Hit-proc)). Flags if `/ec affixdebug` is still on. Listed in the Main panel slash command reference and in `/ec help`. Test 88j locks the wiring.
+- **New: clickable Run buttons in the Slash Commands section.** Every no-arg-or-safe-default command in the Main panel's Slash Commands list now has a Run button beside it. Coverage: `/ec clean`, `/ec clean upgrades`, `/ec sellinfo`, `/ec bugreport`, `/ec perf`, `/ec profile list`, and all five `/ec affixdebug` sub-commands (`status` / `on` / `off` / `dump` / `clear`) each as their own row. Save / load / delete profile by name stays text-only since the button can't enter a profile name; use the Profiles panel for guided management. Buttons dispatch through `SlashCmdList["EBONCLEARANCE"]` so they execute the exact same path as typed commands. Test 88k locks the wiring.
+- **Internal: `/ec help` slimmed to a 2-line redirect.** Now that the Main panel's Slash Commands section IS the canonical command reference (with buttons), the chat dump that used to live in `/ec help` was duplicate content. The command still exists, prints one short line telling the user to open `/ec`, and avoids the muscle-memory cliff if someone types it anyway. Dropped the `/ec help` row from the Main panel (running it just printed the redirect).
 - **No schema changes.** Safe overwrite from v2.37.5.
 
 ### v2.37.5

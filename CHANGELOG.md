@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.38.1
+
+Patch release. Adds an Account view to the Stats panel so players with multiple characters can see their total gold + items processed across the whole account, not just per-character.
+
+The Stats panel has always read from the per-character SavedVariables file - so a player with five alts saw five separate lifetime totals. This patch keeps the per-character view (now called "Character") and adds a parallel "Account" view that aggregates across every character that uses EbonClearance on this account. New stat writes mirror into a fresh account-wide table; existing per-character totals stay where they are.
+
+- **New: Character / Account view toggle in the Stats panel.** Two radio buttons above the first stat row. Character (default) shows the logged-in character's lifetime totals exactly as before. Account shows the same fields summed across every character on the account. A grey one-liner under the toggle ("Account totals counting from <date>") makes it clear that account totals count forward from v2.38.1 install, not retroactively.
+- **Best GPH ribbon in Account view** shows which character set the record: "Best Gold/Hour: 1234g 56s in Stormwind on Charname".
+- **Reset Lifetime button is view-aware.** Character view clears just this character's lifetime totals (existing behaviour). Account view clears just the account-wide ledger; per-character totals are untouched. The button label adapts: "Reset Lifetime (this character)" vs "Reset Lifetime (account)".
+- **Session deltas stay on Character view only.** The grey "(+N this session)" suffixes are inherently per-character, so they only render when Character is selected.
+- **Inventory Worth row stays on Character view only.** It reflects what's currently in the logged-in character's bags, which has no account-wide meaning.
+- **Schema additions:** new `ADB.accountStats` table seeded by `EnsureAccountDB` with the per-character mirror fields (totalCopper, totalItemsSold, totalItemsDeleted, totalRepairs, totalRepairCopper, soldItemCounts, deletedItemCounts, soldItemsByQuality, soldCopperByQuality, deletedItemsByQuality, processCastCounts, copperByZone, bestGPH, bestGPHAt, bestGPHZone) plus `bestGPHChar` (string, names the character that set the account-wide GPH record) and `startedAt` (number, timestamps when this account ledger was first created). Additive, nil-default, downgrade-safe. Safe overwrite from v2.38.0.
+- **Help FAQ:** the existing `stats-overview` entry tightened, plus a new `stats-character-vs-account` entry explaining the toggle, the start-from-zero account ledger, and the view-aware Reset Lifetime behaviour.
+- **Fix: Quickstart preset tooltips legible in default UI.** Hovering Recommended / Cautious / Farmer / Power printed the description into `GameTooltip`, but the Quickstart frame sits at `TOOLTIP` strata with `:Raise()` so the tooltip drew underneath its background and was hidden by the Interface Options frame. The tooltip is now re-raised after showing so the description is always on top.
+- **Internals:** two new helpers (`EC_BumpStat`, `EC_BumpStatBucket`) route every stat increment through one call site that writes to both `DB.*` and `ADB.accountStats.*`. Replaces ~13 individual two-line increment sites; structurally enforces the mirror. Test 88aa locks the helper presence + that every previous increment site converted.
+- **Test invariants:** Test 88aa adds seven sub-checks (schema seeded, helpers defined, every increment site converted, view toggle present, RefreshStats reads from view-selected source, ResetLifetimeStats branches on view, account-side bestGPH writes stamp the character name).
+
 ### v2.38.0
 
 Minor release. Adds a Quickstart panel - a one-click on-ramp for new players who'd rather not navigate nine settings panels on first install.

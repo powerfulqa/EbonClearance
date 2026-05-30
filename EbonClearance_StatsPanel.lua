@@ -37,6 +37,80 @@ StatsPanel:SetScript("OnShow", function(self)
         local heading = NS.MakeHeader(content, "Stats", -16)
         NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 8, 0, "stats-overview")
 
+        -- v2.38.1: Character / Account view toggle. Sits between the
+        -- heading and the first stat row. Two UIRadioButtonTemplate
+        -- buttons + a one-line started-at note for the account ledger.
+        -- _statsView is in-memory only - opens on Character view every
+        -- time the panel shows.
+        panel._statsView = panel._statsView or "character"
+
+        local charRadio = CreateFrame("CheckButton", nil, content, "UIRadioButtonTemplate")
+        charRadio:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", 0, -8)
+        charRadio:SetChecked(panel._statsView == "character")
+        local charLbl = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        charLbl:SetPoint("LEFT", charRadio, "RIGHT", 4, 0)
+        charLbl:SetText("Character")
+
+        local acctRadio = CreateFrame("CheckButton", nil, content, "UIRadioButtonTemplate")
+        acctRadio:SetPoint("LEFT", charLbl, "RIGHT", 16, 0)
+        acctRadio:SetChecked(panel._statsView == "account")
+        local acctLbl = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        acctLbl:SetPoint("LEFT", acctRadio, "RIGHT", 4, 0)
+        acctLbl:SetText("Account")
+
+        charRadio:SetScript("OnClick", function()
+            panel._statsView = "character"
+            charRadio:SetChecked(true)
+            acctRadio:SetChecked(false)
+            if NS.RefreshStats then
+                NS.RefreshStats()
+            end
+            if panel._updateResetLabel then
+                panel._updateResetLabel()
+            end
+            PlaySound("igMainMenuOptionCheckBoxOn")
+        end)
+        acctRadio:SetScript("OnClick", function()
+            panel._statsView = "account"
+            charRadio:SetChecked(false)
+            acctRadio:SetChecked(true)
+            if NS.RefreshStats then
+                NS.RefreshStats()
+            end
+            if panel._updateResetLabel then
+                panel._updateResetLabel()
+            end
+            PlaySound("igMainMenuOptionCheckBoxOn")
+        end)
+
+        -- Started-at note. Reads ADB.accountStats.startedAt and formats
+        -- as a date string so the player understands the account ledger
+        -- counts from v2.38.1 install, not from their full history.
+        local startedAtNote = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        startedAtNote:SetPoint("TOPLEFT", charRadio, "BOTTOMLEFT", 0, -4)
+        EC_compCache.setPanelWidth(startedAtNote, 16)
+        startedAtNote:SetJustifyH("LEFT")
+        if startedAtNote.SetWordWrap then
+            startedAtNote:SetWordWrap(true)
+        end
+        local function refreshStartedAt()
+            local ADB = NS.ADB
+            local AS = ADB and ADB.accountStats
+            local startedAt = AS and AS.startedAt or 0
+            if startedAt > 0 then
+                startedAtNote:SetText(
+                    string.format(
+                        "|cff888888Account totals counting from %s. Per-character history pre-v2.38.1 stays on Character view.|r",
+                        date("%Y-%m-%d", startedAt)
+                    )
+                )
+            else
+                startedAtNote:SetText("")
+            end
+        end
+        refreshStartedAt()
+        panel._refreshStartedAt = refreshStartedAt
+
         -- Lifetime + session stats. Each panel.statsX is the contract
         -- with RefreshStats (called from EbonClearance_Events.lua's data
         -- handlers). Order matches the old MainPanel layout for visual
@@ -46,17 +120,16 @@ StatsPanel:SetScript("OnShow", function(self)
         -- find them.
         local function makeStatRow(yOffset, anchorPrev)
             local fs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-            if anchorPrev == content then
-                fs:SetPoint("TOPLEFT", content, "TOPLEFT", 16, yOffset)
-            else
-                fs:SetPoint("TOPLEFT", anchorPrev, "BOTTOMLEFT", 0, yOffset)
-            end
+            fs:SetPoint("TOPLEFT", anchorPrev, "BOTTOMLEFT", 0, yOffset)
             EC_compCache.setPanelWidth(fs, 16)
             fs:SetJustifyH("LEFT")
             return fs
         end
 
-        local money = makeStatRow(-44, content)
+        -- v2.38.1: first stat row anchors below the started-at note now
+        -- (was -44 from content TOPLEFT, which assumed the heading was
+        -- the only thing above the stats).
+        local money = makeStatRow(-16, startedAtNote)
         panel.statsMoney = money
         local sold = makeStatRow(-6, money)
         panel.statsSold = sold
@@ -179,12 +252,23 @@ StatsPanel:SetScript("OnShow", function(self)
             end
         end)
 
-        -- Reset Lifetime button (same global name + behaviour as before).
-        -- Anchored next to Reset Session so both buttons sit on the same row.
+        -- Reset Lifetime button. v2.38.1: branches on the active view -
+        -- Character view clears this character's DB.* lifetime; Account
+        -- view clears the ADB.accountStats.* aggregate. NS.ResetLifetimeStats
+        -- reads panel._statsView to decide which side to wipe. The button
+        -- label adapts so the player knows what they're about to nuke.
         local resetBtn = CreateFrame("Button", "EbonClearanceResetStatsBtn", content, "UIPanelButtonTemplate")
-        resetBtn:SetSize(170, 22)
+        resetBtn:SetSize(220, 22)
         resetBtn:SetPoint("LEFT", resetSessionBtn, "RIGHT", 8, 0)
-        resetBtn:SetText("Reset Lifetime Stats")
+        local function updateResetLabel()
+            if panel._statsView == "account" then
+                resetBtn:SetText("Reset Lifetime (account)")
+            else
+                resetBtn:SetText("Reset Lifetime (this character)")
+            end
+        end
+        updateResetLabel()
+        panel._updateResetLabel = updateResetLabel
         resetBtn:SetScript("OnClick", function()
             local dialog = StaticPopup_Show("EC_CONFIRM_RESET_LIFETIME")
             if dialog then
@@ -194,6 +278,12 @@ StatsPanel:SetScript("OnShow", function(self)
                     end
                     if NS.RefreshStats then
                         NS.RefreshStats()
+                    end
+                    -- Account-view reset stamps a new startedAt; refresh
+                    -- the date line so the player sees the new "counting
+                    -- from <today>" immediately.
+                    if panel._refreshStartedAt then
+                        panel._refreshStartedAt()
                     end
                 end
             end

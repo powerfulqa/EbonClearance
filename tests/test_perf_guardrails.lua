@@ -4297,8 +4297,9 @@ do
 
         check(
             "MainPanel writes DB.bestGPHAt on the best-update path",
-            panelSrc:find("DB%.bestGPHAt%s*=%s*time%(%)") ~= nil,
-            "the bestGPHAt timestamp must be written together with bestGPH so the panel can render the 'X days ago' context; a stale bestGPHAt would describe the wrong session"
+            panelSrc:find("DB%.bestGPHAt%s*=%s*time%(%)") ~= nil
+                or panelSrc:find("DB%.bestGPHAt%s*=%s*now") ~= nil,
+            "the bestGPHAt timestamp must be written together with bestGPH so the panel can render the 'X days ago' context; a stale bestGPHAt would describe the wrong session. The write may use `time()` directly OR a `now` local hoisted from the same scope (v2.38.1: hoisted so the per-character DB and account-wide ADB writes share one timestamp)."
         )
 
         check(
@@ -5115,6 +5116,77 @@ do
                     and evSrc:find('StaticPopupDialogs%["EC_WELCOME"%]') == nil
                     and evSrc:find("_needsQuickstartOpen") ~= nil,
                 "Quickstart panel must define ANSWER_MAP + PRESETS (4 keys); expose NS.Quickstart.Apply; cover the v2.38.0-added fields (autoOpenContainers / protectAllTomes / iLvl surfaces / qualityRules.maxILvl); never reference user list data; MainPanel must surface a Quickstart entry point; Events.lua must define EC_APPLY_QUICKSTART, NOT define EC_WELCOME, and set _needsQuickstartOpen on fresh install."
+            )
+        end
+
+        -- v2.38.1: Stats panel character/account split. Locks the
+        -- schema, the helper-driven write path, the view toggle UI, and
+        -- the view-aware reset branching so regressions surface in CI.
+        local spf = io.open("EbonClearance_StatsPanel.lua", "rb")
+        local mpf4 = io.open("EbonClearance_MainPanel.lua", "rb")
+        if spf and mpf4 then
+            local spS = spf:read("*a") or ""
+            spf:close()
+            local mpS4 = mpf4:read("*a") or ""
+            mpf4:close()
+            check(
+                "Test 88aa: ADB.accountStats schema seeded by EnsureAccountDB",
+                evSrc:find("ADB%.accountStats%s*=%s*{}") ~= nil
+                    and evSrc:find("AS%.totalCopper%s*=%s*0") ~= nil
+                    and evSrc:find("AS%.bestGPHChar") ~= nil
+                    and evSrc:find("AS%.startedAt%s*=%s*time%(%)") ~= nil,
+                "EnsureAccountDB must initialise ADB.accountStats with the per-character mirror fields + bestGPHChar + startedAt timestamp."
+            )
+            check(
+                "Test 88ab: EC_BumpStat + EC_BumpStatBucket helpers defined",
+                evSrc:find("local function EC_BumpStat%(field, delta%)") ~= nil
+                    and evSrc:find("local function EC_BumpStatBucket%(bucket, key, delta%)") ~= nil
+                    and evSrc:find("ADB%.accountStats%[field%]") ~= nil
+                    and evSrc:find("ADB%.accountStats%[bucket%]") ~= nil,
+                "Both helpers must exist and structurally mirror writes from DB.* to ADB.accountStats.*."
+            )
+            check(
+                "Test 88ac: stat-write sites converted to helpers (no remaining inline DB.totalCopper increments)",
+                evSrc:find('EC_BumpStat%("totalCopper"') ~= nil
+                    and evSrc:find('EC_BumpStat%("totalItemsSold"') ~= nil
+                    and evSrc:find('EC_BumpStat%("totalItemsDeleted"') ~= nil
+                    and evSrc:find('EC_BumpStat%("totalRepairs"') ~= nil
+                    and evSrc:find('EC_BumpStatBucket%("soldItemCounts"') ~= nil
+                    and evSrc:find('EC_BumpStatBucket%("deletedItemCounts"') ~= nil
+                    and evSrc:find('EC_BumpStatBucket%("soldItemsByQuality"') ~= nil
+                    and evSrc:find('EC_BumpStatBucket%("deletedItemsByQuality"') ~= nil
+                    and evSrc:find('EC_BumpStatBucket%("processCastCounts"') ~= nil
+                    and evSrc:find('EC_BumpStatBucket%("copperByZone"') ~= nil,
+                "Every stat increment site must route through EC_BumpStat / EC_BumpStatBucket so the ADB.accountStats mirror is structurally guaranteed."
+            )
+            check(
+                "Test 88ad: StatsPanel renders the view toggle + started-at note",
+                spS:find("panel%._statsView") ~= nil
+                    and spS:find('local charRadio = CreateFrame%("CheckButton"') ~= nil
+                    and spS:find('local acctRadio = CreateFrame%("CheckButton"') ~= nil
+                    and spS:find("startedAtNote") ~= nil,
+                "StatsPanel must render Character / Account radio buttons + the started-at one-liner so the user knows where account totals begin."
+            )
+            check(
+                "Test 88ae: RefreshStats reads from view-selected source",
+                mpS4:find("panel%._statsView") ~= nil
+                    and mpS4:find("ADB%.accountStats") ~= nil
+                    and mpS4:find('view%s*==%s*"account"') ~= nil
+                    and mpS4:find("src%.totalCopper") ~= nil,
+                "RefreshStats must pick its source table based on panel._statsView and read from src.* instead of hard-coding DB.*."
+            )
+            check(
+                "Test 88af: ResetLifetimeStats branches on view",
+                mpS4:find('view%s*==%s*"account"') ~= nil
+                    and mpS4:find("AS%.totalCopper%s*=%s*0") ~= nil
+                    and mpS4:find("AS%.bestGPHChar%s*=%s*\"\"") ~= nil,
+                "Reset Lifetime in Account view must clear ADB.accountStats.* + bestGPHChar; Character view keeps clearing DB.*."
+            )
+            check(
+                "Test 88ag: account-side bestGPH writes during RefreshStats",
+                mpS4:find("AS%.bestGPH%s*=%s*sessionGPH") ~= nil
+                    and mpS4:find("AS%.bestGPHChar%s*=%s*%(UnitName") ~= nil,
+                "When a session beats the account-wide best, RefreshStats must stamp both the new record AND the character name onto ADB.accountStats so the Account view can show 'on <CharName>'."
             )
         end
 

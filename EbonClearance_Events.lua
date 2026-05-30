@@ -448,6 +448,68 @@ local function EnsureAccountDB()
     if type(ADB.affixDebugMaxRows) ~= "number" or ADB.affixDebugMaxRows < 100 then
         ADB.affixDebugMaxRows = 1000
     end
+    -- v2.38.1: account-wide stats ledger. Every per-character stat write
+    -- mirrors into ADB.accountStats so the Stats panel's Account view
+    -- aggregates totals across all characters. Counts forward from
+    -- v2.38.1 install (no backfill from existing DB.* fields). The
+    -- panel surfaces `startedAt` in a one-liner so the user understands
+    -- the account ledger may have started after their per-character
+    -- history.
+    if type(ADB.accountStats) ~= "table" then
+        ADB.accountStats = {}
+    end
+    local AS = ADB.accountStats
+    if type(AS.totalCopper) ~= "number" then
+        AS.totalCopper = 0
+    end
+    if type(AS.totalItemsSold) ~= "number" then
+        AS.totalItemsSold = 0
+    end
+    if type(AS.totalItemsDeleted) ~= "number" then
+        AS.totalItemsDeleted = 0
+    end
+    if type(AS.totalRepairs) ~= "number" then
+        AS.totalRepairs = 0
+    end
+    if type(AS.totalRepairCopper) ~= "number" then
+        AS.totalRepairCopper = 0
+    end
+    if type(AS.soldItemCounts) ~= "table" then
+        AS.soldItemCounts = {}
+    end
+    if type(AS.deletedItemCounts) ~= "table" then
+        AS.deletedItemCounts = {}
+    end
+    if type(AS.soldItemsByQuality) ~= "table" then
+        AS.soldItemsByQuality = {}
+    end
+    if type(AS.soldCopperByQuality) ~= "table" then
+        AS.soldCopperByQuality = {}
+    end
+    if type(AS.deletedItemsByQuality) ~= "table" then
+        AS.deletedItemsByQuality = {}
+    end
+    if type(AS.processCastCounts) ~= "table" then
+        AS.processCastCounts = {}
+    end
+    if type(AS.copperByZone) ~= "table" then
+        AS.copperByZone = {}
+    end
+    if type(AS.bestGPH) ~= "number" then
+        AS.bestGPH = 0
+    end
+    if type(AS.bestGPHAt) ~= "number" then
+        AS.bestGPHAt = 0
+    end
+    if type(AS.bestGPHZone) ~= "string" then
+        AS.bestGPHZone = ""
+    end
+    if type(AS.bestGPHChar) ~= "string" then
+        AS.bestGPHChar = ""
+    end
+    if type(AS.startedAt) ~= "number" then
+        AS.startedAt = time()
+    end
     -- One-shot migration from the v2.26.0 field `allowedProcs`.
     -- rawget avoids the EnsureDefaults pattern's auto-create when
     -- the legacy field has already been migrated away.
@@ -1303,6 +1365,40 @@ local function EC_ResetSession()
     EC_session.startedAt = GetTime()
 end
 NS.ResetSession = EC_ResetSession
+
+-- v2.38.1: every per-character stat write mirrors into ADB.accountStats
+-- so the Stats panel's Account view aggregates totals across all
+-- characters. DB.* is the source of truth for the Character view; the
+-- ADB.accountStats.* mirror counts forward from v2.38.1 install.
+--
+-- EC_BumpStat: scalar counters (totalCopper, totalItemsSold, etc.).
+-- EC_BumpStatBucket: keyed sub-tables (soldItemCounts[itemID],
+-- soldItemsByQuality[quality], copperByZone[zoneName], etc.).
+--
+-- Both helpers are defensive against missing tables - DB or ADB may not
+-- exist yet when called from a corner case (e.g. an event firing during
+-- ADDON_LOADED before EnsureDB runs).
+local function EC_BumpStat(field, delta)
+    delta = delta or 1
+    if DB then
+        DB[field] = (DB[field] or 0) + delta
+    end
+    if ADB and ADB.accountStats then
+        ADB.accountStats[field] = (ADB.accountStats[field] or 0) + delta
+    end
+end
+
+local function EC_BumpStatBucket(bucket, key, delta)
+    delta = delta or 1
+    if DB then
+        DB[bucket] = DB[bucket] or {}
+        DB[bucket][key] = (DB[bucket][key] or 0) + delta
+    end
+    if ADB and ADB.accountStats then
+        ADB.accountStats[bucket] = ADB.accountStats[bucket] or {}
+        ADB.accountStats[bucket][key] = (ADB.accountStats[bucket][key] or 0) + delta
+    end
+end
 
 -- Keep bags open when merchant closes
 local EC_keepBagsFlag = false
@@ -3840,8 +3936,9 @@ function EC_compCache.attributeCopperToZone(copper)
     if not zone or zone == "" then
         zone = "Unknown"
     end
-    DB.copperByZone = DB.copperByZone or {}
-    DB.copperByZone[zone] = (DB.copperByZone[zone] or 0) + copper
+    -- v2.38.1: helper writes to DB AND ADB.accountStats for the
+    -- account-view aggregate.
+    EC_BumpStatBucket("copperByZone", zone, copper)
 end
 
 function EC_manualSell.snapshotBags()
@@ -3911,17 +4008,15 @@ function EC_manualSell.installHookOnce()
             if sellPrice and sellPrice > 0 then
                 local copper = sellPrice * (snap.count or 1)
                 if DB then
-                    DB.totalCopper = (DB.totalCopper or 0) + copper
-                    DB.totalItemsSold = (DB.totalItemsSold or 0) + 1
+                    -- v2.38.1: helpers write to DB + ADB.accountStats.
+                    EC_BumpStat("totalCopper", copper)
+                    EC_BumpStat("totalItemsSold", 1)
                     if snap.itemID then
-                        DB.soldItemCounts = DB.soldItemCounts or {}
-                        DB.soldItemCounts[snap.itemID] = (DB.soldItemCounts[snap.itemID] or 0) + 1
+                        EC_BumpStatBucket("soldItemCounts", snap.itemID, 1)
                     end
                     if quality then
-                        DB.soldItemsByQuality = DB.soldItemsByQuality or {}
-                        DB.soldItemsByQuality[quality] = (DB.soldItemsByQuality[quality] or 0) + 1
-                        DB.soldCopperByQuality = DB.soldCopperByQuality or {}
-                        DB.soldCopperByQuality[quality] = (DB.soldCopperByQuality[quality] or 0) + copper
+                        EC_BumpStatBucket("soldItemsByQuality", quality, 1)
+                        EC_BumpStatBucket("soldCopperByQuality", quality, copper)
                     end
                     -- v2.37.0: attribute the sell to the current zone.
                     EC_compCache.attributeCopperToZone(copper)
@@ -4347,7 +4442,8 @@ local function FinishRun()
     EC_compCache.vendorRunning = false
     worker:Hide()
 
-    DB.totalCopper = (DB.totalCopper or 0) + (goldThisVendoring or 0)
+    -- v2.38.1: helper writes to DB + ADB.accountStats.
+    EC_BumpStat("totalCopper", goldThisVendoring or 0)
     EC_session.copper = EC_session.copper + (goldThisVendoring or 0)
     EC_batchTotalSold = EC_batchTotalSold + #queue
     EC_batchTotalGold = EC_batchTotalGold + (goldThisVendoring or 0)
@@ -4443,18 +4539,17 @@ local function DoNextAction()
         EC_manualSell.inSelfSell = true
         UseContainerItem(action.bag, action.slot)
         EC_manualSell.inSelfSell = false
-        DB.totalItemsSold = (DB.totalItemsSold or 0) + (action.count or 1)
-        EC_session.sold = EC_session.sold + (action.count or 1)
-        DB.soldItemCounts = DB.soldItemCounts or {}
+        -- v2.38.1: helpers write to DB + ADB.accountStats.
+        local soldCount = action.count or 1
+        EC_BumpStat("totalItemsSold", soldCount)
+        EC_session.sold = EC_session.sold + soldCount
         if action.itemID then
-            DB.soldItemCounts[action.itemID] = (DB.soldItemCounts[action.itemID] or 0) + (action.count or 1)
+            EC_BumpStatBucket("soldItemCounts", action.itemID, soldCount)
         end
         if action.quality then
-            local copper = (action.price or 0) * (action.count or 1)
-            DB.soldItemsByQuality = DB.soldItemsByQuality or {}
-            DB.soldItemsByQuality[action.quality] = (DB.soldItemsByQuality[action.quality] or 0) + (action.count or 1)
-            DB.soldCopperByQuality = DB.soldCopperByQuality or {}
-            DB.soldCopperByQuality[action.quality] = (DB.soldCopperByQuality[action.quality] or 0) + copper
+            local copper = (action.price or 0) * soldCount
+            EC_BumpStatBucket("soldItemsByQuality", action.quality, soldCount)
+            EC_BumpStatBucket("soldCopperByQuality", action.quality, copper)
         end
     elseif action.type == "delete" then
         ClearCursor()
@@ -4465,15 +4560,15 @@ local function DoNextAction()
             EC_compCache.pendingDelete = { bag = action.bag, slot = action.slot, itemID = action.itemID }
             DeleteCursorItem()
             ClearCursor()
-            DB.totalItemsDeleted = (DB.totalItemsDeleted or 0) + (action.count or 1)
-            EC_session.deleted = EC_session.deleted + (action.count or 1)
-            DB.deletedItemCounts = DB.deletedItemCounts or {}
+            -- v2.38.1: helpers write to DB + ADB.accountStats.
+            local delCount = action.count or 1
+            EC_BumpStat("totalItemsDeleted", delCount)
+            EC_session.deleted = EC_session.deleted + delCount
             if action.itemID then
-                DB.deletedItemCounts[action.itemID] = (DB.deletedItemCounts[action.itemID] or 0) + (action.count or 1)
+                EC_BumpStatBucket("deletedItemCounts", action.itemID, delCount)
             end
             if action.quality then
-                DB.deletedItemsByQuality = DB.deletedItemsByQuality or {}
-                DB.deletedItemsByQuality[action.quality] = (DB.deletedItemsByQuality[action.quality] or 0) + (action.count or 1)
+                EC_BumpStatBucket("deletedItemsByQuality", action.quality, delCount)
             end
         else
             ClearCursor()
@@ -4610,15 +4705,16 @@ local function StartRun()
                 and GetGuildBankWithdrawMoney() >= repairCost
             if useGuild then
                 RepairAllItems(1) -- 1 = use guild bank funds
-                DB.totalRepairs = (DB.totalRepairs or 0) + 1
-                DB.totalRepairCopper = (DB.totalRepairCopper or 0) + repairCost
+                -- v2.38.1: helpers write to DB + ADB.accountStats.
+                EC_BumpStat("totalRepairs", 1)
+                EC_BumpStat("totalRepairCopper", repairCost)
                 EC_session.repairs = EC_session.repairs + 1
                 EC_session.repairCopper = EC_session.repairCopper + repairCost
                 PrintNicef("Repaired from guild bank: %s", CopperToColoredText(repairCost))
             elseif GetMoney and GetMoney() >= repairCost then
                 RepairAllItems()
-                DB.totalRepairs = (DB.totalRepairs or 0) + 1
-                DB.totalRepairCopper = (DB.totalRepairCopper or 0) + repairCost
+                EC_BumpStat("totalRepairs", 1)
+                EC_BumpStat("totalRepairCopper", repairCost)
                 EC_session.repairs = EC_session.repairs + 1
                 EC_session.repairCopper = EC_session.repairCopper + repairCost
             end
@@ -5938,8 +6034,8 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- or a manual cast bar. "Opening" is excluded - it fires on
         -- every container right-click and would over-attribute.
         if DB and spellName and EC_compCache.PROF_LOOT_SPELLS[spellName] and spellName ~= "Opening" then
-            DB.processCastCounts = DB.processCastCounts or {}
-            DB.processCastCounts[spellName] = (DB.processCastCounts[spellName] or 0) + 1
+            -- v2.38.1: helper writes to DB + ADB.accountStats.
+            EC_BumpStatBucket("processCastCounts", spellName, 1)
         end
         -- v2.25.0: Pick Lock completion - BAG_UPDATE doesn't fire for a
         -- lockbox's lock-state change (slot contents unchanged), and

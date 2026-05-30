@@ -151,30 +151,47 @@ function NS.RefreshStats()
         return
     end
     local DB = NS.DB
+    local ADB = NS.ADB
     if not DB then
         return
     end
+    -- v2.38.1: view-aware. Character view reads DB.* (this character's
+    -- lifetime). Account view reads ADB.accountStats.* (aggregated
+    -- across all characters since v2.38.1 install). Session deltas only
+    -- render in Character view - "session" is inherently per-character.
+    local view = panel._statsView or "character"
+    local src = (view == "account") and (ADB and ADB.accountStats) or DB
+    if not src then
+        return
+    end
+    local showSession = (view == "character")
     local function sessionSuffix(n)
+        if not showSession then
+            return ""
+        end
         return string.format("  |cff888888(session +%s)|r", tostring(n or 0))
     end
     local function sessionMoneySuffix(c)
+        if not showSession then
+            return ""
+        end
         return "  |cff888888(session +" .. NS.CopperToColoredText(c or 0) .. "|cff888888)|r"
     end
     panel.statsMoney:SetText(
-        "Total Money Made: " .. NS.CopperToColoredText(DB.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
+        "Total Money Made: " .. NS.CopperToColoredText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
     )
     panel.statsSold:SetText(
-        "Total Items Sold: " .. tostring(DB.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
+        "Total Items Sold: " .. tostring(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
     )
     panel.statsDeleted:SetText(
-        "Total Items Deleted: " .. tostring(DB.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
+        "Total Items Deleted: " .. tostring(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
     )
     panel.statsRepairs:SetText(
-        "Total Repairs: " .. tostring(DB.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
+        "Total Repairs: " .. tostring(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
     )
     panel.statsRepairCost:SetText(
         "Total Repair Cost: "
-            .. NS.CopperToColoredText(DB.totalRepairCopper or 0)
+            .. NS.CopperToColoredText(src.totalRepairCopper or 0)
             .. sessionMoneySuffix(NS.session.repairCopper)
     )
 
@@ -222,19 +239,34 @@ function NS.RefreshStats()
         end
     end
 
-    -- Best-update gate: 5 minutes of session AND new high.
-    if sessionGPH and elapsed >= 300 and sessionGPH > (DB.bestGPH or 0) then
-        DB.bestGPH = sessionGPH
-        DB.bestGPHAt = time()
+    -- Best-update gate: 5 minutes of session AND new high. Compared
+    -- against both records independently so a character-best update
+    -- doesn't require an account-best, and vice versa.
+    if sessionGPH and elapsed >= 300 then
         local zone = GetRealZoneText()
-        DB.bestGPHZone = (zone and zone ~= "") and zone or "Unknown"
+        local zoneText = (zone and zone ~= "") and zone or "Unknown"
+        local now = time()
+        if sessionGPH > (DB.bestGPH or 0) then
+            DB.bestGPH = sessionGPH
+            DB.bestGPHAt = now
+            DB.bestGPHZone = zoneText
+        end
+        -- v2.38.1: account-wide best record. Stamp the character name
+        -- so the Account view's ribbon can say "on <CharName>".
+        local AS = ADB and ADB.accountStats
+        if AS and sessionGPH > (AS.bestGPH or 0) then
+            AS.bestGPH = sessionGPH
+            AS.bestGPHAt = now
+            AS.bestGPHZone = zoneText
+            AS.bestGPHChar = (UnitName and UnitName("player")) or ""
+        end
     end
 
     if panel.statsBestGPH then
-        local best = DB.bestGPH or 0
+        local best = src.bestGPH or 0
         if best > 0 then
-            local at = DB.bestGPHAt or 0
-            local zone = DB.bestGPHZone
+            local at = src.bestGPHAt or 0
+            local zone = src.bestGPHZone
             if not zone or zone == "" then
                 zone = "Unknown"
             end
@@ -258,10 +290,17 @@ function NS.RefreshStats()
                     when = date("%Y-%m-%d", at)
                 end
             end
+            -- v2.38.1: append the character name in Account view so
+            -- "Best Gold/Hour: 12345g  in Stranglethorn, 2 hours ago on Bob"
+            -- tells the player which character set the account record.
+            local charSuffix = ""
+            if view == "account" and src.bestGPHChar and src.bestGPHChar ~= "" then
+                charSuffix = string.format(" on %s", src.bestGPHChar)
+            end
             panel.statsBestGPH:SetText(
                 "Best Gold/Hour: "
                     .. NS.CopperToColoredText(best)
-                    .. string.format("\n  |cff888888in %s, %s|r", zone, when)
+                    .. string.format("\n  |cff888888in %s, %s%s|r", zone, when, charSuffix)
             )
         else
             panel.statsBestGPH:SetText("Best Gold/Hour: |cff888888-|r")
@@ -269,18 +308,26 @@ function NS.RefreshStats()
     end
 
     if panel.statsAvgWorth then
-        local cnt = DB.inventoryWorthCount or 0
-        local total = DB.inventoryWorthTotal or 0
-        local avg = 0
-        if cnt > 0 then
-            avg = math.floor((total / cnt) + 0.5)
+        -- inventoryWorthTotal / inventoryWorthCount are per-character
+        -- only (no account aggregate). Account view shows a dash for
+        -- this row since the average wouldn't be meaningful across
+        -- characters with different equip levels.
+        if view == "account" then
+            panel.statsAvgWorth:SetText("Average Inventory Worth: |cff888888- (per-character only)|r")
+        else
+            local cnt = DB.inventoryWorthCount or 0
+            local total = DB.inventoryWorthTotal or 0
+            local avg = 0
+            if cnt > 0 then
+                avg = math.floor((total / cnt) + 0.5)
+            end
+            panel.statsAvgWorth:SetText("Average Inventory Worth: " .. NS.CopperToColoredText(avg))
         end
-        panel.statsAvgWorth:SetText("Average Inventory Worth: " .. NS.CopperToColoredText(avg))
     end
 
     if panel.statsQualityBreakdown then
-        local items = DB.soldItemsByQuality or {}
-        local copper = DB.soldCopperByQuality or {}
+        local items = src.soldItemsByQuality or {}
+        local copper = src.soldCopperByQuality or {}
         local rows = { "|cffffd200Sold by Quality|r" }
         local any = false
         for q = 0, 7 do
@@ -307,7 +354,7 @@ function NS.RefreshStats()
     end
 
     if panel.statsDeletedByQuality then
-        local items = DB.deletedItemsByQuality or {}
+        local items = src.deletedItemsByQuality or {}
         local rows = { "|cffffd200Deleted by Quality|r" }
         local any = false
         for q = 0, 7 do
@@ -329,7 +376,7 @@ function NS.RefreshStats()
     end
 
     if panel.statsMostSold then
-        local top = GetTopNItems(DB.soldItemCounts, 5)
+        local top = GetTopNItems(src.soldItemCounts, 5)
         if #top == 0 then
             panel.statsMostSold:SetText("|cffffd200Top 5 Most Sold|r\n  |cff888888None yet|r")
         else
@@ -347,7 +394,7 @@ function NS.RefreshStats()
     end
 
     if panel.statsMostDeleted then
-        local top = GetTopNItems(DB.deletedItemCounts, 5)
+        local top = GetTopNItems(src.deletedItemCounts, 5)
         if #top == 0 then
             panel.statsMostDeleted:SetText("|cffffd200Top 5 Most Deleted|r\n  |cff888888None yet|r")
         else
@@ -365,7 +412,7 @@ function NS.RefreshStats()
     end
 
     if panel.statsProcessTotals then
-        local counts = DB.processCastCounts or {}
+        local counts = src.processCastCounts or {}
         local rows = { "|cffffd200Process Bags Totals|r" }
         local any = false
         -- Fixed display order: Disenchant, Milling, Prospecting, Pick Lock.
@@ -391,7 +438,7 @@ function NS.RefreshStats()
     end
 
     if panel.statsTopZones then
-        local zones = DB.copperByZone or {}
+        local zones = src.copperByZone or {}
         local entries = {}
         for name, copper in pairs(zones) do
             if type(name) == "string" and type(copper) == "number" and copper > 0 then
@@ -422,7 +469,54 @@ function NS.RefreshStats()
     end
 end
 
+-- v2.38.1: view-aware Reset Lifetime. Character view clears this
+-- character's DB.* lifetime totals (existing behaviour). Account view
+-- clears the ADB.accountStats.* aggregate (every character's
+-- contribution since v2.38.1 install). Both wipe the Best GPH triple
+-- on their respective side.
 function NS.ResetLifetimeStats()
+    local panel = _G["EbonClearanceOptionsStats"]
+    local view = (panel and panel._statsView) or "character"
+    if view == "account" then
+        local ADB = NS.ADB
+        local AS = ADB and ADB.accountStats
+        if not AS then
+            return
+        end
+        AS.totalCopper = 0
+        AS.totalItemsSold = 0
+        AS.totalItemsDeleted = 0
+        AS.totalRepairs = 0
+        AS.totalRepairCopper = 0
+        if AS.soldItemCounts then
+            wipe(AS.soldItemCounts)
+        end
+        if AS.deletedItemCounts then
+            wipe(AS.deletedItemCounts)
+        end
+        if AS.soldItemsByQuality then
+            wipe(AS.soldItemsByQuality)
+        end
+        if AS.soldCopperByQuality then
+            wipe(AS.soldCopperByQuality)
+        end
+        if AS.deletedItemsByQuality then
+            wipe(AS.deletedItemsByQuality)
+        end
+        if AS.processCastCounts then
+            wipe(AS.processCastCounts)
+        end
+        if AS.copperByZone then
+            wipe(AS.copperByZone)
+        end
+        AS.bestGPH = 0
+        AS.bestGPHAt = 0
+        AS.bestGPHZone = ""
+        AS.bestGPHChar = ""
+        AS.startedAt = time()
+        return
+    end
+    -- Character view: clear DB.* (per-character).
     local DB = NS.DB
     if not DB then
         return

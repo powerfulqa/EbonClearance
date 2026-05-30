@@ -75,7 +75,13 @@ local EC_HELP_ENTRIES = {
     {
         id = "stats-overview",
         q = "What does the Stats panel show?",
-        a = "The Stats panel tracks your character's lifetime totals from using EbonClearance: money earned, items sold, items deleted, repairs and repair cost, plus current-session gold-per-hour and your best gold-per-hour record (with the zone where it happened and when). Reset Session clears the in-session deltas; Reset Lifetime wipes the lifetime totals (with a confirmation popup). Stats don't include items bought back from vendors.",
+        a = "The Stats panel tracks lifetime totals from using EbonClearance: money earned, items sold, items deleted, repairs and repair cost, plus current-session gold-per-hour and your best gold-per-hour record (with the zone and date). Reset Session clears the session deltas; Reset Lifetime wipes the lifetime totals (with a confirmation popup). Stats don't include items bought back from vendors.",
+        panel = "EbonClearanceOptionsStats",
+    },
+    {
+        id = "stats-character-vs-account",
+        q = "Character view vs Account view in the Stats panel?",
+        a = "The toggle at the top of the Stats panel picks which totals to show. |cffb6ffb6Character|r shows just the currently logged-in character's lifetime totals - the original behaviour. |cffb6ffb6Account|r shows the same fields summed across every character on this account that has used EbonClearance. Account totals start at zero on v2.38.1 install and count forward; older per-character history stays on each character's own Character view. The Account view's Best Gold/Hour ribbon names which character set the record. |cffffd870Reset Lifetime|r is view-aware: in Character view it clears just this character; in Account view it clears just the account ledger, leaving every character's own totals intact.",
         panel = "EbonClearanceOptionsStats",
     },
     {

@@ -813,6 +813,14 @@ local function buildPanel(self, content)
                 GameTooltip:SetOwner(self, "ANCHOR_TOP")
                 GameTooltip:SetText(p.desc, 0.9, 0.9, 0.9, true)
                 GameTooltip:Show()
+                -- v2.38.1: the Quickstart frame sits at TOOLTIP strata
+                -- with frame level 100. GameTooltip is at the same
+                -- strata but parents under self (a child of Quickstart)
+                -- so its level inherits below the parent + a Raise()
+                -- alone doesn't beat the toplevel parent. Stamp a much
+                -- higher absolute level so the description always wins.
+                GameTooltip:SetFrameStrata("TOOLTIP")
+                GameTooltip:SetFrameLevel(250)
             end)
             btn:SetScript("OnLeave", function()
                 GameTooltip:Hide()

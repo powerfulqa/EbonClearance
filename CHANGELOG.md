@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.38.2
+
+Patch release. Three fixes shipped together: a Turbo Mode over-count regression that's been in the build since v2.37.7, a Stats panel that went static while you watched it, and two label rewrites so `/ec bugreport` and `/ec sellinfo` match the in-game checkbox wording.
+
+- **Fix: Turbo Mode over-counted stats by up to 4x per vendor cycle.** Turbo's `OnUpdate` runs `DoNextAction()` N times per tick (N = batch size, default 4). When the queue exhausted mid-batch, the remaining iterations would re-enter the queue-empty branch and re-fire `FinishRun()` once per leftover slot. Every call bumped `DB.totalCopper`, `EC_session.copper`, and `ADB.accountStats.totalCopper` AND printed "Vendoring complete!" again - so a single 32-item sell showed up as four chat lines and counted 4x in your stats. Belt-and-braces fix: a top-of-`DoNextAction` `vendorRunning` guard plus a `break` in the batch for-loop the moment `FinishRun` flips the flag. Tests 88ah + 88ai lock both. Existing lifetime totals are likely inflated by some fraction; use Reset Lifetime on Character + Account view to start fresh if you care.
+- **Fix: Stats panel auto-refreshes while open.** `NS.RefreshStats` only fired on the panel's `OnShow`, so after you opened the Stats panel the displayed numbers stayed frozen even as the writes landed in memory. The v2.38.1 `(session +N)` suffix made the staleness glaringly obvious because a `+0` parked itself next to a growing lifetime total. A 1Hz `OnUpdate` driver gated on `IsShown` now repaints once per second - cheap, no debounce gymnastics from the bump helpers. Test 88aj locks the wiring.
+- **UX: `/ec bugreport` label matches the in-game checkbox.** The "Allow exact-rank duplicates" line was the same field as the Item Protection panel's "Allow selling affixes you already have" checkbox, but the shorthand obscured the verb (allow [selling]? allow [keeping]?). The bug report now uses the in-game wording verbatim.
+- **UX: `/ec sellinfo` affix-protection verdict reworded.** "affix present but allow-listed (rank dupe)" implied the affix was on an explicit allow list when it was actually the dupe-toggle letting the item through. The verdict now reads "affix present, selling allowed (you already have this affix)" or "... this affix family at this rank" depending on the match path. The manual Alt+Right-Click allow-list path reads "affix present, manually allow-listed via Alt+Right-Click" so the two cases are visibly distinct.
+
+Schema-additive only via the v2.38.1 nil-default pattern; safe overwrite from v2.38.1.
+
 ### v2.38.1
 
 Patch release. Adds an Account view to the Stats panel so players with multiple characters can see their total gold + items processed across the whole account, not just per-character.

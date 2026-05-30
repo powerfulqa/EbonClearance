@@ -330,7 +330,7 @@ local function EC_BuildBugReport()
     add("Chance-on-hit allow list (per-itemID): " .. tostring(allowedItemCount))
     add("Random-affix allow list (per-description): " .. tostring(allowedAffixCount))
     add("Known affix descriptions in session set: " .. tostring(knownAffixCount))
-    add("Allow exact-rank duplicates: " .. (DB.affixAllowExactDupes and "yes" or "no"))
+    add("Allow selling affixes you already have: " .. (DB.affixAllowExactDupes and "yes" or "no"))
     -- v2.37.0 (Borrow A): surface the affix debug log status. When the
     -- log has rows, prompt the reporter to also include /ec affixdebug
     -- dump so the maintainer gets the structured event trail.

@@ -4512,6 +4512,17 @@ local function FinishRun()
 end
 
 local function DoNextAction()
+    -- v2.38.2: Turbo Mode runs a batch of N DoNextAction calls per tick
+    -- (line 4596). When the queue exhausts mid-batch, the remaining
+    -- iterations would re-enter the `not action` branch and re-fire
+    -- FinishRun N-1 extra times - resulting in N x "Vendoring complete!"
+    -- chat spam AND N x bumps of DB.totalCopper / EC_session.copper.
+    -- FinishRun sets vendorRunning to false, so checking it here gates
+    -- the post-finish iterations. Belt-and-braces with the batch loop's
+    -- own break (line 4598).
+    if not EC_compCache.vendorRunning then
+        return
+    end
     if not MerchantFrame or not MerchantFrame:IsShown() then
         EC_compCache.vendorRunning = false
         worker:Hide()
@@ -4595,6 +4606,12 @@ worker:SetScript("OnUpdate", function(self, elapsed)
         local batch = EC_EffectiveBatchSize()
         for _ = 1, batch do
             DoNextAction()
+            -- v2.38.2: stop iterating the moment FinishRun fires. The
+            -- alternative is queue-exhausted DoNextAction calls
+            -- repeating FinishRun once per remaining batch slot.
+            if not EC_compCache.vendorRunning then
+                break
+            end
         end
     end
 end)

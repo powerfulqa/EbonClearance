@@ -1203,10 +1203,12 @@ function EC_compCache.describeSellability(bag, slot)
                 or false
             local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown)
             if manualAllow then
-                step("affixProtection", true, "affix present but allow-listed (manual)")
+                step("affixProtection", true, "affix present, manually allow-listed via Alt+Right-Click")
             elseif autoDupe then
-                local how = descKnown and "rank dupe" or "rank dupe via family match"
-                step("affixProtection", true, "affix present but allow-listed (" .. how .. ")")
+                local how = descKnown
+                    and "you already have this affix"
+                    or "you already have this affix family at this rank"
+                step("affixProtection", true, "affix present, selling allowed (" .. how .. ")")
             else
                 affixProtected = true
                 step("affixProtection", false, "VETO - Rare/Epic random affix detected")

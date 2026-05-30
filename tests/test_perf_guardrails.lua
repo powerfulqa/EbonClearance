@@ -5188,6 +5188,33 @@ do
                     and mpS4:find("AS%.bestGPHChar%s*=%s*%(UnitName") ~= nil,
                 "When a session beats the account-wide best, RefreshStats must stamp both the new record AND the character name onto ADB.accountStats so the Account view can show 'on <CharName>'."
             )
+            -- v2.38.2: Turbo Mode FinishRun-fires-once invariant.
+            -- The OnUpdate batch loop runs N iterations per tick. If the
+            -- queue exhausts mid-batch, every remaining iteration would
+            -- re-enter `if not action then FinishRun() end` and bump
+            -- DB.totalCopper / EC_session.copper N times instead of once,
+            -- plus print "Vendoring complete!" N times. The guard is
+            -- belt-and-braces: a top-of-DoNextAction `if not
+            -- vendorRunning then return end` + a `break` in the batch
+            -- for-loop that checks the same flag.
+            check(
+                "Test 88ah: DoNextAction guards against vendorRunning=false at the top",
+                evSrc:find("if not EC_compCache%.vendorRunning then\n%s*return\n%s*end") ~= nil,
+                "DoNextAction must early-return when vendorRunning is false. Without this, Turbo Mode's batch loop re-fires FinishRun once per remaining batch slot after the queue drains, inflating totalCopper / session counters Nx and spamming chat."
+            )
+            check(
+                "Test 88ai: Turbo Mode batch loop breaks on vendorRunning=false",
+                evSrc:find("for _ = 1, batch do\n%s*DoNextAction%(%)\n%s*-- v2%.38%.2: stop iterating the moment FinishRun fires%.") ~= nil
+                    or evSrc:find("DoNextAction%(%)\n%s*-- v2%.38%.2:") ~= nil,
+                "The OnUpdate batch loop must break as soon as FinishRun flips vendorRunning to false. Otherwise the remaining iterations call DoNextAction with an empty queue and re-fire FinishRun."
+            )
+            check(
+                "Test 88aj: StatsPanel has a 1Hz OnUpdate refresher gated on visibility",
+                spS:find('StatsPanel:SetScript%("OnUpdate"') ~= nil
+                    and spS:find("_statsTickAcc") ~= nil
+                    and spS:find("self:IsShown%(%)") ~= nil,
+                "Without an OnUpdate refresher gated on IsShown, the Stats panel goes static the moment the player opens it - lifetime + session totals update in memory but the displayed numbers stay frozen until close+reopen. The (session +N) suffix v2.38.1 added makes the staleness glaring."
+            )
         end
 
         -- v2.38.0: Quickstart iteration regression locks. Each row below

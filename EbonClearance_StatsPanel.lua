@@ -22,6 +22,25 @@ local StatsPanel = CreateFrame("Frame", "EbonClearanceOptionsStats", InterfaceOp
 StatsPanel.name = "Stats"
 StatsPanel.parent = "EbonClearance"
 
+-- v2.38.2: live refresh while the Stats panel is shown. RefreshStats
+-- otherwise only fires on OnShow + after the GetItemInfo warmup, so the
+-- panel goes static the moment the player opens it - they sell more
+-- items, lifetime + session totals keep updating in memory, but the
+-- displayed numbers stay frozen until the panel is closed and reopened.
+-- v2.38.1's new "(session +N)" delta suffix made the static display
+-- glaringly obvious because the suffix sits next to the lifetime total.
+-- A 1Hz OnUpdate driver (cheap: one script call/sec, gated on visibility)
+-- repaints while the panel is shown.
+StatsPanel:SetScript("OnUpdate", function(self, elapsed)
+    self._statsTickAcc = (self._statsTickAcc or 0) + elapsed
+    if self._statsTickAcc >= 1.0 then
+        self._statsTickAcc = 0
+        if self:IsShown() and NS.RefreshStats then
+            NS.RefreshStats()
+        end
+    end
+end)
+
 StatsPanel:SetScript("OnShow", function(self)
     EC_compCache.initPanel(self, function(refreshSelf)
         if NS.RefreshStats then

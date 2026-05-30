@@ -498,10 +498,35 @@ local function BuildMainPanel(panel, content)
             .. "  |cffb6ffb6Merchant Settings|r - change what counts as old gear.\n"
             .. "  |cffb6ffb6Process Bags|r - one button to disenchant, mill, prospect, or pick locks."
     )
+
+    -- v2.38.0: Quickstart entry row. Button + one-line nudge so returning
+    -- players can find the guided setup wizard any time. Fresh installs
+    -- get the wizard opened automatically at PLAYER_LOGIN; this row is the
+    -- way back in.
+    local quickstartBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    quickstartBtn:SetSize(140, 26)
+    quickstartBtn:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)
+    quickstartBtn:SetText("Open Quickstart")
+    quickstartBtn:SetScript("OnClick", function()
+        local qf = _G["EbonClearanceOptionsQuickstart"]
+        if qf and qf.Show then
+            qf:Show()
+        end
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    local quickstartHint = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    quickstartHint:SetPoint("LEFT", quickstartBtn, "RIGHT", 10, 0)
+    quickstartHint:SetJustifyH("LEFT")
+    if quickstartHint.SetWordWrap then
+        quickstartHint:SetWordWrap(true)
+    end
+    EC_compCache.setPanelWidth(quickstartHint, 180)
+    quickstartHint:SetText("|cff888888New here? Pick a preset or answer 15 questions for a guided setup.|r")
+
     -- Tip on its own line, in grey, so it reads as a hint rather than
     -- another sentence in the main description block.
     local mainTip = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    mainTip:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -10)
+    mainTip:SetPoint("TOPLEFT", quickstartBtn, "BOTTOMLEFT", 0, -14)
     EC_compCache.setPanelWidth(mainTip, 16)
     mainTip:SetJustifyH("LEFT")
     mainTip:SetJustifyV("TOP")

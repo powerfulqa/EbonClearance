@@ -60,6 +60,7 @@ local SOURCE_PATHS = {
     "EbonClearance_PanelInfra.lua",
     "EbonClearance_PanelWidgets.lua",
     "EbonClearance_ListWidget.lua",
+    "EbonClearance_QuickstartPanel.lua",
     "EbonClearance_Events.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
@@ -5069,6 +5070,139 @@ do
                 "Test 88f: /ec affixdebug listed in Main panel slash command reference",
                 mpSrc:find("/ec affixdebug") ~= nil,
                 "The Main panel's Slash Commands section must list /ec affixdebug alongside the other commands so players can discover it without typing /ec help."
+            )
+        end
+
+        -- v2.38.0: Quickstart wizard. The new EbonClearance_QuickstartPanel.lua
+        -- file must register the panel, expose NS.Quickstart.Apply, define
+        -- ANSWER_MAP / PRESETS with the four shipped preset keys, and
+        -- CRITICALLY must never reference DB.whitelist / DB.blacklist /
+        -- DB.deleteList / ADB.whitelist - the wizard writes settings only,
+        -- never user list data. Events.lua must define EC_APPLY_QUICKSTART
+        -- popup (and not the now-dead EC_WELCOME popup). MainPanel must
+        -- render the Quickstart row. EnsureDB must seed _needsQuickstartOpen
+        -- on fresh install.
+        local qpf = io.open("EbonClearance_QuickstartPanel.lua", "rb")
+        local mpf3 = io.open("EbonClearance_MainPanel.lua", "rb")
+        if qpf and mpf3 then
+            local qpSrc = qpf:read("*a") or ""
+            qpf:close()
+            local mpSrc3 = mpf3:read("*a") or ""
+            mpf3:close()
+            check(
+                "Test 88m: Quickstart wizard wired + settings-only invariant",
+                qpSrc:find("local PRESETS%s*=%s*{") ~= nil
+                    and qpSrc:find("recommended") ~= nil
+                    and qpSrc:find("cautious") ~= nil
+                    and qpSrc:find("farmer") ~= nil
+                    and qpSrc:find("power") ~= nil
+                    and qpSrc:find("local ANSWER_MAP%s*=%s*{") ~= nil
+                    and qpSrc:find("NS%.Quickstart%s*=%s*{") ~= nil
+                    and qpSrc:find("autoOpenContainers") ~= nil
+                    and qpSrc:find("protectAllTomes") ~= nil
+                    and qpSrc:find("itemLevelOverlay%.paperdoll") ~= nil
+                    and qpSrc:find("itemLevelOverlay%.merchant") ~= nil
+                    and qpSrc:find("maxILvl") ~= nil
+                    -- Settings-only invariant: NEVER touch user list data
+                    and qpSrc:find("DB%.whitelist") == nil
+                    and qpSrc:find("DB%.blacklist") == nil
+                    and qpSrc:find("DB%.deleteList") == nil
+                    and qpSrc:find("ADB%.whitelist") == nil
+                    -- Main panel surfaces a Quickstart entry point
+                    and mpSrc3:find("Open Quickstart") ~= nil
+                    -- Events.lua: new popup, dead old popup gone, auto-open flag
+                    and evSrc:find('StaticPopupDialogs%["EC_APPLY_QUICKSTART"%]') ~= nil
+                    and evSrc:find('StaticPopupDialogs%["EC_WELCOME"%]') == nil
+                    and evSrc:find("_needsQuickstartOpen") ~= nil,
+                "Quickstart panel must define ANSWER_MAP + PRESETS (4 keys); expose NS.Quickstart.Apply; cover the v2.38.0-added fields (autoOpenContainers / protectAllTomes / iLvl surfaces / qualityRules.maxILvl); never reference user list data; MainPanel must surface a Quickstart entry point; Events.lua must define EC_APPLY_QUICKSTART, NOT define EC_WELCOME, and set _needsQuickstartOpen on fresh install."
+            )
+        end
+
+        -- v2.38.0: Quickstart iteration regression locks. Each row below
+        -- closes a bug we hit during in-game iteration so the same trap
+        -- can't sneak back in.
+        local qpf2 = io.open("EbonClearance_QuickstartPanel.lua", "rb")
+        local bcmf = io.open("EbonClearance_BagContextMenu.lua", "rb")
+        if qpf2 and bcmf then
+            local qpS = qpf2:read("*a") or ""
+            qpf2:close()
+            local bcS = bcmf:read("*a") or ""
+            bcmf:close()
+            check(
+                "Test 88n: Quickstart - standalone frame (NOT a sidebar sub-panel)",
+                qpS:find("CreateFrame%(\"Frame\",%s*\"EbonClearanceOptionsQuickstart\",%s*UIParent%)") ~= nil
+                    and qpS:find('InterfaceOptions_AddCategory%(QuickstartPanel%)') == nil
+                    and qpS:find('QuickstartPanel%.parent%s*=%s*"EbonClearance"') == nil,
+                "Quickstart must be parented to UIParent + must NOT register itself as an Interface Options sub-panel (that's the whole 'only reachable from Main panel' point). The chrome sets the parent; no .parent = sub-panel marker."
+            )
+            check(
+                "Test 88o: Quickstart - TOOLTIP strata + Toplevel + UISpecialFrames",
+                qpS:find('SetFrameStrata%("TOOLTIP"%)') ~= nil
+                    and qpS:find("SetToplevel%(true%)") ~= nil
+                    and qpS:find('table%.insert%(UISpecialFrames,%s*"EbonClearanceOptionsQuickstart"%)') ~= nil,
+                "Quickstart must sit at TOOLTIP strata (highest) so it lands above any host addon's Interface Options chrome wrappers. Toplevel auto-raises on click, and UISpecialFrames lets Escape close it."
+            )
+            check(
+                "Test 88p: Quickstart - draggable + clamped to screen",
+                qpS:find("SetMovable%(true%)") ~= nil
+                    and qpS:find('RegisterForDrag%("LeftButton"%)') ~= nil
+                    and qpS:find('SetScript%("OnDragStart",%s*QuickstartPanel%.StartMoving%)') ~= nil
+                    and qpS:find("SetClampedToScreen%(true%)") ~= nil,
+                "Quickstart must be draggable (StartMoving/StopMovingOrSizing) and clamped to the screen so dragging near the edge can't lose the frame."
+            )
+            check(
+                "Test 88q: Quickstart - confirmation popup escalated to TOOLTIP strata",
+                qpS:find('dialog:SetFrameStrata%("TOOLTIP"%)') ~= nil,
+                "Without this, the EC_APPLY_QUICKSTART StaticPopup renders behind the Quickstart frame because StaticPopups default to DIALOG strata."
+            )
+            check(
+                "Test 88r: Quickstart - chrome inited flag mirrors content frame",
+                qpS:find("QuickstartPanel%.inited%s*=%s*QuickstartContent%.inited") ~= nil,
+                "Cross-panel refresh loop (in EC_ApplyQuickstart) gates on p.inited. Because initPanel runs on QuickstartContent (not the chrome frame), the chrome's inited flag has to be mirrored or the active-preset tag won't refresh on preset switch."
+            )
+            check(
+                "Test 88s: Quickstart - active tag anchored below + below button, NOT right of it",
+                qpS:find('SetPoint%("TOP",%s*presetButtons%[activeKey%],%s*"BOTTOM"') ~= nil,
+                "Right-of-button placement (the earlier iteration) put the 'active' text next to the neighbouring preset button and looked like it belonged to that one. Centered below the active button is the correct placement."
+            )
+            check(
+                "Test 88t: Quickstart - Q5b stop-anchor repositions on mode change",
+                qpS:find("self%.q5bStop:ClearAllPoints%(%)") ~= nil,
+                "When the iLvl mode toggles between dynamic / fixed, the four cap-input rows show or hide. The stop anchor that the next question chains to must reposition so the layout doesn't leave a phantom gap below hidden rows."
+            )
+            check(
+                "Test 88u: Quickstart - chat confirm includes preset name (not just 'applied')",
+                qpS:find('PRESETS%[presetKey%]%.name') ~= nil,
+                "The chat message after applying a preset must include which preset was applied, not just say 'Quickstart applied'."
+            )
+            check(
+                "Test 88v: Quickstart - preset tooltip shows description only (no redundant title)",
+                qpS:find('GameTooltip:SetText%(p%.desc') ~= nil
+                    and qpS:find('GameTooltip:SetText%(p%.name') == nil,
+                "The button label already shows the preset name; the tooltip title repeating it is redundant noise."
+            )
+            check(
+                "Test 88w: Quickstart - immediate-apply on radio click (no separate Apply step)",
+                qpS:find("EC_ApplyAnswerImmediate%(questionKey,%s*opt%.value%)") ~= nil
+                    and qpS:find('btn:SetText%("Apply changes"%)') == nil,
+                "Each radio click writes its answer to DB immediately. The standalone 'Apply changes' button from earlier iterations is gone; only Close remains."
+            )
+            check(
+                "Test 88x: Quickstart - snapshot happens INSIDE initPanel callbacks, after EnsureDB",
+                qpS:find("EC_compCache%.initPanel%(QuickstartContent") ~= nil
+                    and qpS:find("workingAnswers,%s*workingFixedCaps%s*=%s*snapshotAnswersFromDB%(DB%)") ~= nil,
+                "Snapshot before EnsureDB runs (initPanel calls EnsureDB at its top) leaves DB nil or partial and the build callback errors silently. Snapshot must live INSIDE the initPanel refresh + build callbacks."
+            )
+            check(
+                "Test 88y: Quickstart - frame width >= 640 so labels at EC_PANEL_WIDTH fit",
+                qpS:find("QuickstartPanel:SetSize%(6") ~= nil,
+                "EC's MakeLabel sizes FontStrings to EC_PANEL_WIDTH (the Interface Options container width ~580). A narrower standalone frame clips the labels on the right side. Width must be at least 640 (parsing accepts SetSize(6**, ...) ie. >= 600 prefix)."
+            )
+            check(
+                "Test 88z: BagContextMenu - cursor anchor clamped to screen bounds",
+                bcS:find("cx > maxX") ~= nil
+                    and bcS:find("UIParent:GetWidth%(%)") ~= nil,
+                "Alt+Right-Clicking a bag item near the right edge (common with host bag UI adapters that pin bags right) used to clip the EC popup off the screen. The clamp keeps the popup's right/bottom edges inside UIParent bounds."
             )
         end
 

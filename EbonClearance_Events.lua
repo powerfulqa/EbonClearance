@@ -918,8 +918,33 @@ local function EnsureDB()
         -- is false. The flag is consumed (set to nil) by the
         -- PLAYER_LOGIN handler after the welcome fires.
         if isFreshInstall then
-            DB._needsWelcome = true
+            -- v2.38.0: fresh installs auto-open the Quickstart panel at
+            -- PLAYER_LOGIN. Renamed from the v2.12.0 `_needsWelcome` flag
+            -- (which fired a 2-button popup pointing at the Main panel)
+            -- to make the intent explicit: open the wizard directly.
+            DB._needsQuickstartOpen = true
         end
+    end
+    -- v2.38.0: one-shot migration from v2.37.x. If an upgrader had the
+    -- old _needsWelcome flag set (installed but never logged in), promote
+    -- it to _needsQuickstartOpen so the wizard fires on their first
+    -- v2.38.0 login. Clear the stale field either way.
+    if DB._needsWelcome ~= nil then
+        if DB._needsWelcome == true then
+            DB._needsQuickstartOpen = true
+        end
+        DB._needsWelcome = nil
+    end
+    -- v2.38.0: Quickstart bookkeeping. _activeQuickstartPreset stores
+    -- the most-recently-applied preset key (or nil for tailored answers)
+    -- so the panel can render the "Active" tag. _previousQuickstartSnapshot
+    -- captures the settings as they were just before the last Apply for
+    -- one-step undo.
+    if DB._activeQuickstartPreset ~= nil and type(DB._activeQuickstartPreset) ~= "string" then
+        DB._activeQuickstartPreset = nil
+    end
+    if DB._previousQuickstartSnapshot ~= nil and type(DB._previousQuickstartSnapshot) ~= "table" then
+        DB._previousQuickstartSnapshot = nil
     end
     if type(DB.autoProtectUpgrades) ~= "boolean" then
         DB.autoProtectUpgrades = false
@@ -4796,18 +4821,23 @@ StaticPopupDialogs["EC_CONFIRM_CLEAN_UPGRADES"] = {
 -- InterfaceOptionsFrame_OpenToCategory call is a known 3.3.5a workaround
 -- for the first-time-this-session focus quirk - the same pattern used by
 -- the slash command's "open settings" fallback at the bottom of the file.
-StaticPopupDialogs["EC_WELCOME"] = {
-    text = "Welcome to EbonClearance!\n\n"
-        .. "Out of the box: junk sells, old gear sells, and your upgrades are kept.\n\n"
-        .. "Click |cffffff00Open Settings|r to look around, or |cffffff00Keep Defaults|r "
-        .. "to start farming.",
-    button1 = "Keep Defaults",
-    button2 = "Open Settings",
-    OnAccept = function()
-        PrintNice("|cffb6ffb6Defaults kept.|r Type |cffffff00/ec|r any time to change settings.")
-    end,
-    OnCancel = function()
-        NS.OpenOptionsPanel("EbonClearanceOptionsMain")
+-- v2.38.0: confirmation popup for the Quickstart panel's Apply button.
+-- The text() callback fills the preset name (or "your tailored answers")
+-- via the dialog's `data` arg captured at StaticPopup_Show time. OnAccept
+-- reads data.answers / data.fixedCaps / data.presetKey and calls
+-- NS.Quickstart.Apply. The popup is settings-only - the body text spells
+-- this out so a player who applies a preset can't be surprised about
+-- Sell / Keep / Delete lists.
+StaticPopupDialogs["EC_APPLY_QUICKSTART"] = {
+    text = "Apply %s?\n\n"
+        .. "This changes your speed, protection, auto-sell, and visual settings.\n\n"
+        .. "Your |cffb6ffb6Sell|r, |cffb6ffb6Keep|r, and |cffb6ffb6Delete|r lists stay exactly as they are.",
+    button1 = "Apply",
+    button2 = CANCEL,
+    OnAccept = function(self, data)
+        if data and NS.Quickstart and NS.Quickstart.Apply then
+            NS.Quickstart.Apply(data.answers, data.fixedCaps, data.presetKey)
+        end
     end,
     timeout = 0,
     whileDead = true,
@@ -4821,6 +4851,11 @@ StaticPopupDialogs["EC_WELCOME"] = {
 
 
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsMain"])
+-- v2.38.0: Quickstart is intentionally NOT registered as an Interface
+-- Options sub-panel - it's a standalone modal frame parented to UIParent.
+-- The only entry points are the "Open Quickstart" button on the Main
+-- panel and the fresh-install PLAYER_LOGIN auto-open. Keeps the sidebar
+-- focused on the long-form settings panels.
 
 
 -- CreateListUI, the 5 list-row factories, and EC_AddScanByQualityRow live in
@@ -6002,24 +6037,21 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     if event == "PLAYER_LOGIN" then
         EC_Delay(1, function()
-            -- v2.12.0: branch on first-run state. Fresh installs see the
-            -- expanded welcome explaining defaults + a setup popup.
-            -- Existing characters keep the unchanged single-line welcome.
-            if DB and DB._needsWelcome then
-                DB._needsWelcome = nil
-                PrintNice("|cffffff00Welcome to EbonClearance!|r Out of the box:")
-                PrintNice("  |cffaaaaaa-|r Greys auto-sell at any merchant.")
+            -- v2.38.0: fresh installs auto-open the Quickstart panel
+            -- directly (no welcome popup). Existing characters keep the
+            -- unchanged single-line welcome.
+            if DB and DB._needsQuickstartOpen then
+                DB._needsQuickstartOpen = nil
                 PrintNice(
-                    "  |cffaaaaaa-|r Whites and greens with iLvl below your equipped gear "
-                        .. "auto-sell on next merchant visit."
+                    "|cffffff00Welcome to EbonClearance!|r Opening Quickstart - pick a preset or answer a few questions to set up."
                 )
-                PrintNice(
-                    "  |cffaaaaaa-|r Equipped gear and looted upgrades are auto-added to "
-                        .. "your Keep list (never sold)."
-                )
-                PrintNice("Type |cff00ff00/ec|r to customise, or pick a setup mode in the popup.")
-                EC_Delay(0.5, function()
-                    StaticPopup_Show("EC_WELCOME")
+                -- Extra 0.3s defer so the UI has finished settling
+                -- before the standalone Quickstart frame floats up.
+                EC_Delay(0.3, function()
+                    local qf = _G["EbonClearanceOptionsQuickstart"]
+                    if qf and qf.Show then
+                        qf:Show()
+                    end
                 end)
             else
                 PrintNice("Enabled. Use |cff00ff00/ec|r to configure.")

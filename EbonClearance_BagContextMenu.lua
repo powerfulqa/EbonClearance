@@ -448,12 +448,30 @@ local function EC_ShowItemContextMenu(button)
     -- out (it ended at last_index + 1).
     frame:SetHeight(8 + 22 + 6 + (visibleSlot * 22) + 8)
 
-    -- Position at the cursor. WoW's GetCursorPosition returns screen pixels;
-    -- divide by UIParent's effective scale to get UIParent-local coords.
+    -- Position at the cursor. WoW's GetCursorPosition returns screen
+    -- pixels; divide by UIParent's effective scale to get UIParent-local
+    -- coords. Clamp the menu's TOPLEFT so the frame's RIGHT / BOTTOM
+    -- edges stay inside the UIParent bounds - without this, Alt+Right-
+    -- Clicking a bag slot near the right edge (common with host bag UI
+    -- adapters that pin bags to the right side) lets the menu clip off
+    -- the screen.
     local x, y = GetCursorPosition()
     local scale = UIParent:GetEffectiveScale()
+    local cx, cy = x / scale, y / scale
+    local fw, fh = frame:GetWidth() or 240, frame:GetHeight() or 200
+    local maxX = UIParent:GetWidth() - fw - 4
+    local minY = fh + 4
+    if cx > maxX then
+        cx = maxX
+    end
+    if cx < 0 then
+        cx = 0
+    end
+    if cy < minY then
+        cy = minY
+    end
     frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cx, cy)
     frame:Show()
     -- Belt-and-braces: even at FULLSCREEN_DIALOG strata, a host bag UI
     -- replacement might have raised one of its own frames to the top

@@ -43,9 +43,15 @@ local EC_HELP_ENTRIES = {
         panel = nil,
     },
     {
+        id = "first-steps-quickstart",
+        q = "I just installed this. Where do I start?",
+        a = "The fastest path is the |cffb6ffb6Quickstart|r panel - Interface Options > EbonClearance > Quickstart, or the Open Quickstart button on the Main panel. Pick one of the four presets (Recommended / Cautious / Farmer / Power) for a one-click setup, or answer the 15 short questions for a tailored config. Either way only changes |cffffd870settings|r - your Sell, Keep, and Delete lists are never touched. Fresh installs open Quickstart automatically on first login.",
+        panel = "EbonClearanceOptionsQuickstart",
+    },
+    {
         id = "first-steps",
-        q = "I just installed this. What should I do first?",
-        a = "Out of the box, EbonClearance auto-sells grey junk every time you visit a vendor. That's it. To go further:\n1) Open Merchant Settings and turn on the rarities you want auto-sold (White / Green / Blue / Epic).\n2) Alt+Right-Click any item you never want sold to put it on your Keep List.\n3) Alt+Right-Click any item you always want sold to put it on your Sell List.\nVisit a merchant and it just works.",
+        q = "I want to set things up manually. What should I do?",
+        a = "Out of the box, EbonClearance auto-sells grey junk every time you visit a vendor. To go further without Quickstart:\n1) Open Merchant Settings and turn on the rarities you want auto-sold (White / Green / Blue / Epic).\n2) Alt+Right-Click any item you never want sold to put it on your Keep List.\n3) Alt+Right-Click any item you always want sold to put it on your Sell List.\nVisit a merchant and it just works.",
         panel = "EbonClearanceOptionsMerchant",
     },
     {
@@ -74,8 +80,8 @@ local EC_HELP_ENTRIES = {
     },
     {
         id = "what-are-profiles",
-        q = "What are Profiles?",
-        a = "Profiles are named snapshots of your Sell List. Save your current Sell List as a profile, then later swap to a different one in a single click - handy if you have different play styles (a 'farming' profile that vendors everything cheap, a 'questing' profile that keeps quest rewards). Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>.",
+        q = "What are Profiles? (and how are they different from Quickstart?)",
+        a = "Profiles are named snapshots of your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r. Save your current lists as a profile, then later swap to a different one in a single click. Quickstart presets are different: they configure the addon's |cffffd870behaviour|r (speed, auto-sell rules, protections) but never touch your lists. The two systems are complementary - profiles for lists, Quickstart for settings. Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>.",
         panel = "EbonClearanceOptionsProfiles",
     },
     {

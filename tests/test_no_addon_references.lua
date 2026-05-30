@@ -47,6 +47,7 @@ local SOURCE_PATHS = {
     "EbonClearance_PanelInfra.lua",
     "EbonClearance_PanelWidgets.lua",
     "EbonClearance_ListWidget.lua",
+    "EbonClearance_QuickstartPanel.lua",
     "EbonClearance_Events.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",

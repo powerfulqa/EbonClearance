@@ -5,6 +5,21 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.38.0
+
+Minor release. Adds a Quickstart panel - a one-click on-ramp for new players who'd rather not navigate nine settings panels on first install.
+
+After the v2.36-v2.37 feature spike, the Main panel had drifted from "open it and go" toward "read the docs first". This release ships a guided setup: four preset shortcuts (Recommended / Cautious / Farmer / Power) and 15 short questions that share the same Apply path. Pick a preset and click Apply for two-click setup, or answer the questions for a tailored config. Either path only writes |cffffd870settings|r - your Sell, Keep, and Delete lists are never touched.
+
+- **New: Quickstart panel.** Interface Options > EbonClearance > Quickstart. Four preset buttons at the top, 15 questions in five sections below, one Apply button. Questions cover speed (Fast / Turbo), auto-loot cycle + Fast Loot + auto-open containers, what to auto-sell (with a Dynamic vs Fixed iLvl-cap mode + per-rarity numeric inputs), which merchants, what to auto-protect, PE safety nets (affix + chance-on-hit), tome protection (unlearned only vs all), auto-repair (gold vs guild bank), keep bags open, Goblin Merchant summon, Delete List enforcement, item-level overlay surfaces, and bag-slot border tints. Each preset pre-fills all 15 answers; clicking the preset button stages the answers in the form, clicking Apply commits them after a confirmation popup.
+- **Fresh installs auto-open Quickstart** instead of the previous two-button welcome popup. The popup is gone; the Quickstart panel opens directly at PLAYER_LOGIN.
+- **Main panel** gets an "Open Quickstart" row near the top so returning players can revisit the wizard any time.
+- **Settings-only invariant.** Quickstart never reads or writes `DB.whitelist` / `DB.blacklist` / `DB.deleteList` / `ADB.whitelist`. Test 88m locks this.
+- **One-step undo snapshot.** Apply captures the pre-apply settings into `DB._previousQuickstartSnapshot` so a future "Undo last Quickstart" surface can revert in one click. (Not exposed in the UI yet; the data is captured for the next release.)
+- **Help FAQ:** new "I just installed this. Where do I start?" entry points at Quickstart. Existing `what-are-profiles` entry updated to spell out the Profiles-vs-Quickstart distinction (profiles save lists; Quickstart configures behaviour).
+- **Schema additions:** `DB._needsQuickstartOpen` (set on fresh install, consumed at PLAYER_LOGIN), `DB._activeQuickstartPreset` (string or nil; powers the panel's "Active" tag), `DB._previousQuickstartSnapshot` (table or nil; one-step undo). One-shot migration carries the old v2.37.x `DB._needsWelcome` flag onto the new `_needsQuickstartOpen` for upgraders. Safe overwrite from v2.37.7.
+- **Fix: Alt+Right-Click bag context menu no longer clips off the screen.** Host bag UI adapters that pin bag frames to the right edge (or layouts where the bag column hugs the right side) caused the EC popup to extend past `UIParent`'s right edge. The cursor anchor is now clamped so the popup's right + bottom edges stay inside the screen.
+
 ### v2.37.7
 
 Patch release. Faster bag-clearing for players who need it, and a UX pass on the vendoring-speed slider so nobody accidentally sets themselves to the slowest setting.

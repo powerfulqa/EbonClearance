@@ -15,6 +15,10 @@ local NS = select(2, ...)
 local Comms = {}
 NS.Comms = Comms
 
+local VER_MAJ_FACTOR = 1000000
+local VER_MIN_FACTOR = 1000
+local VER_COMPONENT_MAX = 1000
+
 -- Encode "v?MAJOR.MINOR.PATCH" as MAJOR*1000000 + MINOR*1000 + PATCH so peers
 -- compare numerically. A plain string compare breaks at two digits
 -- ("2.10.0" < "2.9.0" lexically); numeric encoding fixes that. Each component
@@ -23,16 +27,16 @@ function Comms.parseVersion(str)
     if type(str) ~= "string" then
         return nil
     end
-    local s = str:gsub("^v", "")
+    local s = str:gsub("^[vV]", "")
     local maj, min, pat = s:match("^(%d+)%.(%d+)%.(%d+)")
     maj, min, pat = tonumber(maj), tonumber(min), tonumber(pat)
     if not (maj and min and pat) then
         return nil
     end
-    if maj >= 1000 or min >= 1000 or pat >= 1000 then
+    if maj >= VER_COMPONENT_MAX or min >= VER_COMPONENT_MAX or pat >= VER_COMPONENT_MAX then
         return nil
     end
-    return maj * 1000000 + min * 1000 + pat
+    return maj * VER_MAJ_FACTOR + min * VER_MIN_FACTOR + pat
 end
 
 -- ---- transport ----------------------------------------------------------
@@ -77,6 +81,7 @@ end)
 
 -- ---- version-check consumer ---------------------------------------------
 local DOWNLOAD_URL = "github.com/powerfulqa/EbonClearance"
+local NUDGE_DELAY_S = 3
 local versionNudgeShown = false -- once per session
 
 local function myVersionStr()
@@ -115,13 +120,13 @@ local function considerPeerVersion(verStr, sender)
     end
     -- Sanity cap: ignore an absurd version (e.g. a troll whispering v99.99.99).
     -- Worst case a spoof costs one harmless chat line, so the guard stays light.
-    local myMaj = math.floor(myInt / 1000000)
-    local peerMaj = math.floor(peerInt / 1000000)
+    local myMaj = math.floor(myInt / VER_MAJ_FACTOR)
+    local peerMaj = math.floor(peerInt / VER_MAJ_FACTOR)
     if peerMaj > myMaj + 1 then
         return
     end
-    if peerInt > myInt then
-        NS.Delay(3, function()
+    if peerInt > myInt and NS.Delay then
+        NS.Delay(NUDGE_DELAY_S, function()
             showVersionNudge(verStr)
         end)
     end
@@ -132,7 +137,10 @@ end
 Comms.RegisterHandler("VERQ", function(payload, sender, channel)
     considerPeerVersion(payload, sender)
     if EbonClearanceDB and EbonClearanceDB.versionAlerts and sender and sender ~= playerName() then
-        Comms.Send("VERR", myVersionStr() or "", "WHISPER", sender)
+        local v = myVersionStr()
+        if v then
+            Comms.Send("VERR", v, "WHISPER", sender)
+        end
     end
 end)
 

@@ -2262,6 +2262,27 @@ local EC_scanTooltip = CreateFrame("GameTooltip", "EbonClearanceScanTooltip", UI
 EC_scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
 NS.scanTooltip = EC_scanTooltip
 
+-- v2.38.3: SetOwner-before-SetBagItem invariant. WoW's GameTooltip
+-- silently drops ownership when something calls :Hide() on it - and
+-- anyone iterating UIParent's children (host bag UI replacements, host
+-- UI replacements, profiling addons) can trigger that hide unexpectedly.
+-- Once ownership is gone, every SetBagItem on this frame populates zero
+-- lines and the tooltip-scan-based predicates (processTooltipHasLine,
+-- itemHasChanceOnHit, processIsSoulbound, canPickLock, sell-info /
+-- delete-list scans, etc.) silently return false. The cache then
+-- poisons with "none" until /reload.
+--
+-- All scan-tooltip call sites in the addon must go through this helper.
+-- It re-establishes ownership defensively so SetBagItem always works.
+-- Cost: two extra C calls per scan; negligible vs. the silent-failure
+-- mode this prevents.
+function EC_compCache.scanBagItem(bag, slot)
+    EC_scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    EC_scanTooltip:ClearLines()
+    EC_scanTooltip:SetBagItem(bag, slot)
+    return EC_scanTooltip
+end
+
 -- Forward declaration so the debounce frame's OnUpdate closure below
 -- can resolve the name. Without this, Lua's lexical scoping resolves
 -- the reference to the (nil) global at closure-creation time and the
@@ -2344,8 +2365,8 @@ local function EC_IsOpenable(bag, slot)
     if not itemCount or itemCount <= 0 or locked then
         return false
     end
-    EC_scanTooltip:ClearLines()
-    EC_scanTooltip:SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
+    EC_compCache.scanBagItem(bag, slot)
     -- Cap iterations: tooltips can technically grow long; 30 lines is more
     -- than any container we care about will produce.
     for i = 1, 30 do
@@ -2462,8 +2483,8 @@ function EC_compCache.getBindType(bag, slot)
     if cached then
         return cached
     end
-    EC_scanTooltip:ClearLines()
-    EC_scanTooltip:SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
+    EC_compCache.scanBagItem(bag, slot)
     local result = "any"
     -- 30-line cap matches the openable-container scan; well above any
     -- realistic tooltip we'd encounter on Project Ebonhold.
@@ -5476,6 +5497,48 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             end
         else
             PrintNicef("|cffff4444Unknown sub-command:|r %s. Try on / off / status / dump / clear.", sub)
+        end
+        return
+    end
+
+    if cmd == "processdebug" then
+        -- v2.38.3: one-shot diagnostic for the Process Bags engine.
+        -- Opens a copyable window with every gate that decides whether
+        -- an item appears in the Disenchant / Mill / Prospect / Lockpick
+        -- list (spell-known states, settings, per-slot scan results,
+        -- buildProcessSummary entry counts). Players whose herbs / ores
+        -- don't show up can paste the output and we can identify which
+        -- layer is failing on their setup (private-server spell IDs,
+        -- tooltip-marker variance, etc.) before guessing a fix.
+        --
+        -- Sub-commands:
+        --   /ec processdebug         - open the diagnostic window
+        --   /ec processdebug clear   - wipe processCache (forces fresh
+        --                              tooltip scans on the next bag
+        --                              walk; lets us confirm whether a
+        --                              "none" entry is genuine or
+        --                              cache-poisoned from a /reload
+        --                              tooltip race)
+        local sub = (rest:match("^(%S+)") or ""):lower()
+        if sub == "clear" then
+            if EC_compCache and EC_compCache.processCache then
+                local n = 0
+                for _ in pairs(EC_compCache.processCache) do
+                    n = n + 1
+                end
+                for k in pairs(EC_compCache.processCache) do
+                    EC_compCache.processCache[k] = nil
+                end
+                PrintNicef("|cffb6ffb6Process cache cleared|r (%d entry/entries removed). Re-run |cffffff00/ec processdebug|r to scan fresh.", n)
+            else
+                PrintNice("|cffff4444processCache not available.|r")
+            end
+            return
+        end
+        if NS.ShowProcessDebugDump then
+            NS.ShowProcessDebugDump()
+        else
+            PrintNice("|cffff4444Process debug dump is unavailable.|r")
         end
         return
     end

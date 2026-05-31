@@ -528,6 +528,12 @@ local EC_HELP_ENTRIES = {
         a = "If a tooltip says 'Keep (affix rank known)' but the merchant cycle still sells the item, run |cffffff00/ec affixdebug on|r to start recording. Reproduce the bug (hover the item, hit the vendor, etc.), then run |cffffff00/ec affixdebug dump|r - a copyable window opens with the event log. Paste that into the bug report. Sub-commands: on, off, status, dump, clear.",
         panel = nil,
     },
+    {
+        id = "bug-process-debug",
+        q = "Process Bags missing herbs / ores / disenchant targets?",
+        a = "If Disenchant works but Milling / Prospecting don't show your items (or vice versa), run |cffffff00/ec processdebug|r. A copyable window opens listing every Process Bags gate: which profession spells the client recognises, every bag slot's scan result, and the buildProcessSummary entry counts. Paste that into the bug report so we can pin down which layer fails on your setup (private-server spell IDs, custom tooltip markers, etc.).",
+        panel = nil,
+    },
 }
 
 -- ---------------------------------------------------------------------------

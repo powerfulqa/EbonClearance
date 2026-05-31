@@ -380,8 +380,8 @@ function EC_compCache.bagSlotAffixData(bag, slot)
     if not baseName then
         return nil
     end
-    scanTip():ClearLines()
-    scanTip():SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
+    EC_compCache.scanBagItem(bag, slot)
     local titleFS = _G["EbonClearanceScanTooltipTextLeft1"]
     if not titleFS or not titleFS.GetText then
         return nil
@@ -1122,8 +1122,8 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     if not bag or not slot then
         return false
     end
-    scanTip():ClearLines()
-    scanTip():SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
+    EC_compCache.scanBagItem(bag, slot)
     local result = false
     for i = 1, 30 do
         local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
@@ -1217,8 +1217,8 @@ function EC_compCache.itemIsTome(bag, slot, itemID)
         EC_compCache.tomeCache[itemID] = false
         return false
     end
-    scanTip():ClearLines()
-    scanTip():SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
+    EC_compCache.scanBagItem(bag, slot)
     local result = false
     local usePrefix = ITEM_SPELL_TRIGGER_ONUSE or "Use:"
     for i = 1, 30 do
@@ -1268,8 +1268,8 @@ function EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
     if not bag or not slot then
         return false
     end
-    scanTip():ClearLines()
-    scanTip():SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
+    EC_compCache.scanBagItem(bag, slot)
     local result = false
     local knownStr = ITEM_SPELL_KNOWN or "Already known"
     for i = 1, 30 do

@@ -5,6 +5,21 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.38.3
+
+Patch release. Fixes a silent tooltip-scan failure that hid Mill / Prospect targets from Process Bags (and silently neutered chance-on-hit / soulbound / lockpick / bind-on / known-tome / known-recipe gates as a side effect). Ships the diagnostic command that caught it.
+
+Two players reported the same symptom: Disenchant entries show up in Process Bags, but Milling and Prospecting sections never appear even though the player has the professions trained and stacks of Copper Ore / Bruiseweed / Peacebloom in their bags. Verified locally: a fresh /reload makes Mill and Prospect work again for a while, then they silently break and stay broken until the next /reload.
+
+Root cause: the addon's hidden scan tooltip (`EbonClearanceScanTooltip`) called `SetOwner(UIParent, "ANCHOR_NONE")` exactly once at addon load. Any host UI addon iterating UIParent's children (skinning addons, host bag UI replacements, profiling tools) that calls `:Hide()` on the tooltip drops the owner relationship - and from that point on, every `SetBagItem` against the frame populates zero lines silently. The Mill / Prospect classifier then caches "none" for every itemID it tries to classify, and the cache stays poisoned until /reload.
+
+- **Fix: SetOwner-before-SetBagItem invariant.** New `EC_compCache.scanBagItem(bag, slot)` helper re-establishes ownership on every call. The ten tooltip-scan call sites (Process.lua's `processTooltipHasLine` / `processIsSoulbound` / `canPickLock`, Protection.lua's `itemHasChanceOnHit` / `bagSlotAffixData` / `itemTooltipMatchesKnownTome` / `itemTooltipMatchesKnownRecipe`, Events.lua's `EC_IsOpenable` / `bagBoundsForSlot`, BugReport.lua's diagnostic dump) all route through it. Tests 88am + 88an lock both the helper definition and the no-raw-SetBagItem invariant. Cost: two extra C calls per scan (negligible vs. the silent-failure mode).
+- **New: `/ec processdebug` diagnostic.** One-shot command that opens a copyable window listing every Process Bags gate: spell-known states for DE / Mill / Prospect / Pick Lock, tooltip marker globals, the per-itemID classification cache, every bag slot's exclusion verdicts + tooltip-scan result + canDisenchant / canMill / canProspect outcomes, sample tooltip line dumps for the most suspicious slots (white-quality non-equippables with `none` scan), and the `buildProcessSummary` entry counts per mode. Mirrors `/ec affixdebug dump`'s shape - paste the output, identify the failing layer, no guessing. Sub-command: `/ec processdebug clear` wipes the in-memory classification cache so the next scan rebuilds fresh.
+- **Help FAQ:** new "Process Bags missing herbs / ores / disenchant targets?" entry points players at `/ec processdebug` for the diagnostic shape we want pasted into bug reports.
+- **Main panel slash-command rows:** `/ec processdebug` and `/ec processdebug clear` join the Bug Reporting block.
+
+Safe overwrite from v2.38.2. Schema-additive only; no DB / ADB changes.
+
 ### v2.38.2
 
 Patch release. Three fixes shipped together: a Turbo Mode over-count regression that's been in the build since v2.37.7, a Stats panel that went static while you watched it, and two label rewrites so `/ec bugreport` and `/ec sellinfo` match the in-game checkbox wording.

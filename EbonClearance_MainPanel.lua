@@ -684,6 +684,14 @@ local function BuildMainPanel(panel, content)
             run = "affixdebug clear",
             label = "|cffffff00/ec affixdebug clear|r  Wipe recorded rows",
         },
+        {
+            run = "processdebug",
+            label = "|cffffff00/ec processdebug|r  Diagnose missing Disenchant / Mill / Prospect targets",
+        },
+        {
+            run = "processdebug clear",
+            label = "|cffffff00/ec processdebug clear|r  Wipe Process Bags cache (force fresh tooltip scans)",
+        },
         { run = "perf", label = "|cffffff00/ec perf|r  Show EC's memory, CPU, cache and list sizes" },
     }
 

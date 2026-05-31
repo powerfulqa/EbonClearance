@@ -21,6 +21,9 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+-- v2.38.3: bound where used so Test 65 (bind-IsInSet invariant) stays
+-- satisfied for the /ec processdebug per-slot blacklist gate.
+local IsInSet = NS.IsInSet
 
 -- Bug report diagnostic snapshot
 local function EC_CopperToPlainText(copper)
@@ -533,5 +536,220 @@ local function EC_ShowAffixDebugDump()
     )
 end
 
+-- v2.38.3: one-shot diagnostic for the Process Bags engine. Triggered
+-- by /ec processdebug. Surfaces every gate that decides whether an
+-- item shows up in the Disenchant / Mill / Prospect / Lockpick list,
+-- so a player whose herbs/ores don't appear can paste the dump and
+-- we can pinpoint which layer is failing on their setup (custom
+-- profession spell IDs, tooltip-marker variance, IsSpellKnown
+-- behaviour on private-server cores, etc.). Mirrors /ec affixdebug
+-- dump's pattern: pure plain-text, copy-paste-friendly, single
+-- generate-and-show call (no recording over time).
+local function EC_BuildProcessDebugDump()
+    local lines = {}
+    local function add(s)
+        lines[#lines + 1] = s
+    end
+    add("=== EbonClearance Process Bags Debug Dump ===")
+    add("Generated: " .. (date and date("%Y-%m-%d %H:%M:%S") or "?"))
+    add("Player: " .. (UnitName("player") or "?") .. "-" .. (GetRealmName() or "?"))
+    add("Class: " .. (UnitClass and (UnitClass("player")) or "?") .. " / Level " .. tostring(UnitLevel and UnitLevel("player") or "?"))
+    add("Locale: " .. (GetLocale and GetLocale() or "?"))
+    add("Addon: " .. (NS.GetVersion and NS.GetVersion() or "?"))
+    add("")
+
+    local cc = NS.compCache
+    if not cc then
+        add("ERROR: NS.compCache is nil; addon not fully loaded.")
+        return table.concat(lines, "\n")
+    end
+
+    add("--- Spell knowledge gates ---")
+    local function spellRow(label, id)
+        local name = (GetSpellInfo and GetSpellInfo(id)) or "<GetSpellInfo nil>"
+        local known = (IsSpellKnown and IsSpellKnown(id)) and "yes" or "no"
+        add(string.format("  %-12s id=%-6d  IsSpellKnown=%s  GetSpellInfo='%s'", label, id, known, name))
+    end
+    spellRow("Disenchant", cc.SPELL_DISENCHANT or 13262)
+    spellRow("Milling", cc.SPELL_MILLING or 51005)
+    spellRow("Prospecting", cc.SPELL_PROSPECTING or 31252)
+    spellRow("Pick Lock", cc.SPELL_PICK_LOCK or 1804)
+    add("")
+
+    add("--- Tooltip marker globals ---")
+    add(string.format("  ITEM_MILLABLE     = '%s'", tostring(ITEM_MILLABLE)))
+    add(string.format("  ITEM_PROSPECTABLE = '%s'", tostring(ITEM_PROSPECTABLE)))
+    add(string.format("  ITEM_SOULBOUND    = '%s'", tostring(ITEM_SOULBOUND)))
+    add(string.format("  LOCKED            = '%s'", tostring(LOCKED)))
+    add("")
+
+    local DB = NS.DB
+    local ADB = NS.ADB
+    if not DB then
+        add("ERROR: NS.DB is nil; cannot evaluate per-slot gates.")
+        return table.concat(lines, "\n")
+    end
+    local ignored = DB.processIgnored or {}
+    local protectCOH = DB.protectChanceOnHitItems
+    local maxQ = DB.processMaxDEQuality or 4
+    add(string.format("--- Settings ---"))
+    add(string.format("  processMaxDEQuality   = %d", maxQ))
+    add(string.format("  processIncludeSoulbound = %s", tostring(DB.processIncludeSoulbound == true)))
+    add(string.format("  protectChanceOnHitItems = %s", tostring(protectCOH)))
+    add(string.format("  lockpickEnabled         = %s", tostring(DB.lockpickEnabled == true)))
+    local ignCount = 0
+    for _ in pairs(ignored) do
+        ignCount = ignCount + 1
+    end
+    add(string.format("  processIgnored entries  = %d", ignCount))
+    add("")
+
+    -- v2.38.3: processCache state. If a stack-of-5 Prospectable item is
+    -- in bags but the panel shows no Prospect section, the cache having
+    -- "none" for that itemID is the smoking gun for a tooltip-not-ready
+    -- race that wrote a poisoned entry during early /reload scan.
+    add("--- processCache state (per-itemID classification cache) ---")
+    if cc.processCache then
+        local entries = {}
+        for id, v in pairs(cc.processCache) do
+            entries[#entries + 1] = string.format("    id=%-6d -> '%s'", id, tostring(v))
+        end
+        table.sort(entries)
+        if #entries == 0 then
+            add("  (empty)")
+        else
+            add(string.format("  %d entry/entries:", #entries))
+            for _, line in ipairs(entries) do
+                add(line)
+            end
+        end
+    else
+        add("  (cc.processCache is nil)")
+    end
+    add("")
+
+    add("--- Bag walk (every non-empty slot) ---")
+    local rowCount, herbOrOreShown = 0, 0
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag) or 0
+        for slot = 1, slots do
+            local itemID = GetContainerItemID(bag, slot)
+            local link = GetContainerItemLink(bag, slot)
+            -- v2.38.3: direct call (NOT `(API and API(args))`) so the
+            -- multi-return texture/count/locked/quality/... reaches
+            -- us. The parenthesised guard form discarded everything
+            -- past the first return value, so count was always nil
+            -- and the filter rejected every slot.
+            local _, count = GetContainerItemInfo(bag, slot)
+            if itemID and link and count and count > 0 then
+                rowCount = rowCount + 1
+                local itemString = link:match("item[%-?%d:]+") or "?"
+                -- v2.38.3: direct call (no parens) so the multi-return
+                -- (name, link, quality, ...) doesn't collapse to a single
+                -- value. The original `(API and API(args))` form silently
+                -- discarded everything past the first return so quality
+                -- was always nil and the dump always showed q=?. Same
+                -- class of bug as the count variant fixed above.
+                local _, _, quality = GetItemInfo(itemID)
+                local equippable = (IsEquippableItem and IsEquippableItem(itemID)) and "Y" or "N"
+                local equipped = (IsEquippedItem and IsEquippedItem(itemID)) and "Y" or "N"
+                local ignoredHit = ignored[itemString] and "Y" or "N"
+                local blacklisted = (IsInSet and DB.blacklist and IsInSet(DB.blacklist, itemID)) and "Y" or "N"
+                local cohGated = "N"
+                if protectCOH and cc.itemHasChanceOnHit and cc.itemHasChanceOnHit(bag, slot, itemID) then
+                    cohGated = (ADB and ADB.allowedItems and ADB.allowedItems[itemID]) and "allowed" or "Y"
+                end
+                local ttResult = cc.processTooltipHasLine and cc.processTooltipHasLine(bag, slot, itemID) or "?"
+                local canDE = cc.canDisenchant and cc.canDisenchant(itemID) and "Y" or "N"
+                local canM = cc.canMill and cc.canMill(bag, slot, itemID) and "Y" or "N"
+                local canP = cc.canProspect and cc.canProspect(bag, slot, itemID) and "Y" or "N"
+                add(string.format(
+                    "  b%d s%-2d id=%-6d q=%s ct=%-3d ttScan=%-8s DE=%s M=%s P=%s | ign=%s bl=%s eq=%s coh=%s | %s",
+                    bag, slot, itemID, tostring(quality or "?"), count, ttResult, canDE, canM, canP,
+                    ignoredHit, blacklisted, equipped, cohGated, link
+                ))
+                -- v2.38.3: dump tooltip lines for the most suspicious
+                -- slots, capped at 3 dumps to keep output short:
+                --   (a) any slot where ttScan returned Mill or Prospect
+                --       - confirms what PE's actual tooltip line says
+                --   (b) any non-equippable, low-quality, stack>=5 slot
+                --       where ttScan returned 'none' - that's the
+                --       cache-poisoning candidate (herbs/ores that
+                --       the engine thinks aren't processable)
+                local interesting = (ttResult == "Mill" or ttResult == "Prospect")
+                    or (
+                        ttResult == "none"
+                        and equippable == "N"
+                        and (quality or 0) <= 1
+                        and count >= 5
+                    )
+                if interesting and herbOrOreShown < 3 then
+                    herbOrOreShown = herbOrOreShown + 1
+                    add(string.format("    -- tooltip dump for b%d s%d (%s, ttScan=%s):", bag, slot, link, ttResult))
+                    if cc.scanBagItem and NS.scanTooltip then
+                        -- v2.38.3: route through the shared helper that
+                        -- enforces SetOwner before SetBagItem. The bug
+                        -- this diagnostic surfaced (silent zero-line
+                        -- SetBagItem when ownership was lost) is now
+                        -- fixed structurally - the helper re-establishes
+                        -- ownership every call.
+                        cc.scanBagItem(bag, slot)
+                        local numLines = NS.scanTooltip.NumLines and NS.scanTooltip:NumLines() or -1
+                        add(string.format("       NumLines() = %d", numLines))
+                        for i = 1, 30 do
+                            local lineFS = _G["EbonClearanceScanTooltipTextLeft" .. i]
+                            if not lineFS then
+                                add(string.format("       L%-2d: <FontString not registered>", i))
+                                break
+                            end
+                            local txt = lineFS:GetText()
+                            if txt == nil then
+                                add(string.format("       L%-2d: <nil>", i))
+                            elseif txt == "" then
+                                add(string.format("       L%-2d: <empty string>", i))
+                            else
+                                add(string.format("       L%-2d: '%s'", i, txt))
+                            end
+                            if i >= numLines and numLines > 0 then
+                                break
+                            end
+                        end
+                    else
+                        add("       (NS.scanTooltip is nil)")
+                    end
+                end
+            end
+        end
+    end
+    if rowCount == 0 then
+        add("  (no items in bags)")
+    end
+    add("")
+    add(string.format("--- Summary ---"))
+    if cc.buildProcessSummary then
+        local results = cc.buildProcessSummary() or {}
+        local byMode = {}
+        for _, e in ipairs(results) do
+            byMode[e.mode] = (byMode[e.mode] or 0) + 1
+        end
+        add(string.format("  buildProcessSummary entries: %d", #results))
+        for mode, n in pairs(byMode) do
+            add(string.format("    %s: %d", mode, n))
+        end
+    else
+        add("  ERROR: buildProcessSummary helper missing")
+    end
+    return table.concat(lines, "\n")
+end
+
+local function EC_ShowProcessDebugDump()
+    EC_ShowCopyFrame(
+        "EbonClearance Process Bags Debug Dump",
+        EC_BuildProcessDebugDump(),
+        "Process debug dump generated. Copy the text from the window."
+    )
+end
+
 NS.ShowBugReport = EC_ShowBugReport
 NS.ShowAffixDebugDump = EC_ShowAffixDebugDump
+NS.ShowProcessDebugDump = EC_ShowProcessDebugDump

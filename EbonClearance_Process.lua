@@ -155,8 +155,11 @@ function EC_compCache.processTooltipHasLine(bag, slot, itemID)
     if cached then
         return cached
     end
-    NS.scanTooltip:ClearLines()
-    NS.scanTooltip:SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem invariant via the shared
+    -- helper. Direct SetBagItem calls were silently no-op'ing whenever
+    -- the scan frame lost ownership mid-session, and the resulting
+    -- empty scan got cached as "none" until /reload.
+    EC_compCache.scanBagItem(bag, slot)
     local millMarker = ITEM_MILLABLE or "Millable"
     local prospectMarker = ITEM_PROSPECTABLE or "Prospectable"
     local result = "none"
@@ -223,8 +226,9 @@ function EC_compCache.canPickLock(bag, slot)
     if locked then
         return false
     end
-    NS.scanTooltip:ClearLines()
-    NS.scanTooltip:SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper. See
+    -- EbonClearance_Events.lua's scanBagItem comment for the rationale.
+    EC_compCache.scanBagItem(bag, slot)
     for i = 1, 30 do
         local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
         if not line then
@@ -242,8 +246,8 @@ end
 -- soulbound-include settings are applied here so the returned list
 -- already respects user prefs.
 function EC_compCache.processIsSoulbound(bag, slot)
-    NS.scanTooltip:ClearLines()
-    NS.scanTooltip:SetBagItem(bag, slot)
+    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
+    EC_compCache.scanBagItem(bag, slot)
     for i = 1, 30 do
         local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
         if not line then

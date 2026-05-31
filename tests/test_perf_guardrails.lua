@@ -5215,6 +5215,125 @@ do
                     and spS:find("self:IsShown%(%)") ~= nil,
                 "Without an OnUpdate refresher gated on IsShown, the Stats panel goes static the moment the player opens it - lifetime + session totals update in memory but the displayed numbers stay frozen until close+reopen. The (session +N) suffix v2.38.1 added makes the staleness glaring."
             )
+            -- v2.38.3: Process Bags diagnostic. Without a structural
+            -- lock, the slash command wiring + Help FAQ + dump builder
+            -- could drift apart silently (e.g., command kept but Help
+            -- entry deleted, or builder renamed without updating the
+            -- /ec processdebug handler).
+            local brf = io.open("EbonClearance_BugReport.lua", "rb")
+            local hpf = io.open("EbonClearance_HelpPanel.lua", "rb")
+            if brf and hpf then
+                local brS = brf:read("*a") or ""
+                brf:close()
+                local hpS = hpf:read("*a") or ""
+                hpf:close()
+                check(
+                    "Test 88ak: /ec processdebug diagnostic wired end-to-end",
+                    brS:find("EC_BuildProcessDebugDump") ~= nil
+                        and brS:find("NS%.ShowProcessDebugDump%s*=") ~= nil
+                        and evSrc:find('cmd == "processdebug"') ~= nil
+                        and evSrc:find("NS%.ShowProcessDebugDump%(%)") ~= nil
+                        and mpS4:find("processdebug") ~= nil
+                        and hpS:find("bug%-process%-debug") ~= nil,
+                    "The /ec processdebug command must have: a builder (EC_BuildProcessDebugDump), namespace exposure (NS.ShowProcessDebugDump), a slash handler in Events.lua, a row in Main panel's SLASH_ROWS, AND a Help FAQ entry. Players hitting Mill/Prospect detection bugs need a paste-and-share dump path - same shape /ec affixdebug took for the affix pipeline."
+                )
+                -- v2.38.3: the scan tooltip silently loses SetOwner
+                -- mid-session (another addon iterating UIParent children
+                -- triggers a Hide), after which raw SetBagItem populates
+                -- zero lines and every tooltip-scan predicate (Mill /
+                -- Prospect / Soulbound / chance-on-hit / lockpick /
+                -- bind / openable / known-tome / known-recipe) silently
+                -- returns false. Routing every SetBagItem through the
+                -- shared scanBagItem helper that re-establishes the
+                -- owner is the structural fix. This test makes sure no
+                -- file regresses to raw SetBagItem on the scan tooltip.
+                local function countRawSetBagItem(src)
+                    local n = 0
+                    for _ in src:gmatch("scanTooltip:SetBagItem") do
+                        n = n + 1
+                    end
+                    for _ in src:gmatch("scanTip%(%):SetBagItem") do
+                        n = n + 1
+                    end
+                    return n
+                end
+                local procSrc = (function()
+                    local fh = io.open("EbonClearance_Process.lua", "rb")
+                    if not fh then return "" end
+                    local s = fh:read("*a") or ""
+                    fh:close()
+                    return s
+                end)()
+                local protSrc = (function()
+                    local fh = io.open("EbonClearance_Protection.lua", "rb")
+                    if not fh then return "" end
+                    local s = fh:read("*a") or ""
+                    fh:close()
+                    return s
+                end)()
+                check(
+                    "Test 88am: scanBagItem helper defined in Events.lua",
+                    evSrc:find("function EC_compCache%.scanBagItem%(bag, slot%)") ~= nil
+                        and evSrc:find("EC_scanTooltip:SetOwner%(UIParent, \"ANCHOR_NONE\"%)") ~= nil
+                        and evSrc:find("EC_scanTooltip:SetBagItem%(bag, slot%)") ~= nil,
+                    "EC_compCache.scanBagItem must re-establish SetOwner before SetBagItem so the scan never silently no-ops when ownership has been lost mid-session."
+                )
+                -- v2.38.3: ordering lock. Re-arranging the helper body
+                -- to put SetOwner AFTER SetBagItem would silently break
+                -- everything again (the SetBagItem call would land on a
+                -- tooltip with no owner and populate zero lines). Test
+                -- 88am only verifies presence; this one verifies order.
+                local function bodyPositions(src)
+                    local fnStart = src:find("function EC_compCache%.scanBagItem%(bag, slot%)")
+                    if not fnStart then return nil end
+                    local bodyEnd = src:find("\nend", fnStart, true)
+                    if not bodyEnd then return nil end
+                    local body = src:sub(fnStart, bodyEnd)
+                    local ownerAt = body:find("SetOwner")
+                    local clearAt = body:find("ClearLines")
+                    local setBagAt = body:find("SetBagItem")
+                    return ownerAt, clearAt, setBagAt
+                end
+                local ownerAt, clearAt, setBagAt = bodyPositions(evSrc)
+                check(
+                    "Test 88am-ordering: scanBagItem body calls SetOwner BEFORE SetBagItem",
+                    ownerAt and setBagAt and ownerAt < setBagAt
+                        and clearAt and clearAt < setBagAt,
+                    "Inside the scanBagItem body, SetOwner must precede SetBagItem (and ClearLines must precede SetBagItem). Reversing the order would re-introduce the silent zero-line scan bug v2.38.3 fixed."
+                )
+                check(
+                    "Test 88an: no raw scanTooltip:SetBagItem calls outside the helper",
+                    countRawSetBagItem(procSrc) == 0
+                        and countRawSetBagItem(protSrc) == 0
+                        and countRawSetBagItem(evSrc) <= 1
+                        and countRawSetBagItem(brS) == 0,
+                    "Every tooltip-scan call site must route through cc.scanBagItem so the SetOwner-before-SetBagItem invariant is structural, not a comment. The single permitted Events.lua reference is the helper body itself. Process.lua, Protection.lua, and BugReport.lua must contain zero raw `:SetBagItem(bag, slot)` against the scan tooltip."
+                )
+                -- v2.38.3: positive coverage. Every helper that scans
+                -- the bag tooltip must reference cc.scanBagItem so that
+                -- a future scan-using helper added in Process.lua or
+                -- Protection.lua doesn't slip past Test 88an by using
+                -- a different scan API (e.g. :SetHyperlink). At least
+                -- one EC_compCache.scanBagItem call per scan-heavy file.
+                check(
+                    "Test 88ao: every scan-heavy file routes through EC_compCache.scanBagItem",
+                    procSrc:find("EC_compCache%.scanBagItem%(") ~= nil
+                        and protSrc:find("EC_compCache%.scanBagItem%(") ~= nil,
+                    "Process.lua and Protection.lua each have multiple tooltip-scan helpers (processTooltipHasLine, canPickLock, processIsSoulbound, itemHasChanceOnHit, bagSlotAffixData, known-tome / known-recipe scans). Each file must contain at least one EC_compCache.scanBagItem call so a future helper that scans by a different API still has the surrounding pattern available."
+                )
+                check(
+                    "Test 88al: Process debug dump surfaces every gate layer",
+                    brS:find("Spell knowledge gates") ~= nil
+                        and brS:find("IsSpellKnown") ~= nil
+                        and brS:find("Tooltip marker globals") ~= nil
+                        and brS:find("ITEM_MILLABLE") ~= nil
+                        and brS:find("ITEM_PROSPECTABLE") ~= nil
+                        and brS:find("Bag walk") ~= nil
+                        and brS:find("buildProcessSummary") ~= nil
+                        and brS:find("tooltip dump") ~= nil,
+                    "The dump must expose every layer that decides Process Bags eligibility (spell knowledge, tooltip globals, per-slot scan, summary counts, and a sample tooltip dump for the first Mill/Prospect hits) so a single paste tells us which layer is failing for the player."
+                )
+            end
         end
 
         -- v2.38.0: Quickstart iteration regression locks. Each row below

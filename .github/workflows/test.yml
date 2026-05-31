@@ -26,6 +26,7 @@ jobs:
         # split stages land.
         run: |
           luac5.1 -p EbonClearance_Events.lua
+          luac5.1 -p EbonClearance_Comms.lua
           luac5.1 -p EbonClearance_Core.lua
           luac5.1 -p EbonClearance_Companion.lua
           luac5.1 -p EbonClearance_Protection.lua
@@ -57,3 +58,6 @@ jobs:
 
       - name: No third-party addon references regression test
         run: lua5.1 tests/test_no_addon_references.lua
+
+      - name: Comms / version regression tests
+        run: lua5.1 tests/test_comms_version.lua

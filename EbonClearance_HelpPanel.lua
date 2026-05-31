@@ -498,6 +498,12 @@ local EC_HELP_ENTRIES = {
         a = "Requires the Rogue Pick Lock ability. The panel lists lockboxes (Junkboxes, Mageweave Pouches, Heavy Junkboxes, etc.). Click the Cast button to open the current lockbox; click again for the next one.",
         panel = "EbonClearanceOptionsProcessBags",
     },
+    {
+        id = "process-missing-items",
+        q = "Why isn't an item in Process Bags?",
+        a = "Process Bags hides anything the protections would also stop the vendor from selling: Keep List items, currently equipped gear, items with a 'Chance on hit:' proc (so you don't disenchant a proc weapon you might want to extract), items with a protected affix you haven't extracted yet, and unlearned tomes / recipes. Stack-size matters too - Mill and Prospect require stacks of 5+. To force a specific item through, Alt+Right-Click it and pick 'Allow Sell' (adds the itemID to the allow list) or remove it from the Keep List.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
 
     -- ===================================================================
     -- Section 6: Reporting bugs

@@ -5,6 +5,16 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.38.4
+
+Docs-only patch. Adds a Help FAQ entry that v2.38.3 should have shipped with.
+
+v2.38.3's SetOwner-before-SetBagItem fix didn't just restore Mill / Prospect detection - it also restored chance-on-hit / soulbound / affix / known-tome / known-recipe protections inside Process Bags that had been silently neutered by the same bug. Side effect: items that were previously appearing in the Disenchant section (because the proc-detection was broken) no longer appear post-fix, since the protection now correctly hides proc weapons from DE. A player who hadn't read the chance-on-hit help section would see proc weapons disappear from their DE list and assume v2.38.3 broke something.
+
+- **Help FAQ:** new "Why isn't an item in Process Bags?" entry under the Process Bags section. Lists every reason an item can be hidden (Keep List, equipped, chance-on-hit, protected affix, unlearned tome / recipe, stack < 5) and points at the Alt+Right-Click "Allow Sell" path to force a specific itemID through.
+
+Safe overwrite from v2.38.3. No code changes; no schema changes.
+
 ### v2.38.3
 
 Patch release. Fixes a silent tooltip-scan failure that hid Mill / Prospect targets from Process Bags (and silently neutered chance-on-hit / soulbound / lockpick / bind-on / known-tome / known-recipe gates as a side effect). Ships the diagnostic command that caught it.

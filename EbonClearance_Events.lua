@@ -543,6 +543,11 @@ local function EnsureDB()
     if EbonClearanceDB == nil then
         EbonClearanceDB = {}
     end
+    -- Version-update nudge (opt-out, default ON). Account-level: a single
+    -- toggle that also gates all addon-message comms in this release.
+    if EbonClearanceDB.versionAlerts == nil then
+        EbonClearanceDB.versionAlerts = true
+    end
 
     -- Per-character partition (v2.34.x). See the PER_CHAR_FIELDS block at
     -- the top of the file for the rationale. Top-level fields remain as
@@ -5883,6 +5888,10 @@ f:RegisterEvent("PLAYER_REGEN_ENABLED")
 -- DB.fastLoot and on Blizzard's autoLootDefault CVar, so users without
 -- the toggle on pay one early-return per loot interaction.
 f:RegisterEvent("LOOT_READY")
+-- Group-roster events for version-gossip probes. WoW 3.3.5a equivalents;
+-- GROUP_ROSTER_UPDATE is 4.0+ and must not be used here.
+f:RegisterEvent("PARTY_MEMBERS_CHANGED")
+f:RegisterEvent("RAID_ROSTER_UPDATE")
 
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -5948,6 +5957,12 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
             EC_scavStateBootstrapped = true
         end
+        -- Version gossip: after a short settle, ask the guild for versions.
+        NS.Delay(5, function()
+            if NS.Comms and GetGuildInfo("player") then
+                NS.Comms.FireVersionProbe("GUILD")
+            end
+        end)
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat ended: re-fire the open driver. If the toggle is off or
         -- the queue is empty the driver early-returns; cost on combat
@@ -6209,6 +6224,15 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_Delay(0.8, EC_OpenAllBags)
         end
         EC_keepBagsFlag = false
+    elseif event == "PARTY_MEMBERS_CHANGED" then
+        -- Probe the party only when not in a raid (raid uses its own event).
+        if NS.Comms and GetNumRaidMembers() == 0 and GetNumPartyMembers() > 0 then
+            NS.Comms.FireVersionProbe("PARTY")
+        end
+    elseif event == "RAID_ROSTER_UPDATE" then
+        if NS.Comms and GetNumRaidMembers() > 0 then
+            NS.Comms.FireVersionProbe("RAID")
+        end
     end
 
     if event == "PLAYER_LOGIN" then

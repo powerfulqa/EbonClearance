@@ -48,6 +48,20 @@ jobs:
           # cannot accidentally rewrite an unrelated version-shaped string.
           sed -i "s/^local ADDON_VERSION = \"v[0-9]*\.[0-9]*\.[0-9]*\"/local ADDON_VERSION = \"$VERSION\"/" EbonClearance_Events.lua
 
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Verify before packaging (syntax + all test suites)
+        # v2.39.0: gate the release on the same checks CI runs on master, so a
+        # tag can never ship red. luac is globbed so new split files are
+        # covered automatically; the four suites mirror test.yml.
+        run: |
+          for f in EbonClearance*.lua; do luac5.1 -p "$f"; done
+          lua5.1 tests/test_layout_reactivity.lua
+          lua5.1 tests/test_perf_guardrails.lua
+          lua5.1 tests/test_no_addon_references.lua
+          lua5.1 tests/test_comms_version.lua
+
       - name: Package addon
         run: |
           mkdir -p EbonClearance
@@ -56,20 +70,12 @@ jobs:
           # EbonClearance_*.lua file listed in EbonClearance.toc must be
           # included or the addon fails to load. Add new split files to
           # this glob as future stages land.
-          cp EbonClearance_Events.lua EbonClearance_Core.lua EbonClearance_Companion.lua \
-             EbonClearance_Protection.lua EbonClearance_Vendor.lua \
-             EbonClearance_Process.lua EbonClearance_ProcessBagsPanel.lua \
-             EbonClearance_MerchantPanel.lua EbonClearance_ScavengerPanel.lua \
-             EbonClearance_SellListPanels.lua \
-             EbonClearance_KeepDeletePanels.lua EbonClearance_ProtectionPanel.lua \
-             EbonClearance_ItemHighlightingPanel.lua EbonClearance_ProfilesPanel.lua \
-             EbonClearance_MainPanel.lua EbonClearance_StatsPanel.lua EbonClearance_PanelInfra.lua \
-             EbonClearance_PanelWidgets.lua EbonClearance_ListWidget.lua \
-             EbonClearance_BagDisplay.lua \
-             EbonClearance_BugReport.lua EbonClearance_Minimap.lua \
-             EbonClearance_Tooltip.lua EbonClearance_BagContextMenu.lua \
-             EbonClearance_HelpPanel.lua \
-             EbonClearance.toc Bindings.xml LICENSE EbonClearance/
+          # v2.39.0: ship every EbonClearance*.lua via a glob instead of a
+          # hand-maintained list. The old explicit list silently omitted a
+          # newly added file (EbonClearance_Comms.lua), which the .toc still
+          # referenced - the addon would have failed to load. The glob picks
+          # up every current and future split file automatically.
+          cp EbonClearance*.lua EbonClearance.toc Bindings.xml LICENSE EbonClearance/
           zip -r EbonClearance.zip EbonClearance/
 
       - name: Commit version update back to repo

@@ -59,7 +59,7 @@ jobs:
           for f in EbonClearance*.lua; do luac5.1 -p "$f"; done
           lua5.1 tests/test_layout_reactivity.lua
           lua5.1 tests/test_perf_guardrails.lua
-          lua5.1 tests/test_no_addon_references.lua
+          lua5.1 tests/test_comment_hygiene.lua
           lua5.1 tests/test_comms_version.lua
 
       - name: Package addon

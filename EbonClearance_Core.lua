@@ -287,8 +287,8 @@ local EC_compCache = {
     -- BAG_UPDATE that crosses DB.bagFullThreshold (a vendor opening up,
     -- an item splitting, an inventory shuffle) immediately fires the
     -- dismiss-Scav / summon-Goblin cycle even if the next tick puts the
-    -- count back over the threshold. AutoDelete v3.17.x ships a 1.5 s
-    -- confirm window for the same reason. bagFullSince is timestamped at
+    -- count back over the threshold. A similar same-niche addon ships
+    -- a 1.5 s confirm window for the same reason. bagFullSince is timestamped at
     -- the first tick the threshold is crossed and cleared the moment the
     -- count rises back above it; EC_HandleBagFullForCycle only fires
     -- when (GetTime() - bagFullSince) >= BAG_FULL_CONFIRM_S.

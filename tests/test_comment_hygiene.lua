@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
--- No third-party addon references regression test for EbonClearance.
+-- Comment hygiene check for EbonClearance.
 --
--- Run from repo root:    lua tests/test_no_addon_references.lua
+-- Run from repo root:    lua tests/test_comment_hygiene.lua
 --
 -- The v2.29.0 implementation constraint: EC's shipped source MUST NOT
 -- gain new third-party addon mentions in Lua comments. Existing
@@ -21,7 +21,7 @@
 -- review concludes the new mention is genuinely needed.
 --
 -- Code outside comments (string literals, identifier references like
--- `LibStub:GetAddon("Bagnon")`, table keys, etc.) is NOT scanned here.
+-- `LibStub:GetAddon("SomeBagAddon")`, table keys, etc.) is NOT scanned here.
 -- API calls into specific third-party globals are necessary for the
 -- integrations to work; this test only polices the prose.
 
@@ -87,7 +87,7 @@ end
 -- Any future contributor who genuinely needs to add a new mention must
 -- bump the matching baseline here in the same commit.
 local BASELINES = {
-    AutoDelete   = 6,
+    AutoDelete   = 3,
     AutoLoot     = 0,
     AdiBags      = 0,
     Bagnon       = 0,
@@ -142,7 +142,7 @@ check(
             and ("baseline exceeded for: "
                 .. table.concat(overruns, "; ")
                 .. ". Trim the new mention, or if intentional bump the matching BASELINE "
-                .. "in tests/test_no_addon_references.lua in the same commit.")
+                .. "in tests/test_comment_hygiene.lua in the same commit.")
         or nil
 )
 

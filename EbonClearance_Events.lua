@@ -965,8 +965,8 @@ local function EnsureDB()
     -- the Blacklist (Keep) panel.
     if type(DB.autoAddEquipped) ~= "boolean" then
         -- Fresh installs from v2.12.0+ default to ON so brand-new users
-        -- get equipped-gear protection out of the box - matches AutoDelete
-        -- v3.18+ UX. Existing users (v2.10.0+ already have the field as a
+        -- get equipped-gear protection out of the box - matches common
+        -- niche UX. Existing users (v2.10.0+ already have the field as a
         -- boolean and skip this branch; pre-v2.10.0 users hit this branch
         -- but with isFreshInstall = false) keep OFF so they don't see a
         -- silent behaviour change on upgrade.
@@ -2873,8 +2873,8 @@ function EC_compCache.buildElvUIBagButtons()
     EC_compCache.elvuiButtonsBuilt = true
 
     -- Shared backdrop for the three buttons. Subtle dark fill with a 1px
-    -- mid-grey edge that brightens on hover; matches AutoDelete's bag
-    -- buttons so users running both addons get a consistent visual.
+    -- mid-grey edge that brightens on hover; matches a sibling addon's
+    -- bag buttons so users running both get a consistent visual.
     local function applyBackdrop(btn)
         btn:SetBackdrop({
             bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",

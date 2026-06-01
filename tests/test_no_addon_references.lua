@@ -121,24 +121,30 @@ for line in src:gmatch("([^\n]+)") do
     end
 end
 
--- One check per pattern so any growth surfaces with a clear name.
+-- Check every pattern, but DO NOT print one line per addon name. CI logs are
+-- public, and an enumerated pass-list of the names we police is itself the
+-- thing we don't want to broadcast. On success we emit a single nameless
+-- summary; a specific name is surfaced only when a baseline is actually
+-- exceeded, where the maintainer needs it to locate and fix the violation.
+local patternCount = 0
+local overruns = {}
 for pat, baseline in pairs(BASELINES) do
+    patternCount = patternCount + 1
     local observed = counts[pat] or 0
-    local detail
     if observed > baseline then
-        detail = string.format(
-            "%s comment-line count grew from baseline %d to %d. " ..
-            "Either trim the new mention or, if intentional, bump the BASELINE " ..
-            "for %q in tests/test_no_addon_references.lua in the same commit.",
-            pat, baseline, observed, pat
-        )
+        overruns[#overruns + 1] = string.format("%s (%d > baseline %d)", pat, observed, baseline)
     end
-    check(
-        "no new comment-line references to " .. pat,
-        observed <= baseline,
-        detail
-    )
 end
+check(
+    string.format("no new third-party comment references (%d patterns checked)", patternCount),
+    #overruns == 0,
+    (#overruns > 0)
+            and ("baseline exceeded for: "
+                .. table.concat(overruns, "; ")
+                .. ". Trim the new mention, or if intentional bump the matching BASELINE "
+                .. "in tests/test_no_addon_references.lua in the same commit.")
+        or nil
+)
 
 -- Additional check: the forbidden set is itself enumerated. Catches a
 -- subtle regression where someone might remove a pattern from the list

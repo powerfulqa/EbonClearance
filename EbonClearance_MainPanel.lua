@@ -629,11 +629,27 @@ local function BuildMainPanel(panel, content)
     end
     mainTip:SetText("|cff888888Right-click any bag item with Alt held for quick actions.|r")
 
+    -- Update-available nudge toggle. Anchored below mainTip; cmdHeader
+    -- re-anchors to this checkbox so the layout chain stays intact.
+    local versionAlertCB = NS.AddCheckbox(
+        content,
+        "EbonClearanceVersionAlertCB",
+        mainTip,
+        "Tell me when an update is available",
+        function()
+            return DB.versionAlerts
+        end,
+        function(v)
+            DB.versionAlerts = v
+        end,
+        -14
+    )
+
     -- Slash commands reference.
     -- Stats widgets + Reset buttons moved to EbonClearance_StatsPanel.lua
-    -- in v2.36.x; this anchor chain now goes mainTip -> cmdHeader.
+    -- in v2.36.x; this anchor chain now goes mainTip -> versionAlertCB -> cmdHeader.
     local cmdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cmdHeader:SetPoint("TOPLEFT", mainTip, "BOTTOMLEFT", 0, -20)
+    cmdHeader:SetPoint("TOPLEFT", versionAlertCB, "BOTTOMLEFT", 0, -20)
     cmdHeader:SetText("Slash Commands")
 
     -- v2.37.6: per-row slash command list. Each row gets a [Run] button

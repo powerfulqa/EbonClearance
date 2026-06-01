@@ -96,6 +96,12 @@ local EC_HELP_ENTRIES = {
         a = "Import/Export packs your EbonClearance setup into a copyable text string you can share with another character or another player. Export writes the current setup (Sell List, Keep List, Delete List, and account-wide settings) into the export box; copy it with Ctrl+C. Import reads a pasted string and applies it. Tick 'Full settings pack' to include protection toggles + merchant rules + everything, not just the lists.",
         panel = "EbonClearanceOptionsImportExport",
     },
+    {
+        id = "version-update-alert",
+        q = "How do I know when there's a new version?",
+        a = 'If another EbonClearance user in your guild or group has a newer version, you get one chat line at login telling you an update is available, with the download link. Turn this off with the "Tell me when an update is available" box on the main EbonClearance panel. EbonClearance cannot check for updates on its own; it learns the latest version from other players running it.',
+        panel = nil,
+    },
 
     -- ===================================================================
     -- Section 2: Troubleshooting

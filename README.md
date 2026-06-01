@@ -83,7 +83,7 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 - [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md) is the prescriptive guide for coding in this addon. Read it first: it covers 3.3.5a client gotchas, the file's architecture, naming conventions, the state machine, UI patterns and the decision not to embed Ace3.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) is a short list of known follow-up cleanups that weren't part of the last pass.
 
-A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 26 `.lua` files after the v2.32.0 file-split, the v2.36.0 Help / Stats panel splits, and the v2.39.0 `EbonClearance_Comms.lua` addition; the entry hub is `EbonClearance_Events.lua`.)
+A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 27 `.lua` files after the v2.32.0 file-split, the v2.36.0 Help / Stats panel splits, the v2.38.0 Quickstart panel, and the v2.39.0 `EbonClearance_Comms.lua` addition; the entry hub is `EbonClearance_Events.lua`.)
 
 ## Changelog
 

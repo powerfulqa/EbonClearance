@@ -17,7 +17,7 @@ WoW 3.3.5a addons cannot check the web for updates, so EbonClearance learns the 
 - **`/ec commtest` diagnostic.** A solo self-test: it confirms the server actually delivers addon messages (a guild ping that echoes back) and simulates a higher-version peer so you can see the nudge and confirm the opt-out toggle, all without a second player online.
 - **Schema:** one additive account-level field, `EbonClearanceDB.versionAlerts` (boolean, default `true`). Existing saves auto-migrate via the nil-default pattern; downgrade-safe.
 
-New file `EbonClearance_Comms.lua` (loads after `EbonClearance_Events.lua`); the addon now ships 26 `.lua` files. New test suite `tests/test_comms_version.lua` runs in CI alongside the existing three.
+New file `EbonClearance_Comms.lua` (loads after `EbonClearance_Events.lua`); the addon now ships 27 `.lua` files. New test suite `tests/test_comms_version.lua` runs in CI alongside the existing three.
 
 ### v2.38.4
 

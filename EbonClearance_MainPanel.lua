@@ -593,13 +593,48 @@ local function BuildMainPanel(panel, content)
             .. "  |cffb6ffb6Process Bags|r - one button to disenchant, mill, prospect, or pick locks."
     )
 
+    -- v2.39.1: master Enable toggle on the Main panel. The flag
+    -- (DB.enabled) gates the sell engine, scavenger, auto-loot,
+    -- auto-open, tooltip annotations, and post-merchant cleanup, but
+    -- pre-v2.39.1 the only ways to flip it were the minimap
+    -- right-click, a Bindings.xml keybind, or the global Lua function
+    -- - none of which a confused player thinks to try when the addon
+    -- "stopped working" (real bug report: v2.39.0, Paladin, ticket
+    -- relayed via Discord). Putting the checkbox at the top of the
+    -- panel that players DO check makes the disabled state recoverable
+    -- from the first place they look. The setter routes through
+    -- EbonClearance_ToggleEnabled() so the chat message + sound stay
+    -- identical across all three entry points (minimap, keybind,
+    -- panel checkbox).
+    local enableCB = NS.AddCheckbox(
+        content,
+        "EbonClearanceMainEnableCB",
+        descLabel2,
+        "Enable EbonClearance",
+        function()
+            return NS.DB and NS.DB.enabled ~= false
+        end,
+        function(v)
+            local newState = v and true or false
+            local curr = (NS.DB and NS.DB.enabled ~= false) and true or false
+            if curr ~= newState and EbonClearance_ToggleEnabled then
+                EbonClearance_ToggleEnabled()
+            end
+        end,
+        -14
+    )
+    -- Store on the panel so the OnShow re-sync can refresh the
+    -- checkbox state after a minimap-right-click or /ec enable that
+    -- happened while the panel was hidden.
+    panel.enableCB = enableCB
+
     -- v2.38.0: Quickstart entry row. Button + one-line nudge so returning
     -- players can find the guided setup wizard any time. Fresh installs
     -- get the wizard opened automatically at PLAYER_LOGIN; this row is the
     -- way back in.
     local quickstartBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     quickstartBtn:SetSize(140, 26)
-    quickstartBtn:SetPoint("TOPLEFT", descLabel2, "BOTTOMLEFT", 0, -16)
+    quickstartBtn:SetPoint("TOPLEFT", enableCB, "BOTTOMLEFT", 0, -10)
     quickstartBtn:SetText("Open Quickstart")
     quickstartBtn:SetScript("OnClick", function()
         local qf = _G["EbonClearanceOptionsQuickstart"]
@@ -665,6 +700,18 @@ local function BuildMainPanel(panel, content)
     -- button, so the two columns line up.
     local SLASH_ROWS = {
         { label = "|cffffff00/ec|r  Open settings |cffaaaaaa(you are here)|r" },
+        {
+            run = "status",
+            label = "|cffffff00/ec status|r  Is EbonClearance currently on or off?",
+        },
+        {
+            run = "enable",
+            label = "|cffffff00/ec enable|r  Turn EbonClearance on",
+        },
+        {
+            run = "disable",
+            label = "|cffffff00/ec disable|r  Turn EbonClearance off",
+        },
         { run = "profile list", label = "|cffffff00/ec profile list|r  Show your saved profiles" },
         {
             label = "|cffffff00/ec profile [save|load|delete] <name>|r  Manage profiles by name |cffaaaaaa(or use the Profiles panel)|r",
@@ -782,9 +829,15 @@ MainOptions:SetScript("OnShow", function(self)
     -- _G["EbonClearanceOptionsStats"]. The Main panel no longer renders
     -- stats itself (v2.36.x split), but we still trigger a refresh on
     -- show so the Stats panel stays up to date when users tab over.
-    EC_compCache.initPanel(self, function()
+    -- v2.39.1: also re-sync the Enable checkbox so a minimap-driven or
+    -- slash-driven toggle that happened while the panel was hidden
+    -- shows the current state when the player reopens the panel.
+    EC_compCache.initPanel(self, function(refreshSelf)
         if NS.RefreshStats then
             NS.RefreshStats()
+        end
+        if refreshSelf.enableCB then
+            refreshSelf.enableCB:SetChecked(NS.DB and NS.DB.enabled ~= false)
         end
     end, function(buildSelf, content)
         -- v2.12.0: scroll-wrap the Main panel so the Slash Commands block

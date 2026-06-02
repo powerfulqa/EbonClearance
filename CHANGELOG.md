@@ -5,6 +5,20 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.39.1
+
+Patch release. Makes the master Enable toggle discoverable from the panels and chat surfaces players actually check when something goes wrong.
+
+A real player report sat in Discord with `Enabled: false` in their bug report and "the addon stopped working" - because the only ways to flip `DB.enabled` were the minimap right-click (subtle; icon just desaturates), a Bindings.xml keybind (only fires if bound), or a global Lua function (requires `/script`). Bag-border tinting is gated by a separate setting, so the addon "looks alive" even with the master switch off, which made the disabled state especially easy to miss.
+
+- **New: "Enable EbonClearance" checkbox** at the top of the Main panel. One click on/off. The setter routes through the existing `EbonClearance_ToggleEnabled()` helper so chat message + sound feedback match the minimap path exactly. The checkbox re-syncs in `OnShow` so a minimap right-click or slash command that happened while the panel was hidden shows the current state next time the panel opens.
+- **New: `/ec status`, `/ec enable`, `/ec disable` slash commands.** Status prints whether EbonClearance is currently ENABLED or DISABLED plus a one-liner hint listing the three flip paths. Enable / disable are idempotent (no-op + plain message if already in the target state) and reuse the toggle helper when a flip is needed. All three rows show up on the Main panel's slash-command reference block.
+- **Fix: minimap icon and Main panel checkbox stay in sync no matter which surface you flip.** Before this patch, toggling via the Main panel left the minimap icon stuck saturated (and vice versa) because the minimap right-click handler and the LDB launcher each did their own `DB.enabled = not DB.enabled` inline. `EbonClearance_ToggleEnabled()` is now the single source of truth: every entry point (minimap right-click, LDB right-click, Main panel checkbox, `/ec enable / disable`, keybind) routes through it, and the helper refreshes every UI surface that mirrors the flag.
+- **Help FAQ:** new entry `Why isn't the addon doing anything?` under Troubleshooting. Covers the three flip paths AND calls out that bag-border tinting is a separate toggle (so "borders still showing" is not evidence the addon is on).
+- **Tests:** Test 88ap pins the Main panel routing through `EbonClearance_ToggleEnabled` (catches a future contributor who tries to write `DB.enabled = v` directly and silently drops the chat / sound feedback). Test 88aq pins the three slash subcommands. Test 88ar pins the Help FAQ entry per the release-includes-help-faq rule.
+
+No schema changes. Safe overwrite from v2.39.0.
+
 ### v2.39.0
 
 New feature: EbonClearance now tells you when a newer version is out, built on a small reusable addon-comms layer that future shared features will reuse.

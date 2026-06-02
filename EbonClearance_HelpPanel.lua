@@ -109,6 +109,12 @@ local EC_HELP_ENTRIES = {
     { section = "troubleshooting", title = "Troubleshooting" },
 
     {
+        id = "tshoot-not-working",
+        q = "Why isn't the addon doing anything?",
+        a = "The most common cause is that the master Enable toggle got switched off (a right-click on the minimap button toggles it). When EbonClearance is disabled, it stops selling, looting, summoning the Goblin Merchant, and annotating tooltips - but the |cffb6ffb6Sell-border tint|r on bag items is a separate setting, so the addon still |cffffd870looks|r active when it isn't. Three ways to turn it back on: tick the |cffb6ffb6Enable EbonClearance|r checkbox at the top of the panel below, right-click the EbonClearance minimap icon, or type |cffffff00/ec enable|r in chat. Use |cffffff00/ec status|r if you just want to check the current state.",
+        panel = "EbonClearanceOptionsMain",
+    },
+    {
         id = "tshoot-why-not-selling",
         q = "Why isn't this item selling?",
         a = "Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints each check and tells you which one is keeping the item. Usually one of the protection toggles is catching it - the panel below has all of them.",
@@ -165,8 +171,8 @@ local EC_HELP_ENTRIES = {
     {
         id = "tshoot-disable-per-char",
         q = "How do I disable EbonClearance on one specific character?",
-        a = "Right-click the minimap button on that character to toggle the addon off, or type /ec and use the toggle on the Main panel. The setting is per-character; other characters stay enabled.",
-        panel = nil,
+        a = "Three ways: untick the |cffb6ffb6Enable EbonClearance|r checkbox at the top of the Main panel, right-click the minimap button on that character, or type |cffffff00/ec disable|r in chat. The setting is per-character; other characters stay enabled. Type |cffffff00/ec status|r any time to check the current state.",
+        panel = "EbonClearanceOptionsMain",
     },
     {
         id = "tshoot-sellinfo",

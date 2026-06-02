@@ -144,11 +144,13 @@ local function EC_CreateMinimapButton()
             if not DB then
                 return
             end
-            DB.enabled = not DB.enabled
-            local state = DB.enabled and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
-            NS.PrintNice("Addon " .. state)
-            if self.icon then
-                self.icon:SetDesaturated(not DB.enabled)
+            -- v2.39.1: route through the canonical helper so the
+            -- minimap icon + Main panel checkbox + chat message +
+            -- sound stay consistent with every other entry point.
+            -- The helper itself updates the icon desaturation, so
+            -- this handler no longer needs to do it inline.
+            if EbonClearance_ToggleEnabled then
+                EbonClearance_ToggleEnabled()
             end
         end
     end)
@@ -223,8 +225,11 @@ local function EC_CreateLDBLauncher()
                 if not DB then
                     return
                 end
-                DB.enabled = not DB.enabled
-                NS.PrintNice("Addon " .. (DB.enabled and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"))
+                -- v2.39.1: route through the canonical helper so the
+                -- minimap icon + Main panel checkbox stay in sync.
+                if EbonClearance_ToggleEnabled then
+                    EbonClearance_ToggleEnabled()
+                end
             else
                 NS.OpenOptionsPanel("EbonClearanceOptionsMain")
             end

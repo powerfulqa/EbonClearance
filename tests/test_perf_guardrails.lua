@@ -5334,6 +5334,73 @@ do
                         and brS:find("tooltip dump") ~= nil,
                     "The dump must expose every layer that decides Process Bags eligibility (spell knowledge, tooltip globals, per-slot scan, summary counts, and a sample tooltip dump for the first Mill/Prospect hits) so a single paste tells us which layer is failing for the player."
                 )
+                -- v2.39.1: master Enable discoverability locks. Each
+                -- check below closes one half of the veeco bug class
+                -- (real player on v2.39.0 with DB.enabled=false who
+                -- could not figure out how to flip it back on because
+                -- the only paths were minimap right-click and a
+                -- keybind). Tests pin the three additive surfaces.
+                check(
+                    "Test 88ap: Main panel routes Enable checkbox through EbonClearance_ToggleEnabled",
+                    mpS4:find("EbonClearanceMainEnableCB") ~= nil
+                        and mpS4:find("EbonClearance_ToggleEnabled%(%)") ~= nil
+                        and mpS4:find("panel%.enableCB%s*=") ~= nil,
+                    "The Main panel Enable checkbox must use NS.AddCheckbox + route the setter through EbonClearance_ToggleEnabled() (NOT a direct DB.enabled = write) so the chat message + sound feedback stay identical to the minimap right-click path. The checkbox must also be stored on the panel (panel.enableCB) so OnShow / slash handlers can re-sync it."
+                )
+                check(
+                    "Test 88aq: /ec status, /ec enable, /ec disable slash subcommands wired",
+                    evSrc:find('cmd == "status" or cmd == "enable" or cmd == "disable"') ~= nil
+                        and evSrc:find("[Cc]urrently %%s") ~= nil
+                        and evSrc:find("[Aa]lready enabled") ~= nil
+                        and evSrc:find("[Aa]lready disabled") ~= nil,
+                    "Three slash subcommands must exist so a player who can't see the minimap (right-click hidden, button moved out of the way by a host UI replacement) has a chat-driven recovery path. status reports current state; enable / disable flip only if a change is needed (idempotent), reusing EbonClearance_ToggleEnabled() so messaging stays consistent."
+                )
+                check(
+                    "Test 88ar: Help FAQ has a tshoot-not-working entry covering the master toggle",
+                    hpS:find('id = "tshoot%-not%-working"') ~= nil
+                        and hpS:find("master Enable toggle") ~= nil
+                        and hpS:find("/ec enable") ~= nil
+                        and hpS:find("Sell%-border tint") ~= nil,
+                    "Help FAQ must include the recovery entry for the master Enable toggle (covers the three flip paths + explains why bag borders stay visible when the addon is disabled). Per feedback_release_includes_help_faq memory: any player-facing change MUST update Help/FAQ in the same patch."
+                )
+                -- v2.39.1 follow-up: bidirectional sync. The toggle
+                -- helper must be the single source of truth - it
+                -- writes DB.enabled, prints chat, plays sound, AND
+                -- refreshes every UI surface that mirrors the state
+                -- (minimap icon desaturation, Main panel checkbox).
+                -- The two inline-flip sites in Minimap.lua
+                -- (right-click handler + LDB launcher) must route
+                -- through the helper, not write DB.enabled directly.
+                -- Without these checks, a future refactor could
+                -- re-introduce divergent toggle paths and the panel
+                -- vs minimap icon would silently drift out of sync.
+                local minimapSrc = (function()
+                    local fh = io.open("EbonClearance_Minimap.lua", "rb")
+                    if not fh then return "" end
+                    local s = fh:read("*a") or ""
+                    fh:close()
+                    return s
+                end)()
+                check(
+                    "Test 88as: EbonClearance_ToggleEnabled refreshes minimap icon + panel checkbox",
+                    evSrc:find('_G%["EbonClearanceMinimapButton"%]') ~= nil
+                        and evSrc:find("mb%.icon:SetDesaturated%(not DB%.enabled%)") ~= nil
+                        and evSrc:find('_G%["EbonClearanceOptionsMain"%]') ~= nil
+                        and evSrc:find("mp%.enableCB:SetChecked") ~= nil,
+                    "The toggle helper must be the single source of truth: after flipping DB.enabled, it MUST refresh the minimap icon AND the Main panel checkbox so a flip via any entry point keeps every UI surface in sync. Without this, panel ↔ minimap stay out of sync depending on which surface the user clicked."
+                )
+                check(
+                    "Test 88at: Minimap right-click + LDB launcher route through EbonClearance_ToggleEnabled",
+                    minimapSrc:find("DB%.enabled%s*=%s*not%s+DB%.enabled") == nil
+                        and (function()
+                            local count = 0
+                            for _ in minimapSrc:gmatch("EbonClearance_ToggleEnabled%(%)") do
+                                count = count + 1
+                            end
+                            return count >= 2
+                        end)(),
+                    "Minimap.lua must NOT contain any direct `DB.enabled = not DB.enabled` flip - the right-click handler AND the LDB launcher both have to route through EbonClearance_ToggleEnabled() so all UI surfaces (icon + panel checkbox) stay in sync. Requires at least 2 calls to the helper from this file (one per inline-flip site we replaced)."
+                )
             end
         end
 

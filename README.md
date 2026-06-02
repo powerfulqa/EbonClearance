@@ -31,7 +31,7 @@ A complete enumeration of every feature lives in [docs/ADDON_GUIDE.md](docs/ADDO
 3. Log in and type `/ec` to open the settings panel.
 4. Sensible defaults are seeded for new characters - White and Green auto-vendor below your equipped iLvl, equipped gear is auto-Kept, the Scavenger / auto-loot cycle are on. Tune from there.
 
-Per-character on/off: use the minimap button's right-click or `/ec` to disable the addon on alts you'd rather it skip.
+Per-character on/off: tick / untick the **Enable EbonClearance** checkbox at the top of the main panel, right-click the minimap button, or type `/ec enable` / `/ec disable` to skip the addon on alts you'd rather it leave alone. Use `/ec status` to check the current state at any time.
 
 ## Configuration
 
@@ -56,6 +56,9 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | Command | Description |
 |---------|-------------|
 | `/ec` | Open the settings panel |
+| `/ec status` | Show whether EbonClearance is currently enabled or disabled |
+| `/ec enable` | Turn EbonClearance on for this character |
+| `/ec disable` | Turn EbonClearance off for this character |
 | `/ec profile list` | Show all saved Sell List profiles |
 | `/ec profile save <name>` | Save the current Sell List as a named profile |
 | `/ec profile load <name>` | Load a saved profile into the active Sell List |

@@ -493,6 +493,12 @@ Not wired into CI, but enforce in review:
 ## Slash commands
 
 - `/ec` - open the Interface Options panel.
+- `/ec status` - print whether EbonClearance is currently enabled or
+  disabled, plus the three flip paths.
+- `/ec enable` / `/ec disable` - flip the master `DB.enabled` toggle
+  (idempotent: no-op + plain message when already in the target
+  state). Both route through `EbonClearance_ToggleEnabled()` so the
+  minimap icon + Main panel checkbox stay in sync. v2.39.1.
 - `/ec profile list|save|load|delete <name>` - profile management.
 - `/ec clean` - report items present on more than one list.
 - `/ec clean apply` - auto-resolve list conflicts (precedence:
@@ -1740,6 +1746,15 @@ Cross-file reach pattern:
   already on NS from prior stages.
 - `EbonClearance_ToggleSettings` / `ToggleEnabled` / `ForceSell` are
   WoW globals (Bindings.xml glue) - reachable from any file.
+  `EbonClearance_ToggleEnabled` is the canonical helper for the master
+  `DB.enabled` flag: it flips the flag, prints the chat message,
+  plays the sound, AND refreshes every UI surface that mirrors the
+  state (minimap icon desaturation, Main panel "Enable EbonClearance"
+  checkbox). Every entry point (minimap right-click, LDB launcher,
+  Main panel checkbox, `/ec enable` / `/ec disable`, keybind) MUST
+  route through this helper; direct `DB.enabled = not DB.enabled`
+  writes are forbidden and locked by Test 88at. See v2.39.1 in
+  CHANGELOG for the bidirectional-sync bug this consolidation closed.
 
 Exposed on NS for the ADDON_LOADED branch in EbonClearance.lua:
 

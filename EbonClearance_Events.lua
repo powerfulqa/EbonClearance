@@ -5261,8 +5261,24 @@ end
 function EbonClearance_ToggleEnabled()
     EnsureDB()
     DB.enabled = not DB.enabled
-    PrintNicef("EbonClearance is now %s.", DB.enabled and "|cff00ff00enabled|r" or "|cffff4444disabled|r")
+    PrintNicef("Now %s.", DB.enabled and "|cff00ff00enabled|r" or "|cffff4444disabled|r")
     PlaySound(DB.enabled and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+    -- v2.39.1: single source of truth for the master Enable state.
+    -- The helper now refreshes every UI surface that mirrors
+    -- DB.enabled so a flip via ANY entry point (minimap right-click,
+    -- Main panel checkbox, /ec enable / disable, keybind, LDB
+    -- launcher) keeps every other surface in sync. Without this,
+    -- toggling via the panel left the minimap icon stuck saturated
+    -- (and vice versa) - bug found right after v2.39.1 wired the
+    -- panel checkbox.
+    local mb = _G["EbonClearanceMinimapButton"]
+    if mb and mb.icon and mb.icon.SetDesaturated then
+        mb.icon:SetDesaturated(not DB.enabled)
+    end
+    local mp = _G["EbonClearanceOptionsMain"]
+    if mp and mp.enableCB then
+        mp.enableCB:SetChecked(DB.enabled ~= false)
+    end
 end
 
 function EbonClearance_ForceSell()
@@ -5471,6 +5487,43 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         else
             PrintNice("|cffff4444Comms module not loaded.|r")
         end
+        return
+    end
+
+    if cmd == "status" or cmd == "enable" or cmd == "disable" then
+        -- v2.39.1: discoverable surface for the master Enable toggle.
+        -- Pre-v2.39.1 the only ways to flip DB.enabled were the
+        -- minimap right-click (subtle) or a keybind (only fires if
+        -- bound). A real player report (Paladin, v2.39.0) showed up
+        -- with `Enabled: false` in their bug report and "the addon
+        -- stopped working" because they had no idea they'd disabled
+        -- it. These three subcommands give a slash-driven recovery
+        -- path that complements the new Main panel checkbox.
+        EnsureDB()
+        local currentlyEnabled = DB and DB.enabled ~= false
+        if cmd == "status" then
+            PrintNicef(
+                "Currently %s.",
+                currentlyEnabled and "|cff00ff00ENABLED|r" or "|cffff4444DISABLED|r"
+            )
+            PrintNice("|cff888888Right-click the minimap icon, tick the Main panel checkbox, or type /ec enable / /ec disable to switch.|r")
+        elseif cmd == "enable" then
+            if currentlyEnabled then
+                PrintNice("Already enabled.")
+            else
+                EbonClearance_ToggleEnabled()
+            end
+        elseif cmd == "disable" then
+            if not currentlyEnabled then
+                PrintNice("Already disabled.")
+            else
+                EbonClearance_ToggleEnabled()
+            end
+        end
+        -- v2.39.1: no need to re-sync UI surfaces here -
+        -- EbonClearance_ToggleEnabled() does that for every entry
+        -- point. The status-only branch above also doesn't flip
+        -- state, so nothing to sync there either.
         return
     end
 

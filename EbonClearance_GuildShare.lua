@@ -177,7 +177,6 @@ function GuildShare.mergeReply(agg, decoded)
         e.copper = e.copper + (z.copper or 0)
         e.contributors = e.contributors + 1
     end
-    agg.items = agg.items or {}
     for _, it in ipairs(decoded.items or {}) do
         local e = agg.items[it.id]
         if not e then
@@ -188,12 +187,10 @@ function GuildShare.mergeReply(agg, decoded)
         e.count = e.count + (it.count or 0)
         e.contributors = e.contributors + 1
     end
-    agg.quality = agg.quality or {}
     for q, c in pairs(decoded.quality or {}) do
         agg.quality[q] = (agg.quality[q] or 0) + (c or 0)
     end
     if decoded.name and decoded.name ~= "" then
-        agg.contributors = agg.contributors or {}
         agg.contributors[decoded.name] = true
     end
 end
@@ -205,7 +202,8 @@ end
 local GREQ_THROTTLE_S = 30
 local lastReqAt = 0
 
--- Build this player's anonymous payload from data EC already tracks.
+-- Build this player's shareable payload from data EC already tracks (a name
+-- is included only when shareGuildName is on; otherwise it stays anonymous).
 local function localPayload()
     local DB = EbonClearanceDB or {}
     local itemsSold = 0

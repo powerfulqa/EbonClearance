@@ -394,9 +394,6 @@ GuildPanel:SetScript("OnShow", function(self)
 
         -- Pre-create the fixed set of totals rows.
         local totRows = {}
-        local tPrev = totalsHeader
-        local tYOff = -8
-
         local function makeTotRow(leftText, anchor, yOff)
             local row = makeRow(content, anchor, yOff)
             row.left:SetText(leftText)
@@ -404,7 +401,7 @@ GuildPanel:SetScript("OnShow", function(self)
             return row
         end
 
-        totRows.members = makeTotRow("Members shared:", tPrev, tYOff)
+        totRows.members = makeTotRow("Members shared:", totalsHeader, -8)
         totRows.gold    = makeTotRow("Combined gold:", totRows.members, -2)
         totRows.items   = makeTotRow("Combined items sold:", totRows.gold, -2)
         totRows.bestGPH = makeTotRow("Best gold/hour seen:", totRows.items, -2)

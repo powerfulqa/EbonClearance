@@ -116,7 +116,10 @@ function GuildShare.mergeReply(agg, decoded)
 end
 
 -- ---- transport consumer + on-demand request ----------------------------
-local GREQ_THROTTLE_S = 8 -- min seconds between our own GREQ broadcasts
+-- Match the Comms per-channel send throttle (30s). RequestNow resets the
+-- aggregate before sending, so its window must not be shorter than the
+-- transport's, or a Refresh in between would blank the panel without re-querying.
+local GREQ_THROTTLE_S = 30
 local lastReqAt = 0
 
 -- Build this player's anonymous payload from data EC already tracks.

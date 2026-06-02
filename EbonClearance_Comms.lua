@@ -53,9 +53,12 @@ end
 
 function Comms.Send(msgType, payload, channel, target)
     local now = GetTime()
-    -- Whisper replies throttle per target so we don't re-whisper the same
-    -- peer repeatedly; broadcasts throttle per channel.
-    local key = (channel == "WHISPER") and ("WHISPER:" .. tostring(target)) or channel
+    -- Throttle per (message type, destination) so unrelated message types to
+    -- the same peer never share a bucket (e.g. a version reply must not
+    -- throttle-drop a guild-data reply to the same player).
+    local key = (channel == "WHISPER")
+        and (msgType .. ":WHISPER:" .. tostring(target))
+        or (msgType .. ":" .. channel)
     if lastSendAt[key] and (now - lastSendAt[key]) < SEND_THROTTLE_S then
         return
     end

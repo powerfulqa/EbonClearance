@@ -5,9 +5,8 @@
 --
 -- Interface Options sub-panel for guild-share: opt-in toggle,
 -- best farming zones aggregate, guild totals, and a manual refresh
--- button. Registered with InterfaceOptions_AddCategory from
--- EbonClearance_Events.lua (separate task) so sort order is
--- controlled at one place.
+-- button. Self-registers at the end of this file (matching the Help
+-- panel), because it loads after the event hub.
 --
 -- Dependencies satisfied by NS:
 --   * NS.compCache (Core)           - initPanel, setPanelWidth
@@ -91,7 +90,8 @@ repaintGuildPanel = function()
             panel._guildTotalsFS:SetText(
                 "Members shared: " .. (agg.memberCount or 0) .. "\n"
                 .. "Combined gold: " .. copperStr .. "\n"
-                .. "Combined items sold: " .. (agg.totalItems or 0)
+                .. "Combined items sold: " .. (agg.totalItems or 0) .. "\n"
+                .. "Best gold/hour seen: " .. (NS.CopperToColoredText and NS.CopperToColoredText(agg.bestGPH or 0) or tostring(agg.bestGPH or 0))
             )
         else
             panel._guildTotalsFS:SetText(

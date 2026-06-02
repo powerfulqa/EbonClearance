@@ -10,6 +10,7 @@ local GuildShare = {}
 NS.GuildShare = GuildShare
 
 local MAX_ZONES = 5
+local MAX_ITEMS = 3
 local MAX_PAYLOAD = 240 -- stay safely under the ~255-byte addon-message limit
 
 -- Return an array of {name, copper} for the top n zones, highest copper first.
@@ -30,9 +31,10 @@ local function zoneNameSafe(name)
     return type(name) == "string" and name ~= "" and not name:find("[=;|,\t]")
 end
 
--- Build the compact wire payload. Caps to MAX_ZONES, skips delimiter-unsafe
--- names, and trims trailing zones until the whole thing fits MAX_PAYLOAD.
-function GuildShare.encodePayload(zones, stats)
+-- Build the compact wire payload. Caps to MAX_ZONES/MAX_ITEMS, skips
+-- delimiter-unsafe names, and trims trailing zones until the whole thing fits
+-- MAX_PAYLOAD. Items are tiny and wanted, so zones are trimmed first.
+function GuildShare.encodePayload(zones, stats, items)
     local s = stats or {}
     local statsPart = string.format(
         "stats:%d,%d,%d",
@@ -40,6 +42,18 @@ function GuildShare.encodePayload(zones, stats)
         math.floor(tonumber(s.itemsSold) or 0),
         math.floor(tonumber(s.bestGPH) or 0)
     )
+    local itemParts = {}
+    for _, it in ipairs(items or {}) do
+        if #itemParts >= MAX_ITEMS then
+            break
+        end
+        local id = math.floor(tonumber(it.id) or 0)
+        local n = math.floor(tonumber(it.count) or 0)
+        if id > 0 and n > 0 then
+            itemParts[#itemParts + 1] = id .. "=" .. n
+        end
+    end
+    local itemsPart = (#itemParts > 0) and ("items:" .. table.concat(itemParts, ";")) or nil
     local picked = {}
     for _, z in ipairs(zones or {}) do
         if #picked >= MAX_ZONES then
@@ -49,12 +63,17 @@ function GuildShare.encodePayload(zones, stats)
             picked[#picked + 1] = z
         end
     end
-    local function assemble(list)
+    local function assemble(zlist)
         local parts = {}
-        for _, z in ipairs(list) do
+        for _, z in ipairs(zlist) do
             parts[#parts + 1] = z.name .. "=" .. tostring(math.floor(tonumber(z.copper) or 0))
         end
-        return statsPart .. "|zones:" .. table.concat(parts, ";")
+        local out = statsPart
+        if itemsPart then
+            out = out .. "|" .. itemsPart
+        end
+        out = out .. "|zones:" .. table.concat(parts, ";")
+        return out
     end
     local payload = assemble(picked)
     while #payload > MAX_PAYLOAD and #picked > 0 do
@@ -64,24 +83,34 @@ function GuildShare.encodePayload(zones, stats)
     return payload
 end
 
--- Parse a payload back into { stats = {...}, zones = { {name, copper}, ... } }.
+-- Parse a payload back into { stats = {...}, zones = { {name, copper}, ... }, items = { {id, count}, ... } }.
 function GuildShare.decodePayload(str)
-    local out = { stats = { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, zones = {} }
+    local out = { stats = { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, zones = {}, items = {} }
     if type(str) ~= "string" then
         return out
     end
-    local c, i, g = str:match("stats:(%d+),(%d+),(%d+)")
-    if c then
-        out.stats.totalCopper = tonumber(c) or 0
-        out.stats.itemsSold = tonumber(i) or 0
-        out.stats.bestGPH = tonumber(g) or 0
-    end
-    local zonesPart = str:match("zones:(.*)$")
-    if zonesPart then
-        for entry in zonesPart:gmatch("[^;]+") do
-            local name, copper = entry:match("^(.-)=(%d+)$")
-            if name and name ~= "" then
-                out.zones[#out.zones + 1] = { name = name, copper = tonumber(copper) or 0 }
+    for section in str:gmatch("[^|]+") do
+        local prefix, body = section:match("^(%w+):(.*)$")
+        if prefix == "stats" then
+            local c, i, g = body:match("^(%d+),(%d+),(%d+)")
+            if c then
+                out.stats.totalCopper = tonumber(c) or 0
+                out.stats.itemsSold = tonumber(i) or 0
+                out.stats.bestGPH = tonumber(g) or 0
+            end
+        elseif prefix == "zones" then
+            for entry in body:gmatch("[^;]+") do
+                local name, copper = entry:match("^(.-)=(%d+)$")
+                if name and name ~= "" then
+                    out.zones[#out.zones + 1] = { name = name, copper = tonumber(copper) or 0 }
+                end
+            end
+        elseif prefix == "items" then
+            for entry in body:gmatch("[^;]+") do
+                local id, n = entry:match("^(%d+)=(%d+)$")
+                if id then
+                    out.items[#out.items + 1] = { id = tonumber(id), count = tonumber(n) or 0 }
+                end
             end
         end
     end
@@ -90,7 +119,7 @@ end
 
 -- Fresh transient aggregate (session-only; never saved).
 function GuildShare.newAggregate()
-    return { zones = {}, totalCopper = 0, totalItems = 0, bestGPH = 0, memberCount = 0 }
+    return { zones = {}, items = {}, totalCopper = 0, totalItems = 0, bestGPH = 0, memberCount = 0 }
 end
 
 -- Merge one decoded reply into the aggregate.
@@ -113,6 +142,16 @@ function GuildShare.mergeReply(agg, decoded)
         e.copper = e.copper + (z.copper or 0)
         e.contributors = e.contributors + 1
     end
+    agg.items = agg.items or {}
+    for _, it in ipairs(decoded.items or {}) do
+        local e = agg.items[it.id]
+        if not e then
+            e = { count = 0, contributors = 0 }
+            agg.items[it.id] = e
+        end
+        e.count = e.count + (it.count or 0)
+        e.contributors = e.contributors + 1
+    end
 end
 
 -- ---- transport consumer + on-demand request ----------------------------
@@ -130,7 +169,15 @@ local function localPayload()
         itemsSold = itemsSold + (tonumber(n) or 0)
     end
     local stats = { totalCopper = DB.totalCopper or 0, itemsSold = itemsSold, bestGPH = DB.bestGPH or 0 }
-    return GuildShare.encodePayload(GuildShare.topZones(DB.copperByZone, MAX_ZONES), stats)
+    local itemsTop = {}
+    for id, n in pairs(DB.soldItemCounts or {}) do
+        itemsTop[#itemsTop + 1] = { id = id, count = tonumber(n) or 0 }
+    end
+    table.sort(itemsTop, function(a, b) return a.count > b.count end)
+    while #itemsTop > MAX_ITEMS do
+        itemsTop[#itemsTop] = nil
+    end
+    return GuildShare.encodePayload(GuildShare.topZones(DB.copperByZone, MAX_ZONES), stats, itemsTop)
 end
 
 -- The live aggregate the panel reads. Lives on the shared cache (session-only).

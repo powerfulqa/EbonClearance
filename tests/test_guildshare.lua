@@ -102,6 +102,32 @@ end
 flatten(a)
 ok("sender name not stored in aggregate", table.concat(flat, "|"):find("SecretSenderName", 1, true) == nil)
 
+-- items: round-trip (3rd arg to encodePayload; items = {{id=, count=}})
+local pItems = gs.encodePayload(
+    { { name = "Barrens", copper = 200 } },
+    { totalCopper = 1, itemsSold = 1, bestGPH = 1 },
+    { { id = 4306, count = 7 }, { id = 2589, count = 3 } }
+)
+ok("payload has items section", pItems:find("items:", 1, true) ~= nil)
+local dItems = gs.decodePayload(pItems)
+eq("decode item count", #dItems.items, 2)
+eq("decode item id", dItems.items[1].id, 4306)
+eq("decode item count val", dItems.items[1].count, 7)
+eq("decode still has zone", dItems.zones[1].name, "Barrens")
+eq("decode still has stats", dItems.stats.totalCopper, 1)
+
+-- backward compat: 2-arg encode (no items) still decodes with empty items
+local dNoItems = gs.decodePayload(gs.encodePayload({ { name = "Barrens", copper = 5 } }, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }))
+eq("no items section -> empty items", #dNoItems.items, 0)
+eq("zone still parses without items", dNoItems.zones[1].name, "Barrens")
+
+-- merge pools items by id with contributor counts
+local aItems = gs.newAggregate()
+gs.mergeReply(aItems, gs.decodePayload(gs.encodePayload({}, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, { { id = 4306, count = 5 } })))
+gs.mergeReply(aItems, gs.decodePayload(gs.encodePayload({}, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, { { id = 4306, count = 2 } })))
+eq("merged item pooled count", aItems.items[4306].count, 7)
+eq("merged item contributors", aItems.items[4306].contributors, 2)
+
 -- ---- static-pattern invariants (scan live code, not comments) ----
 local function readCode(p)
     local fh = assert(io.open(p, "r"))

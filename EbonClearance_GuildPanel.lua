@@ -153,9 +153,17 @@ repaintGuildPanel = function()
 end
 
 GuildPanel:SetScript("OnShow", function(self)
+    -- Forward-declare so both the refresh closure and the build closure
+    -- can capture syncNameEnabled as a shared upvalue.
+    local nameCB
+    local syncNameEnabled
+
     EC_compCache.initPanel(self, function(refreshSelf)
         -- Refresh pass: repaint data rows on subsequent OnShow.
         repaintGuildPanel()
+        if syncNameEnabled then
+            syncNameEnabled()
+        end
     end, function(buildSelf, content)
         -- Build pass: runs once on the first OnShow.
 
@@ -184,13 +192,18 @@ GuildPanel:SetScript("OnShow", function(self)
                 if EbonClearanceDB then
                     EbonClearanceDB.shareGuildData = v
                 end
+                if syncNameEnabled then
+                    syncNameEnabled()
+                end
             end,
             -10
         )
 
         -- "Show my name" opt-in: appends this player's name to the
         -- contributors list visible to guildmates in the Totals block.
-        local nameCB = NS.AddCheckbox(
+        -- Assigned to the forward-declared upvalue (not a new local) so
+        -- syncNameEnabled can reference it.
+        nameCB = NS.AddCheckbox(
             content,
             "EbonClearanceGuildNameCB",
             optInCB,
@@ -199,6 +212,30 @@ GuildPanel:SetScript("OnShow", function(self)
             function(v) if EbonClearanceDB then EbonClearanceDB.shareGuildName = v end end,
             -8
         )
+
+        -- syncNameEnabled: mirrors the syncILvlSubsEnabled pattern in
+        -- EbonClearance_ItemHighlightingPanel.lua. Enables/disables nameCB
+        -- and tints its label to reflect whether sharing is active.
+        syncNameEnabled = function()
+            if not nameCB then
+                return
+            end
+            local label = _G["EbonClearanceGuildNameCB" .. "Text"]
+            if EbonClearanceDB and EbonClearanceDB.shareGuildData then
+                nameCB:Enable()
+                nameCB:SetChecked(EbonClearanceDB.shareGuildName)
+                if label then
+                    label:SetTextColor(1, 1, 1)
+                end
+            else
+                nameCB:Disable()
+                nameCB:SetChecked(false)
+                if label then
+                    label:SetTextColor(0.5, 0.5, 0.5)
+                end
+            end
+        end
+        syncNameEnabled()
 
         -- "Guild's Best Farming Zones" sub-header + data FontString.
         local zonesHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")

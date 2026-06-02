@@ -61,6 +61,7 @@ jobs:
           lua5.1 tests/test_perf_guardrails.lua
           lua5.1 tests/test_comment_hygiene.lua
           lua5.1 tests/test_comms_version.lua
+          lua5.1 tests/test_guildshare.lua
 
       - name: Package addon
         run: |

@@ -27,6 +27,8 @@ jobs:
         run: |
           luac5.1 -p EbonClearance_Events.lua
           luac5.1 -p EbonClearance_Comms.lua
+          luac5.1 -p EbonClearance_GuildShare.lua
+          luac5.1 -p EbonClearance_GuildPanel.lua
           luac5.1 -p EbonClearance_Core.lua
           luac5.1 -p EbonClearance_Companion.lua
           luac5.1 -p EbonClearance_Protection.lua
@@ -61,3 +63,6 @@ jobs:
 
       - name: Comms / version regression tests
         run: lua5.1 tests/test_comms_version.lua
+
+      - name: Guild-share regression tests
+        run: lua5.1 tests/test_guildshare.lua

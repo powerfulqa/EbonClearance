@@ -548,6 +548,10 @@ local function EnsureDB()
     if EbonClearanceDB.versionAlerts == nil then
         EbonClearanceDB.versionAlerts = true
     end
+    -- Guild farming/stats sharing (opt-in, default OFF). Account-level.
+    if EbonClearanceDB.shareGuildData == nil then
+        EbonClearanceDB.shareGuildData = false
+    end
 
     -- Per-character partition (v2.34.x). See the PER_CHAR_FIELDS block at
     -- the top of the file for the rationale. Top-level fields remain as

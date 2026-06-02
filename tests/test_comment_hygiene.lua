@@ -50,6 +50,8 @@ local SOURCE_PATHS = {
     "EbonClearance_QuickstartPanel.lua",
     "EbonClearance_Events.lua",
     "EbonClearance_Comms.lua",
+    "EbonClearance_GuildShare.lua",
+    "EbonClearance_GuildPanel.lua",
     "EbonClearance_BagDisplay.lua",
     "EbonClearance_BugReport.lua",
     "EbonClearance_Minimap.lua",

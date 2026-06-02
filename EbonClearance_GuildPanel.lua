@@ -227,6 +227,6 @@ NS.RefreshGuildPanel = function()
     repaintGuildPanel()
 end
 
--- v2.39.x: registered with InterfaceOptions_AddCategory from
--- EbonClearance_Events.lua so the sub-panel sort order is controlled
--- at one place.
+-- This panel loads after EbonClearance_Events.lua, so it self-registers
+-- (matching the Help panel), rather than via the Events.lua category block.
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsGuild"])

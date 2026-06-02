@@ -102,6 +102,31 @@ end
 flatten(a)
 ok("sender name not stored in aggregate", table.concat(flat, "|"):find("SecretSenderName", 1, true) == nil)
 
+-- ---- static-pattern invariants (scan live code, not comments) ----
+local function readCode(p)
+    local fh = assert(io.open(p, "r"))
+    local s = fh:read("*a")
+    fh:close()
+    local out = {}
+    for line in (s .. "\n"):gmatch("([^\n]*)\n") do
+        local t = line:match("^%s*(.-)%s*$") or ""
+        if t:sub(1, 2) ~= "--" then out[#out + 1] = line end
+    end
+    return table.concat(out, "\n")
+end
+local share = readCode("EbonClearance_GuildShare.lua")
+ok("exposes NS.GuildShare", share:find("NS.GuildShare", 1, true) ~= nil)
+ok("uses NS.Comms transport", share:find("NS.Comms", 1, true) ~= nil)
+ok("reply gated on shareGuildData", share:find("shareGuildData", 1, true) ~= nil)
+ok("registers GREQ", share:find('"GREQ"', 1, true) ~= nil)
+ok("registers GDAT", share:find('"GDAT"', 1, true) ~= nil)
+ok("zone cap constant present", share:find("MAX_ZONES", 1, true) ~= nil)
+ok("no 4.0 group event", not share:find("GROUP_ROSTER_UPDATE", 1, true))
+local panel = readCode("EbonClearance_GuildPanel.lua")
+ok("panel reads aggregate", panel:find("GetAggregate", 1, true) ~= nil)
+ok("panel opt-in writes shareGuildData", panel:find("shareGuildData", 1, true) ~= nil)
+ok("panel self-registers", panel:find("InterfaceOptions_AddCategory", 1, true) ~= nil)
+
 print()
 if fails > 0 then io.stderr:write("RESULT: " .. fails .. " test(s) failed\n"); os.exit(1) end
 print("RESULT: all tests passed")

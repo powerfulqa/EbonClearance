@@ -408,7 +408,13 @@ GuildPanel:SetScript("OnShow", function(self)
         totRows.gold    = makeTotRow("Combined gold:", totRows.members, -2)
         totRows.items   = makeTotRow("Combined items sold:", totRows.gold, -2)
         totRows.bestGPH = makeTotRow("Best gold/hour seen:", totRows.items, -2)
-        totRows.sharedBy = makeTotRow("Shared by:", totRows.bestGPH, -2)
+        -- "Shared by" row: extra gap above so the first line clears the
+        -- "Best gold/hour seen" row; doubled height so a two-line wrap
+        -- has room; value anchored TOPLEFT so overflow grows downward.
+        totRows.sharedBy = makeTotRow("Shared by:", totRows.bestGPH, -10)
+        totRows.sharedBy:SetHeight(28)
+        totRows.sharedBy.right:ClearAllPoints()
+        totRows.sharedBy.right:SetPoint("TOPLEFT", totRows.sharedBy, "TOPLEFT", VALUE_X, 0)
         -- The "Shared by" value can be long: give it a reactive width so
         -- it wraps instead of overflowing. VALUE_X + 16 is the x offset
         -- from the content frame's TOPLEFT to the right edge (content is
@@ -474,7 +480,7 @@ GuildPanel:SetScript("OnShow", function(self)
             row:EnableMouse(true)
             row:SetScript("OnEnter", function(self2)
                 if self2.itemID then
-                    GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+                    GameTooltip:SetOwner(self2, "ANCHOR_CURSOR")
                     GameTooltip:SetHyperlink("item:" .. self2.itemID)
                     GameTooltip:Show()
                 end

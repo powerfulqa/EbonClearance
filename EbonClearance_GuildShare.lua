@@ -199,9 +199,9 @@ end
 function GuildShare.InjectTestPeers()
     NS.compCache.guildAgg = GuildShare.newAggregate()
     local fakes = {
-        { stats = { totalCopper = 5000000, itemsSold = 120, bestGPH = 450000 }, zones = { { name = "The Barrens", copper = 3000000 }, { name = "Durotar", copper = 800000 } } },
-        { stats = { totalCopper = 3200000, itemsSold = 80, bestGPH = 600000 }, zones = { { name = "The Barrens", copper = 1500000 }, { name = "Elwynn Forest", copper = 2200000 } } },
-        { stats = { totalCopper = 900000, itemsSold = 40, bestGPH = 300000 }, zones = { { name = "Westfall", copper = 700000 } } },
+        { stats = { totalCopper = 5000000, itemsSold = 120, bestGPH = 450000 }, zones = { { name = "The Barrens", copper = 3000000 }, { name = "Durotar", copper = 800000 } }, items = { { id = 2589, count = 50 }, { id = 4306, count = 30 } } },
+        { stats = { totalCopper = 3200000, itemsSold = 80, bestGPH = 600000 }, zones = { { name = "The Barrens", copper = 1500000 }, { name = "Elwynn Forest", copper = 2200000 } }, items = { { id = 2589, count = 40 }, { id = 774, count = 20 } } },
+        { stats = { totalCopper = 900000, itemsSold = 40, bestGPH = 300000 }, zones = { { name = "Westfall", copper = 700000 } }, items = { { id = 4306, count = 15 } } },
     }
     for _, f in ipairs(fakes) do
         GuildShare.mergeReply(GuildShare.GetAggregate(), f)

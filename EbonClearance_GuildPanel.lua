@@ -100,6 +100,42 @@ repaintGuildPanel = function()
             )
         end
     end
+
+    -- Guild's Most-Sold Items block.
+    if panel._guildItemsFS then
+        local items = agg.items
+        if items and next(items) then
+            local entries = {}
+            for id, e in pairs(items) do
+                entries[#entries + 1] = {
+                    id = id,
+                    count = e.count or 0,
+                    contributors = e.contributors or 0,
+                }
+            end
+            table.sort(entries, function(a, b)
+                if a.count == b.count then
+                    return a.id < b.id
+                end
+                return a.count > b.count
+            end)
+            local rows = {}
+            local limit = math.min(5, #entries)
+            for i = 1, limit do
+                local e = entries[i]
+                local name = (GetItemInfo and GetItemInfo(e.id)) or ("item #" .. e.id)
+                rows[i] = name
+                    .. " - "
+                    .. e.count
+                    .. " sold (from "
+                    .. e.contributors
+                    .. ")"
+            end
+            panel._guildItemsFS:SetText(table.concat(rows, "\n"))
+        else
+            panel._guildItemsFS:SetText("No items shared yet.")
+        end
+    end
 end
 
 GuildPanel:SetScript("OnShow", function(self)
@@ -177,13 +213,31 @@ GuildPanel:SetScript("OnShow", function(self)
         )
         buildSelf._guildTotalsFS = totalsFS
 
+        -- "Guild's Most-Sold Items" sub-header + data FontString.
+        local itemsHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        itemsHeader:SetPoint("TOPLEFT", totalsFS, "BOTTOMLEFT", 0, -16)
+        itemsHeader:SetText("Guild's Most-Sold Items")
+
+        local itemsFS = content:CreateFontString(
+            nil, "ARTWORK", "GameFontHighlight"
+        )
+        itemsFS:SetPoint("TOPLEFT", itemsHeader, "BOTTOMLEFT", 0, -8)
+        EC_compCache.setPanelWidth(itemsFS, 16)
+        itemsFS:SetJustifyH("LEFT")
+        itemsFS:SetJustifyV("TOP")
+        if itemsFS.SetWordWrap then
+            itemsFS:SetWordWrap(true)
+        end
+        itemsFS:SetText("No items shared yet.")
+        buildSelf._guildItemsFS = itemsFS
+
         -- Refresh button. Fires a broadcast request then plays the
         -- standard checkbox click sound.
         local refreshBtn = CreateFrame(
             "Button", nil, content, "UIPanelButtonTemplate"
         )
         refreshBtn:SetSize(110, 24)
-        refreshBtn:SetPoint("TOPLEFT", totalsFS, "BOTTOMLEFT", 0, -12)
+        refreshBtn:SetPoint("TOPLEFT", itemsFS, "BOTTOMLEFT", 0, -12)
         refreshBtn:SetText("Refresh")
         refreshBtn:SetScript("OnClick", function()
             if NS.GuildShare and NS.GuildShare.RequestNow then

@@ -1,12 +1,12 @@
--- EbonClearance_GuildPanel - Guild sharing sub-panel.
+-- EbonClearance_GuildPanel - Stats - Guild sharing sub-panel.
 -- Author:  Serv
 -- Source:  https://github.com/powerfulqa/EbonClearance
 -- License: see LICENSE; attribution preservation is required.
 --
 -- Interface Options sub-panel for guild-share: opt-in toggle,
 -- best farming zones aggregate, guild totals, and a manual refresh
--- button. Self-registers at the end of this file (matching the Help
--- panel), because it loads after the event hub.
+-- button. Registered centrally in EbonClearance_Events.lua (loads
+-- after this file, so the frame exists when AddCategory is called).
 --
 -- Dependencies satisfied by NS:
 --   * NS.compCache (Core)           - initPanel, setPanelWidth
@@ -25,7 +25,7 @@ local GuildPanel = CreateFrame(
     "EbonClearanceOptionsGuild",
     InterfaceOptionsFramePanelContainer
 )
-GuildPanel.name = "Guild"
+GuildPanel.name = "Stats - Guild"
 GuildPanel.parent = "EbonClearance"
 
 -- repaintGuildPanel: shared repaint body used by both the OnShow
@@ -167,7 +167,7 @@ GuildPanel:SetScript("OnShow", function(self)
     end, function(buildSelf, content)
         -- Build pass: runs once on the first OnShow.
 
-        local heading = NS.MakeHeader(content, "Guild", -16)
+        local heading = NS.MakeHeader(content, "Stats - Guild", -16)
 
         local descLabel = NS.MakeLabel(
             content,
@@ -344,6 +344,4 @@ NS.RefreshGuildPanel = function()
     repaintGuildPanel()
 end
 
--- This panel loads after EbonClearance_Events.lua, so it self-registers
--- (matching the Help panel), rather than via the Events.lua category block.
-InterfaceOptions_AddCategory(_G["EbonClearanceOptionsGuild"])
+-- Registration is handled centrally in EbonClearance_Events.lua.

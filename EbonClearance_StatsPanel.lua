@@ -19,7 +19,7 @@ local NS = select(2, ...)
 local EC_compCache = NS.compCache
 
 local StatsPanel = CreateFrame("Frame", "EbonClearanceOptionsStats", InterfaceOptionsFramePanelContainer)
-StatsPanel.name = "Stats"
+StatsPanel.name = "Stats - Personal"
 StatsPanel.parent = "EbonClearance"
 
 -- v2.38.2: live refresh while the Stats panel is shown. RefreshStats
@@ -53,7 +53,7 @@ StatsPanel:SetScript("OnShow", function(self)
         -- as the public contract with RefreshStats - keep the literals.
         local panel = buildSelf
         -- Heading. Same -16 y offset as Keep List / Sell List etc.
-        local heading = NS.MakeHeader(content, "Stats", -16)
+        local heading = NS.MakeHeader(content, "Stats - Personal", -16)
         NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 8, 0, "stats-overview")
 
         -- v2.38.1: Character / Account view toggle. Sits between the

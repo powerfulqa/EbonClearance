@@ -166,7 +166,12 @@ ok("no 4.0 group event", not share:find("GROUP_ROSTER_UPDATE", 1, true))
 local panel = readCode("EbonClearance_GuildPanel.lua")
 ok("panel reads aggregate", panel:find("GetAggregate", 1, true) ~= nil)
 ok("panel opt-in writes shareGuildData", panel:find("shareGuildData", 1, true) ~= nil)
-ok("panel self-registers", panel:find("InterfaceOptions_AddCategory", 1, true) ~= nil)
+-- v2.39.x: GuildPanel now loads before Events.lua so registration is
+-- centralised in Events.lua alongside Stats - Personal. The panel must
+-- NOT self-register; Events.lua must contain the AddCategory call.
+ok("panel does not self-register", panel:find("InterfaceOptions_AddCategory", 1, true) == nil)
+local events = readCode("EbonClearance_Events.lua")
+ok("Events.lua registers guild panel centrally", events:find('InterfaceOptions_AddCategory(_G["EbonClearanceOptionsGuild"])', 1, true) ~= nil)
 
 print()
 if fails > 0 then io.stderr:write("RESULT: " .. fails .. " test(s) failed\n"); os.exit(1) end

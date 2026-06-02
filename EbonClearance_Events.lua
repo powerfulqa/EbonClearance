@@ -5025,7 +5025,11 @@ InterfaceOptions_AddCategory(_G["EbonClearanceOptionsCharacter"]) -- Item Highli
 -- panels first, then their stats dashboard, then the curated lists. The
 -- Stats panel file itself does not call InterfaceOptions_AddCategory; the
 -- sort position is controlled at one place here.
-InterfaceOptions_AddCategory(_G["EbonClearanceOptionsStats"]) -- Stats
+-- v2.39.x: Guild panel loads before Events.lua (see .toc), so it is also
+-- registered here, immediately after Stats - Personal, to keep both stats
+-- panels adjacent above Sell List.
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsStats"]) -- Stats - Personal
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsGuild"]) -- Stats - Guild
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsWhitelist"]) -- Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsAccountWhitelist"]) -- Account Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsBlacklist"]) -- Keep List

@@ -102,38 +102,39 @@ end
 flatten(a)
 ok("sender name not stored in aggregate", table.concat(flat, "|"):find("SecretSenderName", 1, true) == nil)
 
--- items now travel by NAME (3rd arg). 4th arg is an optional consenting player name.
+-- items now carry id + name; 5th encode arg is a per-rarity count map
 local pItems = gs.encodePayload(
     { { name = "Barrens", copper = 200 } },
     { totalCopper = 1, itemsSold = 1, bestGPH = 1 },
-    { { name = "Silk Cloth", count = 7 }, { name = "Linen Cloth", count = 3 } },
-    "Alaric"
+    { { id = 4306, name = "Silk Cloth", count = 7 }, { id = 2589, name = "Linen Cloth", count = 3 } },
+    "Alaric",
+    { [0] = 10, [2] = 5 }
 )
 ok("payload has items section", pItems:find("items:", 1, true) ~= nil)
-ok("payload has name section", pItems:find("name:Alaric", 1, true) ~= nil)
+ok("payload encodes id~name", pItems:find("4306~Silk Cloth=7", 1, true) ~= nil)
+ok("payload has qual section", pItems:find("qual:", 1, true) ~= nil)
 local dItems = gs.decodePayload(pItems)
 eq("decode item count", #dItems.items, 2)
+eq("decode item id", dItems.items[1].id, 4306)
 eq("decode item name", dItems.items[1].name, "Silk Cloth")
 eq("decode item count val", dItems.items[1].count, 7)
+eq("decode quality poor", dItems.quality[0], 10)
+eq("decode quality uncommon", dItems.quality[2], 5)
 eq("decode name", dItems.name, "Alaric")
 eq("decode still has zone", dItems.zones[1].name, "Barrens")
 
--- no 4th arg -> anonymous (no name section)
-local dAnon = gs.decodePayload(gs.encodePayload({ { name = "Barrens", copper = 5 } }, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, { { name = "Wool Cloth", count = 9 } }))
-eq("anonymous payload has no name", dAnon.name, nil)
-eq("item still parses", dAnon.items[1].name, "Wool Cloth")
+-- backward compat: 2-arg encode (no items/name/quality)
+local dNo = gs.decodePayload(gs.encodePayload({ { name = "Barrens", copper = 5 } }, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }))
+eq("no items -> empty", #dNo.items, 0)
 
--- backward compat: 2-arg encode (no items, no name)
-local dNoItems = gs.decodePayload(gs.encodePayload({ { name = "Barrens", copper = 5 } }, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }))
-eq("no items section -> empty items", #dNoItems.items, 0)
-
--- merge pools items by name; collects consenting contributor names
+-- merge pools items by id (keeping name) and sums quality
 local aItems = gs.newAggregate()
-gs.mergeReply(aItems, gs.decodePayload(gs.encodePayload({}, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, { { name = "Silk Cloth", count = 5 } }, "Alaric")))
-gs.mergeReply(aItems, gs.decodePayload(gs.encodePayload({}, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, { { name = "Silk Cloth", count = 2 } })))
-eq("merged item pooled by name", aItems.items["Silk Cloth"].count, 7)
-eq("merged item contributors", aItems.items["Silk Cloth"].contributors, 2)
-ok("named contributor recorded", aItems.contributors["Alaric"] == true)
+gs.mergeReply(aItems, gs.decodePayload(gs.encodePayload({}, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, { { id = 4306, name = "Silk Cloth", count = 5 } }, nil, { [2] = 4 })))
+gs.mergeReply(aItems, gs.decodePayload(gs.encodePayload({}, { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, { { id = 4306, name = "Silk Cloth", count = 2 } }, nil, { [2] = 1 })))
+eq("merged item pooled by id", aItems.items[4306].count, 7)
+eq("merged item keeps name", aItems.items[4306].name, "Silk Cloth")
+eq("merged item contributors", aItems.items[4306].contributors, 2)
+eq("merged quality summed", aItems.quality[2], 5)
 
 -- best-GPH holder name: tracked when the top holder consented; nil if anonymous
 local aGPH = gs.newAggregate()

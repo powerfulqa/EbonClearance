@@ -28,7 +28,7 @@ end
 
 -- A zone name is unsafe if it contains one of our payload delimiters.
 local function zoneNameSafe(name)
-    return type(name) == "string" and name ~= "" and not name:find("[=;|,\t]")
+    return type(name) == "string" and name ~= "" and not name:find("[=;|,~\t]")
 end
 
 -- Build the compact wire payload. Caps to MAX_ZONES/MAX_ITEMS, skips
@@ -36,7 +36,8 @@ end
 -- MAX_PAYLOAD. Items are tiny and wanted, so zones are trimmed first.
 -- selfName is an optional 4th arg: when the sharer has opted in to attribution,
 -- pass UnitName("player") here and it travels as a name: section.
-function GuildShare.encodePayload(zones, stats, items, selfName)
+-- quality is an optional 5th arg: map of rarity index (0..7) -> sold count.
+function GuildShare.encodePayload(zones, stats, items, selfName, quality)
     local s = stats or {}
     local statsPart = string.format(
         "stats:%d,%d,%d",
@@ -47,14 +48,24 @@ function GuildShare.encodePayload(zones, stats, items, selfName)
     local namePart = (type(selfName) == "string" and selfName ~= "" and zoneNameSafe(selfName))
         and ("name:" .. selfName)
         or nil
+    local qualParts = {}
+    for q, c in pairs(quality or {}) do
+        local qn = math.floor(tonumber(q) or -1)
+        local cn = math.floor(tonumber(c) or 0)
+        if qn >= 0 and cn > 0 then
+            qualParts[#qualParts + 1] = qn .. "=" .. cn
+        end
+    end
+    local qualPart = (#qualParts > 0) and ("qual:" .. table.concat(qualParts, ";")) or nil
     local itemParts = {}
     for _, it in ipairs(items or {}) do
         if #itemParts >= MAX_ITEMS then
             break
         end
+        local id = math.floor(tonumber(it.id) or 0)
         local n = math.floor(tonumber(it.count) or 0)
-        if zoneNameSafe(it.name) and n > 0 then
-            itemParts[#itemParts + 1] = it.name .. "=" .. n
+        if id > 0 and zoneNameSafe(it.name) and n > 0 then
+            itemParts[#itemParts + 1] = id .. "~" .. it.name .. "=" .. n
         end
     end
     local itemsPart = (#itemParts > 0) and ("items:" .. table.concat(itemParts, ";")) or nil
@@ -76,6 +87,9 @@ function GuildShare.encodePayload(zones, stats, items, selfName)
         if namePart then
             out = out .. "|" .. namePart
         end
+        if qualPart then
+            out = out .. "|" .. qualPart
+        end
         if itemsPart then
             out = out .. "|" .. itemsPart
         end
@@ -91,9 +105,10 @@ function GuildShare.encodePayload(zones, stats, items, selfName)
 end
 
 -- Parse a payload back into { stats = {...}, zones = { {name, copper}, ... },
--- items = { {name, count}, ... }, name = <string or nil> }.
+-- items = { {id, name, count}, ... }, quality = { [rarity] = count, ... },
+-- name = <string or nil> }.
 function GuildShare.decodePayload(str)
-    local out = { stats = { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, zones = {}, items = {} }
+    local out = { stats = { totalCopper = 0, itemsSold = 0, bestGPH = 0 }, zones = {}, items = {}, quality = {} }
     if type(str) ~= "string" then
         return out
     end
@@ -110,6 +125,13 @@ function GuildShare.decodePayload(str)
             if body ~= "" then
                 out.name = body
             end
+        elseif prefix == "qual" then
+            for entry in body:gmatch("[^;]+") do
+                local q, c = entry:match("^(%d+)=(%d+)$")
+                if q then
+                    out.quality[tonumber(q)] = tonumber(c) or 0
+                end
+            end
         elseif prefix == "zones" then
             for entry in body:gmatch("[^;]+") do
                 local name, copper = entry:match("^(.-)=(%d+)$")
@@ -119,9 +141,9 @@ function GuildShare.decodePayload(str)
             end
         elseif prefix == "items" then
             for entry in body:gmatch("[^;]+") do
-                local name, cnt = entry:match("^(.-)=(%d+)$")
-                if name and name ~= "" then
-                    out.items[#out.items + 1] = { name = name, count = tonumber(cnt) or 0 }
+                local id, name, cnt = entry:match("^(%d+)~(.-)=(%d+)$")
+                if id and name and name ~= "" then
+                    out.items[#out.items + 1] = { id = tonumber(id), name = name, count = tonumber(cnt) or 0 }
                 end
             end
         end
@@ -131,7 +153,7 @@ end
 
 -- Fresh transient aggregate (session-only; never saved).
 function GuildShare.newAggregate()
-    return { zones = {}, items = {}, contributors = {}, totalCopper = 0, totalItems = 0, bestGPH = 0, memberCount = 0 }
+    return { zones = {}, items = {}, quality = {}, contributors = {}, totalCopper = 0, totalItems = 0, bestGPH = 0, memberCount = 0 }
 end
 
 -- Merge one decoded reply into the aggregate.
@@ -157,13 +179,18 @@ function GuildShare.mergeReply(agg, decoded)
     end
     agg.items = agg.items or {}
     for _, it in ipairs(decoded.items or {}) do
-        local e = agg.items[it.name]
+        local e = agg.items[it.id]
         if not e then
-            e = { count = 0, contributors = 0 }
-            agg.items[it.name] = e
+            e = { name = it.name, count = 0, contributors = 0 }
+            agg.items[it.id] = e
         end
+        e.name = e.name or it.name
         e.count = e.count + (it.count or 0)
         e.contributors = e.contributors + 1
+    end
+    agg.quality = agg.quality or {}
+    for q, c in pairs(decoded.quality or {}) do
+        agg.quality[q] = (agg.quality[q] or 0) + (c or 0)
     end
     if decoded.name and decoded.name ~= "" then
         agg.contributors = agg.contributors or {}
@@ -199,12 +226,16 @@ local function localPayload()
             end
             local name = GetItemInfo and GetItemInfo(e.id)
             if name and zoneNameSafe(name) then
-                itemsTop[#itemsTop + 1] = { name = name, count = e.count }
+                itemsTop[#itemsTop + 1] = { id = math.floor(tonumber(e.id) or 0), name = name, count = e.count }
             end
         end
     end
+    local quality = {}
+    for q, c in pairs(DB.soldItemsByQuality or {}) do
+        quality[q] = tonumber(c) or 0
+    end
     local selfName = (EbonClearanceDB.shareGuildName and UnitName("player")) or nil
-    return GuildShare.encodePayload(GuildShare.topZones(DB.copperByZone, MAX_ZONES), stats, itemsTop, selfName)
+    return GuildShare.encodePayload(GuildShare.topZones(DB.copperByZone, MAX_ZONES), stats, itemsTop, selfName, quality)
 end
 
 -- The live aggregate the panel reads. Lives on the shared cache (session-only).
@@ -226,9 +257,9 @@ end
 function GuildShare.InjectTestPeers()
     NS.compCache.guildAgg = GuildShare.newAggregate()
     local fakes = {
-        { name = "Alaric", stats = { totalCopper = 5000000, itemsSold = 120, bestGPH = 450000 }, zones = { { name = "The Barrens", copper = 3000000 }, { name = "Durotar", copper = 800000 } }, items = { { name = "Linen Cloth", count = 50 }, { name = "Silk Cloth", count = 30 } } },
-        { name = "Brynn", stats = { totalCopper = 3200000, itemsSold = 80, bestGPH = 600000 }, zones = { { name = "The Barrens", copper = 1500000 }, { name = "Elwynn Forest", copper = 2200000 } }, items = { { name = "Linen Cloth", count = 40 }, { name = "Malachite", count = 20 } } },
-        { stats = { totalCopper = 900000, itemsSold = 40, bestGPH = 300000 }, zones = { { name = "Westfall", copper = 700000 } }, items = { { name = "Silk Cloth", count = 15 } } },
+        { name = "Alaric", stats = { totalCopper = 5000000, itemsSold = 120, bestGPH = 450000 }, zones = { { name = "The Barrens", copper = 3000000 }, { name = "Durotar", copper = 800000 } }, items = { { id = 2589, name = "Linen Cloth", count = 50 }, { id = 4306, name = "Silk Cloth", count = 30 } }, quality = { [0] = 40, [1] = 50, [2] = 25, [3] = 5 } },
+        { name = "Brynn", stats = { totalCopper = 3200000, itemsSold = 80, bestGPH = 600000 }, zones = { { name = "The Barrens", copper = 1500000 }, { name = "Elwynn Forest", copper = 2200000 } }, items = { { id = 2589, name = "Linen Cloth", count = 40 }, { id = 774, name = "Malachite", count = 20 } }, quality = { [0] = 20, [1] = 30, [2] = 20, [4] = 10 } },
+        { stats = { totalCopper = 900000, itemsSold = 40, bestGPH = 300000 }, zones = { { name = "Westfall", copper = 700000 } }, items = { { id = 4306, name = "Silk Cloth", count = 15 } }, quality = { [1] = 25, [2] = 15 } },
     }
     for _, f in ipairs(fakes) do
         GuildShare.mergeReply(GuildShare.GetAggregate(), f)

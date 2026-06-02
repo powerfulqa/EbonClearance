@@ -552,6 +552,10 @@ local function EnsureDB()
     if EbonClearanceDB.shareGuildData == nil then
         EbonClearanceDB.shareGuildData = false
     end
+    -- Show player name with shared data (opt-in, default OFF). Account-level.
+    if EbonClearanceDB.shareGuildName == nil then
+        EbonClearanceDB.shareGuildName = false
+    end
 
     -- Per-character partition (v2.34.x). See the PER_CHAR_FIELDS block at
     -- the top of the file for the rationale. Top-level fields remain as

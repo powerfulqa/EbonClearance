@@ -87,11 +87,26 @@ repaintGuildPanel = function()
             local copperStr = NS.CopperToColoredText
                 and NS.CopperToColoredText(agg.totalCopper or 0)
                 or tostring(agg.totalCopper or 0)
+            local named = {}
+            for nm in pairs(agg.contributors or {}) do named[#named + 1] = nm end
+            table.sort(named)
+            local anon = agg.memberCount - #named
+            if anon < 0 then anon = 0 end
+            local sharedBy
+            if #named > 0 then
+                sharedBy = "Shared by: " .. table.concat(named, ", ")
+                if anon > 0 then
+                    sharedBy = sharedBy .. " (+" .. anon .. " anonymous)"
+                end
+            else
+                sharedBy = "Shared by: all anonymous"
+            end
             panel._guildTotalsFS:SetText(
                 "Members shared: " .. (agg.memberCount or 0) .. "\n"
                 .. "Combined gold: " .. copperStr .. "\n"
                 .. "Combined items sold: " .. (agg.totalItems or 0) .. "\n"
-                .. "Best gold/hour seen: " .. (NS.CopperToColoredText and NS.CopperToColoredText(agg.bestGPH or 0) or tostring(agg.bestGPH or 0))
+                .. "Best gold/hour seen: " .. (NS.CopperToColoredText and NS.CopperToColoredText(agg.bestGPH or 0) or tostring(agg.bestGPH or 0)) .. "\n"
+                .. sharedBy
             )
         else
             panel._guildTotalsFS:SetText(
@@ -106,16 +121,16 @@ repaintGuildPanel = function()
         local items = agg.items
         if items and next(items) then
             local entries = {}
-            for id, e in pairs(items) do
+            for name, e in pairs(items) do
                 entries[#entries + 1] = {
-                    id = id,
+                    name = name,
                     count = e.count or 0,
                     contributors = e.contributors or 0,
                 }
             end
             table.sort(entries, function(a, b)
                 if a.count == b.count then
-                    return a.id < b.id
+                    return a.name < b.name
                 end
                 return a.count > b.count
             end)
@@ -123,8 +138,7 @@ repaintGuildPanel = function()
             local limit = math.min(5, #entries)
             for i = 1, limit do
                 local e = entries[i]
-                local name = (GetItemInfo and GetItemInfo(e.id)) or ("item #" .. e.id)
-                rows[i] = name
+                rows[i] = e.name
                     .. " - "
                     .. e.count
                     .. " sold (from "
@@ -174,9 +188,21 @@ GuildPanel:SetScript("OnShow", function(self)
             -10
         )
 
+        -- "Show my name" opt-in: appends this player's name to the
+        -- contributors list visible to guildmates in the Totals block.
+        local nameCB = NS.AddCheckbox(
+            content,
+            "EbonClearanceGuildNameCB",
+            optInCB,
+            "Show my name with my shared data",
+            function() return EbonClearanceDB and EbonClearanceDB.shareGuildName end,
+            function(v) if EbonClearanceDB then EbonClearanceDB.shareGuildName = v end end,
+            -8
+        )
+
         -- "Guild's Best Farming Zones" sub-header + data FontString.
         local zonesHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-        zonesHeader:SetPoint("TOPLEFT", optInCB, "BOTTOMLEFT", 0, -16)
+        zonesHeader:SetPoint("TOPLEFT", nameCB, "BOTTOMLEFT", 0, -16)
         zonesHeader:SetText("Guild's Best Farming Zones")
 
         local zonesFS = content:CreateFontString(

@@ -5,6 +5,18 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.40.1
+
+Patch release. Fixes a Process Bags trap where clicking the Cast button during the cast or global cooldown would equip the item instead of processing it.
+
+The cast macro is `/cast SpellName` followed by `/use bag slot` - the second line picks up the item to apply the spell to. If you clicked while `/cast` was still in flight or on cooldown, the cast silently no-op'd but `/use` ran anyway, and `/use` on an equippable item means equip. Players on Project Ebonhold who shorten Mill / Prospect / Disenchant cast times below the GCD saw this constantly: cast ends, click again, the item gets equipped instead of disenchanted.
+
+- **Fix: post-click lockout on the Process Next button.** After every click, the button is `:Disable()`d and the standard cooldown swirl paints for `max(effective cast time, 1.5 seconds)`. The effective cast duration comes from `UnitCastingInfo` at `UNIT_SPELLCAST_START` (honours haste / talent / server-side reductions, unlike the base value from `GetSpellInfo`). The 1.5 s floor matches the standard global cooldown and protects against shortened cast times falling below it. Re-enables the moment the lockout clears.
+- **Help FAQ:** new "What's the swirl on the Process Next button?" entry under the Process Bags section explains the visual + the underlying reason.
+- **Test 88au** locks the wiring: the Cooldown frame, the `startProcessCastCooldown` helper, the `PostClick` hook, the `PROCESS_BUTTON_FLOOR_SECONDS = 1.5` floor, the `UNIT_SPELLCAST_START` listener that reads the effective duration from `UnitCastingInfo`, the `armedSpellName` state, the OmniCC opt-out flags, and the `SetCooldown` call all have to remain present.
+
+Safe overwrite from v2.40.0. No schema changes.
+
 ### v2.40.0
 
 New feature: a "Stats - Guild" panel that anonymously pools your guild's (and group's) farming and selling data, built on the v2.39.0 addon-comms layer. The existing "Stats" panel is renamed "Stats - Personal" and the two sit together in the options menu.

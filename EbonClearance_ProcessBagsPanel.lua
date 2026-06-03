@@ -172,6 +172,10 @@ function EC_compCache.rearmProcessButton()
             string.format("/cast %s\n/use %d %d", entry.spellName, entry.bag, entry.slot)
         )
         panel.castBtn:Enable()
+        -- v2.40.1: stash the armed spell name so the GCD listener
+        -- knows which cooldown to watch and the rearm path can paint
+        -- the cooldown swirl on initial entry.
+        panel.armedSpellName = entry.spellName
         if panel.castBtnLabel then
             -- Mode label only; the dynamic item name lives on the
             -- separate label below the button so a long item name
@@ -185,6 +189,7 @@ function EC_compCache.rearmProcessButton()
     else
         panel.castBtn:SetAttribute("macrotext", "")
         panel.castBtn:Disable()
+        panel.armedSpellName = nil
         if panel.castBtnLabel then
             panel.castBtnLabel:SetText("Process Next")
         end
@@ -194,6 +199,129 @@ function EC_compCache.rearmProcessButton()
     end
     EC_compCache.updateProcessSelection()
 end
+
+-- v2.40.1: post-click button lockout. After the user clicks Process
+-- Next we keep the secure button :Disable()d for a short window so
+-- a second click can't fall through /cast (silent fail during cast
+-- or GCD) into /use (which equips the item).
+--
+-- Duration design: max(effective cast time, 1.5 s). The 1.5 s floor
+-- protects players on servers where Disenchant / Mill / Prospect cast
+-- time has been shortened below the global cooldown - if cast = 0.3 s
+-- a no-floor cooldown would re-enable the button mid-GCD and the next
+-- click would still trigger the equip. 1.5 s matches the standard
+-- WoW GCD and has comfortable headroom over Project Ebonhold's 1 s
+-- effective GCD; chosen after in-game iteration (1.0 felt rushed,
+-- 1.25 closer, 1.5 felt right).
+--
+-- Iteration history:
+--   * First attempt tracked GetSpellCooldown directly; the user
+--     reported the resulting swirl as "far too long" (1.5 s standard
+--     GCD vs. their 1 s GCD).
+--   * Second attempt used GetSpellInfo's cast time (PostClick-driven).
+--     GetSpellInfo returns the BASE cast time and does NOT honour
+--     haste / talent / server-side reductions, so the swirl visibly
+--     ran longer than the actual cast on shortened-cast servers.
+--   * Current: PostClick applies the floor immediately (protects the
+--     50 ms window before UNIT_SPELLCAST_START fires), then
+--     UNIT_SPELLCAST_START reads the EFFECTIVE duration from
+--     UnitCastingInfo and re-arms the lockout to match. The swirl
+--     ends with the cast, falling back to the 1.5 s floor for instant
+--     or very-short casts.
+local PROCESS_BUTTON_FLOOR_SECONDS = 1.5
+local activeLockoutToken = 0
+local function startProcessCastCooldown(spellName, duration)
+    local panel = _G["EbonClearanceOptionsProcessBags"]
+    if not panel or not panel.castBtn or not panel.castCD then
+        return
+    end
+    if not spellName or spellName == "" then
+        return
+    end
+    duration = duration or PROCESS_BUTTON_FLOOR_SECONDS
+    if duration < PROCESS_BUTTON_FLOOR_SECONDS then
+        duration = PROCESS_BUTTON_FLOOR_SECONDS
+    end
+    -- Token-stamp the lockout so a stale NS.Delay callback from the
+    -- PostClick-floor invocation doesn't re-enable the button while a
+    -- longer UNIT_SPELLCAST_START-driven lockout is still running.
+    activeLockoutToken = activeLockoutToken + 1
+    local myToken = activeLockoutToken
+    panel.castCD:SetCooldown(GetTime(), duration)
+    panel.castCD:Show()
+    panel.castBtn:Disable()
+    if NS.Delay then
+        NS.Delay(duration, function()
+            if myToken ~= activeLockoutToken then
+                return
+            end
+            local p = _G["EbonClearanceOptionsProcessBags"]
+            if not p or not p.castBtn or not p.castCD then
+                return
+            end
+            p.castCD:Hide()
+            -- Only re-enable if there's still something armed; the
+            -- rearm path may have intentionally Disable()d the button
+            -- after a queue exhaustion.
+            if p.armedSpellName then
+                p.castBtn:Enable()
+            end
+        end)
+    end
+end
+EC_compCache.startProcessCastCooldown = startProcessCastCooldown
+
+-- v2.40.1: process-spell name cache. UNIT_SPELLCAST_START's arg2 is
+-- the localised spell name, so we resolve each spell ID's name once
+-- and keep a set for O(1) membership tests in the event handler.
+-- Lazy-built on first event so it survives the file-load timing
+-- (GetSpellInfo can return nil during ADDON_LOADED on some clients).
+local processSpellNames
+local function getProcessSpellNames()
+    if processSpellNames then
+        return processSpellNames
+    end
+    processSpellNames = {}
+    local ids = {
+        EC_compCache.SPELL_DISENCHANT,
+        EC_compCache.SPELL_MILLING,
+        EC_compCache.SPELL_PROSPECTING,
+        EC_compCache.SPELL_PICK_LOCK,
+    }
+    for _, id in ipairs(ids) do
+        local n = id and GetSpellInfo(id)
+        if n and n ~= "" then
+            processSpellNames[n] = true
+        end
+    end
+    return processSpellNames
+end
+
+-- v2.40.1: cast-start driver. Reads the EFFECTIVE cast duration off
+-- UnitCastingInfo and re-arms the lockout to match. UnitCastingInfo
+-- returns startTime / endTime in milliseconds, so the difference gives
+-- a seconds duration that includes any haste / talent / server-side
+-- reductions the GetSpellInfo cast-time field misses. Floor still
+-- applies via startProcessCastCooldown.
+local castStartDriver = CreateFrame("Frame")
+castStartDriver:RegisterEvent("UNIT_SPELLCAST_START")
+castStartDriver:SetScript("OnEvent", function(_, _, unit, spellName)
+    if unit ~= "player" or not spellName then
+        return
+    end
+    if not getProcessSpellNames()[spellName] then
+        return
+    end
+    local _, _, _, _, startTime, endTime = UnitCastingInfo("player")
+    local duration = PROCESS_BUTTON_FLOOR_SECONDS
+    if startTime and endTime then
+        local effective = (endTime - startTime) / 1000
+        if effective > duration then
+            duration = effective
+        end
+    end
+    startProcessCastCooldown(spellName, duration)
+end)
 
 -- Repaints the persistent "armed" highlight on the row whose entryIndex
 -- matches EC_compCache.armedIndex. Called from rearm so any cursor
@@ -811,6 +939,45 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         castBtn:SetText("Process Next")
         self.castBtn = castBtn
         self.castBtnLabel = castBtn:GetFontString()
+
+        -- v2.40.1: post-click button lockout + cooldown swirl. The
+        -- cast macro is "/cast SpellName" followed by "/use bag slot".
+        -- If the player clicks during the GCD, /cast silently no-ops
+        -- but /use still runs - and /use on an equippable item equips
+        -- it. Players on PE who shorten Mill / Prospect / Disenchant
+        -- cast times below the GCD saw this constantly. Fix: after
+        -- each click, paint the standard cooldown swirl AND :Disable()
+        -- the button for max(cast time, 1 s). PostClick fires after
+        -- the secure click processes; we read the just-fired spell
+        -- name off the panel and start the lockout. Floor protects
+        -- against shortened cast times falling under the server's
+        -- actual GCD (1 s on Project Ebonhold).
+        local castCD = CreateFrame("Cooldown", "EbonClearanceProcessCastCD", castBtn, "CooldownFrameTemplate")
+        castCD:SetAllPoints(castBtn)
+        castCD:SetDrawEdge(false)
+        -- v2.40.1: opt out of OmniCC / CooldownCount-style numeric
+        -- overlays. The 3.3.5a CooldownFrameTemplate has no built-in
+        -- countdown text - but players running OmniCC see numbers on
+        -- every Cooldown frame in the UI unless the frame carries one
+        -- of these flags. We want the swirl only (the button text
+        -- already says "Process Next (<mode>)", a number on top reads
+        -- as visual noise).
+        castCD.noOCC = true
+        castCD.noCooldownCount = true
+        self.castCD = castCD
+
+        castBtn:SetScript("PostClick", function()
+            -- Floor-only lockout fires immediately on click. The
+            -- UNIT_SPELLCAST_START handler re-arms with the actual
+            -- effective cast duration the moment the cast bar shows
+            -- up (typically ~10-50 ms later). Without this initial
+            -- floor, a fast double-click in that pre-cast window
+            -- would slip past the lockout entirely.
+            local spellName = self.armedSpellName
+            if spellName and EC_compCache.startProcessCastCooldown then
+                EC_compCache.startProcessCastCooldown(spellName, PROCESS_BUTTON_FLOOR_SECONDS)
+            end
+        end)
 
         -- Skip arrow: advances the armed cast target to the next list
         -- entry. Lets the user reach Mill / Prospect without first

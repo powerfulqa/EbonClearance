@@ -522,6 +522,12 @@ local EC_HELP_ENTRIES = {
         a = "Process Bags hides anything the protections would also stop the vendor from selling: Keep List items, currently equipped gear, items with a 'Chance on hit:' proc (so you don't disenchant a proc weapon you might want to extract), items with a protected affix you haven't extracted yet, and unlearned tomes / recipes. Stack-size matters too - Mill and Prospect require stacks of 5+. To force a specific item through, Alt+Right-Click it and pick 'Allow Sell' (adds the itemID to the allow list) or remove it from the Keep List.",
         panel = "EbonClearanceOptionsProcessBags",
     },
+    {
+        id = "process-cooldown-swirl",
+        q = "What's the swirl on the Process Next button?",
+        a = "A short post-click lockout that lasts the spell's cast time, with a 1.5 second floor. While the swirl is up the Cast button is intentionally inert - if you click during the cast or global cooldown the |cffffd870/cast|r line would silently no-op and the follow-up |cffffd870/use|r would |cffffb84dequip|r the item instead of processing it. Wait for the swirl to clear, then click again. The floor matters on servers where Mill / Prospect / Disenchant cast times have been shortened below the GCD.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
 
     -- ===================================================================
     -- Section 6: Reporting bugs

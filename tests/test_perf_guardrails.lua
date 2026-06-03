@@ -5391,6 +5391,44 @@ do
                         and evSrc:find("mp%.enableCB:SetChecked") ~= nil,
                     "The toggle helper must be the single source of truth: after flipping DB.enabled, it MUST refresh the minimap icon AND the Main panel checkbox so a flip via any entry point keeps every UI surface in sync. Without this, panel ↔ minimap stay out of sync depending on which surface the user clicked."
                 )
+                -- v2.40.1: Process Bags cast button must paint a
+                -- cooldown swirl + disable during GCD. The macrotext
+                -- is "/cast Spell" followed by "/use bag slot" - if
+                -- /cast fails during the GCD, /use STILL runs and
+                -- equips the (equippable) item. Players on PE who've
+                -- shortened cast times below the 1.5s GCD trip this
+                -- constantly. The fix is structural: a Cooldown
+                -- overlay tied to GetSpellCooldown + a
+                -- SPELL_UPDATE_COOLDOWN listener that disables the
+                -- button while the armed spell is on CD. This test
+                -- locks the wiring so a future contributor who
+                -- "simplifies" the rearm path can't silently drop the
+                -- guard.
+                local pbpSrc = (function()
+                    local fh = io.open("EbonClearance_ProcessBagsPanel.lua", "rb")
+                    if not fh then return "" end
+                    local s = fh:read("*a") or ""
+                    fh:close()
+                    return s
+                end)()
+                check(
+                    "Test 88au: Process Bags cast button has a post-click lockout with effective-cast-time floor",
+                    pbpSrc:find('CreateFrame%("Cooldown"') ~= nil
+                        and pbpSrc:find('"CooldownFrameTemplate"') ~= nil
+                        and pbpSrc:find("local function startProcessCastCooldown") ~= nil
+                        and pbpSrc:find("EC_compCache%.startProcessCastCooldown") ~= nil
+                        and pbpSrc:find('SetScript%("PostClick"') ~= nil
+                        and pbpSrc:find("PROCESS_BUTTON_FLOOR_SECONDS%s*=%s*1") ~= nil
+                        and pbpSrc:find('RegisterEvent%("UNIT_SPELLCAST_START"%)') ~= nil
+                        and pbpSrc:find('UnitCastingInfo%("player"%)') ~= nil
+                        and pbpSrc:find("armedSpellName") ~= nil
+                        and pbpSrc:find("castBtn:Disable") ~= nil
+                        and pbpSrc:find("castBtn:Enable") ~= nil
+                        and pbpSrc:find("castCD:SetCooldown") ~= nil
+                        and pbpSrc:find("noOCC") ~= nil
+                        and pbpSrc:find("noCooldownCount") ~= nil,
+                    "Process Bags cast button must lock out after every click for max(effective cast time, 1 s). Otherwise a click during the cast-time-less-than-GCD window falls through /cast (silent fail) into /use (equips the item). Cast duration must come from UnitCastingInfo at UNIT_SPELLCAST_START (the effective value with haste/talent/server reductions applied), NOT GetSpellInfo (returns the unmodified base cast time). PostClick still applies the floor immediately so a fast double-click in the pre-cast window can't slip past. Cooldown frame must also opt out of OmniCC-style numeric overlays via noOCC + noCooldownCount."
+                )
                 check(
                     "Test 88at: Minimap right-click + LDB launcher route through EbonClearance_ToggleEnabled",
                     minimapSrc:find("DB%.enabled%s*=%s*not%s+DB%.enabled") == nil

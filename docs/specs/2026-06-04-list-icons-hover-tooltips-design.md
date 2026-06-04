@@ -1,0 +1,81 @@
+# Spec: Item icons + hover tooltips on the four editable lists
+
+**Date**: 2026-06-04
+**Status**: Approved (brainstorming complete; awaiting implementation plan)
+**Target release**: v2.41.0 (next minor - new user-facing UX feature, fully additive, no schema change)
+**Touched files**: `EbonClearance_ListWidget.lua` (the only code file); docs sync in `CHANGELOG.md`, `README.md`, `docs/ADDON_GUIDE.md`, and (only if an existing entry reads wrong) `EbonClearance_HelpPanel.lua`
+
+## Goal
+
+Make the four editable item lists more interactive:
+
+1. **Hover tooltip** - mousing over a list row brings up that item's full tooltip, anchored at the cursor.
+2. **Icon instead of the ID number** - the green item ID currently shown at the start of each row is replaced by the item's icon.
+
+Scope is the four editable lists built by `CreateListUI`: **Sell List, Account Sell List, Keep List, Delete List**. The Process Bags queue, the personal Stats Top-5, and the Guild most-sold rows are explicitly out of scope (the Guild panel already has hover tooltips; the Stats Top-5 is a single multi-line text block, not real rows).
+
+## Decisions locked (via brainstorming)
+
+- **Scope:** the four editable `CreateListUI` lists only.
+- **ID handling:** the green item ID is *fully replaced* by the icon. The raw ID is no longer rendered on the row. It remains reachable two ways that already exist: the list's Search box still matches on the ID string, and the hover tooltip shows the full item.
+- **Implementation:** Approach A - extend the existing pooled row factory in place; reuse the `GetItemInfo` call that already runs per row; copy the Guild panel's hover pattern verbatim. No new helper abstraction (YAGNI), no Blizzard `ItemButton` rewrite.
+
+## Architecture
+
+All changes live in `EbonClearance_ListWidget.lua`, in two spots.
+
+### 1. Row factory (`EC_compCache.makeListRowFactory` -> `getRow`)
+
+Each pooled row gains one Texture plus hover wiring, created once at mint time and reused by the pool:
+
+- `row.icon = row:CreateTexture(nil, "ARTWORK")`, size **18x18**, anchored `LEFT, row, LEFT, 2, 0`, with `SetTexCoord(0.07, 0.93, 0.07, 0.93)` to crop the stock icon border for a clean square.
+- The existing `text` FontString re-anchors its LEFT from `row, LEFT, +2` to `row.icon, RIGHT, +4`. Its RIGHT -> `rm.LEFT` anchor is unchanged, so it still stretches with the (resizable) content frame.
+- Hover wired once at mint, copying the Guild panel pattern (`EbonClearance_GuildPanel.lua`):
+  - `row:EnableMouse(true)`
+  - `OnEnter`: if `self.itemID` then `GameTooltip:SetOwner(self, "ANCHOR_CURSOR")`, `GameTooltip:SetHyperlink("item:" .. self.itemID)`, `GameTooltip:Show()`.
+  - `OnLeave`: `GameTooltip:Hide()`.
+
+### 2. Refresh loop (the per-row body, around the current line 481)
+
+- Capture the icon texture from the **existing** call (no new API call): `local name, _, _, _, _, _, _, _, _, itemTexture = GetItemInfo(id)`.
+- `row.icon:SetTexture(itemTexture or "Interface\\Icons\\INV_Misc_QuestionMark")` - question-mark fallback for not-yet-cached items.
+- `row.itemID = id` so the already-wired `OnEnter` resolves the right tooltip.
+- Row text drops the green ID prefix: `string.format("%s%s%s", name, affixTag, procTag)` (was `"|cffb6ffb6%d|r  %s%s%s"`). The `(affix-gated)` and `(Hit-proc)` tags are unchanged.
+
+## Edge cases (already handled by existing code)
+
+- **Uncached item:** `name` is nil -> the existing tooltip-prime + `pendingRetry` path requeues a Refresh in 1.5 s. Until then the row shows the question-mark icon and the existing `ItemID: <n>` placeholder name. On retry both fill in. No new logic.
+- **Search / sort:** unchanged. Search still matches the ID string (the ID is simply not rendered anymore); the name-sort precompute is untouched.
+- **Remove button / Clear All / reactive width:** untouched. The icon is fixed-size, so it introduces no `EC_PANEL_WIDTH` snapshot and no `test_layout_reactivity` concern. Reusing the existing `GetItemInfo` introduces no `test_perf_guardrails` concern.
+
+## Testing
+
+1. `luac -p EbonClearance_ListWidget.lua` (local syntax check).
+2. All five invariant suites stay green: `test_layout_reactivity`, `test_perf_guardrails`, `test_comment_hygiene`, `test_comms_version`, `test_guildshare`. Before editing, grep the test files for any assertion pinned to the old `|cffb6ffb6` row-text format and update it in lockstep if one exists.
+3. Repo grep for U+2014 returns zero.
+4. In-game smoke on Ebonhold, for each of the four lists (Sell / Account Sell / Keep / Delete):
+   - icons render for cached items;
+   - an uncached item shows the question-mark icon, then fills in on the 1.5 s retry;
+   - hovering a row shows the item tooltip at the cursor; moving off hides it;
+   - Remove, Clear All, Search, and both sort buttons still work.
+
+## Docs sync (project rule)
+
+Player-facing visual change to existing lists; no new toggle, command, or schema:
+
+- **CHANGELOG.md** - `### v2.41.0` stanza.
+- **README.md** - one feature bullet: list rows now show item icons + a hover tooltip.
+- **docs/ADDON_GUIDE.md** - one line under the list-widget description noting rows carry an icon + cursor-anchored hover tooltip.
+- **EbonClearance_HelpPanel.lua** - touch only if an existing list-related FAQ entry would now read wrong; no new entry needed (no new control). Check during implementation.
+- **CLAUDE.md** - no change (file count and test-invariant list both unchanged).
+- **NOTICE.md** - no change.
+
+## Version
+
+`v2.41.0` - minor bump (new user-facing UX feature, fully additive, downgrade-safe).
+
+## Out of scope
+
+- Process Bags queue, personal Stats Top-5, Guild most-sold rows.
+- Click / shift-click-to-link behaviour on rows (hover tooltip only).
+- Keeping the raw ID visible on the row in any form.

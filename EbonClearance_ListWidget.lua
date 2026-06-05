@@ -436,6 +436,21 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
 
     local rowFactory = EC_compCache.makeListRowFactory(content, setTableName)
 
+    -- v2.41.3: empty-state line shown when Refresh renders zero rows - either
+    -- the list has no items, or the search / rarity filter matched nothing.
+    -- Greyed via GameFontDisableSmall. It wraps via an explicit SetWidth set
+    -- in Refresh from the live content width - two-point anchoring does NOT
+    -- give a FontString a reliable wrap width on 3.3.5a (it clips to one
+    -- line); this mirrors MakeLabel's SetWidth + SetWordWrap approach.
+    local emptyFS = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    emptyFS:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -8)
+    emptyFS:SetJustifyH("LEFT")
+    emptyFS:SetJustifyV("TOP")
+    if emptyFS.SetWordWrap then
+        emptyFS:SetWordWrap(true)
+    end
+    emptyFS:Hide()
+
     local function MatchesSearch(id, name, searchText)
         if not searchText or searchText == "" then
             return true
@@ -578,7 +593,27 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         end
 
         rowFactory.setActiveRows(shown)
-        content:SetHeight(math.max(1, (shown * 22) + 8))
+        if shown == 0 then
+            -- Explicit wrap width from the live content width (mirrors
+            -- MakeLabel); content tracks the panel via box:OnSizeChanged.
+            emptyFS:SetWidth(math.max(60, (content:GetWidth() or 200) - 8))
+            -- #keys == 0 means the list itself is empty; otherwise items
+            -- exist but the search / rarity filter hid them all.
+            if #keys == 0 then
+                emptyFS:SetText(
+                    "This list is empty. Add an item by ID or name above, "
+                        .. "or Alt+Right-Click an item in your bags."
+                )
+            else
+                emptyFS:SetText("No items match your search.")
+            end
+            emptyFS:Show()
+            -- Height from the wrapped text so 2-3 line messages aren't clipped.
+            content:SetHeight(math.max(44, (emptyFS:GetStringHeight() or 28) + 16))
+        else
+            emptyFS:Hide()
+            content:SetHeight(math.max(1, (shown * 22) + 8))
+        end
         -- Scroll-bar visibility auto-updates via the OnScrollRangeChanged hook
         -- wired in EC_HookScrollbarAutoHide(scroll) below; SetHeight here
         -- triggers that hook, no manual call needed.

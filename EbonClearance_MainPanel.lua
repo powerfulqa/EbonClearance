@@ -348,7 +348,7 @@ function NS.RefreshStats()
             end
         end
         if not any then
-            rows[#rows + 1] = "  |cff888888None yet|r"
+            rows[#rows + 1] = "  |cff888888Nothing sold yet.|r"
         end
         panel.statsQualityBreakdown:SetText(table.concat(rows, "\n"))
     end
@@ -370,7 +370,7 @@ function NS.RefreshStats()
             end
         end
         if not any then
-            rows[#rows + 1] = "  |cff888888None yet|r"
+            rows[#rows + 1] = "  |cff888888Nothing deleted yet.|r"
         end
         panel.statsDeletedByQuality:SetText(table.concat(rows, "\n"))
     end
@@ -378,7 +378,7 @@ function NS.RefreshStats()
     if panel.statsMostSold then
         local top = GetTopNItems(src.soldItemCounts, 5)
         if #top == 0 then
-            panel.statsMostSold:SetText("|cffffd200Top 5 Most Sold|r\n  |cff888888None yet|r")
+            panel.statsMostSold:SetText("|cffffd200Top 5 Most Sold|r\n  |cff888888Nothing sold yet.|r")
         else
             local rows = { "|cffffd200Top 5 Most Sold|r" }
             for i = 1, #top do
@@ -396,7 +396,7 @@ function NS.RefreshStats()
     if panel.statsMostDeleted then
         local top = GetTopNItems(src.deletedItemCounts, 5)
         if #top == 0 then
-            panel.statsMostDeleted:SetText("|cffffd200Top 5 Most Deleted|r\n  |cff888888None yet|r")
+            panel.statsMostDeleted:SetText("|cffffd200Top 5 Most Deleted|r\n  |cff888888Nothing deleted yet.|r")
         else
             local rows = { "|cffffd200Top 5 Most Deleted|r" }
             for i = 1, #top do
@@ -432,7 +432,7 @@ function NS.RefreshStats()
             end
         end
         if not any then
-            rows[#rows + 1] = "  |cff888888None yet|r"
+            rows[#rows + 1] = "  |cff888888Nothing processed yet.|r"
         end
         panel.statsProcessTotals:SetText(table.concat(rows, "\n"))
     end
@@ -453,7 +453,7 @@ function NS.RefreshStats()
         end)
         local rows = { "|cffffd200Top Zones (gold earned)|r" }
         if #entries == 0 then
-            rows[#rows + 1] = "  |cff888888None yet|r"
+            rows[#rows + 1] = "  |cff888888No zones tracked yet.|r"
         else
             local cap = math.min(#entries, 5)
             for i = 1, cap do

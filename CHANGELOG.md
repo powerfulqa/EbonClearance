@@ -5,6 +5,16 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.41.3
+
+Patch release. Clearer empty states across the UI.
+
+- **The Sell / Account Sell / Keep / Delete lists now explain themselves when empty.** Previously an empty list (or a search / rarity filter that matched nothing) showed a blank box. An empty list now reads "This list is empty. Add an item by ID or name above, or Alt+Right-Click an item in your bags."; a search or filter that hides everything shows "No items match your search."
+- **Stats empty states reworded** from the terse "None yet" to context-specific lines: "Nothing sold yet." / "Nothing deleted yet." / "Nothing processed yet." / "No zones tracked yet."
+- **Process Bags** now says "Nothing to process right now." instead of "Nothing eligible." (plainer wording).
+
+Safe overwrite from v2.41.2. No schema changes.
+
 ### v2.41.2
 
 Patch release. Two Process Bags polish fixes from real player reports.

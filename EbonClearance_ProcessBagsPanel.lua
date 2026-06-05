@@ -194,7 +194,7 @@ function EC_compCache.rearmProcessButton()
             panel.castBtnLabel:SetText("Process Next")
         end
         if panel.nextItemLabel then
-            panel.nextItemLabel:SetText("|cffaaaaaaNothing eligible.|r")
+            panel.nextItemLabel:SetText("|cffaaaaaaNothing to process right now.|r")
         end
     end
     EC_compCache.updateProcessSelection()

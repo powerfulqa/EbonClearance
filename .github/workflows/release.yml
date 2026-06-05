@@ -49,7 +49,16 @@ jobs:
           sed -i "s/^local ADDON_VERSION = \"v[0-9]*\.[0-9]*\.[0-9]*\"/local ADDON_VERSION = \"$VERSION\"/" EbonClearance_Events.lua
 
       - name: Install Lua 5.1
-        run: sudo apt-get update && sudo apt-get install -y lua5.1
+        # Retry: the apt mirror occasionally returns exit 100 (a transient
+        # package-fetch failure) which has red-failed otherwise-green runs.
+        # Up to 3 attempts; the final lua5.1 -v asserts the install actually
+        # succeeded so a genuine failure still fails the step loudly.
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y lua5.1 && break
+            echo "apt attempt $i failed; retrying in 5s..." && sleep 5
+          done
+          lua5.1 -v
 
       - name: Verify before packaging (syntax + all test suites)
         # v2.39.0: gate the release on the same checks CI runs on master, so a

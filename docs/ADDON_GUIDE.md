@@ -627,6 +627,16 @@ Read this section before touching any of the subsystems below. Each item is
 a non-obvious design choice that has silently broken in the past (or would
 if you "simplified" it).
 
+Many of these (and a few others) also carry an inline `EC-TRAP:` marker at
+the exact line in the code. Before you delete or "simplify" anything that
+looks like dead code, cruft, or a bug, run `grep -rn "EC-TRAP:"` - every hit
+is intentional code that has misled someone before. Read the marker and
+follow its pointer (a locking test, a section here, or a
+`docs/CODE_REVIEW.md` item) before changing it. Never remove an `EC-TRAP:`
+line as part of a cleanup. When you add a new intentional-but-looks-wrong
+construct, mark it the same way: `-- EC-TRAP: <what it looks like>. Do NOT
+<wrong action> - <what breaks>. See <pointer>.`
+
 ### Saved-variable migration order is load-bearing
 
 `EnsureDB()` does two migrations in a specific order that must not be reshuffled:

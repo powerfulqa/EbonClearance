@@ -408,6 +408,10 @@ function EC_compCache.bagSlotAffixData(bag, slot)
         -- that DO have a roman suffix but failed parseAffixFromTitle
         -- for some other reason, are NOT cached so the next call
         -- retries cleanly after the client finishes loading the link.
+        -- EC-TRAP: do NOT cache `false` unconditionally on a nil parse. A
+        -- cold-tooltip scan would then mask the affix for the whole session
+        -- and the item gets vendored while the tooltip shows Keep. The
+        -- bagSlotAffixData cache-poison test in tests/test_perf_guardrails.lua locks this.
         local stableNoAffix = titleText ~= "" and titleText:match(" [IVXLCDM]+$") == nil
         if itemString and stableNoAffix then
             EC_compCache.affixDataCache[itemString] = false

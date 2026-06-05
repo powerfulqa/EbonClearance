@@ -927,6 +927,10 @@ local function EnsureDB()
     -- to true on every load - any prior `false` value from when the
     -- toggle was user-controlled gets reset. The Scavenger Settings
     -- panel's two checkboxes were removed in the same change.
+    -- EC-TRAP: these look like dead flags (forced true, no UI) but are NOT
+    -- dead - EbonClearance_Companion.lua's chat + bubble filters still read
+    -- them. The toggles were removed; the hiding is now always-on. Do NOT
+    -- delete these or the Companion read-sites.
     DB.hideGreedyChat = true
     DB.hideGreedyBubbles = true
 
@@ -942,6 +946,9 @@ local function EnsureDB()
     -- characters not in their old DB.allowedChars set. DB.allowedChars
     -- itself stays in the SV (dormant, ignored) so a downgrade to a
     -- pre-v2.30.x version restores the user's list.
+    -- EC-TRAP: dormant on purpose - do NOT remove this gate or the dormant
+    -- DB.allowedChars field. Forcing it false guards a downgrade regression
+    -- (the old per-character allowlist locking users out). See comment above.
     DB.enableOnlyListedChars = false
 
     if type(DB.inventoryWorthTotal) ~= "number" then
@@ -1718,6 +1725,7 @@ local function EC_RecordInventoryWorthSample()
     DB.inventoryWorthCount = (DB.inventoryWorthCount or 0) + 1
 end
 
+-- EC-TRAP: this raw global override must NOT be "fixed" to hooksecurefunc.
 -- v2.37.4 (audit issue #2): this is one of the few raw global overrides
 -- left in the addon. hooksecurefunc is NOT a drop-in swap here because
 -- the hook below intentionally SHORT-CIRCUITS the original handler when
@@ -4112,6 +4120,11 @@ end
 -- qualityPass / whitelistPass) into one combined check -- you will silently
 -- break the grey-always-sold guarantee that users and docs rely on.
 -- Blacklist and IsEquippedItem are the only things that can veto a sale.
+-- EC-TRAP: (1) do NOT combine isJunk / qualityPass / whitelistPass into
+-- "one cleaner check" - that breaks the grey-always-sold guarantee (see
+-- ADDON_GUIDE "Grey items are always sold"). (2) EC_AnnotateTooltip in
+-- EbonClearance_Tooltip.lua deliberately MIRRORS this logic instead of
+-- calling it; do NOT unify them. See docs/CODE_REVIEW.md item 6.
 local function EC_IsSellable(bag, slot, junkOnly)
     local itemID = GetContainerItemID(bag, slot)
     if not itemID then

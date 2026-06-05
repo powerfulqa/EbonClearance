@@ -163,6 +163,11 @@ local function EC_GreedyEventFilter(self, _event, msg, author)
     return false
 end
 
+-- EC-TRAP: two chat-filter systems coexist on purpose. This one
+-- (EC_GreedyEventFilter) also drives loot-silence stuck detection via the
+-- speech timestamps. Do NOT merge it with, or delete, the other system
+-- (ApplyGreedyChatFilter below) without the side-by-side test. See
+-- docs/CODE_REVIEW.md item 1.
 local function EC_InstallGreedyMuteOnce()
     if EC_greedyFiltersInstalled then
         return
@@ -302,6 +307,9 @@ local function GreedyScavengerChatFilter(self, _event, _msg, author)
     return false
 end
 
+-- EC-TRAP: second of two intentional chat-filter systems (see
+-- EC_InstallGreedyMuteOnce above). Do NOT assume this is redundant and
+-- delete it. See docs/CODE_REVIEW.md item 1.
 local function ApplyGreedyChatFilter()
     local DB = NS.DB
     for i = 1, #CHAT_FILTER_EVENTS do

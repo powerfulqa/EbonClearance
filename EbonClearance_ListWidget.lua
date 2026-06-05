@@ -284,6 +284,8 @@ end
 -- (search, sortNameBtn, clearAllBtn, rarityDD).
 function EC_compCache.buildListSearchAndSortRow(box, setTableName)
     local divider = box:CreateTexture(nil, "ARTWORK")
+    -- EC-TRAP: SetTexture(r,g,b,a) draws a solid colour on 3.3.5a. Do NOT
+    -- "fix" this to SetColorTexture - that API does not exist on this client.
     divider:SetTexture(0.4, 0.35, 0.25, 0.8)
     divider:SetHeight(1)
     divider:SetPoint("TOPLEFT", 0, -50)

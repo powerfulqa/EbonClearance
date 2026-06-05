@@ -83,6 +83,10 @@ end
 -- and clear the flag when the tooltip is reset.
 local EC_tooltipHooked = false
 
+-- EC-TRAP: this deliberately MIRRORS EC_IsSellable (EbonClearance_Events.lua)
+-- rather than calling it - it needs the WHY (per-outcome labels), not a
+-- yes/no. Do NOT refactor the two into one shared function. See
+-- docs/CODE_REVIEW.md item 6.
 local function EC_AnnotateTooltip(tooltip)
     local DB = NS.DB
     local ADB = NS.ADB

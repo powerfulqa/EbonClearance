@@ -157,6 +157,10 @@ StaticPopupDialogs["EBONCLEARANCE_UPDATE_URL"] = {
 -- which errors with "Unknown link type" (and trips other addons that hook
 -- SetHyperlink). Returning early for our link avoids that path entirely;
 -- every other link is forwarded to the original untouched.
+-- EC-TRAP: SetItemRef is REPLACED (not hooksecurefunc'd) on purpose - the
+-- stock 3.3.5a handler errors on our custom "ecupdate" link type. Do NOT
+-- swap this to a hook. The comment above explains; every other link type
+-- is forwarded to the original untouched.
 local origSetItemRef = SetItemRef
 function SetItemRef(link, text, button, chatFrame)
     if type(link) == "string" and link:sub(1, 9) == "ecupdate:" then

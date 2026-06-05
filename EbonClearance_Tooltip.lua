@@ -29,7 +29,7 @@
 --     normaliseAffixDesc, playerHasAffixDescription, isDowngradeVsEquipped,
 --     getEquippedILvl, INVTYPE_SLOTS, baselineProtectedIDs, qualityNames
 --   * NS.DB / NS.ADB - captured at function entry
---   * NS.IsAddonEnabledForChar (EbonClearance.lua) - early-out gate
+--   * NS.IsAddonEnabledForChar (EbonClearance_Events.lua) - early-out gate
 --   * Various WoW globals - ITEM_QUALITY_COLORS, GetItemInfo, etc.
 
 local NS = select(2, ...)

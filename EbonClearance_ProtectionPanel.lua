@@ -233,7 +233,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             DB.protectAffixedRareItems = cb:GetChecked() and true or false
             PlaySound("igMainMenuOptionCheckBoxOn")
             -- Same refresh as the second autoAffixCB OnClick handler
-            -- below (line ~7392). This first handler is replaced by
+            -- below (the second SetScript in this build callback). This first handler is replaced by
             -- the second a few lines later within the same build
             -- callback, so the body never runs in practice - but the
             -- refresh is included for symmetry so the verdict-toggle

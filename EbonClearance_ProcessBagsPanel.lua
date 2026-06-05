@@ -31,9 +31,9 @@
 --     buildProcessSummary, processCache, initPanel, registerWidth,
 --     setPanelWidth, refreshLayouts
 --   * NS.DB - captured at function entry per helper / OnShow
---   * NS.MakeHeader, NS.MakeLabel (EbonClearance.lua) - panel-text
+--   * NS.MakeHeader, NS.MakeLabel (EbonClearance_Events.lua) - panel-text
 --     primitives; NS-exposed for split files
---   * NS.PrintNice, NS.PrintNicef (EbonClearance.lua) - chat output
+--   * NS.PrintNice, NS.PrintNicef (EbonClearance_Events.lua) - chat output
 --   * Various WoW globals - CreateFrame, UIDropDownMenu_*,
 --     GameTooltip, PlaySound, InCombatLockdown, GetBindingKey, etc.
 

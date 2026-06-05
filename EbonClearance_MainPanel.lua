@@ -20,11 +20,11 @@
 --   * The MainOptions OnShow handler which composes RefreshStats +
 --     BuildMainPanel through EC_compCache.initPanel
 --
--- The panel-infrastructure helpers (MakeHeader, MakeLabel,
--- AddCheckbox, AddSlider, EC_PANEL_WIDTH, EC_UpdatePanelWidth,
--- EC_compCache.initPanel, registerWidth, setPanelWidth, etc.) all
--- STAY in EbonClearance.lua for now; they're shared across every
--- panel and will move in a later stage.
+-- The panel-infrastructure helpers (EC_PANEL_WIDTH, initPanel,
+-- registerWidth, setPanelWidth, etc.) live in
+-- EbonClearance_PanelInfra.lua, and the widget primitives (MakeHeader,
+-- MakeLabel, AddCheckbox, AddSlider) in EbonClearance_PanelWidgets.lua;
+-- both are exposed on NS and shared across every panel.
 --
 -- Cross-file dependencies satisfied by NS:
 --   * NS.compCache (Core) - initPanel, setPanelWidth

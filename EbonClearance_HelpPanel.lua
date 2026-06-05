@@ -15,7 +15,7 @@
 --   * NS.DB         (per-character SavedVariables, captured at OnShow)
 --   * NS.MakeHeader / NS.MakeLabel (panel-text primitives)
 --   * NS.FitScrollContent (scroll-content height fitter)
---   * NS.EC_WrapPanelInScrollFrame (scroll-wrap helper)
+--   * (scroll-wrapping is handled inside EC_compCache.initPanel, not called directly here)
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache

@@ -19,7 +19,7 @@
 --   * EC_InstallBagContextHookOnce - the
 --     ContainerFrameItemButton_OnModifiedClick hook installer.
 --     Exposed as NS.InstallBagContextHookOnce for the ADDON_LOADED
---     branch in EbonClearance.lua.
+--     branch in EbonClearance_Events.lua.
 --
 -- Local IsInSet helper carried along (same pattern as Vendor /
 -- BagDisplay / Tooltip).
@@ -29,8 +29,8 @@
 --     playerHasAffixDescription, itemHasChanceOnHit, etc.
 --   * NS.DB / NS.ADB - captured at function entry
 --   * NS.AddItemToList / NS.RemoveItemFromList / NS.FindAddConflict
---     (EbonClearance.lua) - list-mutation helpers driven by row clicks
---   * NS.PrintNice / PrintNicef (EbonClearance.lua)
+--     (EbonClearance_Events.lua) - list-mutation helpers driven by row clicks
+--   * NS.PrintNice / PrintNicef (EbonClearance_Events.lua)
 --   * NS.compCache.openPanelToList - opens the relevant settings panel
 --     via _G[<panel-name>] lookup (panels are named frames)
 --   * Various WoW globals - GameTooltip, GetCursorPosition,

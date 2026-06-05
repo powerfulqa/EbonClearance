@@ -7,9 +7,9 @@
 -- item 4. This file owns the Process Bags ENGINE (the eligibility
 -- predicates and the bag-walk summary). The Process Bags PANEL (UI
 -- side, including rearmProcessButton / refreshProcessPanel /
--- updateProcessSelection / skipProcessTarget) stays in EbonClearance.lua
--- for Stage 8 because it pulls in a dense web of UI-building helpers
--- (MakeHeader, AddCheckbox, CreateListUI, EC_FitScrollContent, etc.).
+-- updateProcessSelection / skipProcessTarget) lives in
+-- EbonClearance_ProcessBagsPanel.lua, which composes the UI-building
+-- helpers (MakeHeader, AddCheckbox, CreateListUI, FitScrollContent, etc.).
 --
 -- Moved into this file:
 --   * Spell ID constants: SPELL_DISENCHANT, SPELL_MILLING, SPELL_PROSPECTING,
@@ -27,23 +27,23 @@
 --   * NS.compCache              (Core) - eligibility caches
 --                                 (processCache, chanceOnHitCache,
 --                                 affixDataCache, etc.)
---   * NS.scanTooltip            (EbonClearance.lua) - the private named
+--   * NS.scanTooltip            (EbonClearance_Events.lua) - the private named
 --                                 GameTooltip used for SetBagItem scans
---   * NS.DB / NS.ADB            (EbonClearance.lua via EnsureDB /
+--   * NS.DB / NS.ADB            (EbonClearance_Events.lua via EnsureDB /
 --                                 EnsureAccountDB) - captured as
 --                                 `local DB = NS.DB` at the start of
 --                                 each function that uses it
---   * NS.PrintNicef             (EbonClearance.lua) - chat output for
+--   * NS.PrintNicef             (EbonClearance_Events.lua) - chat output for
 --                                 the Process panel's status lines
---   * NS.Delay                  (EbonClearance.lua) - timer helper
---   * NS.IsAddonEnabledForChar  (EbonClearance.lua) - per-character
+--   * NS.Delay                  (EbonClearance_Events.lua) - timer helper
+--   * NS.IsAddonEnabledForChar  (EbonClearance_Events.lua) - per-character
 --                                 enable gate
 --
 -- Two cached values resolved at file load:
 --   * EC_compCache.PICK_LOCK_NAME runs GetSpellInfo(1804) once. If
 --     GetSpellInfo returns nil at file-load time (rare; the spell DB
 --     should be populated by then on 3.3.5a) the UNIT_SPELLCAST_SUCCEEDED
---     handler in EbonClearance.lua re-resolves on first nil.
+--     handler in EbonClearance_Events.lua re-resolves on first nil.
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache

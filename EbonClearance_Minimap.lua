@@ -20,23 +20,23 @@
 --                            ChocolateBar, etc. get the same launcher in
 --                            their preferred frame.
 --
--- These are wired from EbonClearance.lua's ADDON_LOADED branch via the
--- existing names (still file-scope locals in EbonClearance.lua that we
--- expose on NS below). Existing call sites in EbonClearance.lua
+-- These are wired from EbonClearance_Events.lua's ADDON_LOADED branch via the
+-- existing names (still file-scope locals in EbonClearance_Events.lua that we
+-- expose on NS below). Existing call sites in EbonClearance_Events.lua
 -- (PLAYER_LOGIN, slash command "/ec minimap") read NS-qualified names.
 --
 -- Cross-file dependencies read inline:
 --   * NS.compCache               (Core)
 --   * NS.DB / NS.ADB             - captured at function entry
 --   * NS.PreviewSellable         (Vendor) - tooltip "Sellable now: N"
---   * NS.CopperToColoredText     (EbonClearance.lua) - tooltip est. value
---   * NS.GetFreeBagSlots         (EbonClearance.lua) - tooltip free slots
---   * NS.PrintNice / PrintNicef  (EbonClearance.lua)
---   * NS.TARGET_NAME             (EbonClearance.lua, refreshed by EnsureDB)
+--   * NS.CopperToColoredText     (EbonClearance_Events.lua) - tooltip est. value
+--   * NS.GetFreeBagSlots         (EbonClearance_Events.lua) - tooltip free slots
+--   * NS.PrintNice / PrintNicef  (EbonClearance_Events.lua)
+--   * NS.TARGET_NAME             (EbonClearance_Events.lua, refreshed by EnsureDB)
 --   * _G["EbonClearanceOptionsMain"]      - main settings panel (named frame)
 --   * _G["EbonClearanceOptionsProcessBags"] - Process Bags panel (named frame)
 --   * EbonClearance_ToggleSettings / ToggleEnabled / ForceSell - WoW
---     globals from the keybinding handler block in EbonClearance.lua
+--     globals from the keybinding handler block in EbonClearance_Events.lua
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache

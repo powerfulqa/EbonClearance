@@ -27,12 +27,12 @@
 --
 -- Cross-file API surface this file relies on:
 --   * NS.compCache              (Core)  - target table for all helpers
---   * NS.scanTooltip            (EbonClearance.lua) - the private named
+--   * NS.scanTooltip            (EbonClearance_Events.lua) - the private named
 --                                 GameTooltip used by every scan call.
 --                                 We bind it lazily via NS.scanTooltip
 --                                 inside function bodies, NOT as a
 --                                 file-load upvalue, because the frame
---                                 is created by EbonClearance.lua's
+--                                 is created by EbonClearance_Events.lua's
 --                                 main chunk which runs AFTER this
 --                                 file loads. By the time any of these
 --                                 functions is first called (BAG_UPDATE,
@@ -52,7 +52,7 @@ local NS = select(2, ...)
 local EC_compCache = NS.compCache
 
 -- Read-through accessor so each call resolves NS.scanTooltip fresh.
--- EbonClearance.lua creates the frame and writes NS.scanTooltip during
+-- EbonClearance_Events.lua creates the frame and writes NS.scanTooltip during
 -- its main chunk; this file loads first, so any file-load attempt to
 -- capture the frame as an upvalue would store nil. Wrap in a function
 -- and call it inside each method body.

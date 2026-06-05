@@ -175,7 +175,7 @@ local EC_scavStateBootstrapped = false
 -- DB.autoLootCycle is on, so users not running the cycle pay no extra work
 -- on the chat-event path. Lives on EC_compCache (declared in
 -- EbonClearance_Core.lua) so EbonClearance_Companion.lua's chat filter and
--- EbonClearance.lua's EC_IsLootSilenceStuck can both access it via the
+-- EbonClearance_Events.lua's EC_IsLootSilenceStuck can both access it via the
 -- shared cache table after the file split. See docs/CODE_REVIEW.md item 4.
 -- Ring of GetTime() values pushed on every LOOT_CLOSED (player corpse loot
 -- completed). Pruned in place inside EC_IsLootSilenceStuck on each pet-tick
@@ -1643,7 +1643,7 @@ local function EC_RenameProfile(oldName, newName)
 end
 -- Stage 8e-viii: profile-management helpers exposed on NS so the
 -- ProfilesPanel (extracted into EbonClearance_ProfilesPanel.lua) can
--- reach them. Bodies remain file-scope locals in EbonClearance.lua;
+-- reach them. Bodies remain file-scope locals in EbonClearance_Events.lua;
 -- slash command handlers + the panel's button OnClicks both resolve
 -- through the same NS entries.
 NS.SaveProfile = EC_SaveProfile
@@ -1676,7 +1676,7 @@ local function PrintNicef(fmt, ...)
 end
 
 -- Expose to split files (Stage 6+ uses NS.PrintNice / NS.PrintNicef from
--- EbonClearance_BagDisplay.lua's sellinfo trace output). EbonClearance.lua's
+-- EbonClearance_BagDisplay.lua's sellinfo trace output). EbonClearance_Events.lua's
 -- own call sites keep using the file-scope upvalues.
 NS.PrintNice = PrintNice
 NS.PrintNicef = PrintNicef
@@ -4547,13 +4547,13 @@ end
 
 local function DoNextAction()
     -- v2.38.2: Turbo Mode runs a batch of N DoNextAction calls per tick
-    -- (line 4596). When the queue exhausts mid-batch, the remaining
-    -- iterations would re-enter the `not action` branch and re-fire
-    -- FinishRun N-1 extra times - resulting in N x "Vendoring complete!"
-    -- chat spam AND N x bumps of DB.totalCopper / EC_session.copper.
+    -- (in the OnUpdate batch loop below). When the queue exhausts mid-batch,
+    -- the remaining iterations would re-enter the `not action` branch and
+    -- re-fire FinishRun N-1 extra times - resulting in N x "Vendoring
+    -- complete!" chat spam AND N x bumps of DB.totalCopper / EC_session.copper.
     -- FinishRun sets vendorRunning to false, so checking it here gates
     -- the post-finish iterations. Belt-and-braces with the batch loop's
-    -- own break (line 4598).
+    -- own break below.
     if not EC_compCache.vendorRunning then
         return
     end

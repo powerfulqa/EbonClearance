@@ -10,7 +10,7 @@
 --
 -- The Protection Settings panel (BlacklistSettingsPanel - auto-protect
 -- toggles for equipped / upgrades / sets / affixes / chance-on-hit)
--- stays in EbonClearance.lua for now; it's a different domain
+-- stays in EbonClearance_Events.lua for now; it's a different domain
 -- (settings, not list management) and will move in a later stage.
 --
 -- Moved into this file:

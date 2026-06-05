@@ -22,7 +22,7 @@
 --     The hook OnUpdate watches StaticPopup1 for DELETE_* variants and
 --     auto-confirms when the queued deletion (EC_compCache.pendingDelete)
 --     names an item on DB.deleteList. Exposed as NS.HookDeletePopupOnce
---     so EbonClearance.lua's ADDON_LOADED branch can install it once.
+--     so EbonClearance_Events.lua's ADDON_LOADED branch can install it once.
 --
 -- Cross-file dependencies (read at call time):
 --   * EC_compCache.pendingDelete - shared cache field, promoted Stage 5 prep
@@ -34,7 +34,7 @@
 --     EC_PreviewSellable, EC_IsMerchantAllowed (the merchant cycle itself)
 --   * EC_manualSell (manual-sell attribution via hooksecurefunc)
 --   * EC_compCache.isQuestItem helper
--- All of those stay in EbonClearance.lua for now and will be extracted
+-- All of those stay in EbonClearance_Events.lua for now and will be extracted
 -- in future stages when the cross-file plumbing for the helpers they
 -- depend on (PrintNice, EC_Delay, EC_session, EC_lootCycleState, STATE,
 -- EC_GetItemPrice, EC_IsAddonEnabledForChar, EC_RecordInventoryWorthSample,

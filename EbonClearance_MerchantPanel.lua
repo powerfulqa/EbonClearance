@@ -21,12 +21,12 @@
 --   * NS.compCache (Core) - initPanel, setPanelWidth, registerWidth,
 --     refreshLayouts, getBindType
 --   * NS.DB captured at OnShow entry
---   * NS.MakeHeader / NS.MakeLabel (EbonClearance.lua) - panel text;
+--   * NS.MakeHeader / NS.MakeLabel (EbonClearance_Events.lua) - panel text;
 --     NS-exposed in Stage 8e-i.
 --   * NS.AddCheckbox / NS.AddSlider / NS.ColorTextByQuality /
---     NS.StyleInputBox / NS.FitScrollContent (EbonClearance.lua) -
+--     NS.StyleInputBox / NS.FitScrollContent (EbonClearance_Events.lua) -
 --     panel widget primitives; NS-exposed as Stage 8e-ii prep.
---   * NS.PrintNice / NS.PrintNicef (EbonClearance.lua) - chat output.
+--   * NS.PrintNice / NS.PrintNicef (EbonClearance_Events.lua) - chat output.
 --   * Various WoW globals - CreateFrame, UIDropDownMenu_*,
 --     PlaySound, GameTooltip, etc.
 
@@ -36,10 +36,10 @@ local EC_compCache = NS.compCache
 -- Quality-threshold options shared by the Merchant Settings panel.
 --
 -- The table is constructed inside the OnShow build callback (not at file
--- load time) because this file loads BEFORE EbonClearance.lua and the
+-- load time) because this file loads BEFORE EbonClearance_Events.lua and the
 -- NS.ColorTextByQuality binding doesn't exist yet at load. Eager table
 -- construction would call nil here. The build callback runs lazily on
--- first OnShow, by which time EbonClearance.lua has loaded and NS is
+-- first OnShow, by which time EbonClearance_Events.lua has loaded and NS is
 -- fully populated. The OnShow build is gated by initPanel's "build
 -- only once" lock so this evaluates exactly once per session, same as
 -- the original file-scope upvalue.

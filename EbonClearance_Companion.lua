@@ -20,11 +20,11 @@
 --   * NS.compCache.lastScavSpokeAt    written by EC_GreedyEventFilter
 --   * NS.compCache.scavSpeechEverHeard  written by EC_GreedyEventFilter
 --   * NS.DB                           live DB binding (refreshed by
---                                       EnsureDB in EbonClearance.lua)
+--                                       EnsureDB in EbonClearance_Events.lua)
 --   * NS.PET_NAME_LC                  live lowercase pet name (refreshed
 --                                       by EnsureDB + refreshNames)
 --
--- All three are mirrored onto NS at the binding sites in EbonClearance.lua.
+-- All three are mirrored onto NS at the binding sites in EbonClearance_Events.lua.
 -- This file reads them inline at call time so it always sees the latest
 -- value (no stale upvalues even if EnsureDB rebinds mid-session).
 

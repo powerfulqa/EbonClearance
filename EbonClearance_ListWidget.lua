@@ -39,7 +39,7 @@
 --   * NS.Delay                 - 3.3.5a-compatible setTimeout shim
 --   * NS.ADB                   - account DB (for affixedListedItems annotation)
 --   * NS.activeIDBox           - shared focus-tracker for shift-click-to-add;
---                                reader lives in EbonClearance.lua's
+--                                reader lives in EbonClearance_Events.lua's
 --                                ChatEdit_InsertLink hook
 --
 -- Lua 5.1 200-locals-per-main-chunk cap rationale: the five row-factory

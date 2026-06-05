@@ -24,7 +24,7 @@
 --     decommissioned along with the panel rename. Zero call sites in
 --     any shipped file confirmed via grep.
 --   - Orphan comment headers from Stages 8e-v / 8e-vi extractions
---     are stripped from EbonClearance.lua (BlacklistPanel and
+--     are stripped from EbonClearance_Events.lua (BlacklistPanel and
 --     BlacklistSettingsPanel docstrings that survived the moves).
 --
 -- Cross-file dependencies satisfied by NS:

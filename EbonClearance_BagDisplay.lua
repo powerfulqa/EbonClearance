@@ -13,7 +13,7 @@
 --     Hooks two surfaces: default ContainerFrame_Update and any host
 --     bag UI's per-slot class detected via LibStub at runtime.
 --   * NS.RefreshSellBorders body. Forward-declared as a no-op stub on
---     NS in EbonClearance.lua so the Character Settings panel toggle
+--     NS in EbonClearance_Events.lua so the Character Settings panel toggle
 --     can call it before this file's bag-display hooks install; this
 --     file replaces the stub with the real body. Lives on NS (not as
 --     a file-scope local) because the stub-and-reassign pattern needs
@@ -31,20 +31,20 @@
 -- Every helper is attached to EC_compCache (the shared cache table
 -- created in EbonClearance_Core.lua), so call sites elsewhere in the
 -- addon already resolve via the EC_compCache upvalue. No call-site
--- changes are needed in EbonClearance.lua for the cache helpers.
+-- changes are needed in EbonClearance_Events.lua for the cache helpers.
 --
 -- Cross-file dependencies read inline:
 --   * NS.compCache             (Core)
---   * NS.IsSellable            (EbonClearance.lua) - the central sell
+--   * NS.IsSellable            (EbonClearance_Events.lua) - the central sell
 --                                predicate; bagSlotWillSell + describeSellability
 --                                consult it
---   * NS.PrintNice / PrintNicef (EbonClearance.lua) - chat output for
+--   * NS.PrintNice / PrintNicef (EbonClearance_Events.lua) - chat output for
 --                                the sellinfo trace
---   * NS.scanTooltip           (EbonClearance.lua via the frame creation)
---   * NS.DB                    (EbonClearance.lua via EnsureDB) -
+--   * NS.scanTooltip           (EbonClearance_Events.lua via the frame creation)
+--   * NS.DB                    (EbonClearance_Events.lua via EnsureDB) -
 --                                captured as `local DB = NS.DB` at the
 --                                start of each function that uses it
---   * NS.ADB                   (EbonClearance.lua via EnsureAccountDB)
+--   * NS.ADB                   (EbonClearance_Events.lua via EnsureAccountDB)
 --                                - same pattern
 
 local NS = select(2, ...)

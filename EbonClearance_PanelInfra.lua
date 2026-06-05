@@ -37,8 +37,9 @@
 --     no external API needed
 --
 -- The widget primitives (MakeHeader, MakeLabel, AddCheckbox, AddSlider,
--- StyleInputBox, ColorTextByQuality) + CreateListUI + the list-row
--- factories STAY in EbonClearance.lua for Stages 8e-ix-c / 8e-ix-d.
+-- StyleInputBox, ColorTextByQuality) live in EbonClearance_PanelWidgets.lua
+-- (Stage 8e-ix-c); CreateListUI + the list-row factories in
+-- EbonClearance_ListWidget.lua (Stage 8e-ix-d).
 -- MakeLabel and CreateListUI reach EC_PANEL_WIDTH through
 -- NS.GetPanelWidth() at call time (not via upvalue, because the local
 -- now lives in this file's scope).

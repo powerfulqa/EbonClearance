@@ -4,10 +4,11 @@
 -- License: see LICENSE; attribution preservation is required.
 --
 -- Stage 8e-ix-c of the multi-stage file split (docs/CODE_REVIEW.md item 4).
--- Six widget primitives bundled in one file: MakeHeader, MakeLabel,
--- StyleInputBox, AddCheckbox, AddSlider, ColorTextByQuality. Every
+-- Seven widget primitives bundled in one file: MakeHeader, MakeLabel,
+-- StyleInputBox, AddCheckbox, AddSlider, ColorTextByQuality, and the
+-- help-icon button (MakeHelpIcon, exposed as NS.AddHelpIcon). Every
 -- Interface Options panel in the addon builds widgets through these
--- helpers. All six are exposed on NS so split panel files can call
+-- helpers. All seven are exposed on NS so split panel files can call
 -- them (the bare locals would only be visible inside this file).
 --
 -- Moved into this file:
@@ -22,6 +23,7 @@
 --   * AddCheckbox        (InterfaceOptionsCheckButtonTemplate +
 --                         text + click handler)
 --   * ColorTextByQuality (ITEM_QUALITY_COLORS-aware text formatter)
+--   * MakeHelpIcon       ([?] help-icon button; exposed as NS.AddHelpIcon)
 --   * AddSlider          (OptionsSliderTemplate + label + value
 --                         display + commit on OnValueChanged)
 --
@@ -31,8 +33,8 @@
 --                            8e-ix-b prep exposure
 --
 -- The list-row factories (EC_compCache.makeListRowFactory +
--- buildList*Row helpers) + CreateListUI + EC_AddScanByQualityRow STAY
--- in EbonClearance.lua for Stage 8e-ix-d.
+-- buildList*Row helpers) + CreateListUI + EC_AddScanByQualityRow were
+-- extracted to EbonClearance_ListWidget.lua in Stage 8e-ix-d.
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache

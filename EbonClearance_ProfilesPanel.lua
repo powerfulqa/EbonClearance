@@ -25,7 +25,7 @@
 --     hook used by the profile list and the import textarea
 --   * NS.SaveProfile / NS.LoadProfile / NS.DeleteProfile /
 --     NS.RenameProfile (8e-viii prep) - profile-mutation helpers
---     whose bodies stay in EbonClearance.lua (slash commands also
+--     whose bodies stay in EbonClearance_Events.lua (slash commands also
 --     resolve them through the same NS entries)
 --   * NS.CountItems (Stage 8 prep) - item-count utility
 

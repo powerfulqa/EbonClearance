@@ -15,8 +15,8 @@
 --                                   addonDismissed (promoted in Stage 8 prep)
 --   * NS.DB / NS.ADB             - captured at function entry
 --   * NS.PrintNice / PrintNicef  - chat output
---   * NS.GetVersion              - exposed by EbonClearance.lua
---   * NS.GetFreeBagSlots         - exposed by EbonClearance.lua
+--   * NS.GetVersion              - exposed by EbonClearance_Events.lua
+--   * NS.GetFreeBagSlots         - exposed by EbonClearance_Events.lua
 --   * NS.EnsureDB                - called once before reading DB fields
 
 local NS = select(2, ...)

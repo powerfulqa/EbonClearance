@@ -206,7 +206,7 @@ local EC_compCache = {
     -- (scavSpeechEverHeard) is true, the signal trips and the pet gets
     -- a stuck-resummon. Lives on EC_compCache (instead of as a file-
     -- scope local) so Companion code in EbonClearance_Companion.lua and
-    -- EC_IsLootSilenceStuck in EbonClearance.lua can both update / read
+    -- EC_IsLootSilenceStuck in EbonClearance_Events.lua can both update / read
     -- it via the same shared cache table after the Stage 3 file split.
     lastScavSpokeAt = 0,
     -- Vendor cycle gate. Set to true while the worker frame is processing
@@ -214,7 +214,7 @@ local EC_compCache = {
     -- paths read it as a "skip while a vendor cycle is mid-flight"
     -- guard (BAG_UPDATE handlers, mount cycle, scav-recovery summon,
     -- auto-open driver). Lives on EC_compCache so EbonClearance_Vendor.lua
-    -- can write it from inside the worker and EbonClearance.lua's
+    -- can write it from inside the worker and EbonClearance_Events.lua's
     -- non-vendor handlers can read it via the same shared cache table
     -- after the Stage 5 file split.
     vendorRunning = false,
@@ -226,10 +226,10 @@ local EC_compCache = {
     -- above - cross-file access between Vendor and the event hub.
     pendingDelete = nil,
     -- Auto-loot cycle state machine. Promoted from file-scope `local
-    -- EC_lootCycleState = STATE.IDLE` in EbonClearance.lua so split files
+    -- EC_lootCycleState = STATE.IDLE` in EbonClearance_Events.lua so split files
     -- (the bug-report builder in Stage 8, and potentially future cycle
     -- code) can read it as a snapshot. The string values match the STATE
-    -- constants table also declared in EbonClearance.lua's main chunk
+    -- constants table also declared in EbonClearance_Events.lua's main chunk
     -- (STATE = { IDLE = "idle", LOOTING = "looting", WAITING_MERCHANT =
     -- "waiting_merchant", SELLING = "selling" }).
     lootCycleState = "idle",
@@ -323,7 +323,7 @@ local EC_compCache = {
     combatDeferredAnnounced = false,
 }
 -- Mirror the junk-drawer table onto the addon namespace. Same table; both
--- names alias the same memory. EbonClearance.lua re-binds this as its own
+-- names alias the same memory. EbonClearance_Events.lua re-binds this as its own
 -- module-local `EC_compCache` upvalue so existing call sites keep working
 -- without churn. Stage 1 of the file split established this alias; Stage 2
 -- moved the declaration into Core.

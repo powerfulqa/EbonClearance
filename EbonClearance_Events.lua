@@ -5085,6 +5085,9 @@ end
 --     to the EbonClearance_* global handlers further down this file.
 BINDING_HEADER_EBONCLEARANCE = "EbonClearance"
 _G["BINDING_NAME_CLICK EbonClearanceTargetMerchantButton:LeftButton"] = "Target Goblin Merchant"
+-- Secure click bindings show their raw "CLICK <button>:<mouseButton>" action
+-- string in the keybind UI unless a BINDING_NAME_ global gives them a label.
+_G["BINDING_NAME_CLICK EbonClearanceProcessCastBtn:LeftButton"] = "Process Next"
 BINDING_NAME_EBONCLEARANCE_TOGGLE_SETTINGS = "Open/close settings"
 BINDING_NAME_EBONCLEARANCE_TOGGLE_ENABLED = "Toggle enabled"
 BINDING_NAME_EBONCLEARANCE_FORCE_SELL = "Force sell at current merchant"

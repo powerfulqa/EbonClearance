@@ -5,6 +5,16 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.41.1
+
+Patch release. Tidies the Process Bags entry in the Key Bindings list.
+
+The Process Next keybind is a secure click binding, and without a display name WoW showed it as the raw `CLICK EbonClearanceProcessCastBtn:LeftButton` action string (wrapped across two lines) instead of a readable label like the other EbonClearance bindings.
+
+- **Fix: the Process Bags keybind now reads "Process Next"** in Key Bindings, grouped under the EbonClearance header with the rest. Set a `BINDING_NAME_` label for the click binding (mirroring the Target Goblin Merchant binding) and added the missing `header="EBONCLEARANCE"` to its `Bindings.xml` entry.
+
+Safe overwrite from v2.41.0. No schema changes.
+
 ### v2.41.0
 
 The item lists are easier to read and the controls above them are clearer for new players.

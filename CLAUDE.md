@@ -59,7 +59,8 @@ The release is driven by [.github/workflows/release.yml](.github/workflows/relea
 4. Commit code + CHANGELOG + docs together (or in two commits if the diff is large: features first, then docs).
 5. Push to `origin/master`.
 6. Tag the release: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-7. The workflow runs (~1-2 min). The version-bump bot commit lands on `origin/master`; `git pull --rebase` locally to sync.
+7. The workflow runs (~1-2 min) and re-runs all five test suites at the gate. The version-bump bot commit (`Update version to vX.Y.Z [skip ci]`) lands on `origin/master`, carrying the CI-side rewrites of `EbonClearance.toc` + `EbonClearance_Events.lua`'s `ADDON_VERSION`.
+8. **Required final step: `git pull --rebase` to sync local with the CI build work.** Because step 7 committed the version bump upstream, your local branch is now 1 commit behind `origin/master`. You MUST rebase before any further work, or the next local commit diverges from origin. Confirm with `git status -sb` - it should read `## master...origin/master` with no `[ahead N]` / `[behind N]`.
 
 If you tag without a CHANGELOG stanza (e.g. a fast patch where the commit message was the only record), the release page ships with the fallback stub and players reading the release notes see no detail. The recovery path:
 

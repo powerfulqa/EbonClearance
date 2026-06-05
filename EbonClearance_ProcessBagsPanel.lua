@@ -746,14 +746,27 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             -44
         )
 
+        -- v2.41.2: tip text rewritten. The old wording promised
+        -- holding the keybind would drain a stack, which is
+        -- factually wrong: WoW fires bound actions once per
+        -- keypress and does not honour OS keyboard repeat for
+        -- keybinds. A real player report (Ralickan, on v2.41.x)
+        -- followed the tip, held the key, and saw nothing happen.
+        -- The [?] icon to the right of this label deep-links to
+        -- the process-keybind FAQ entry for the full keyboard-only
+        -- mental model (queue order, skip arrow, cooldown swirl).
+        -- Test 88av locks the wording + icon + FAQ entry together.
         local tip = NS.MakeLabel(
             content,
-            "|cff888888Tip: bind a key to Process Next in Key Bindings, then hold it to drain a stack without clicking.|r",
+            "|cff888888Tip: bind a key to Process Next in Key Bindings to advance the queue one cast per press.|r",
             16,
             -44
         )
         tip:ClearAllPoints()
         tip:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -8)
+        if NS.AddHelpIcon then
+            NS.AddHelpIcon(content, tip, "LEFT", "RIGHT", 6, 0, "process-keybind")
+        end
 
         local keepTip = NS.MakeLabel(
             content,

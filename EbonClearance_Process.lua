@@ -95,6 +95,24 @@ EC_compCache.SPELL_PICK_LOCK = 1804
 -- EC_compCache to stay under Lua 5.1's 200-locals cap.
 EC_compCache.PICK_LOCK_NAME = (GetSpellInfo and GetSpellInfo(1804)) or "Pick Lock"
 
+-- v2.41.2: equippable slots that LOOK like DE candidates (pass
+-- IsEquippableItem + quality 2-4) but the server rejects with
+-- "Item cannot be disenchanted". The 9th GetItemInfo return is
+-- equipLoc, an unlocalised constant - safe to compare across
+-- locales. A real player report (green Traveler's Backpack
+-- queued for DE on v2.41.x, server refused the cast) led to
+-- this blacklist. INVTYPE_BAG / INVTYPE_QUIVER cover regular
+-- and ammo bags; INVTYPE_TABARD / INVTYPE_BODY / INVTYPE_AMMO
+-- are belt-and-braces for custom-server green-quality tabards
+-- / shirts / ammo that could otherwise slip through.
+local NON_DE_EQUIP_LOCS = {
+    INVTYPE_BAG = true,
+    INVTYPE_QUIVER = true,
+    INVTYPE_TABARD = true,
+    INVTYPE_BODY = true,
+    INVTYPE_AMMO = true,
+}
+
 function EC_compCache.canDisenchant(itemID)
     if not itemID then
         return false
@@ -105,8 +123,14 @@ function EC_compCache.canDisenchant(itemID)
     if not IsEquippableItem or not IsEquippableItem(itemID) then
         return false
     end
-    local _, _, quality = GetItemInfo(itemID)
+    local _, _, quality, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
     if not quality then
+        return false
+    end
+    -- v2.41.2: exclude equippable slots that aren't actually
+    -- disenchantable. Bags pass IsEquippableItem because they go
+    -- in bag slots; the server still refuses Disenchant on them.
+    if equipLoc and NON_DE_EQUIP_LOCS[equipLoc] then
         return false
     end
     -- DE works on Uncommon (2) through Epic (4). Quality 5+ (Legendary,

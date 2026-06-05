@@ -5,6 +5,24 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.41.2
+
+Patch release. Two Process Bags polish fixes from real player reports.
+
+**Misleading tip + keybind discoverability.** A new player followed the in-game tip that said holding the Process Next keybind would drain a stack, found that holding did nothing, and reported it. WoW's binding system fires bound actions once per keypress and does not honour OS-level keyboard repeat for keybinds, and a SecureActionButton needs a hardware click each time - the old tip was promising behaviour the addon can never deliver.
+
+- **Tip text rewritten.** The Process Bags panel tip now reads "bind a key to Process Next in Key Bindings to advance the queue one cast per press." No more "hold to drain" claim.
+- **`[?]` help icon next to the tip.** Same widget the rest of the panel uses (heading, soulbound checkbox, DE quality dropdown), deep-linked to a new FAQ entry so the affordance is right at the point of confusion.
+- **New Help FAQ entry "Can I keep casting without using the mouse?"** Under the Process Bags section. Covers where to bind the key (`Esc menu > Key Bindings > EbonClearance`), the one-press-per-cast behaviour, the queue order (Disenchant -> Mill -> Prospect -> Pick Locks), and what the `>` skip arrow does (jump past the current mode).
+
+**Bags falsely queued for Disenchant.** A green-quality Traveler's Backpack (16 Slot Bag) appeared in the Disenchant section; clicking Cast got the server's "Item cannot be disenchanted" error. `canDisenchant` checked `IsEquippableItem` + quality but didn't filter the equip-slot type, and bags pass `IsEquippableItem` because they go in bag slots.
+
+- **Fix: canDisenchant now filters on equipLoc.** Items with `equipLoc` of `INVTYPE_BAG`, `INVTYPE_QUIVER`, `INVTYPE_TABARD`, `INVTYPE_BODY`, or `INVTYPE_AMMO` are rejected - all five are equippable but never disenchantable, even when their quality is green or above. `equipLoc` is an unlocalised constant, so the filter is locale-safe.
+
+- **Tests 88av + 88aw** lock both fixes - the tip / icon / FAQ entry trio, and the canDisenchant equipLoc blacklist.
+
+Safe overwrite from v2.41.1. No schema changes.
+
 ### v2.41.1
 
 Patch release. Tidies the Process Bags entry in the Key Bindings list.

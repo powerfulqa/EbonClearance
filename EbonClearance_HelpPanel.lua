@@ -517,6 +517,12 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
+        id = "process-keybind",
+        q = "Can I keep casting without using the mouse?",
+        a = "Yes. Open |cffffd870Esc menu > Key Bindings|r, find the |cffb6ffb6EbonClearance|r section, and bind |cffb6ffb6Process Next|r to a key. Each press fires one cast (WoW doesn't auto-repeat keybinds, so holding the key does nothing - press it again for the next item). The queue runs in a fixed order: |cffb6ffb6Disenchant|r first, then |cffb6ffb6Mill|r, then |cffb6ffb6Prospect|r, then |cffb6ffb6Pick Locks|r. Within each section items sort by quality (Disenchant) or name. Use the |cffb6ffb6>|r arrow next to the Cast button to skip past every remaining entry of the current mode and jump to the next mode (handy when you want to mill before clearing Disenchant junk). See the |cffffd870swirl|r entry for why the button briefly stays inert between casts.",
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
         id = "process-missing-items",
         q = "Why isn't an item in Process Bags?",
         a = "Process Bags hides anything the protections would also stop the vendor from selling: Keep List items, currently equipped gear, items with a 'Chance on hit:' proc (so you don't disenchant a proc weapon you might want to extract), items with a protected affix you haven't extracted yet, and unlearned tomes / recipes. Stack-size matters too - Mill and Prospect require stacks of 5+. To force a specific item through, Alt+Right-Click it and pick 'Allow Sell' (adds the itemID to the allow list) or remove it from the Keep List.",

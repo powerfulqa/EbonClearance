@@ -5422,6 +5422,42 @@ do
                     fh:close()
                     return s
                 end)()
+                -- v2.41.2: keybind discoverability + tip honesty. The
+                -- old Process Bags tip read "hold it to drain a stack"
+                -- which is factually wrong - WoW doesn't auto-repeat
+                -- bound actions. A player report (Ralickan) followed
+                -- the tip, held the key, saw nothing happen. This test
+                -- locks all three patch pieces in one shot so any of
+                -- them silently disappearing in a future refactor
+                -- shows up in CI.
+                -- v2.41.2: canDisenchant must filter on equipLoc, not
+                -- just IsEquippableItem + quality. Bags are equippable
+                -- (they go in bag slots) and a green-quality bag like
+                -- Traveler's Backpack slipped through, queued for DE,
+                -- and the server refused the cast with "Item cannot
+                -- be disenchanted" (real player report). This test
+                -- locks the blacklist + the equipLoc read so a future
+                -- refactor can't silently drop the guard.
+                check(
+                    "Test 88aw: canDisenchant filters out bags / quivers / tabards / shirts via equipLoc",
+                    procSrc:find("NON_DE_EQUIP_LOCS%s*=%s*{") ~= nil
+                        and procSrc:find("INVTYPE_BAG%s*=%s*true") ~= nil
+                        and procSrc:find("INVTYPE_QUIVER%s*=%s*true") ~= nil
+                        and procSrc:find("INVTYPE_TABARD%s*=%s*true") ~= nil
+                        and procSrc:find("INVTYPE_BODY%s*=%s*true") ~= nil
+                        and procSrc:find("local _, _, quality, _, _, _, _, _, equipLoc = GetItemInfo") ~= nil
+                        and procSrc:find("NON_DE_EQUIP_LOCS%[equipLoc%]") ~= nil,
+                    "canDisenchant must read equipLoc (9th GetItemInfo return, unlocalised) and reject INVTYPE_BAG / INVTYPE_QUIVER / INVTYPE_TABARD / INVTYPE_BODY (and INVTYPE_AMMO for belt-and-braces). Without this, a green-quality bag passes IsEquippableItem + the quality gate and the queue shows it for Disenchant; the server then refuses the cast and the player has to skip it manually."
+                )
+                check(
+                    "Test 88av: Process Bags keybind tip rewritten + help icon + FAQ entry wired",
+                    pbpSrc:find("hold it to drain") == nil
+                        and pbpSrc:find("one cast per press") ~= nil
+                        and pbpSrc:find('"process%-keybind"') ~= nil
+                        and hpS:find('id = "process%-keybind"') ~= nil
+                        and hpS:find('panel = "EbonClearanceOptionsProcessBags"') ~= nil,
+                    "Process Bags tip must not promise hold-to-drain behaviour (WoW fires keybinds once per press; the addon cannot auto-repeat a SecureActionButton click). The new tip text must say 'one cast per press', a help icon next to it must deep-link to the process-keybind FAQ entry, and that entry must exist in EbonClearance_HelpPanel.lua with the EbonClearanceOptionsProcessBags panel link. A future contributor who removes any of the three pieces sees this test go red."
+                )
                 check(
                     "Test 88au: Process Bags cast button has a post-click lockout with effective-cast-time floor",
                     pbpSrc:find('CreateFrame%("Cooldown"') ~= nil

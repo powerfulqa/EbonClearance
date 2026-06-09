@@ -4434,6 +4434,19 @@ end
 -- whole point of the feature. Do NOT add a combat guard.
 function EC_compCache.runAutoDeleteOnPickup()
     local DB = NS.DB
+    -- v2.42.1: master Enable toggle must veto the sweep, same as the
+    -- vendor cycle / scavenger / auto-loot paths do. Without this gate,
+    -- a player who right-clicks the minimap to "turn the addon off"
+    -- can still trigger destructive deletes via Alt+Right-Click ->
+    -- Mark for delete followed by a /reload (real report from
+    -- Sanavesa on v2.42.0). The master gate is the user's only kill
+    -- switch for the entire addon - it MUST veto every destructive
+    -- path. Routed through the existing helper for consistency with
+    -- the vendor cycle (EC_IsAddonEnabledForChar handles both
+    -- DB.enabled and the per-character whitelist).
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
     if not (DB and DB.enableDeletion and DB.autoDeleteOnPickup) then
         return
     end

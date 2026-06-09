@@ -5,6 +5,18 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.42.1
+
+Patch release. Fixes a destructive bug in v2.42.0's auto-delete-on-pickup feature: the sweep ignored the master Enable toggle.
+
+Reported by Sanavesa. Repro: right-click the minimap to disable EbonClearance, Alt+Right-Click a bag item and "Mark for delete", `/reload` - the item is deleted on the next BAG_UPDATE despite the addon being "off". The vendor cycle correctly honours `EC_IsAddonEnabledForChar()` (the same helper that bridges minimap right-click, the Main panel Enable checkbox, and `/ec enable / disable`); the new auto-delete sweep in v2.42.0 only gated on `enableDeletion` + `autoDeleteOnPickup` and missed the master check.
+
+- **Fix: the auto-delete sweep now early-returns when the master Enable toggle is off.** Same `EC_IsAddonEnabledForChar()` predicate the vendor cycle uses, so every entry point (minimap, panel checkbox, slash command, keybind) vetoes the destructive path consistently.
+- **Knock-on: re-enabling the master toggle no longer triggers an immediate sweep of items already in bags.** Pre-fix, items already in your bags would auto-destroy the moment you flipped the master Enable back on (because the sweep was running unconditionally and the next BAG_UPDATE picked them up). Post-fix, the sweep waits for the next real bag-state change (loot, vendor open, drop / move). Verified in-game by the reporter as preferable - an explicit master-on shouldn't surprise-destroy items.
+- **Test 88aa** extended to lock the invariant: the runAutoDeleteOnPickup body must reference `EC_IsAddonEnabledForChar`. A future refactor that drops the gate goes red in CI.
+
+Safe overwrite from v2.42.0. No schema changes.
+
 ### v2.42.0
 
 New option: auto-delete Delete List items the moment they enter your bags, instead of only at a vendor, to cut vendor trips while farming. Off by default. Suggested by Sanavesa.

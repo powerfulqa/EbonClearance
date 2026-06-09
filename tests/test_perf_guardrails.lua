@@ -5712,10 +5712,18 @@ do
         check("Test 88aa: runAutoDeleteOnPickup is defined", fnStart ~= nil,
             "the auto-delete-on-pickup scan must exist on EC_compCache")
         if fnStart then
-            local body = s:sub(fnStart, fnStart + 1400)
+            local body = s:sub(fnStart, fnStart + 2400)
             check("Test 88aa: scan gates on autoDeleteOnPickup + enableDeletion",
                 body:find("autoDeleteOnPickup") ~= nil and body:find("enableDeletion") ~= nil,
                 "both toggles must gate the scan")
+            -- v2.42.1: the master Enable toggle MUST veto the sweep,
+            -- same as the vendor cycle. Without this, a player who
+            -- turns the addon off via the minimap can still trigger
+            -- destructive deletes by marking items + /reload (real
+            -- repro from Sanavesa on v2.42.0).
+            check("Test 88aa: scan honours the master Enable toggle (DB.enabled)",
+                body:find("EC_IsAddonEnabledForChar") ~= nil,
+                "must early-return when EC_IsAddonEnabledForChar is false, same as the vendor cycle - the master toggle is the user's kill switch for every destructive path")
             check("Test 88aa: scan skips during a vendor cycle",
                 body:find("vendorRunning") ~= nil,
                 "must not fight an active vendor cycle")

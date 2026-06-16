@@ -8,6 +8,7 @@ A **Project Ebonhold-aware** bag manager. Out of the box it sells your junk and 
 
 ## What It Does
 
+- **Quickstart setup.** A guided panel gets you going in seconds: pick one of four one-click presets (Recommended / Cautious / Farmer / Power), or answer ~15 short questions for a tailored config. It opens automatically on a fresh install and only changes settings - your Sell, Keep, and Delete lists are never touched.
 - **Auto-sell trash + auto-vendor your loot.** Per-rarity rules (White / Green / Blue / Purple) with two cap modes: follow your equipped iLvl (default on Whites and Greens for fresh installs) or set a fixed max. Per-rarity bind-type filter (Any / BoE / BoP). Grey junk always auto-sells. Equipped gear is never touched.
 - **Per-character + account-wide Sell Lists**, plus a Keep List and a Delete List. Add items by ID or name (or bulk-add from your bags by colour), and switch lists by activity with saved profiles. Each list row shows the item's icon and a quality-colored name, hovering a row brings up the item tooltip, and you can filter the view by rarity.
 - **Project Ebonhold-specific protections** that the auto-rule sweep respects: affixed Rare/Epic drops (per-instance), chance-on-hit proc items, tomes and recipes (learned-state-aware), quest items, profession tools, equipped gear and looted upgrades, equipment-manager set members. Each protection has an Alt+Right-Click → **Allow Sell** override that's account-wide for items / per-affix-description for affixes.

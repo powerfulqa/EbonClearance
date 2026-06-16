@@ -101,7 +101,7 @@ scoped to be a single-session change unless flagged otherwise.
 > (file split) was added post-v2.29.0 audit when the 200-locals cap
 > became a recurring active constraint; it shipped across multiple
 > stages and moved to Resolved in v2.37.4. Active now: 1 chat-filter,
-> 3 TUNING.
+> 3 TUNING, 4 luacheck CI reconciliation (v2.43.0).
 
 ## Audit decisions (won't fix)
 
@@ -201,6 +201,35 @@ the entire file in one go).
 This is the smallest qlty-flagged item on the backlog and the
 lowest priority. Action only when already touching tuning-related
 code.
+
+---
+
+### 4. Reconcile luacheck so CI gating can be re-enabled - medium effort, low risk
+
+Added v2.43.0. A `luacheck EbonClearance_*.lua` step was added to
+[.github/workflows/test.yml](../.github/workflows/test.yml) but
+surfaced ~162 pre-existing warnings, so the gate was **deferred** (the
+step is commented out; CI still runs `luac -p` + all six suites). The
+warnings predate localization and fall into two buckets:
+
+- **Missing `read_globals` (most of the count):** WoW API globals the
+  addon legitimately uses but that aren't in
+  [`.luacheckrc`](../.luacheckrc) - e.g. `BankFrame`, `InspectFrame`,
+  `CharacterFrame`, `NUM_BANKGENERIC_SLOTS`, `BUYBACK_ITEMS_PER_PAGE`,
+  `MERCHANT_ITEMS_PER_PAGE`, `GetBuybackItemLink`, `NUM_CONTAINER_FRAMES`,
+  `UnitLevel`, `GetLocale`, `GetNumAddOns`, and more. Add each to
+  `read_globals` (CLAUDE.md: extend, don't blanket-silence).
+- **Dead locals / unused args (~28):** e.g. `merchantOpen`
+  (BagContextMenu), `procProtected` never accessed (BagDisplay),
+  `reason` (BugReport), plus unused callback arguments across Comms /
+  panels. Remove or underscore-prefix; consider whether `212` (unused
+  argument) belongs in the `ignore` list given WoW's fixed handler
+  signatures.
+
+**Do this in a session with luacheck installed** (`luarocks install
+luacheck`) so the fixes are verifiable locally rather than via CI
+round-trips. When green, uncomment the step in test.yml and restore the
+"luacheck runs in CI" note in CLAUDE.md.
 
 ---
 

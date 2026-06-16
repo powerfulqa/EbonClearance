@@ -562,6 +562,17 @@ local function EnsureDB()
     if EbonClearanceDB.shareGuildName == nil then
         EbonClearanceDB.shareGuildName = false
     end
+    -- Language override (default false = follow the client's GetLocale()).
+    -- Account-level. A locale code ("frFR" / "deDE" / ...) forces that
+    -- language regardless of the client; false / "auto" follows the client.
+    -- Applied to the locale layer here so it is live for everything looked up
+    -- after login (a /reload refreshes the few strings captured at file load).
+    if EbonClearanceDB.localeOverride == nil then
+        EbonClearanceDB.localeOverride = false
+    end
+    if NS.SetLocaleOverride then
+        NS.SetLocaleOverride(EbonClearanceDB.localeOverride)
+    end
 
     -- Per-character partition (v2.34.x). See the PER_CHAR_FIELDS block at
     -- the top of the file for the rationale. Top-level fields remain as
@@ -5629,6 +5640,48 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         -- EbonClearance_ToggleEnabled() does that for every entry
         -- point. The status-only branch above also doesn't flip
         -- state, so nothing to sync there either.
+        return
+    end
+
+    if cmd == "locale" or cmd == "lang" or cmd == "language" then
+        -- v2.43.1: force a UI language regardless of the client. On 3.3.5a a
+        -- private-server client can only run a language whose data is
+        -- installed, so this lets a player on an enUS client read EC in
+        -- French / German (and lets the author preview translations).
+        EnsureDB()
+        local client = (NS.GetClientLocale and NS.GetClientLocale()) or "enUS"
+        local registered = (NS.GetRegisteredLocales and NS.GetRegisteredLocales()) or {}
+        local listText = (#registered > 0) and table.concat(registered, ", ") or "enUS"
+        local want = rest:lower()
+        if want == "" then
+            local active = (NS.GetActiveLocale and NS.GetActiveLocale()) or client
+            PrintNicef(L["Language: %s (your client is %s)."], active, client)
+            PrintNicef(L["Change with /ec locale <code> (%s), or /ec locale auto to follow your client."], listText)
+            return
+        end
+        if want == "auto" then
+            EbonClearanceDB.localeOverride = false
+            NS.SetLocaleOverride(false)
+            PrintNicef(L["Now following your client language (%s). Type /reload to apply fully."], client)
+            return
+        end
+        -- Resolve case-insensitively to a canonical code (codes are mixed-case).
+        local canon
+        if want == "enus" then
+            canon = "enUS"
+        end
+        for _, code in ipairs(registered) do
+            if code:lower() == want then
+                canon = code
+            end
+        end
+        if not canon then
+            PrintNicef(L["Unknown language '%s'. Try auto, enUS, or one of: %s."], rest, listText)
+            return
+        end
+        EbonClearanceDB.localeOverride = canon
+        NS.SetLocaleOverride(canon)
+        PrintNicef(L["Language set to %s. Type /reload to apply fully."], canon)
         return
     end
 

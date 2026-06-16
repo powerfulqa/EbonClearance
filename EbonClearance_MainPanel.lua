@@ -699,6 +699,19 @@ local function BuildMainPanel(panel, content)
     -- text-only: a single button can't pick a sub-command for the user.
     -- Labels start at the same x regardless of whether the row has a
     -- button, so the two columns line up.
+    -- Current-language indicator for the language rows below. Computed at
+    -- build time; a language change needs a /reload to fully apply, and the
+    -- /reload rebuilds this panel, so the line is accurate post-switch.
+    local activeLocale = (NS.GetActiveLocale and NS.GetActiveLocale()) or "enUS"
+    local langStatus
+    if activeLocale == "enUS" or activeLocale == "enGB" then
+        langStatus = string.format(L["Current language: %s."], activeLocale)
+    else
+        -- A non-English language is active; untranslated strings always fall
+        -- back to the English (enUS) source text.
+        langStatus = string.format(L["Current language: %s (fallback: enUS)."], activeLocale)
+    end
+
     local SLASH_ROWS = {
         { label = "|cffffff00/ec|r  " .. L["Open settings |cffaaaaaa(you are here)|r"] },
         {
@@ -765,6 +778,19 @@ local function BuildMainPanel(panel, content)
             label = "|cffffff00/ec processdebug clear|r  " .. L["Wipe Process Bags cache (force fresh tooltip scans)"],
         },
         { run = "perf", label = "|cffffff00/ec perf|r  " .. L["Show EC's memory, CPU, cache and list sizes"] },
+        { label = "|cff66ccff" .. langStatus .. "|r" },
+        {
+            run = "locale deDE",
+            label = "|cffffff00/ec locale deDE|r  " .. L["Switch the addon to German (/reload to finish)"],
+        },
+        {
+            run = "locale frFR",
+            label = "|cffffff00/ec locale frFR|r  " .. L["Switch the addon to French (/reload to finish)"],
+        },
+        {
+            run = "locale auto",
+            label = "|cffffff00/ec locale auto|r  " .. L["Follow your client's language (/reload to finish)"],
+        },
     }
 
     -- Layout strategy: each label is its OWN FontString with setPanelWidth,

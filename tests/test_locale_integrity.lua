@@ -72,7 +72,7 @@ end
 -- ---- 1. functional: the core L table ------------------------------------
 
 do
-    -- Stub GetLocale so the core selects frFR, then register a tiny table.
+    -- Stub GetLocale so the client locale is frFR, then register tables.
     _G.GetLocale = function()
         return "frFR"
     end
@@ -82,21 +82,40 @@ do
 
     check("core exposes NS.L", type(NS.L) == "table")
     check("core exposes NS.RegisterLocale", type(NS.RegisterLocale) == "function")
+    check("core exposes NS.SetLocaleOverride", type(NS.SetLocaleOverride) == "function")
+    check("core exposes NS.GetActiveLocale", type(NS.GetActiveLocale) == "function")
+    check("core exposes NS.GetClientLocale", type(NS.GetClientLocale) == "function")
 
     -- Passthrough: unknown key returns itself (English fallback).
     check("passthrough returns the key", NS.L["Totally untranslated key"] == "Totally untranslated key")
 
-    -- Active-locale override wins; empty value is skipped (falls back).
     NS.RegisterLocale("frFR", {
         ["Enable EbonClearance"] = "Activer EbonClearance",
         ["Empty stays English"] = "",
     })
-    check("active-locale value overrides", NS.L["Enable EbonClearance"] == "Activer EbonClearance")
+    NS.RegisterLocale("deDE", { ["Enable EbonClearance"] = "EbonClearance aktivieren" })
+
+    -- Active locale follows the client (frFR) by default.
+    check("client locale reported", NS.GetClientLocale() == "frFR")
+    check("active locale defaults to client", NS.GetActiveLocale() == "frFR")
+    check("active-locale value resolves", NS.L["Enable EbonClearance"] == "Activer EbonClearance")
     check("empty value falls back to English", NS.L["Empty stays English"] == "Empty stays English")
 
-    -- Non-active locale is ignored entirely.
-    NS.RegisterLocale("deDE", { ["Enable EbonClearance"] = "WRONG" })
-    check("non-active locale ignored", NS.L["Enable EbonClearance"] == "Activer EbonClearance")
+    -- Override switches the language live (dynamic resolution).
+    NS.SetLocaleOverride("deDE")
+    check("override changes active locale", NS.GetActiveLocale() == "deDE")
+    check("override value resolves live", NS.L["Enable EbonClearance"] == "EbonClearance aktivieren")
+    check("client locale unchanged by override", NS.GetClientLocale() == "frFR")
+
+    -- "auto" / false clears the override, back to the client locale.
+    NS.SetLocaleOverride("auto")
+    check("auto restores client locale", NS.GetActiveLocale() == "frFR")
+    check("auto restores client value", NS.L["Enable EbonClearance"] == "Activer EbonClearance")
+
+    -- Overriding to a locale with no table falls back to English (no error).
+    NS.SetLocaleOverride("esES")
+    check("unknown-locale override falls back to English", NS.L["Enable EbonClearance"] == "Enable EbonClearance")
+    NS.SetLocaleOverride(false)
 end
 
 -- ---- 2. per-translation validation --------------------------------------

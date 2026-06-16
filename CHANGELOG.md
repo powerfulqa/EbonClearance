@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.43.1
+
+Adds an in-game language picker so you can read EbonClearance in French or German even when your client can't switch languages.
+
+- **`/ec locale` command.** `/ec locale deDE` (or `frFR`) forces the addon's language; `/ec locale auto` goes back to following your client; `/ec locale` on its own shows the current language and the options. Handy on private-server clients that are locked to one language, and for previewing translations.
+- **Shown in the Main panel.** The slash-command list shows your current language ("Current language: deDE (fallback: enUS)") with one-click German / French / Auto buttons.
+- **Saved per account.** Your choice is remembered (`EbonClearanceDB.localeOverride`, default off = follow client). The switch is mostly live; type `/reload` to refresh the few labels that are built once at load.
+- **Internal:** the locale layer now resolves translations dynamically (per lookup) instead of once at load, which is what makes the live override possible. Additive account-wide schema field, downgrade-safe.
+
+Safe overwrite from v2.43.0.
+
 ### v2.43.0
 
 French and German language support. Every player-facing string in the addon can now be translated, with automatic English fallback for anything not yet done. Added for the influx of French and German players on the server.

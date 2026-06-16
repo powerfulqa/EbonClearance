@@ -632,11 +632,24 @@ guild/group stats into a transient, session-only aggregate
 Hand-rolled i18n, no AceLocale. `EbonClearance_Locale.lua` loads **second**
 (right after Core) and exposes:
 
-- `NS.L` - a table whose `__index` returns the key itself, so an untranslated
-  string renders its English text. The English text **is** the lookup key.
-- `NS.RegisterLocale(code, tbl)` - copies a locale table's non-empty values
-  onto `NS.L`, but only when `code == GetLocale()`. Non-active locale files
-  no-op, so every language ships unconditionally.
+- `NS.L` - stores **nothing**; every `L[key]` access goes through `__index`,
+  which resolves against the active locale's table (or returns the English key
+  if there's no non-empty translation). Resolution is **dynamic** (per lookup),
+  not copied once at load - this is what makes the runtime override work.
+- `NS.RegisterLocale(code, tbl)` - stores `tbl` in the `NS.localeTables[code]`
+  registry. ALL locales are stored; the resolver picks the active one.
+- `NS.SetLocaleOverride(code)` - force a language (`"frFR"` / `"deDE"` / ...) or
+  `nil`/`false`/`"auto"` to follow the client. Active locale is
+  `override or GetLocale()`. `NS.GetActiveLocale()` / `GetClientLocale()` /
+  `GetRegisteredLocales()` round out the API.
+
+The override is persisted as the account-wide `DB.localeOverride` (default
+`false` = follow client) and applied in `EnsureDB` via `NS.SetLocaleOverride`.
+Players set it with **`/ec locale <code|auto>`**. Because resolution is dynamic,
+the switch is live for anything looked up after it's set - **except** strings
+captured into module-level tables at FILE LOAD (a few dropdown / rarity labels),
+which snapshot the value once before the saved override is read and so need a
+`/reload`. The client-locale path is unaffected (it's known at load).
 
 `EbonClearance_Locale_frFR.lua` / `_deDE.lua` load third/fourth and call
 `RegisterLocale` with the full key set, values seeded `""` (empty = not yet

@@ -74,6 +74,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec affixdebug on\|off\|status\|dump\|clear` | Record affix-detection events for bug reports; `dump` opens a copyable window with the event log |
 | `/ec commtest` | Diagnostic: check that addon messages are delivered on this server and preview the update nudge (works solo) |
 | `/ec guildtest` | Diagnostic: preview the Stats - Guild panel with simulated members (works solo) |
+| `/ec locale [auto\|frFR\|deDE]` | Show or force the addon's display language. `auto` follows your client; a code forces that language (handy when your client is locked to one language). `/reload` to apply fully |
 | `/ec help` | Print the full slash-command reference in chat |
 | `/ecdebug` | Show debug info and run a bag scan |
 

@@ -96,11 +96,12 @@ scoped to be a single-session change unless flagged otherwise.
 > and 4 (split CreateListUI and extract panel OnShow boilerplate) were
 > actioned in v2.18.0 and v2.17.0 respectively and moved to Resolved.
 > Items 1 (chat-filter consolidation) and 3 (TUNING constants) remain.
-> Item 2 was reused to renumber the former L10n stub item, since it's
-> still parked. Item 4 (file split) was added post-v2.29.0 audit when
-> the 200-locals cap became a recurring active constraint; it shipped
-> across multiple stages and moved to Resolved in v2.37.4. Numbering
-> now: 1 chat-filter, 2 L10n stub, 3 TUNING.
+> Item 2 was reused to renumber the former L10n stub item; it shipped
+> in v2.43.0 (localization framework) and moved to Resolved. Item 4
+> (file split) was added post-v2.29.0 audit when the 200-locals cap
+> became a recurring active constraint; it shipped across multiple
+> stages and moved to Resolved in v2.37.4. Active now: 1 chat-filter,
+> 3 TUNING.
 
 ## Audit decisions (won't fix)
 
@@ -149,22 +150,22 @@ do side-by-side testing in a stable zone before deleting.
 
 ---
 
-### 2. L10n stub - low cost, future-proofing
+### 2. L10n stub - DONE (v2.43.0)
 
-Even without AceLocale, a trivial passthrough makes future
-localisation mechanical:
+The parked stub landed in full when a concrete request arrived (an
+influx of French and German players to the server). The trivial
+passthrough is now `EbonClearance_Locale.lua` (`NS.L` +
+`NS.RegisterLocale`), every player-facing string is wrapped at its
+call site as `L["English text"]`, and `EbonClearance_Locale_frFR.lua`
+/ `_deDE.lua` ship as community-fill templates (empty values fall back
+to English). Design: `docs/specs/2026-06-16-localization-framework-design.md`.
+Translator guide: `docs/TRANSLATING.md`. Invariants:
+`tests/test_locale_integrity.lua`.
 
-```lua
-local L = setmetatable({}, { __index = function(_, k) return k end })
--- Usage: PrintNice(L["Vendoring complete!"])
-```
-
-English keys stay English by default. When a locale table is added,
-it overrides keys. Adoption is incremental - wrap new strings first,
-then sweep existing ones.
-
-Status: still applicable, still nobody asking for it. Park unless a
-concrete localisation request lands.
+The one non-mechanical change was decoupling the tooltip verdict logic
+from its displayed label (a localized label can't be introspected with
+`:find("Will Sell")`), now driven by an English `statusTag` token - see
+the EC-TRAP in `EbonClearance_Tooltip.lua`.
 
 ---
 

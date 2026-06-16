@@ -44,6 +44,12 @@ local PET_NAME = "Greedy scavenger"
 local ADDON_AUTHOR = NS.ADDON_AUTHOR
 local ADDON_URL = NS.ADDON_URL
 
+-- Localization passthrough. NS.L is a metatable-backed table set by
+-- EbonClearance_Locale.lua (loads earlier per the .toc), so it exists at
+-- this file's load time. L[key] returns key unchanged unless a translation
+-- exists, so wrapping player-facing strings is a no-op on the enUS client.
+local L = NS.L
+
 -- Build-time version. The release workflow's sed rule rewrites the
 -- `local ADDON_VERSION = "vX.Y.Z"` line on each tag push (anchored
 -- pattern fixed in v2.13.2), so the in-game UI surfaces (settings
@@ -1908,7 +1914,7 @@ local function SummonGreedyScavenger()
         -- on every bag-full cycle. Print it here so the close-out fires
         -- regardless of which path actually completed the summon.
         if EC_compCache.pendingAnnounce then
-            PrintNice("|cff00ff00Greedy Scavenger resummoned.|r")
+            PrintNice(L["|cff00ff00Greedy Scavenger resummoned.|r"])
             EC_compCache.pendingAnnounce = false
         end
         -- v2.11.0: do NOT clear EC_addonDismissed here. A combat
@@ -2246,7 +2252,7 @@ local function EC_HandleBagFullForCycle()
     end
     EC_compCache.bagFullSince = nil
     EC_compCache.lootCycleState = STATE.WAITING_MERCHANT
-    PrintNicef("|cffffff00%d free bag slots left. Summoning Goblin Merchant...|r", free)
+    PrintNicef(L["|cffffff00%d free bag slots left. Summoning Goblin Merchant...|r"], free)
     if DismissCompanion then
         DismissCompanion("CRITTER")
     end
@@ -2462,7 +2468,7 @@ function EC_HandleAutoOpenContainers()
                 end
             end
             if hasOpenable then
-                PrintNice("Containers deferred until out of combat.")
+                PrintNice(L["Containers deferred until out of combat."])
             end
         end
         return
@@ -2789,14 +2795,14 @@ local function EC_AddItemToList(setName, itemID, label, quiet)
     local t = EC_GetListTable(setName)
     if not t then
         if not quiet then
-            PrintNicef("|cffff4444Could not resolve list: %s|r", tostring(setName))
+            PrintNicef(L["|cffff4444Could not resolve list: %s|r"], tostring(setName))
         end
         return false
     end
     local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
     if t[itemID] then
         if not quiet then
-            PrintNicef("|cffaaaaaa%s already on %s.|r", itemName, label)
+            PrintNicef(L["|cffaaaaaa%s already on %s.|r"], itemName, label)
         end
         return false
     end
@@ -2807,14 +2813,14 @@ local function EC_AddItemToList(setName, itemID, label, quiet)
     local conflictName = EC_FindAddConflict(itemID, setName)
     if conflictName then
         if not quiet then
-            PrintNicef("|cffff8888%s is already on %s. Remove it from there first.|r", itemName, conflictName)
+            PrintNicef(L["|cffff8888%s is already on %s. Remove it from there first.|r"], itemName, conflictName)
             PlaySound("igMainMenuOptionCheckBoxOff")
         end
         return false
     end
     t[itemID] = true
     if not quiet then
-        PrintNicef("Added |cffb6ffb6%s|r to %s.", itemName, label)
+        PrintNicef(L["Added |cffb6ffb6%s|r to %s."], itemName, label)
     end
     -- Refresh the corresponding settings panel if it's been opened.
     local panelName = EC_CTX_PANEL_FOR[setName]
@@ -2948,12 +2954,12 @@ function EC_compCache.buildElvUIBagButtons()
     sellBtn:SetPoint("TOPRIGHT", bagFrame, "TOPRIGHT", -98, -4)
     sellBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
-        GameTooltip:AddLine("|cff66ccff[EC]|r |cffb6ffb6Sell|r", 0.71, 1, 0.71)
-        GameTooltip:AddLine("Drop item to add to Sell List.", 1, 1, 1)
-        GameTooltip:AddLine("Click at a vendor to start selling now.", 0.7, 0.7, 0.7)
-        GameTooltip:AddLine("Right-click to open the Sell List panel.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["|cff66ccff[EC]|r |cffb6ffb6Sell|r"], 0.71, 1, 0.71)
+        GameTooltip:AddLine(L["Drop item to add to Sell List."], 1, 1, 1)
+        GameTooltip:AddLine(L["Click at a vendor to start selling now."], 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Right-click to open the Sell List panel."], 0.7, 0.7, 0.7)
         if not (MerchantFrame and MerchantFrame:IsShown()) then
-            GameTooltip:AddLine("Not at a vendor.", 1, 0.4, 0.4)
+            GameTooltip:AddLine(L["Not at a vendor."], 1, 0.4, 0.4)
         end
         GameTooltip:Show()
         self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
@@ -2982,10 +2988,10 @@ function EC_compCache.buildElvUIBagButtons()
     keepBtn:SetPoint("LEFT", sellBtn, "RIGHT", 4, 0)
     keepBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
-        GameTooltip:AddLine("|cff66ccff[EC]|r |cffffb84dKeep|r", 1, 0.78, 0.30)
-        GameTooltip:AddLine("Drop item to add to Keep List.", 1, 1, 1)
-        GameTooltip:AddLine("Items here are never auto-sold or auto-deleted.", 0.7, 0.7, 0.7)
-        GameTooltip:AddLine("Right-click to open the Keep List panel.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["|cff66ccff[EC]|r |cffffb84dKeep|r"], 1, 0.78, 0.30)
+        GameTooltip:AddLine(L["Drop item to add to Keep List."], 1, 1, 1)
+        GameTooltip:AddLine(L["Items here are never auto-sold or auto-deleted."], 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Right-click to open the Keep List panel."], 0.7, 0.7, 0.7)
         GameTooltip:Show()
         self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
         self._icon:SetVertexColor(self._hoverR, self._hoverG, self._hoverB)
@@ -3017,10 +3023,10 @@ function EC_compCache.buildElvUIBagButtons()
     delBtn:SetPoint("LEFT", keepBtn, "RIGHT", 4, 0)
     delBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
-        GameTooltip:AddLine("|cff66ccff[EC]|r |cffff4444Delete|r", 1, 0.3, 0.3)
-        GameTooltip:AddLine("Drop item to add to Delete List.", 1, 1, 1)
-        GameTooltip:AddLine("Items here are auto-destroyed at any merchant visit.", 0.7, 0.7, 0.7)
-        GameTooltip:AddLine("Right-click to open the Delete List panel.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["|cff66ccff[EC]|r |cffff4444Delete|r"], 1, 0.3, 0.3)
+        GameTooltip:AddLine(L["Drop item to add to Delete List."], 1, 1, 1)
+        GameTooltip:AddLine(L["Items here are auto-destroyed at any merchant visit."], 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Right-click to open the Delete List panel."], 0.7, 0.7, 0.7)
         GameTooltip:Show()
         self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
         self._icon:SetVertexColor(self._hoverR, self._hoverG, self._hoverB)
@@ -3092,7 +3098,7 @@ local function EC_RemoveItemFromList(setName, itemID, label)
         DB.blacklistAuto[itemID] = nil
     end
     local itemName = GetItemInfo(itemID) or ("ItemID:" .. itemID)
-    PrintNicef("Removed |cffb6ffb6%s|r from %s.", itemName, label)
+    PrintNicef(L["Removed |cffb6ffb6%s|r from %s."], itemName, label)
     -- Refresh the corresponding settings panel if it's been opened.
     local panelName = EC_CTX_PANEL_FOR[setName]
     if panelName then
@@ -3178,9 +3184,9 @@ function EC_compCache.syncEquipped()
         end
     end
     if added > 0 then
-        PrintNicef("|cffb6ffb6Added %d equipped item%s to your Keep List.|r", added, added == 1 and "" or "s")
+        PrintNicef(L["|cffb6ffb6Added %d equipped item%s to your Keep List.|r"], added, added == 1 and "" or "s")
     else
-        PrintNice("|cffaaaaaaYour equipped gear is already on the Keep List.|r")
+        PrintNice(L["|cffaaaaaaYour equipped gear is already on the Keep List.|r"])
     end
 end
 
@@ -3225,7 +3231,7 @@ function EC_compCache.syncEquipmentSets(silent)
     if not n or n == 0 then
         if not silent then
             PrintNice(
-                "|cffaaaaaaNo equipment sets saved. Use the Blizzard Equipment Manager to create one, then re-tick this option.|r"
+                L["|cffaaaaaaNo equipment sets saved. Use the Blizzard Equipment Manager to create one, then re-tick this option.|r"]
             )
         end
         return 0
@@ -3254,7 +3260,7 @@ function EC_compCache.syncEquipmentSets(silent)
     if not silent then
         if added > 0 then
             PrintNicef(
-                "|cffb6ffb6Auto-protected %d item%s from %d equipment set%s.|r",
+                L["|cffb6ffb6Auto-protected %d item%s from %d equipment set%s.|r"],
                 added,
                 added == 1 and "" or "s",
                 sets,
@@ -3262,7 +3268,7 @@ function EC_compCache.syncEquipmentSets(silent)
             )
         else
             PrintNicef(
-                "|cffaaaaaaScanned %d equipment set%s; all items already on the keep list.|r",
+                L["|cffaaaaaaScanned %d equipment set%s; all items already on the keep list.|r"],
                 sets,
                 sets == 1 and "" or "s"
             )
@@ -3505,7 +3511,7 @@ function EC_compCache.checkBagsForUpgrades()
                                 -- v2.12.0: origin tag for tooltip fork.
                                 DB.blacklistAuto[itemID] = "upgrade"
                                 local name = GetItemInfo(itemID) or ("Item:" .. itemID)
-                                PrintNicef("|cffb6ffb6Kept %s (looks like an upgrade).|r", name)
+                                PrintNicef(L["|cffb6ffb6Kept %s (looks like an upgrade).|r"], name)
                             end
                         end
                     end
@@ -3561,7 +3567,7 @@ local function EC_TickGoblinSummon(elapsed)
             EC_targetGoblinPending = true
             EC_targetGoblinTimer = 2.0
         else
-            PrintNice("|cffff4444Goblin Merchant not found in companion list!|r")
+            PrintNice(L["|cffff4444Goblin Merchant not found in companion list!|r"])
             EC_compCache.lootCycleState = STATE.LOOTING
         end
     end
@@ -3587,7 +3593,7 @@ local function EC_TickGoblinTarget(elapsed)
         if nowSummoned then
             EC_goblinRetryCount = 0
             PrintNicef(
-                "|cff00ff00Goblin Merchant summoned|r - press %s or right-click to sell.",
+                L["|cff00ff00Goblin Merchant summoned|r - press %s or right-click to sell."],
                 EC_FormatTargetMerchantBinding()
             )
             EC_merchantReminderPending = true
@@ -3603,7 +3609,7 @@ local function EC_TickGoblinTarget(elapsed)
             -- Only fires once per cycle (transition from N-1 -> N retries).
             if EC_goblinRetryCount == EC_GOBLIN_MAX_RETRIES - 1 then
                 PrintNice(
-                    "|cffffb84dGoblin Merchant retrying. Hold off your rotation briefly so the summon can land.|r"
+                    L["|cffffb84dGoblin Merchant retrying. Hold off your rotation briefly so the summon can land.|r"]
                 )
             end
             -- Re-route through the summon path so the next CallCompanion
@@ -3612,7 +3618,7 @@ local function EC_TickGoblinTarget(elapsed)
             EC_summonGoblinTimer = 0.5
         else
             EC_goblinRetryCount = 0
-            PrintNice("|cffff4444Goblin Merchant failed to summon. Resuming looting.|r")
+            PrintNice(L["|cffff4444Goblin Merchant failed to summon. Resuming looting.|r"])
             EC_compCache.lootCycleState = STATE.LOOTING
         end
     end
@@ -3629,7 +3635,7 @@ local function EC_TickMerchantReminder(elapsed)
     if EC_merchantReminderTimer <= 0 then
         EC_merchantReminderPending = false
         if EC_compCache.lootCycleState == STATE.WAITING_MERCHANT then
-            PrintNice("|cffffff00Right-click the Goblin Merchant to open the vendor window.|r")
+            PrintNice(L["|cffffff00Right-click the Goblin Merchant to open the vendor window.|r"])
         end
     end
     return false
@@ -3718,9 +3724,9 @@ local function EC_HandleScavengerOut(scavengerOut)
         EC_scavMovementAccum = 0
         EC_recentLootTimes = {}
         if stuckByMovement then
-            PrintNice("|cffffff00Scavenger fell behind. Resummoning when you stop moving.|r")
+            PrintNice(L["|cffffff00Scavenger fell behind. Resummoning when you stop moving.|r"])
         else
-            PrintNice("|cffffff00Scavenger went quiet during looting. Resummoning when you stop moving.|r")
+            PrintNice(L["|cffffff00Scavenger went quiet during looting. Resummoning when you stop moving.|r"])
         end
         DismissGreedyScavenger()
     end
@@ -3821,7 +3827,7 @@ local function EC_TryResummonScavenger(greedyIndex, anyPetOut, goblinStillOut)
     -- log doesn't fill with duplicate "resummoned" lines during heavy
     -- combat farming.
     if EC_compCache.pendingAnnounce then
-        PrintNice("|cff00ff00Greedy Scavenger resummoned.|r")
+        PrintNice(L["|cff00ff00Greedy Scavenger resummoned.|r"])
         EC_compCache.pendingAnnounce = false
     end
     -- Anchor the user-dismiss-vs-leash classification window for this summon
@@ -4414,7 +4420,7 @@ function EC_compCache.executeBagSlotDelete(bag, slot, itemID, count, quality, an
     end
     if announce then
         local link = select(2, GetItemInfo(itemID)) or ("item:" .. tostring(itemID))
-        PrintNicef("|cffff4444Auto-deleted|r %s.", link)
+        PrintNicef(L["|cffff4444Auto-deleted|r %s."], link)
     end
     return true
 end
@@ -4551,7 +4557,7 @@ local function BuildQueue(junkOnly)
         for i = #queue, cap + 1, -1 do
             queue[i] = nil
         end
-        PrintNicef("|cffffff00Sold %d items this trip (%d more left). Talk to the merchant again to sell the rest.|r", cap, removed)
+        PrintNicef(L["|cffffff00Sold %d items this trip (%d more left). Talk to the merchant again to sell the rest.|r"], cap, removed)
     end
 end
 
@@ -4572,7 +4578,7 @@ local function FinishRun()
 
     -- Check if merchant is still open - delay re-scan so server can process sold items
     if MerchantFrame and MerchantFrame:IsShown() then
-        PrintNicef("Sold |cffffff00%d|r items so far. Checking for more...", EC_batchTotalSold)
+        PrintNicef(L["Sold |cffffff00%d|r items so far. Checking for more..."], EC_batchTotalSold)
         EC_Delay(1.0, function()
             if not MerchantFrame or not MerchantFrame:IsShown() then
                 return
@@ -4586,7 +4592,7 @@ local function FinishRun()
             else
                 -- Nothing left - print final summary
                 PrintNicef(
-                    "Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
+                    L["Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s"],
                     EC_batchTotalSold,
                     CopperToColoredText(EC_batchTotalGold)
                 )
@@ -4615,7 +4621,7 @@ local function FinishRun()
 
     -- All done - print final summary
     PrintNicef(
-        "Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s",
+        L["Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s"],
         EC_batchTotalSold,
         CopperToColoredText(EC_batchTotalGold)
     )
@@ -4823,7 +4829,7 @@ local function StartRun()
                 EC_BumpStat("totalRepairCopper", repairCost)
                 EC_session.repairs = EC_session.repairs + 1
                 EC_session.repairCopper = EC_session.repairCopper + repairCost
-                PrintNicef("Repaired from guild bank: %s", CopperToColoredText(repairCost))
+                PrintNicef(L["Repaired from guild bank: %s"], CopperToColoredText(repairCost))
             elseif GetMoney and GetMoney() >= repairCost then
                 RepairAllItems()
                 EC_BumpStat("totalRepairs", 1)
@@ -4837,7 +4843,7 @@ local function StartRun()
     BuildQueue(not merchantAllowed)
 
     if #queue == 0 then
-        PrintNice("Nothing to sell.")
+        PrintNice(L["Nothing to sell."])
         EC_compCache.vendorRunning = false
         if UnitExists("target") and UnitName("target") == TARGET_NAME and MerchantFrame and MerchantFrame:IsShown() then
             EC_SummonGreedyWithDelay()
@@ -4924,7 +4930,7 @@ end
 -- SecureActionButton helper) rather than reviving this dead surface.
 
 StaticPopupDialogs["EC_CONFIRM_RESET_LIFETIME"] = {
-    text = "Reset |cffb6ffb6EbonClearance|r lifetime stats?\n|cffaaaaaaThis clears money earned, items sold, items deleted, and repair totals. Session stats are not affected.|r",
+    text = L["Reset |cffb6ffb6EbonClearance|r lifetime stats?\n|cffaaaaaaThis clears money earned, items sold, items deleted, and repair totals. Session stats are not affected.|r"],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -4939,7 +4945,7 @@ StaticPopupDialogs["EC_CONFIRM_RESET_LIFETIME"] = {
 }
 
 StaticPopupDialogs["EC_CONFIRM_RESET_SESSION"] = {
-    text = "Reset session stats?",
+    text = L["Reset session stats?"],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -4954,7 +4960,7 @@ StaticPopupDialogs["EC_CONFIRM_RESET_SESSION"] = {
 }
 
 StaticPopupDialogs["EC_CONFIRM_DELETE_PROFILE"] = {
-    text = 'Delete profile "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r',
+    text = L['Delete profile "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r'],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -4969,7 +4975,7 @@ StaticPopupDialogs["EC_CONFIRM_DELETE_PROFILE"] = {
 }
 
 StaticPopupDialogs["EC_CONFIRM_CLEAR_PROFILE"] = {
-    text = 'Clear all items from profile "|cffffff00%s|r"?\n|cffaaaaaaThe profile itself will remain.|r',
+    text = L['Clear all items from profile "|cffffff00%s|r"?\n|cffaaaaaaThe profile itself will remain.|r'],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -4987,7 +4993,7 @@ StaticPopupDialogs["EC_CONFIRM_CLEAR_PROFILE"] = {
 -- (Whitelist - Character / Whitelist - Account / Blacklist / Deletion List).
 -- The %s slot is filled with the list's user-facing title.
 StaticPopupDialogs["EC_CONFIRM_CLEAR_LIST"] = {
-    text = 'Remove every item from "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r',
+    text = L['Remove every item from "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r'],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -5003,7 +5009,7 @@ StaticPopupDialogs["EC_CONFIRM_CLEAR_LIST"] = {
 
 -- v2.42.0: confirm enabling auto-delete-on-pickup (irreversible behaviour).
 StaticPopupDialogs["EC_CONFIRM_AUTODELETE"] = {
-    text = "Auto-delete permanently destroys Delete List items the instant they're looted - no vendor step, no undo. Turn it on?",
+    text = L["Auto-delete permanently destroys Delete List items the instant they're looted - no vendor step, no undo. Turn it on?"],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -5022,10 +5028,7 @@ StaticPopupDialogs["EC_CONFIRM_AUTODELETE"] = {
 -- OnAccept invokes the callback function passed via StaticPopup_Show's
 -- third "data" argument, mirroring the EC_CONFIRM_CLEAR_LIST pattern.
 StaticPopupDialogs["EC_CONFIRM_CLEAN_UPGRADES"] = {
-    text = "Remove |cffffff00%d|r stale 'Upgrade'-tagged entries from your Keep List?\n"
-        .. "|cffaaaaaaThese items were auto-tagged as upgrades but are no longer above your "
-        .. "currently-equipped iLvl. Manual Keep List entries (no auto-tag) and 'Worn'-tagged "
-        .. "entries are not affected.|r",
+    text = L["Remove |cffffff00%d|r stale 'Upgrade'-tagged entries from your Keep List?\n|cffaaaaaaThese items were auto-tagged as upgrades but are no longer above your currently-equipped iLvl. Manual Keep List entries (no auto-tag) and 'Worn'-tagged entries are not affected.|r"],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -5054,9 +5057,7 @@ StaticPopupDialogs["EC_CONFIRM_CLEAN_UPGRADES"] = {
 -- this out so a player who applies a preset can't be surprised about
 -- Sell / Keep / Delete lists.
 StaticPopupDialogs["EC_APPLY_QUICKSTART"] = {
-    text = "Apply %s?\n\n"
-        .. "This changes your speed, protection, auto-sell, and visual settings.\n\n"
-        .. "Your |cffb6ffb6Sell|r, |cffb6ffb6Keep|r, and |cffb6ffb6Delete|r lists stay exactly as they are.",
+    text = L["Apply %s?\n\nThis changes your speed, protection, auto-sell, and visual settings.\n\nYour |cffb6ffb6Sell|r, |cffb6ffb6Keep|r, and |cffb6ffb6Delete|r lists stay exactly as they are."],
     button1 = "Apply",
     button2 = CANCEL,
     OnAccept = function(self, data)
@@ -5239,14 +5240,14 @@ end
 
 local function EC_PrintConflictReport(conflicts)
     if #conflicts == 0 then
-        PrintNice("|cff00ff00No list conflicts found.|r")
+        PrintNice(L["|cff00ff00No list conflicts found.|r"])
         return
     end
-    PrintNicef("Found |cffffff00%d|r item(s) present in multiple lists:", #conflicts)
+    PrintNicef(L["Found |cffffff00%d|r item(s) present in multiple lists:"], #conflicts)
     for i = 1, #conflicts do
         local c = conflicts[i]
         local name = GetItemInfo(c.id) or ("ItemID:" .. c.id)
-        PrintNicef("  |cffb6ffb6%d|r  %s  [%s]", c.id, name, table.concat(c.lists, ", "))
+        PrintNicef(L["  |cffb6ffb6%d|r  %s  [%s]"], c.id, name, table.concat(c.lists, ", "))
     end
 end
 
@@ -5354,7 +5355,7 @@ end
 function EbonClearance_ToggleEnabled()
     EnsureDB()
     DB.enabled = not DB.enabled
-    PrintNicef("Now %s.", DB.enabled and "|cff00ff00enabled|r" or "|cffff4444disabled|r")
+    PrintNicef(L["Now %s."], DB.enabled and L["|cff00ff00enabled|r"] or L["|cffff4444disabled|r"])
     PlaySound(DB.enabled and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
     -- v2.39.1: single source of truth for the master Enable state.
     -- The helper now refreshes every UI surface that mirrors
@@ -5377,7 +5378,7 @@ end
 function EbonClearance_ForceSell()
     EnsureDB()
     if not MerchantFrame or not MerchantFrame:IsShown() then
-        PrintNice("|cffff4444Force sell|r: open a merchant first.")
+        PrintNice(L["|cffff4444Force sell|r: open a merchant first."])
         return
     end
     StartRun()
@@ -5398,7 +5399,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
     if cmd == "affixfind" then
         local needle = rest:lower()
         if needle == "" then
-            PrintNice("usage: /ec affixfind <text>")
+            PrintNice(L["usage: /ec affixfind <text>"])
             return
         end
         local set = EC_compCache.knownAffixDescriptions or {}
@@ -5545,7 +5546,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             PrintNice(result)
         elseif sub == "list" or sub == "" then
             EnsureDB()
-            PrintNice("Sell List Profiles:")
+            PrintNice(L["Sell List Profiles:"])
             local names = {}
             for name in pairs(DB.whitelistProfiles) do
                 if type(name) == "string" then
@@ -5558,11 +5559,11 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             for i = 1, #names do
                 local wlCount = EC_CountItems(DB.whitelistProfiles[names[i]])
                 local blCount = DB.blacklistProfiles[names[i]] and EC_CountItems(DB.blacklistProfiles[names[i]]) or 0
-                local tag = (names[i] == DB.activeProfileName) and " |cff00ff00(active)|r" or ""
-                PrintNicef("  |cffffff00%s|r - %d whitelist, %d blacklist%s", names[i], wlCount, blCount, tag)
+                local tag = (names[i] == DB.activeProfileName) and L[" |cff00ff00(active)|r"] or ""
+                PrintNicef(L["  |cffffff00%s|r - %d whitelist, %d blacklist%s"], names[i], wlCount, blCount, tag)
             end
         else
-            PrintNice("Usage: /ec profile save|load|delete|list <name>")
+            PrintNice(L["Usage: /ec profile save|load|delete|list <name>"])
         end
         return
     end
@@ -5578,7 +5579,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         if NS.Comms then
             NS.Comms.RunSelfTest()
         else
-            PrintNice("|cffff4444Comms module not loaded.|r")
+            PrintNice(L["|cffff4444Comms module not loaded.|r"])
         end
         return
     end
@@ -5587,9 +5588,9 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         -- Solo diagnostic for the guild-share panel: inject simulated members.
         if NS.GuildShare then
             local n = NS.GuildShare.InjectTestPeers()
-            PrintNicef("Injected %d simulated guild members. Open the Guild panel (or re-run this with it open) to see the pooled data.", n)
+            PrintNicef(L["Injected %d simulated guild members. Open the Guild panel (or re-run this with it open) to see the pooled data."], n)
         else
-            PrintNice("|cffff4444Guild-share module not loaded.|r")
+            PrintNice(L["|cffff4444Guild-share module not loaded.|r"])
         end
         return
     end
@@ -5607,19 +5608,19 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         local currentlyEnabled = DB and DB.enabled ~= false
         if cmd == "status" then
             PrintNicef(
-                "Currently %s.",
-                currentlyEnabled and "|cff00ff00ENABLED|r" or "|cffff4444DISABLED|r"
+                L["Currently %s."],
+                currentlyEnabled and L["|cff00ff00ENABLED|r"] or L["|cffff4444DISABLED|r"]
             )
-            PrintNice("|cff888888Right-click the minimap icon, tick the Main panel checkbox, or type /ec enable / /ec disable to switch.|r")
+            PrintNice(L["|cff888888Right-click the minimap icon, tick the Main panel checkbox, or type /ec enable / /ec disable to switch.|r"])
         elseif cmd == "enable" then
             if currentlyEnabled then
-                PrintNice("Already enabled.")
+                PrintNice(L["Already enabled."])
             else
                 EbonClearance_ToggleEnabled()
             end
         elseif cmd == "disable" then
             if not currentlyEnabled then
-                PrintNice("Already disabled.")
+                PrintNice(L["Already disabled."])
             else
                 EbonClearance_ToggleEnabled()
             end
@@ -5642,34 +5643,34 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         --   /ec affixdebug clear   - wipe the recorded rows
         local sub = (rest:match("^(%S+)") or ""):lower()
         if not ADB then
-            PrintNice("|cffff4444Affix debug requires the account DB; try again after the addon finishes loading.|r")
+            PrintNice(L["|cffff4444Affix debug requires the account DB; try again after the addon finishes loading.|r"])
             return
         end
         if sub == "on" then
             ADB.affixDebugEnabled = true
-            PrintNice("|cffb6ffb6Affix debug: ON.|r Reproduce the issue, then run |cffffff00/ec affixdebug dump|r.")
+            PrintNice(L["|cffb6ffb6Affix debug: ON.|r Reproduce the issue, then run |cffffff00/ec affixdebug dump|r."])
         elseif sub == "off" then
             ADB.affixDebugEnabled = false
-            PrintNice("|cffb6ffb6Affix debug: OFF.|r")
+            PrintNice(L["|cffb6ffb6Affix debug: OFF.|r"])
         elseif sub == "clear" then
             ADB.affixDebug = nil
-            PrintNice("|cffb6ffb6Affix debug log cleared.|r")
+            PrintNice(L["|cffb6ffb6Affix debug log cleared.|r"])
         elseif sub == "status" or sub == "" then
             local rows = (ADB.affixDebug and ADB.affixDebug.rows) or {}
             PrintNicef(
-                "Affix debug: %s, %d row(s) recorded.",
-                ADB.affixDebugEnabled and "|cffb6ffb6ON|r" or "|cff888888off|r",
+                L["Affix debug: %s, %d row(s) recorded."],
+                ADB.affixDebugEnabled and L["|cffb6ffb6ON|r"] or L["|cff888888off|r"],
                 #rows
             )
-            PrintNice("|cffaaaaaaSub-commands: on | off | status | dump | clear|r")
+            PrintNice(L["|cffaaaaaaSub-commands: on | off | status | dump | clear|r"])
         elseif sub == "dump" then
             if NS.ShowAffixDebugDump then
                 NS.ShowAffixDebugDump()
             else
-                PrintNice("|cffff4444Affix debug dump window is unavailable.|r")
+                PrintNice(L["|cffff4444Affix debug dump window is unavailable.|r"])
             end
         else
-            PrintNicef("|cffff4444Unknown sub-command:|r %s. Try on / off / status / dump / clear.", sub)
+            PrintNicef(L["|cffff4444Unknown sub-command:|r %s. Try on / off / status / dump / clear."], sub)
         end
         return
     end
@@ -5702,16 +5703,16 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                 for k in pairs(EC_compCache.processCache) do
                     EC_compCache.processCache[k] = nil
                 end
-                PrintNicef("|cffb6ffb6Process cache cleared|r (%d entry/entries removed). Re-run |cffffff00/ec processdebug|r to scan fresh.", n)
+                PrintNicef(L["|cffb6ffb6Process cache cleared|r (%d entry/entries removed). Re-run |cffffff00/ec processdebug|r to scan fresh."], n)
             else
-                PrintNice("|cffff4444processCache not available.|r")
+                PrintNice(L["|cffff4444processCache not available.|r"])
             end
             return
         end
         if NS.ShowProcessDebugDump then
             NS.ShowProcessDebugDump()
         else
-            PrintNice("|cffff4444Process debug dump is unavailable.|r")
+            PrintNice(L["|cffff4444Process debug dump is unavailable.|r"])
         end
         return
     end
@@ -5750,8 +5751,8 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             UpdateAddOnMemoryUsage()
         end
         local memKb = GetAddOnMemoryUsage and GetAddOnMemoryUsage("EbonClearance") or 0
-        PrintNice("|cffffff00=== EbonClearance perf ===|r")
-        PrintNicef("Memory: |cffb6ffb6%.1f KB|r", memKb)
+        PrintNice(L["|cffffff00=== EbonClearance perf ===|r"])
+        PrintNicef(L["Memory: |cffb6ffb6%.1f KB|r"], memKb)
         local profileOn = GetCVarBool and GetCVarBool("scriptProfile")
         if profileOn then
             if UpdateAddOnCPUUsage then
@@ -5763,16 +5764,16 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                 fps = 1
             end
             PrintNicef(
-                "CPU: |cffb6ffb6%.1f ms total|r (%.3f ms/frame avg at %.0f FPS)",
+                L["CPU: |cffb6ffb6%.1f ms total|r (%.3f ms/frame avg at %.0f FPS)"],
                 cpuMs, cpuMs / fps, fps
             )
         else
             PrintNice(
-                "|cff888888CPU profile is off. Enable with /console set scriptProfile 1 then /reload to see CPU numbers here.|r"
+                L["|cff888888CPU profile is off. Enable with /console set scriptProfile 1 then /reload to see CPU numbers here.|r"]
             )
         end
         PrintNicef(
-            "Caches: %d affix / %d hit-proc / %d tome / %d processable / %d bind / %d item-affix",
+            L["Caches: %d affix / %d hit-proc / %d tome / %d processable / %d bind / %d item-affix"],
             countKeys(EC_compCache.affixDataCache),
             countKeys(EC_compCache.chanceOnHitCache),
             countKeys(EC_compCache.tomeCache),
@@ -5782,7 +5783,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         )
         if DB then
             PrintNicef(
-                "Lists: %d sell / %d keep / %d delete / %d account-sell",
+                L["Lists: %d sell / %d keep / %d delete / %d account-sell"],
                 countKeys(DB.whitelist),
                 countKeys(DB.blacklist),
                 countKeys(DB.deleteList),
@@ -5791,14 +5792,14 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         end
         if ADB then
             PrintNicef(
-                "Side meta: %d (affix-gated) / %d (Hit-proc)",
+                L["Side meta: %d (affix-gated) / %d (Hit-proc)"],
                 countKeys(ADB.affixedListedItems),
                 countKeys(ADB.chanceOnHitListedItems)
             )
             if ADB.affixDebugEnabled then
                 local rows = (ADB.affixDebug and ADB.affixDebug.rows) or {}
                 PrintNicef(
-                    "|cffffb84daffixdebug ON|r - %d rows logged. Turn off with /ec affixdebug off when you're done.",
+                    L["|cffffb84daffixdebug ON|r - %d rows logged. Turn off with /ec affixdebug off when you're done."],
                     #rows
                 )
             end
@@ -5813,9 +5814,9 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         -- live here is duplication. Keeps the command so the
         -- conventional /<addon> help expectation still gives a useful
         -- response.
-        PrintNice("|cffffff00EbonClearance|r: type |cffffff00/ec|r to open settings.")
+        PrintNice(L["|cffffff00EbonClearance|r: type |cffffff00/ec|r to open settings."])
         PrintNice(
-            "|cffaaaaaaThe Slash Commands section there has every command with click-to-run buttons. The Help panel in Interface Options has the full FAQ.|r"
+            L["|cffaaaaaaThe Slash Commands section there has every command with click-to-run buttons. The Help panel in Interface Options has the full FAQ.|r"]
         )
         return
     end
@@ -5834,11 +5835,11 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             local nDeferred = #report.deferred
             local nSkipped = #report.skipped
             if nStale == 0 and nDeferred == 0 and nSkipped == 0 then
-                PrintNice("|cffaaaaaaNo 'Upgrade'-tagged entries on your Keep List.|r")
+                PrintNice(L["|cffaaaaaaNo 'Upgrade'-tagged entries on your Keep List.|r"])
                 return
             end
             PrintNicef(
-                "|cffffff00%d|r stale 'Upgrade' entr%s found (no longer above your equipped iLvl).",
+                L["|cffffff00%d|r stale 'Upgrade' entr%s found (no longer above your equipped iLvl)."],
                 nStale,
                 nStale == 1 and "y" or "ies"
             )
@@ -5847,7 +5848,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                 for i = 1, cap do
                     local s = report.stale[i]
                     PrintNicef(
-                        "  |cffaaaaaa[%d]|r %s |cffaaaaaa(iLvl %d, equipped %d)|r",
+                        L["  |cffaaaaaa[%d]|r %s |cffaaaaaa(iLvl %d, equipped %d)|r"],
                         s.id,
                         s.name,
                         s.iLvl,
@@ -5855,19 +5856,19 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                     )
                 end
                 if nStale > cap then
-                    PrintNicef("  |cffaaaaaa... and %d more.|r", nStale - cap)
+                    PrintNicef(L["  |cffaaaaaa... and %d more.|r"], nStale - cap)
                 end
             end
             if nDeferred > 0 then
                 PrintNicef(
-                    "|cffaaaaaaDeferred %d entr%s (item info not loaded; rerun the command later).|r",
+                    L["|cffaaaaaaDeferred %d entr%s (item info not loaded; rerun the command later).|r"],
                     nDeferred,
                     nDeferred == 1 and "y" or "ies"
                 )
             end
             if nSkipped > 0 then
                 PrintNicef(
-                    "|cffaaaaaaSkipped %d entr%s (no candidate slot populated to compare against).|r",
+                    L["|cffaaaaaaSkipped %d entr%s (no candidate slot populated to compare against).|r"],
                     nSkipped,
                     nSkipped == 1 and "y" or "ies"
                 )
@@ -5878,7 +5879,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                     dialog.data = function()
                         local removed = EC_compCache.applyStaleUpgradeCleanup(report)
                         PrintNicef(
-                            "Removed |cffffff00%d|r stale 'Upgrade' entr%s from the Keep List.",
+                            L["Removed |cffffff00%d|r stale 'Upgrade' entr%s from the Keep List."],
                             removed,
                             removed == 1 and "y" or "ies"
                         )
@@ -5889,7 +5890,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                     end
                 end
             elseif nStale > 0 then
-                PrintNice("Run |cffffff00/ec clean upgrades apply|r to remove them.")
+                PrintNice(L["Run |cffffff00/ec clean upgrades apply|r to remove them."])
             end
             return
         end
@@ -5898,7 +5899,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         if rest == "apply" and #conflicts > 0 then
             local removed = EC_ApplyCleanResolution(conflicts)
             PrintNicef(
-                "Removed |cffffff00%d|r duplicate entr%s (precedence: blacklist > deleteList > whitelist).",
+                L["Removed |cffffff00%d|r duplicate entr%s (precedence: blacklist > deleteList > whitelist)."],
                 removed,
                 removed == 1 and "y" or "ies"
             )
@@ -5911,7 +5912,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                 bp.listUI:Refresh()
             end
         elseif #conflicts > 0 then
-            PrintNice("Run |cffffff00/ec clean apply|r to auto-resolve (blacklist > deleteList > whitelist).")
+            PrintNice(L["Run |cffffff00/ec clean apply|r to auto-resolve (blacklist > deleteList > whitelist)."])
         end
         return
     end
@@ -5923,10 +5924,10 @@ end
 SLASH_ECDEBUG1 = "/ecdebug"
 SlashCmdList["ECDEBUG"] = function()
     if not DB then
-        PrintNice("|cffff4444DB not loaded.|r")
+        PrintNice(L["|cffff4444DB not loaded.|r"])
         return
     end
-    PrintNice("|cffffff00=== EbonClearance Debug ===|r")
+    PrintNice(L["|cffffff00=== EbonClearance Debug ===|r"])
     for q = 1, 4 do
         local r = DB.qualityRules and DB.qualityRules[q] or {}
         local rarityName = (q == 1) and "White" or (q == 2) and "Green" or (q == 3) and "Blue" or "Epic"
@@ -5942,7 +5943,7 @@ SlashCmdList["ECDEBUG"] = function()
         wlCount = wlCount + 1
     end
     if wlCount == 0 then
-        PrintNice("  (whitelist is empty)")
+        PrintNice(L["  (whitelist is empty)"])
     end
 
     -- Scan bags and check which items would be sold. v2.13.4: routes
@@ -5955,7 +5956,7 @@ SlashCmdList["ECDEBUG"] = function()
     -- inferred from EC_IsSellable's authoritative outcome plus the
     -- two cheap stable predicates (isJunk and whitelistPass) computed
     -- locally.
-    PrintNice("|cffffff00--- Bag scan ---|r")
+    PrintNice(L["|cffffff00--- Bag scan ---|r"])
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
@@ -5986,7 +5987,7 @@ SlashCmdList["ECDEBUG"] = function()
             end
         end
     end
-    PrintNice("|cffffff00=== End Debug ===|r")
+    PrintNice(L["|cffffff00=== End Debug ===|r"])
 end
 
 local f = CreateFrame("Frame")
@@ -6190,7 +6191,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
             if n > 0 then
                 PrintNicef(
-                    "|cffaaaaaa%d lockbox(es) available.|r Click |cffffb84dProcess Next|r in Process Bags to open.",
+                    L["|cffaaaaaa%d lockbox(es) available.|r Click |cffffb84dProcess Next|r in Process Bags to open."],
                     n
                 )
             end
@@ -6330,7 +6331,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             local link = GetInventoryItemLink and GetInventoryItemLink("player", slot)
             local id = link and tonumber(link:match("item:(%d+)"))
             local itemName = (id and GetItemInfo(id)) or "item"
-            PrintNicef("Auto-protected |cffb6ffb6%s|r (added to Keep list).", itemName)
+            PrintNicef(L["Auto-protected |cffb6ffb6%s|r (added to Keep list)."], itemName)
             local bp = _G["EbonClearanceOptionsBlacklist"]
             if bp and bp.listUI then
                 bp.listUI:Refresh()
@@ -6414,7 +6415,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             if DB and DB._needsQuickstartOpen then
                 DB._needsQuickstartOpen = nil
                 PrintNice(
-                    "|cffffff00Welcome to EbonClearance!|r Opening Quickstart - pick a preset or answer a few questions to set up."
+                    L["|cffffff00Welcome to EbonClearance!|r Opening Quickstart - pick a preset or answer a few questions to set up."]
                 )
                 -- Extra 0.3s defer so the UI has finished settling
                 -- before the standalone Quickstart frame floats up.
@@ -6425,7 +6426,7 @@ f:SetScript("OnEvent", function(self, event, ...)
                     end
                 end)
             else
-                PrintNice("Enabled. Use |cff00ff00/ec|r to configure.")
+                PrintNice(L["Enabled. Use |cff00ff00/ec|r to configure."])
             end
             -- Fresh-install one-shot equipped sync. Set in EnsureDB only
             -- when the SavedVariable was nil at first ADDON_LOADED, so

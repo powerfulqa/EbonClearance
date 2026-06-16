@@ -38,6 +38,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local MainOptions = CreateFrame("Frame", "EbonClearanceOptionsMain", InterfaceOptionsFramePanelContainer)
 MainOptions.name = "EbonClearance"
@@ -88,14 +89,14 @@ end
 -- (7) reuses the Artifact (6) gold tone, matching the legacy
 -- in-game tooltip palette.
 local QUALITY_NAMES = {
-    [0] = "Poor",
-    [1] = "Common",
-    [2] = "Uncommon",
-    [3] = "Rare",
-    [4] = "Epic",
-    [5] = "Legendary",
-    [6] = "Artifact",
-    [7] = "Heirloom",
+    [0] = L["Poor"],
+    [1] = L["Common"],
+    [2] = L["Uncommon"],
+    [3] = L["Rare"],
+    [4] = L["Epic"],
+    [5] = L["Legendary"],
+    [6] = L["Artifact"],
+    [7] = L["Heirloom"],
 }
 local QUALITY_HEX = {
     [0] = "9d9d9d",
@@ -114,7 +115,7 @@ local QUALITY_HEX = {
 -- accumulate pending refreshes.
 local function ItemLabel(id)
     if not id then
-        return "None"
+        return L["None"]
     end
     local name = GetItemInfo(id)
     if name then
@@ -169,7 +170,7 @@ function NS.RefreshStats()
         if not showSession then
             return ""
         end
-        return string.format("  |cff888888(session +%s)|r", tostring(n or 0))
+        return string.format(L["  |cff888888(session +%s)|r"], tostring(n or 0))
     end
     local function sessionMoneySuffix(c)
         if not showSession then
@@ -178,19 +179,19 @@ function NS.RefreshStats()
         return "  |cff888888(session +" .. NS.CopperToColoredText(c or 0) .. "|cff888888)|r"
     end
     panel.statsMoney:SetText(
-        "Total Money Made: " .. NS.CopperToColoredText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
+        L["Total Money Made: "] .. NS.CopperToColoredText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
     )
     panel.statsSold:SetText(
-        "Total Items Sold: " .. tostring(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
+        L["Total Items Sold: "] .. tostring(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
     )
     panel.statsDeleted:SetText(
-        "Total Items Deleted: " .. tostring(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
+        L["Total Items Deleted: "] .. tostring(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
     )
     panel.statsRepairs:SetText(
-        "Total Repairs: " .. tostring(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
+        L["Total Repairs: "] .. tostring(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
     )
     panel.statsRepairCost:SetText(
-        "Total Repair Cost: "
+        L["Total Repair Cost: "]
             .. NS.CopperToColoredText(src.totalRepairCopper or 0)
             .. sessionMoneySuffix(NS.session.repairCopper)
     )
@@ -228,13 +229,13 @@ function NS.RefreshStats()
     if panel.statsSessionGPH then
         if sessionGPH then
             panel.statsSessionGPH:SetText(
-                "Session Gold/Hour: "
+                L["Session Gold/Hour: "]
                     .. NS.CopperToColoredText(sessionGPH)
                     .. string.format("  |cff888888(%s)|r", humanDuration(elapsed))
             )
         else
             panel.statsSessionGPH:SetText(
-                "Session Gold/Hour: |cff888888-  (computing...)|r"
+                L["Session Gold/Hour: |cff888888-  (computing...)|r"]
             )
         end
     end
@@ -268,24 +269,24 @@ function NS.RefreshStats()
             local at = src.bestGPHAt or 0
             local zone = src.bestGPHZone
             if not zone or zone == "" then
-                zone = "Unknown"
+                zone = L["Unknown"]
             end
             local when
             if at <= 0 then
-                when = "unknown date"
+                when = L["unknown date"]
             else
                 local secs = time() - at
                 if secs < 60 then
-                    when = "just now"
+                    when = L["just now"]
                 elseif secs < 3600 then
                     local n = math.floor(secs / 60)
-                    when = string.format("%d minute%s ago", n, n == 1 and "" or "s")
+                    when = string.format(L["%d minute%s ago"], n, n == 1 and "" or "s")
                 elseif secs < 86400 then
                     local n = math.floor(secs / 3600)
-                    when = string.format("%d hour%s ago", n, n == 1 and "" or "s")
+                    when = string.format(L["%d hour%s ago"], n, n == 1 and "" or "s")
                 elseif secs < 30 * 86400 then
                     local n = math.floor(secs / 86400)
-                    when = string.format("%d day%s ago", n, n == 1 and "" or "s")
+                    when = string.format(L["%d day%s ago"], n, n == 1 and "" or "s")
                 else
                     when = date("%Y-%m-%d", at)
                 end
@@ -295,15 +296,15 @@ function NS.RefreshStats()
             -- tells the player which character set the account record.
             local charSuffix = ""
             if view == "account" and src.bestGPHChar and src.bestGPHChar ~= "" then
-                charSuffix = string.format(" on %s", src.bestGPHChar)
+                charSuffix = string.format(L[" on %s"], src.bestGPHChar)
             end
             panel.statsBestGPH:SetText(
-                "Best Gold/Hour: "
+                L["Best Gold/Hour: "]
                     .. NS.CopperToColoredText(best)
-                    .. string.format("\n  |cff888888in %s, %s%s|r", zone, when, charSuffix)
+                    .. string.format(L["\n  |cff888888in %s, %s%s|r"], zone, when, charSuffix)
             )
         else
-            panel.statsBestGPH:SetText("Best Gold/Hour: |cff888888-|r")
+            panel.statsBestGPH:SetText(L["Best Gold/Hour: |cff888888-|r"])
         end
     end
 
@@ -313,7 +314,7 @@ function NS.RefreshStats()
         -- this row since the average wouldn't be meaningful across
         -- characters with different equip levels.
         if view == "account" then
-            panel.statsAvgWorth:SetText("Average Inventory Worth: |cff888888- (per-character only)|r")
+            panel.statsAvgWorth:SetText(L["Average Inventory Worth: |cff888888- (per-character only)|r"])
         else
             local cnt = DB.inventoryWorthCount or 0
             local total = DB.inventoryWorthTotal or 0
@@ -321,14 +322,14 @@ function NS.RefreshStats()
             if cnt > 0 then
                 avg = math.floor((total / cnt) + 0.5)
             end
-            panel.statsAvgWorth:SetText("Average Inventory Worth: " .. NS.CopperToColoredText(avg))
+            panel.statsAvgWorth:SetText(L["Average Inventory Worth: "] .. NS.CopperToColoredText(avg))
         end
     end
 
     if panel.statsQualityBreakdown then
         local items = src.soldItemsByQuality or {}
         local copper = src.soldCopperByQuality or {}
-        local rows = { "|cffffd200Sold by Quality|r" }
+        local rows = { L["|cffffd200Sold by Quality|r"] }
         local any = false
         for q = 0, 7 do
             local cnt = items[q]
@@ -348,14 +349,14 @@ function NS.RefreshStats()
             end
         end
         if not any then
-            rows[#rows + 1] = "  |cff888888Nothing sold yet.|r"
+            rows[#rows + 1] = L["  |cff888888Nothing sold yet.|r"]
         end
         panel.statsQualityBreakdown:SetText(table.concat(rows, "\n"))
     end
 
     if panel.statsDeletedByQuality then
         local items = src.deletedItemsByQuality or {}
-        local rows = { "|cffffd200Deleted by Quality|r" }
+        local rows = { L["|cffffd200Deleted by Quality|r"] }
         local any = false
         for q = 0, 7 do
             local cnt = items[q]
@@ -370,7 +371,7 @@ function NS.RefreshStats()
             end
         end
         if not any then
-            rows[#rows + 1] = "  |cff888888Nothing deleted yet.|r"
+            rows[#rows + 1] = L["  |cff888888Nothing deleted yet.|r"]
         end
         panel.statsDeletedByQuality:SetText(table.concat(rows, "\n"))
     end
@@ -378,9 +379,9 @@ function NS.RefreshStats()
     if panel.statsMostSold then
         local top = GetTopNItems(src.soldItemCounts, 5)
         if #top == 0 then
-            panel.statsMostSold:SetText("|cffffd200Top 5 Most Sold|r\n  |cff888888Nothing sold yet.|r")
+            panel.statsMostSold:SetText(L["|cffffd200Top 5 Most Sold|r\n  |cff888888Nothing sold yet.|r"])
         else
-            local rows = { "|cffffd200Top 5 Most Sold|r" }
+            local rows = { L["|cffffd200Top 5 Most Sold|r"] }
             for i = 1, #top do
                 rows[#rows + 1] = string.format(
                     "  %d. %s  |cff888888x|r|cffffd100%d|r",
@@ -396,9 +397,9 @@ function NS.RefreshStats()
     if panel.statsMostDeleted then
         local top = GetTopNItems(src.deletedItemCounts, 5)
         if #top == 0 then
-            panel.statsMostDeleted:SetText("|cffffd200Top 5 Most Deleted|r\n  |cff888888Nothing deleted yet.|r")
+            panel.statsMostDeleted:SetText(L["|cffffd200Top 5 Most Deleted|r\n  |cff888888Nothing deleted yet.|r"])
         else
-            local rows = { "|cffffd200Top 5 Most Deleted|r" }
+            local rows = { L["|cffffd200Top 5 Most Deleted|r"] }
             for i = 1, #top do
                 rows[#rows + 1] = string.format(
                     "  %d. %s  |cff888888x|r|cffffd100%d|r",
@@ -413,16 +414,16 @@ function NS.RefreshStats()
 
     if panel.statsProcessTotals then
         local counts = src.processCastCounts or {}
-        local rows = { "|cffffd200Process Bags Totals|r" }
+        local rows = { L["|cffffd200Process Bags Totals|r"] }
         local any = false
         -- Fixed display order: Disenchant, Milling, Prospecting, Pick Lock.
         -- Mirrors the Process Bags panel's section order.
         local order = { "Disenchant", "Milling", "Prospecting", "Pick Lock" }
         local labels = {
-            Disenchant = "Disenchanted",
-            Milling = "Milled",
-            Prospecting = "Prospected",
-            ["Pick Lock"] = "Lockboxes Picked",
+            Disenchant = L["Disenchanted"],
+            Milling = L["Milled"],
+            Prospecting = L["Prospected"],
+            ["Pick Lock"] = L["Lockboxes Picked"],
         }
         for _, k in ipairs(order) do
             local n = counts[k] or 0
@@ -432,7 +433,7 @@ function NS.RefreshStats()
             end
         end
         if not any then
-            rows[#rows + 1] = "  |cff888888Nothing processed yet.|r"
+            rows[#rows + 1] = L["  |cff888888Nothing processed yet.|r"]
         end
         panel.statsProcessTotals:SetText(table.concat(rows, "\n"))
     end
@@ -451,9 +452,9 @@ function NS.RefreshStats()
             end
             return a.copper > b.copper
         end)
-        local rows = { "|cffffd200Top Zones (gold earned)|r" }
+        local rows = { L["|cffffd200Top Zones (gold earned)|r"] }
         if #entries == 0 then
-            rows[#rows + 1] = "  |cff888888No zones tracked yet.|r"
+            rows[#rows + 1] = L["  |cff888888No zones tracked yet.|r"]
         else
             local cap = math.min(#entries, 5)
             for i = 1, cap do
@@ -572,7 +573,7 @@ local function BuildMainPanel(panel, content)
 
     local welcomeLabel = NS.MakeLabel(
         content,
-        "Welcome to |cffb6ffb6EbonClearance|r - bag management for Project Ebonhold.",
+        L["Welcome to |cffb6ffb6EbonClearance|r - bag management for Project Ebonhold."],
         16,
         -52
     )
@@ -585,12 +586,12 @@ local function BuildMainPanel(panel, content)
         descLabel2:SetWordWrap(true)
     end
     descLabel2:SetText(
-        "Out of the box it sells your junk and old gear when you visit a merchant, keeps your upgrades, and never touches anything important.\n\n"
-            .. "Want more control?\n"
-            .. "  |cffb6ffb6Sell List|r - items you want sold every time.\n"
-            .. "  |cffb6ffb6Keep List|r - items the addon should never touch.\n"
-            .. "  |cffb6ffb6Merchant Settings|r - change what counts as old gear.\n"
-            .. "  |cffb6ffb6Process Bags|r - one button to disenchant, mill, prospect, or pick locks."
+        L["Out of the box it sells your junk and old gear when you visit a merchant, keeps your upgrades, and never touches anything important.\n\n"]
+            .. L["Want more control?\n"]
+            .. L["  |cffb6ffb6Sell List|r - items you want sold every time.\n"]
+            .. L["  |cffb6ffb6Keep List|r - items the addon should never touch.\n"]
+            .. L["  |cffb6ffb6Merchant Settings|r - change what counts as old gear.\n"]
+            .. L["  |cffb6ffb6Process Bags|r - one button to disenchant, mill, prospect, or pick locks."]
     )
 
     -- v2.39.1: master Enable toggle on the Main panel. The flag
@@ -610,7 +611,7 @@ local function BuildMainPanel(panel, content)
         content,
         "EbonClearanceMainEnableCB",
         descLabel2,
-        "Enable EbonClearance",
+        L["Enable EbonClearance"],
         function()
             return NS.DB and NS.DB.enabled ~= false
         end,
@@ -635,7 +636,7 @@ local function BuildMainPanel(panel, content)
     local quickstartBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     quickstartBtn:SetSize(140, 26)
     quickstartBtn:SetPoint("TOPLEFT", enableCB, "BOTTOMLEFT", 0, -10)
-    quickstartBtn:SetText("Open Quickstart")
+    quickstartBtn:SetText(L["Open Quickstart"])
     quickstartBtn:SetScript("OnClick", function()
         local qf = _G["EbonClearanceOptionsQuickstart"]
         if qf and qf.Show then
@@ -650,7 +651,7 @@ local function BuildMainPanel(panel, content)
         quickstartHint:SetWordWrap(true)
     end
     EC_compCache.setPanelWidth(quickstartHint, 180)
-    quickstartHint:SetText("|cff888888New here? Pick a preset or answer 15 questions for a guided setup.|r")
+    quickstartHint:SetText(L["|cff888888New here? Pick a preset or answer 15 questions for a guided setup.|r"])
 
     -- Tip on its own line, in grey, so it reads as a hint rather than
     -- another sentence in the main description block.
@@ -662,7 +663,7 @@ local function BuildMainPanel(panel, content)
     if mainTip.SetWordWrap then
         mainTip:SetWordWrap(true)
     end
-    mainTip:SetText("|cff888888Right-click any bag item with Alt held for quick actions.|r")
+    mainTip:SetText(L["|cff888888Right-click any bag item with Alt held for quick actions.|r"])
 
     -- Update-available nudge toggle. Anchored below mainTip; cmdHeader
     -- re-anchors to this checkbox so the layout chain stays intact.
@@ -670,7 +671,7 @@ local function BuildMainPanel(panel, content)
         content,
         "EbonClearanceVersionAlertCB",
         mainTip,
-        "Tell me when an update is available",
+        L["Tell me when an update is available"],
         function()
             -- versionAlerts is an account-level field on the top-level
             -- SavedVariables (not per-character), so read it directly rather
@@ -690,7 +691,7 @@ local function BuildMainPanel(panel, content)
     -- in v2.36.x; this anchor chain now goes mainTip -> versionAlertCB -> cmdHeader.
     local cmdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     cmdHeader:SetPoint("TOPLEFT", versionAlertCB, "BOTTOMLEFT", 0, -20)
-    cmdHeader:SetText("Slash Commands")
+    cmdHeader:SetText(L["Slash Commands"])
 
     -- v2.37.6: per-row slash command list. Each row gets a [Run] button
     -- when the command works without arguments (or with the safe default
@@ -699,68 +700,71 @@ local function BuildMainPanel(panel, content)
     -- Labels start at the same x regardless of whether the row has a
     -- button, so the two columns line up.
     local SLASH_ROWS = {
-        { label = "|cffffff00/ec|r  Open settings |cffaaaaaa(you are here)|r" },
+        { label = "|cffffff00/ec|r  " .. L["Open settings |cffaaaaaa(you are here)|r"] },
         {
             run = "status",
-            label = "|cffffff00/ec status|r  Is EbonClearance currently on or off?",
+            label = "|cffffff00/ec status|r  " .. L["Is EbonClearance currently on or off?"],
         },
         {
             run = "enable",
-            label = "|cffffff00/ec enable|r  Turn EbonClearance on",
+            label = "|cffffff00/ec enable|r  " .. L["Turn EbonClearance on"],
         },
         {
             run = "disable",
-            label = "|cffffff00/ec disable|r  Turn EbonClearance off",
+            label = "|cffffff00/ec disable|r  " .. L["Turn EbonClearance off"],
         },
-        { run = "profile list", label = "|cffffff00/ec profile list|r  Show your saved profiles" },
+        { run = "profile list", label = "|cffffff00/ec profile list|r  " .. L["Show your saved profiles"] },
         {
-            label = "|cffffff00/ec profile [save|load|delete] <name>|r  Manage profiles by name |cffaaaaaa(or use the Profiles panel)|r",
+            label = "|cffffff00/ec profile [save|load|delete] <name>|r  "
+                .. L["Manage profiles by name |cffaaaaaa(or use the Profiles panel)|r"],
         },
         {
             run = "clean",
-            label = "|cffffff00/ec clean|r  Find items on more than one list |cffaaaaaa(add 'apply' to fix)|r",
+            label = "|cffffff00/ec clean|r  " .. L["Find items on more than one list |cffaaaaaa(add 'apply' to fix)|r"],
         },
         {
             run = "clean upgrades",
-            label = "|cffffff00/ec clean upgrades|r  Find old 'Upgrade'-tagged Keep List items |cffaaaaaa(add 'apply' to remove)|r",
+            label = "|cffffff00/ec clean upgrades|r  "
+                .. L["Find old 'Upgrade'-tagged Keep List items |cffaaaaaa(add 'apply' to remove)|r"],
         },
         {
             run = "sellinfo",
-            label = "|cffffff00/ec sellinfo|r  Explain why an item will or won't sell |cffaaaaaa(or Alt+Shift+Right-Click)|r",
+            label = "|cffffff00/ec sellinfo|r  "
+                .. L["Explain why an item will or won't sell |cffaaaaaa(or Alt+Shift+Right-Click)|r"],
         },
         {
             run = "bugreport",
-            label = "|cffffff00/ec bugreport|r  Generate a report to share when something's wrong",
+            label = "|cffffff00/ec bugreport|r  " .. L["Generate a report to share when something's wrong"],
         },
         {
             run = "affixdebug status",
-            label = "|cffffff00/ec affixdebug status|r  Show recording state + row count",
+            label = "|cffffff00/ec affixdebug status|r  " .. L["Show recording state + row count"],
         },
         {
             run = "affixdebug on",
-            label = "|cffffff00/ec affixdebug on|r  Start recording affix events for a bug report",
+            label = "|cffffff00/ec affixdebug on|r  " .. L["Start recording affix events for a bug report"],
         },
         {
             run = "affixdebug off",
-            label = "|cffffff00/ec affixdebug off|r  Stop recording",
+            label = "|cffffff00/ec affixdebug off|r  " .. L["Stop recording"],
         },
         {
             run = "affixdebug dump",
-            label = "|cffffff00/ec affixdebug dump|r  Open the event-log window",
+            label = "|cffffff00/ec affixdebug dump|r  " .. L["Open the event-log window"],
         },
         {
             run = "affixdebug clear",
-            label = "|cffffff00/ec affixdebug clear|r  Wipe recorded rows",
+            label = "|cffffff00/ec affixdebug clear|r  " .. L["Wipe recorded rows"],
         },
         {
             run = "processdebug",
-            label = "|cffffff00/ec processdebug|r  Diagnose missing Disenchant / Mill / Prospect targets",
+            label = "|cffffff00/ec processdebug|r  " .. L["Diagnose missing Disenchant / Mill / Prospect targets"],
         },
         {
             run = "processdebug clear",
-            label = "|cffffff00/ec processdebug clear|r  Wipe Process Bags cache (force fresh tooltip scans)",
+            label = "|cffffff00/ec processdebug clear|r  " .. L["Wipe Process Bags cache (force fresh tooltip scans)"],
         },
-        { run = "perf", label = "|cffffff00/ec perf|r  Show EC's memory, CPU, cache and list sizes" },
+        { run = "perf", label = "|cffffff00/ec perf|r  " .. L["Show EC's memory, CPU, cache and list sizes"] },
     }
 
     -- Layout strategy: each label is its OWN FontString with setPanelWidth,
@@ -802,7 +806,7 @@ local function BuildMainPanel(panel, content)
             -- For a wrapped multi-line label, the button centres on the
             -- whole wrapped block, which is acceptable visual drift.
             btn:SetPoint("LEFT", fs, "LEFT", -LABEL_COL_X, 0)
-            btn:SetText("Run")
+            btn:SetText(L["Run"])
             local runCmd = row.run
             btn:SetScript("OnClick", function()
                 local handler = SlashCmdList and SlashCmdList["EBONCLEARANCE"]

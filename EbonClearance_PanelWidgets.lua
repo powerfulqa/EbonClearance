@@ -38,6 +38,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local function MakeHeader(parent, text, y)
     local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
@@ -149,7 +150,7 @@ local function MakeHelpIcon(parent, anchorWidget, anchorPoint, relPoint, xOff, y
         fs:SetText("|cffffffaa[?]|r")
         if GameTooltip then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Click for help", 1, 1, 1)
+            GameTooltip:SetText(L["Click for help"], 1, 1, 1)
             GameTooltip:Show()
         end
     end)

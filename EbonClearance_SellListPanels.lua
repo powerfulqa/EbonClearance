@@ -21,6 +21,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local WhitelistPanel = CreateFrame("Frame", "EbonClearanceOptionsWhitelist", InterfaceOptionsFramePanelContainer)
 WhitelistPanel.name = "Sell List"
@@ -33,7 +34,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
             self.listUI:Refresh()
         end
     end, function(self)
-        local heading = NS.MakeHeader(self, "Sell List", -16)
+        local heading = NS.MakeHeader(self, L["Sell List"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
 
         -- Panel-specific description only. Cross-cutting info (grey junk
@@ -41,7 +42,7 @@ WhitelistPanel:SetScript("OnShow", function(self)
         -- repeating the same explanation on every list page.
         local descLabel = NS.MakeLabel(
             self,
-            "Items this character should always sell. Use the |cffb6ffb6Add from bags|r buttons to add by colour, or shift-click an item to add it.",
+            L["Items this character should always sell. Use the |cffb6ffb6Add from bags|r buttons to add by colour, or shift-click an item to add it."],
             16,
             -44
         )
@@ -56,18 +57,18 @@ WhitelistPanel:SetScript("OnShow", function(self)
             descNote:SetWordWrap(true)
         end
         descNote:SetText(
-            "|cffaaaaaaThis list is per-character. For items every alt should sell, use the |r|cffb6ffb6Account Sell List|r|cffaaaaaa instead.|r"
+            L["|cffaaaaaaThis list is per-character. For items every alt should sell, use the |r|cffb6ffb6Account Sell List|r|cffaaaaaa instead.|r"]
         )
 
         -- Cascade-anchor the scan row to the grey note's BOTTOMLEFT so it stays
         -- below regardless of how many lines the description / note wrap to.
-        local scanRow = NS.AddScanByQualityRow(self, descNote, "whitelist", "the Sell List", function()
+        local scanRow = NS.AddScanByQualityRow(self, descNote, "whitelist", L["the Sell List"], function()
             if self.listUI then
                 self.listUI:Refresh()
             end
         end, 0, -10)
 
-        self.listUI = NS.CreateListUI(self, "Manual Add (Shift-click item or type ID)", "whitelist", 16, -118)
+        self.listUI = NS.CreateListUI(self, L["Manual Add (Shift-click item or type ID)"], "whitelist", 16, -118)
         self.listUI:ClearAllPoints()
         self.listUI:SetPoint("TOPLEFT", scanRow, "BOTTOMLEFT", 0, -16)
         self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
@@ -87,11 +88,11 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
             self.listUI:Refresh()
         end
     end, function(self)
-        local heading = NS.MakeHeader(self, "Account Sell List", -16)
+        local heading = NS.MakeHeader(self, L["Account Sell List"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "share-sell-list-across-chars")
         local descLabel = NS.MakeLabel(
             self,
-            "Items |cffffff00every|r character on this account should sell. Good for shared trash like reagents or seasonal drops.",
+            L["Items |cffffff00every|r character on this account should sell. Good for shared trash like reagents or seasonal drops."],
             16,
             -44
         )
@@ -106,17 +107,17 @@ AccountWhitelistPanel:SetScript("OnShow", function(self)
         if descNote.SetWordWrap then
             descNote:SetWordWrap(true)
         end
-        descNote:SetText("|cffaaaaaaThis list isn't part of profiles - it stays the same when you switch profiles.|r")
+        descNote:SetText(L["|cffaaaaaaThis list isn't part of profiles - it stays the same when you switch profiles.|r"])
 
         -- Cascade-anchor the scan row to the grey note's BOTTOMLEFT so it stays
         -- below regardless of how many lines the description / note wrap to.
-        local scanRow = NS.AddScanByQualityRow(self, descNote, "accountWhitelist", "the Account Sell List", function()
+        local scanRow = NS.AddScanByQualityRow(self, descNote, "accountWhitelist", L["the Account Sell List"], function()
             if self.listUI then
                 self.listUI:Refresh()
             end
         end, 0, -10)
 
-        self.listUI = NS.CreateListUI(self, "Account-Wide Items", "accountWhitelist", 16, -118)
+        self.listUI = NS.CreateListUI(self, L["Account-Wide Items"], "accountWhitelist", 16, -118)
         self.listUI:ClearAllPoints()
         self.listUI:SetPoint("TOPLEFT", scanRow, "BOTTOMLEFT", 0, -16)
         -- Fill remaining vertical space rather than fixed-height; mirrors

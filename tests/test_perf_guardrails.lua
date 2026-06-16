@@ -517,7 +517,9 @@ do
     -- "Allowed - Delete" collapses to plain "Will Delete" because the
     -- destination doesn't need an "Allowed" qualifier - the verdict
     -- is what the player needs to see.
-    local hasDeleteLabel = src:find('"|cff66ccff%[EC%]|r |cffff4444Will Delete|r"') ~= nil
+    -- v2.43.0: verdict labels are localized (wrapped in L[...]), so the
+    -- displayed string is no longer a single literal. Match the wrapped key.
+    local hasDeleteLabel = src:find('L%["Will Delete"%]') ~= nil
     check("tooltip annotation emits 'Keep (chance-on-hit proc)' for unmarked items",
           hasProtectedLabel)
     check("tooltip annotation emits 'Override on ...' when no list chosen",
@@ -546,7 +548,7 @@ end
 do
     local hasProtectedGate = src:find("rowHidden = true") ~= nil
         and src:find("procProtected") ~= nil
-    local hasAllowText = src:find('btn:SetText%("Allow Sell"%)') ~= nil
+    local hasAllowText = src:find('btn:SetText%(L%["Allow Sell"%]%)') ~= nil
     local hasRemoveText = src:find("Remove from Allow List") ~= nil
     local sellNowGone = src:find('btn:SetText%("Sell Now"%)') == nil
     local addToPrefixGone = src:find('btn:SetText%("Add to "') == nil
@@ -4462,8 +4464,8 @@ do
             check(
                 "autoDupe-only Will-Sell label is gated on upstream Will-Sell verdict",
                 ttSrc:find('Will Sell %(you have this affix%)') ~= nil
-                    and ttSrc:find('statusLine and statusLine:find%("Will Sell"') ~= nil,
-                "the 'Will Sell (you have this affix)' label must only fire when an upstream 'Will Sell' verdict already exists in statusLine. Without this gate, the label fires for items that won't actually sell (quality rule disabled, not on any list) and creates a tooltip-vs-vendor divergence"
+                    and ttSrc:find('statusTag == "willsell"') ~= nil,
+                "the 'Will Sell (you have this affix)' label must only fire when an upstream 'Will Sell' verdict already exists. v2.43.0 localized the labels, so the gate reads the English statusTag token (statusTag == \"willsell\") instead of introspecting the displayed string. Without this gate, the label fires for items that won't actually sell (quality rule disabled, not on any list) and creates a tooltip-vs-vendor divergence"
             )
             check(
                 "autoDupe-only fallback when no upstream sell verdict is 'Keep (affix rank known)'",
@@ -4921,7 +4923,7 @@ do
 
         check(
             "Test 87b: Item Highlighting panel registers a 'keep' category row",
-            ihSrc:find('{ key = "keep", label = "Keep List') ~= nil,
+            ihSrc:find('{ key = "keep", label = L%["Keep List') ~= nil,
             "Item Highlighting panel's SELL_BORDER_CATEGORIES table must include a 'keep' row so the player can toggle the new border and repaint its colour. Adding the category to EnsureDB without surfacing it in the panel makes it invisible to the user."
         )
 
@@ -5002,8 +5004,8 @@ do
             ttSrc:find("Already known by this character") ~= nil
                 and ttSrc:find("liveTooltipIsTome") ~= nil
                 and ttSrc:find("liveTooltipPlayerKnowsTome") ~= nil
-                and ttSrc:find('you have%)", 1, true') ~= nil,
-            "EC_AnnotateTooltip must add the 'Already known by this character' line for tome/recipe items the player has learned, gated on liveTooltipIsTome + liveTooltipPlayerKnowsTome, and dedupe against the existing tome-protection block's '(... you have)' label so the same info doesn't render twice."
+                and ttSrc:find('statusTag ~= "tome_have"') ~= nil,
+            "EC_AnnotateTooltip must add the 'Already known by this character' line for tome/recipe items the player has learned, gated on liveTooltipIsTome + liveTooltipPlayerKnowsTome, and dedupe against the existing tome-protection block's '(... you have)' label so the same info doesn't render twice. v2.43.0 localized the labels, so the dedupe reads the English statusTag token (statusTag ~= \"tome_have\") instead of introspecting the displayed string."
         )
 
         -- v2.37.0 polish: affix protection wins over chance-on-hit in
@@ -5014,9 +5016,9 @@ do
         -- the chance-on-hit block from overwriting an affix label.
         check(
             "Test 88a-precedence: affix label wins over chance-on-hit in tooltip",
-            ttSrc:find('affixKept = statusLine and statusLine:find%("%%%(affix rank"') ~= nil
+            ttSrc:find('affixKept = %(statusTag == "affixknown"') ~= nil
                 and ttSrc:find("elseif affixKept then") ~= nil,
-            "EC_AnnotateTooltip's chance-on-hit block must detect an affix-rank Keep label already present in statusLine and skip the chance-on-hit override. Without this, items carrying both an affix AND a chance-on-hit proc show 'Keep (chance-on-hit proc)' instead of the more meaningful affix label."
+            "EC_AnnotateTooltip's chance-on-hit block must detect an affix-rank Keep verdict already resolved and skip the chance-on-hit override. v2.43.0 localized the labels, so the detection reads the English statusTag token (affixknown / affixneeded) instead of introspecting the displayed string. Without this, items carrying both an affix AND a chance-on-hit proc show 'Keep (chance-on-hit proc)' instead of the more meaningful affix label."
         )
 
         -- Borrow C: DB schema + renderer + equipLoc whitelist.
@@ -5630,7 +5632,7 @@ do
                 "Test 88k: Main panel SLASH_ROWS table + Run-button wiring present",
                 mpSrc2:find("SLASH_ROWS%s*=%s*{") ~= nil
                     and mpSrc2:find('SlashCmdList%["EBONCLEARANCE"%]') ~= nil
-                    and mpSrc2:find('btn:SetText%("Run"%)') ~= nil,
+                    and mpSrc2:find('btn:SetText%(L%["Run"%]%)') ~= nil,
                 "The Main panel must define the SLASH_ROWS table, create Run buttons, and dispatch via SlashCmdList[\"EBONCLEARANCE\"] so players can click commands instead of typing."
             )
         end

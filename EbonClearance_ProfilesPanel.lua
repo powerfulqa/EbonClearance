@@ -31,6 +31,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- ============================================================
 local ProfilesPanel = CreateFrame("Frame", "EbonClearanceOptionsProfiles", InterfaceOptionsFramePanelContainer)
@@ -44,11 +45,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
             self:RefreshProfileList()
         end
     end, function(self)
-        local heading = NS.MakeHeader(self, "Profiles", -16)
+        local heading = NS.MakeHeader(self, L["Profiles"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-profiles")
         local descLabel = NS.MakeLabel(
             self,
-            "Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots.",
+            L["Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots."],
             16,
             -44
         )
@@ -63,7 +64,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
             clarifyLabel:SetWordWrap(true)
         end
         clarifyLabel:SetText(
-            "|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Account Sell List|r|cffaaaaaa (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"
+            L["|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Account Sell List|r|cffaaaaaa (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"]
         )
 
         -- Active profile indicator
@@ -77,7 +78,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
         -- whatever the wrap above ends up at).
         local saveLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         saveLabel:SetPoint("TOPLEFT", activeLabel, "BOTTOMLEFT", 0, -10)
-        saveLabel:SetText("Profile name:")
+        saveLabel:SetText(L["Profile name:"])
 
         local saveInput = CreateFrame("EditBox", "EbonClearanceProfileSaveInput", self, "InputBoxTemplate")
         saveInput:SetAutoFocus(false)
@@ -90,7 +91,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
         local saveBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
         saveBtn:SetSize(80, 22)
         saveBtn:SetPoint("LEFT", saveInput, "RIGHT", 8, 0)
-        saveBtn:SetText("Save")
+        saveBtn:SetText(L["Save"])
 
         -- Status text (relative to the save row above it).
         local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -103,7 +104,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
         -- Profile list scroll area
         local listLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         listLabel:SetPoint("TOPLEFT", statusFS, "BOTTOMLEFT", 0, -8)
-        listLabel:SetText("Saved Profiles")
+        listLabel:SetText(L["Saved Profiles"])
 
         -- v2.32.x: backdrop chrome wrapper around the profile scroll list,
         -- matching the Import/Export panel pattern and the list-widget
@@ -151,19 +152,19 @@ ProfilesPanel:SetScript("OnShow", function(self)
             local delBtn = CreateFrame("Button", "EbonClearanceProfileDel_" .. index, content, "UIPanelButtonTemplate")
             delBtn:SetSize(58, 18)
             delBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-            delBtn:SetText("Delete")
+            delBtn:SetText(L["Delete"])
 
             local clearBtn =
                 CreateFrame("Button", "EbonClearanceProfileClear_" .. index, content, "UIPanelButtonTemplate")
             clearBtn:SetSize(52, 18)
             clearBtn:SetPoint("RIGHT", delBtn, "LEFT", -4, 0)
-            clearBtn:SetText("Clear")
+            clearBtn:SetText(L["Clear"])
 
             local loadBtn =
                 CreateFrame("Button", "EbonClearanceProfileLoad_" .. index, content, "UIPanelButtonTemplate")
             loadBtn:SetSize(52, 18)
             loadBtn:SetPoint("RIGHT", clearBtn, "LEFT", -4, 0)
-            loadBtn:SetText("Load")
+            loadBtn:SetText(L["Load"])
 
             local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
             text:SetPoint("LEFT", row, "LEFT", 2, 0)
@@ -193,7 +194,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
         -- Rename row
         local renameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         renameLabel:SetPoint("TOPLEFT", scroll, "BOTTOMLEFT", 0, -12)
-        renameLabel:SetText("Rename active profile:")
+        renameLabel:SetText(L["Rename active profile:"])
 
         local renameInput = CreateFrame("EditBox", "EbonClearanceProfileRenameInput", self, "InputBoxTemplate")
         renameInput:SetAutoFocus(false)
@@ -206,7 +207,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
         local renameBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
         renameBtn:SetSize(70, 22)
         renameBtn:SetPoint("LEFT", renameInput, "RIGHT", 8, 0)
-        renameBtn:SetText("Rename")
+        renameBtn:SetText(L["Rename"])
 
         -- Use field-assignment form rather than colon-method definition so the
         -- function closes over the outer `self` (the panel) rather than receiving
@@ -217,7 +218,7 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
             -- Update active indicator
             local activeName = DB.activeProfileName or "Default"
-            activeLabel:SetText("Active profile: |cff00ff00" .. activeName .. "|r")
+            activeLabel:SetText(L["Active profile: "] .. "|cff00ff00" .. activeName .. "|r")
             saveInput:SetText(activeName)
             renameInput:SetText(activeName)
 
@@ -250,8 +251,8 @@ ProfilesPanel:SetScript("OnShow", function(self)
                 -- with up to three buttons (Load/Clear/Delete), so longer phrasing
                 -- gets truncated at narrow Interface Options widths.
                 local label = isActive
-                        and string.format("|cff00ff00%s|r  |cff888888(%d wl, %d bl, active)|r", pName, wlCount, blCount)
-                    or string.format("|cffffff00%s|r  |cff888888(%d wl, %d bl)|r", pName, wlCount, blCount)
+                        and string.format(L["|cff00ff00%s|r  |cff888888(%d wl, %d bl, active)|r"], pName, wlCount, blCount)
+                    or string.format(L["|cffffff00%s|r  |cff888888(%d wl, %d bl)|r"], pName, wlCount, blCount)
                 row.text:SetText(label)
 
                 row.loadBtn:SetScript("OnClick", function()
@@ -292,8 +293,8 @@ ProfilesPanel:SetScript("OnShow", function(self)
                                         wp.listUI:Refresh()
                                     end
                                 end
-                                statusFS:SetText('|cff00ff00Cleared profile "|cffffff00' .. pName .. '|r|cff00ff00".|r')
-                                NS.PrintNicef('Cleared profile "|cffffff00%s|r".', pName)
+                                statusFS:SetText(L['|cff00ff00Cleared profile "|cffffff00'] .. pName .. L['|r|cff00ff00".|r'])
+                                NS.PrintNicef(L['Cleared profile "|cffffff00%s|r".'], pName)
                                 PlaySound("igMainMenuOptionCheckBoxOn")
                             end
                             self:RefreshProfileList()
@@ -458,7 +459,7 @@ function EC_compCache.importFullPack(str, mode)
     local DB = NS.DB
     local ADB = NS.ADB
     if type(str) ~= "string" or str == "" then
-        return false, "Empty string."
+        return false, L["Empty string."]
     end
     -- Normalise line endings + strip trailing fingerprint and whitespace.
     str = (str:gsub("\r\n", "\n"))
@@ -470,7 +471,7 @@ function EC_compCache.importFullPack(str, mode)
         lines[#lines + 1] = line
     end
     if #lines == 0 or lines[1]:sub(1, #EC_compCache.PACK_PREFIX) ~= EC_compCache.PACK_PREFIX then
-        return false, "Not a full settings pack. Use the single-list importer below."
+        return false, L["Not a full settings pack. Use the single-list importer below."]
     end
 
     -- Parse-then-apply: build the full snapshot first so a single malformed
@@ -582,10 +583,10 @@ function EC_compCache.importFullPack(str, mode)
         end
     end
 
-    local modeLabel = (mode == "replace") and "replaced" or "merged"
+    local modeLabel = (mode == "replace") and L["replaced"] or L["merged"]
     return true,
         string.format(
-            "Imported settings pack (%s). Quality rules updated; Sell +%d, Keep +%d, Delete +%d, Account Sell +%d.",
+            L["Imported settings pack (%s). Quality rules updated; Sell +%d, Keep +%d, Delete +%d, Account Sell +%d."],
             modeLabel,
             sellAdded,
             keepAdded,
@@ -598,7 +599,7 @@ local function EC_ImportWhitelist(str, mode, scope)
     local DB = NS.DB
     local ADB = NS.ADB
     if type(str) ~= "string" or str == "" then
-        return false, "Empty string."
+        return false, L["Empty string."]
     end
     str = str:gsub("^%s+", ""):gsub("%s+$", "")
     -- Strip a trailing ";fp=<hex>" fingerprint suffix before format
@@ -607,12 +608,12 @@ local function EC_ImportWhitelist(str, mode, scope)
     -- fingerprinted and unfingerprinted strings without warning.
     str = (str:gsub(";fp=[0-9a-f]+%s*$", ""))
     if str:sub(1, #EC_EXPORT_PREFIX) ~= EC_EXPORT_PREFIX then
-        return false, "Invalid format. String must start with EC:"
+        return false, L["Invalid format. String must start with EC:"]
     end
     local body = str:sub(#EC_EXPORT_PREFIX + 1)
     local name, idStr = body:match("^([^:]*):(.+)$")
     if not idStr or idStr == "" then
-        return false, "No item IDs found after the list name."
+        return false, L["No item IDs found after the list name."]
     end
     local ids = {}
     for token in idStr:gmatch("([^,]+)") do
@@ -622,11 +623,11 @@ local function EC_ImportWhitelist(str, mode, scope)
         end
     end
     if #ids == 0 then
-        return false, "No valid item IDs found."
+        return false, L["No valid item IDs found."]
     end
     local target = EC_GetWhitelistForScope(scope)
     if not target then
-        return false, "Target list unavailable."
+        return false, L["Target list unavailable."]
     end
     if mode == "replace" then
         wipe(target)
@@ -638,12 +639,12 @@ local function EC_ImportWhitelist(str, mode, scope)
         end
         target[ids[i]] = true
     end
-    local scopeLabel = (scope == "account") and "account whitelist" or "character whitelist"
+    local scopeLabel = (scope == "account") and L["account whitelist"] or L["character whitelist"]
     return true,
         string.format(
-            'Imported |cffffff00%d|r items from "%s" into the %s (%d new).',
+            L['Imported |cffffff00%d|r items from "%s" into the %s (%d new).'],
             #ids,
-            name or "Unnamed",
+            name or L["Unnamed"],
             scopeLabel,
             added
         )
@@ -652,7 +653,7 @@ end
 ImportExportPanel:SetScript("OnShow", function(self)
     local DB = NS.DB
     EC_compCache.initPanel(self, nil, function(self)
-        local heading = NS.MakeHeader(self, "Import / Export", -16)
+        local heading = NS.MakeHeader(self, L["Import / Export"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-is-import-export")
 
         -- === EXPORT SECTION ===
@@ -660,7 +661,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         -- click reads from (Source list) versus writes to (Target list).
         NS.MakeLabel(
             self,
-            "Export a whitelist to a string you can share. Pick which list to read from, then give the export a name.",
+            L["Export a whitelist to a string you can share. Pick which list to read from, then give the export a name."],
             16,
             -44
         )
@@ -669,7 +670,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
         local exportScopeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         exportScopeLabel:SetPoint("TOPLEFT", 16, -72)
-        exportScopeLabel:SetText("Source list:")
+        exportScopeLabel:SetText(L["Source list:"])
 
         local exportCharCB =
             CreateFrame("CheckButton", "EbonClearanceExportSourceCharCB", self, "UIRadioButtonTemplate")
@@ -677,7 +678,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         exportCharCB:SetChecked(true)
         local exportCharLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         exportCharLbl:SetPoint("LEFT", exportCharCB, "RIGHT", 2, 1)
-        exportCharLbl:SetText("Character")
+        exportCharLbl:SetText(L["Character"])
 
         local exportAcctCB =
             CreateFrame("CheckButton", "EbonClearanceExportSourceAcctCB", self, "UIRadioButtonTemplate")
@@ -685,7 +686,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         exportAcctCB:SetChecked(false)
         local exportAcctLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         exportAcctLbl:SetPoint("LEFT", exportAcctCB, "RIGHT", 2, 1)
-        exportAcctLbl:SetText("Account")
+        exportAcctLbl:SetText(L["Account"])
 
         exportCharCB:SetScript("OnClick", function()
             exportScope = "character"
@@ -702,20 +703,20 @@ ImportExportPanel:SetScript("OnShow", function(self)
 
         local exportNameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         exportNameLabel:SetPoint("TOPLEFT", 16, -100)
-        exportNameLabel:SetText("List name:")
+        exportNameLabel:SetText(L["List name:"])
 
         local exportNameBox = CreateFrame("EditBox", "EbonClearanceExportNameBox", self, "InputBoxTemplate")
         exportNameBox:SetAutoFocus(false)
         exportNameBox:SetSize(200, 20)
         exportNameBox:SetPoint("LEFT", exportNameLabel, "RIGHT", 8, 0)
         exportNameBox:SetMaxLetters(40)
-        exportNameBox:SetText("My Sell List")
+        exportNameBox:SetText(L["My Sell List"])
         NS.StyleInputBox(exportNameBox)
 
         local exportBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
         exportBtn:SetSize(80, 22)
         exportBtn:SetPoint("LEFT", exportNameBox, "RIGHT", 8, 0)
-        exportBtn:SetText("Export")
+        exportBtn:SetText(L["Export"])
 
         -- Optional checkbox: when ticked, the Export button emits a full
         -- settings pack instead of the current single-list payload. Toggling
@@ -731,7 +732,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         fullPackCB:SetSize(22, 22)
         local fullPackLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         fullPackLbl:SetPoint("LEFT", fullPackCB, "RIGHT", 2, 1)
-        fullPackLbl:SetText("Full settings pack (rules + Sell / Keep / Delete + Account Sell)")
+        fullPackLbl:SetText(L["Full settings pack (rules + Sell / Keep / Delete + Account Sell)"])
         fullPackCB:SetChecked(false)
 
         local function refreshExportInputsForPackMode(packMode)
@@ -767,9 +768,9 @@ ImportExportPanel:SetScript("OnShow", function(self)
         end)
         fullPackCB:SetScript("OnEnter", function(self_)
             GameTooltip:SetOwner(self_, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Full settings pack")
+            GameTooltip:AddLine(L["Full settings pack"])
             GameTooltip:AddLine(
-                "When ticked, Export produces one string covering quality rules, the Sell List, the Keep List, the Delete List, and the Account Sell List together. Off by default.",
+                L["When ticked, Export produces one string covering quality rules, the Sell List, the Keep List, the Delete List, and the Account Sell List together. Off by default."],
                 1,
                 1,
                 1,
@@ -837,7 +838,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
                 exportBox:SetFocus()
                 PlaySound("igMainMenuOptionCheckBoxOn")
                 NS.PrintNice(
-                    "Exported full settings pack (rules + Sell / Keep / Delete + Account Sell). Copy the text above."
+                    L["Exported full settings pack (rules + Sell / Keep / Delete + Account Sell). Copy the text above."]
                 )
             else
                 str = EC_ExportWhitelist(exportNameBox:GetText(), exportScope)
@@ -852,19 +853,19 @@ ImportExportPanel:SetScript("OnShow", function(self)
                         count = count + 1
                     end
                 end
-                local scopeName = (exportScope == "account") and "account" or "character"
-                NS.PrintNicef("Exported |cffffff00%d|r %s whitelist items. Copy the text above.", count, scopeName)
+                local scopeName = (exportScope == "account") and L["account"] or L["character"]
+                NS.PrintNicef(L["Exported |cffffff00%d|r %s whitelist items. Copy the text above."], count, scopeName)
             end
         end)
 
         -- === IMPORT SECTION ===
-        NS.MakeLabel(self, "Paste a Sell List string and pick which list it imports into.", 16, -228)
+        NS.MakeLabel(self, L["Paste a Sell List string and pick which list it imports into."], 16, -228)
 
         local importScope = "character"
 
         local importScopeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         importScopeLabel:SetPoint("TOPLEFT", 16, -256)
-        importScopeLabel:SetText("Target list:")
+        importScopeLabel:SetText(L["Target list:"])
 
         local importCharCB =
             CreateFrame("CheckButton", "EbonClearanceImportTargetCharCB", self, "UIRadioButtonTemplate")
@@ -872,7 +873,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         importCharCB:SetChecked(true)
         local importCharLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         importCharLbl:SetPoint("LEFT", importCharCB, "RIGHT", 2, 1)
-        importCharLbl:SetText("Character")
+        importCharLbl:SetText(L["Character"])
 
         local importAcctCB =
             CreateFrame("CheckButton", "EbonClearanceImportTargetAcctCB", self, "UIRadioButtonTemplate")
@@ -880,7 +881,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
         importAcctCB:SetChecked(false)
         local importAcctLbl = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         importAcctLbl:SetPoint("LEFT", importAcctCB, "RIGHT", 2, 1)
-        importAcctLbl:SetText("Account")
+        importAcctLbl:SetText(L["Account"])
 
         importCharCB:SetScript("OnClick", function()
             importScope = "character"
@@ -942,12 +943,12 @@ ImportExportPanel:SetScript("OnShow", function(self)
         local importMergeBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
         importMergeBtn:SetSize(120, 22)
         importMergeBtn:SetPoint("TOPLEFT", 16, -342)
-        importMergeBtn:SetText("Import (Merge)")
+        importMergeBtn:SetText(L["Import (Merge)"])
 
         local importReplaceBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
         importReplaceBtn:SetSize(120, 22)
         importReplaceBtn:SetPoint("LEFT", importMergeBtn, "RIGHT", 8, 0)
-        importReplaceBtn:SetText("Import (Replace)")
+        importReplaceBtn:SetText(L["Import (Replace)"])
 
         local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         statusFS:SetPoint("TOPLEFT", 16, -370)
@@ -1005,8 +1006,8 @@ ImportExportPanel:SetScript("OnShow", function(self)
             importNote:SetWordWrap(true)
         end
         importNote:SetText(
-            "|cffaaaaaa'Merge' adds imported items to the target list. "
-                .. "'Replace' clears the target list first, then adds the imported items.|r"
+            L["|cffaaaaaa'Merge' adds imported items to the target list. "]
+                .. L["'Replace' clears the target list first, then adds the imported items.|r"]
         )
     end)
 end)

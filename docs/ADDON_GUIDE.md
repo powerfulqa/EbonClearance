@@ -120,6 +120,12 @@ them in XML at addon-load time.
 
 ## Architecture
 
+> For the multi-file map (which of the 29 `.lua` files owns what, the
+> cross-file boundaries, and a "where do I change X?" table), see
+> [ARCHITECTURE.md](ARCHITECTURE.md). The per-file ordering notes below
+> describe the rough layout *within* the larger files (Core, Events, etc.)
+> and predate the file split; treat them as within-file guidance.
+
 ### File layout
 
 One file, roughly in this order:
@@ -621,6 +627,44 @@ guild/group stats into a transient, session-only aggregate
 - **`/ec guildtest`** injects simulated members plus the local player via the
   real send path (honoring live toggles), so the panel is testable solo.
 
+## Localization (`NS.L`, v2.43.0)
+
+Hand-rolled i18n, no AceLocale. `EbonClearance_Locale.lua` loads **second**
+(right after Core) and exposes:
+
+- `NS.L` - a table whose `__index` returns the key itself, so an untranslated
+  string renders its English text. The English text **is** the lookup key.
+- `NS.RegisterLocale(code, tbl)` - copies a locale table's non-empty values
+  onto `NS.L`, but only when `code == GetLocale()`. Non-active locale files
+  no-op, so every language ships unconditionally.
+
+`EbonClearance_Locale_frFR.lua` / `_deDE.lua` load third/fourth and call
+`RegisterLocale` with the full key set, values seeded `""` (empty = not yet
+translated, falls back to English). These are community-fill templates; see
+`docs/TRANSLATING.md`.
+
+**Wrapping convention:** `local L = NS.L` at the top of each emitting file;
+wrap the player-facing literal at the call site, leaving helpers dumb:
+`PrintNicef(L["Sold %d items."], n)`, `AddCheckbox(..., L["Enable EbonClearance"], ...)`,
+`{ q = L["..."], a = L["..."] }`. The whole format string is one key (never
+concatenate fragments - placeholders reorder per language). Never wrap a
+string used in a comparison or as a table key (`== "..."`, `:find(...)`,
+`t["..."]`); on an English client `L[k] == k` hides the bug, but it breaks on
+frFR / deDE. Engine button globals (`YES`/`NO`/`OKAY`) stay unwrapped.
+
+**Load order** matters only for `Locale.lua` itself (must precede any file
+binding `local L = NS.L` at its main chunk). File-scope wrapped tables (e.g.
+dropdown data built at load) get translated values because the locale tables
+register before the panels load.
+
+Invariants in `tests/test_locale_integrity.lua`: passthrough + override +
+empty-skip behaviour, format-placeholder parity between each English key and
+its translation, balanced `|cff..|r` color codes, no U+2014, no code-shaped
+retail tokens. The locale files are in `test_comment_hygiene.lua`'s source
+list and the CI `luac` list, but deliberately **not** in
+`test_perf_guardrails.lua`'s concatenated `src` (its substring presence /
+absence checks would false-match the English keys in the templates).
+
 ## Gotchas and refactoring traps
 
 Read this section before touching any of the subsystems below. Each item is
@@ -751,6 +795,22 @@ truth, used by BOTH `BuildQueue`'s delete branch and `runAutoDeleteOnPickup`:
   (not on `pendingDelete`): a low-rarity item deletes with no popup and never
   clears `pendingDelete`, so gating on `pendingDelete` would wedge the cascade
   after the first item. A batch loop breaks the single-popup serialisation.
+
+### Tooltip verdict is introspected via `statusTag`, not the displayed string (v2.43.0)
+
+`EC_AnnotateTooltip` builds the verdict label into `statusLine` and used to
+introspect it (`statusLine:find("Will Sell")`, `("(affix rank")`,
+`(" you have)")`) to decide downstream branches (affix override, chance-on-hit
+precedence, the "Already known" dedupe). Once labels are localized, that string
+is French / German on those clients and the English `:find` patterns silently
+miss - the sell / keep / delete logic would diverge per language. So every
+`statusLine` assignment now also sets an English `statusTag` token
+(`"willsell"`, `"keep"`, `"affixknown"`, `"affixneeded"`, `"tome_have"`, ...),
+and the branches read the tag. `destinationLabel` returns `(line, tag)`. An
+`EC-TRAP` marks the `statusTag` declaration. **Do NOT reintroduce
+`statusLine:find(...)` for control flow** - it works on enUS (where `L[k] == k`)
+and breaks on every translated client. Locked by Test 88a / 88a-precedence and
+the autoDupe-gate test in `test_perf_guardrails.lua`.
 
 ### Stuck-Scavenger detection uses movement time, not distance
 

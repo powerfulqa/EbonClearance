@@ -32,6 +32,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- Quality-threshold options shared by the Merchant Settings panel.
 --
@@ -50,12 +51,12 @@ MerchantPanel.name = "Merchant Settings"
 MerchantPanel.parent = "EbonClearance"
 
 local EC_MERCHANT_MODES = {
-    { text = "|cffb6ffb6Goblin Merchant|r Only", value = "goblin" },
-    { text = "Normal Merchants Only", value = "any" },
+    { text = L["|cffb6ffb6Goblin Merchant|r Only"], value = "goblin" },
+    { text = L["Normal Merchants Only"], value = "any" },
     -- v2.13.x: renamed from "Both (All Merchants)" and made the new default
     -- in EnsureDB so brand-new users without the Goblin Merchant pet still
     -- get useful auto-vendor behaviour at normal merchants out of the box.
-    { text = "All Merchants", value = "both" },
+    { text = L["All Merchants"], value = "both" },
 }
 
 MerchantPanel:SetScript("OnShow", function(self)
@@ -113,21 +114,21 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- Build-time table population. See the EC_WHITELIST_QUALITIES
         -- declaration above for why this can't run at file load.
         EC_WHITELIST_QUALITIES = {
-            { text = NS.ColorTextByQuality(1, "White (Common)"), value = 1 },
-            { text = NS.ColorTextByQuality(2, "Green (Uncommon)"), value = 2 },
-            { text = NS.ColorTextByQuality(3, "Blue (Rare)"), value = 3 },
-            { text = NS.ColorTextByQuality(4, "Purple (Epic)"), value = 4 },
+            { text = NS.ColorTextByQuality(1, L["White (Common)"]), value = 1 },
+            { text = NS.ColorTextByQuality(2, L["Green (Uncommon)"]), value = 2 },
+            { text = NS.ColorTextByQuality(3, L["Blue (Rare)"]), value = 3 },
+            { text = NS.ColorTextByQuality(4, L["Purple (Epic)"]), value = 4 },
         }
 
-        NS.MakeHeader(content, "Merchant Settings", -16)
+        NS.MakeHeader(content, L["Merchant Settings"], -16)
         -- Panel-specific intro only. Generic "grey junk auto-sells" cross-cut
         -- removed; it's covered on the Main panel.
-        NS.MakeLabel(content, "Change which items sell automatically, and at which merchants.", 16, -44)
+        NS.MakeLabel(content, L["Change which items sell automatically, and at which merchants."], 16, -44)
 
         -- Merchant mode dropdown
         local modeLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         modeLabel:SetPoint("TOPLEFT", 16, -76)
-        modeLabel:SetText("Sell at:")
+        modeLabel:SetText(L["Sell at:"])
 
         local modeDD = CreateFrame("Frame", "EbonClearanceMerchantModeDD", content, "UIDropDownMenuTemplate")
         modeDD:SetPoint("LEFT", modeLabel, "RIGHT", -8, -2)
@@ -173,7 +174,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         repairCB:SetChecked(DB.repairGear)
         local rt = _G[repairCB:GetName() .. "Text"]
         if rt then
-            rt:SetText("Repair gear while selling")
+            rt:SetText(L["Repair gear while selling"])
             rt:SetWidth(420)
             rt:SetJustifyH("LEFT")
         end
@@ -201,7 +202,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         guildRepairCB:SetChecked(DB.repairUseGuildBank)
         local grt = _G[guildRepairCB:GetName() .. "Text"]
         if grt then
-            grt:SetText("Pay from guild bank when possible")
+            grt:SetText(L["Pay from guild bank when possible"])
             EC_compCache.setPanelWidth(grt, 80)
             grt:SetJustifyH("LEFT")
         end
@@ -221,7 +222,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         keepBagsCB:SetChecked(DB.keepBagsOpen)
         local kbt = _G[keepBagsCB:GetName() .. "Text"]
         if kbt then
-            kbt:SetText("Keep bags open after talking to a merchant")
+            kbt:SetText(L["Keep bags open after talking to a merchant"])
             EC_compCache.setPanelWidth(kbt, 60)
             kbt:SetJustifyH("LEFT")
         end
@@ -247,7 +248,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceVendoringSpeedSlider",
             keepBagsCB,
-            "Time between sells",
+            L["Time between sells"],
             0.05,
             0.500,
             0.01,
@@ -299,16 +300,16 @@ MerchantPanel:SetScript("OnShow", function(self)
             local sliderRate = batch / sliderValue
             local effectiveInterval = DB.fastMode and 0.05 or sliderValue
             local effectiveRate = batch / effectiveInterval
-            local mainText = string.format("About %.0f sells per second.", sliderRate)
+            local mainText = string.format(L["About %.0f sells per second."], sliderRate)
             local noteText = ""
             if DB.fastMode and math.abs(sliderRate - effectiveRate) > 0.5 then
-                noteText = string.format("  |cffaaaaaa(Fast Mode active: %.0f/sec)|r", effectiveRate)
+                noteText = string.format(L["  |cffaaaaaa(Fast Mode active: %.0f/sec)|r"], effectiveRate)
             elseif DB.fastMode and DB.turboMode then
-                noteText = "  |cffaaaaaa(Fast + Turbo)|r"
+                noteText = L["  |cffaaaaaa(Fast + Turbo)|r"]
             elseif DB.fastMode then
-                noteText = "  |cffaaaaaa(Fast Mode)|r"
+                noteText = L["  |cffaaaaaa(Fast Mode)|r"]
             elseif DB.turboMode then
-                noteText = "  |cffaaaaaa(Turbo Mode)|r"
+                noteText = L["  |cffaaaaaa(Turbo Mode)|r"]
             end
             speedReadout:SetText(mainText .. noteText)
         end
@@ -320,7 +321,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceFastModeCB",
             speedReadout,
-            "Fast Mode (0.05 s interval, 160-item cap)",
+            L["Fast Mode (0.05 s interval, 160-item cap)"],
             function()
                 return DB.fastMode
             end,
@@ -347,7 +348,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             fastModeNote:SetWordWrap(true)
         end
         fastModeNote:SetText(
-            "|cff888888May cause disconnects on unstable connections - turn off if it does.|r"
+            L["|cff888888May cause disconnects on unstable connections - turn off if it does.|r"]
         )
 
         -- v2.37.7: Turbo Mode - pops multiple items per worker fire.
@@ -363,7 +364,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceTurboModeCB",
             fastModeNote,
-            "Turbo Mode (4 items per cycle - bag-clear in seconds)",
+            L["Turbo Mode (4 items per cycle - bag-clear in seconds)"],
             function()
                 return DB.turboMode
             end,
@@ -392,7 +393,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             turboModeNote:SetWordWrap(true)
         end
         turboModeNote:SetText(
-            "|cff888888Combine with Fast Mode for the fastest cycle. Turn off if you see disconnects.|r"
+            L["|cff888888Combine with Fast Mode for the fastest cycle. Turn off if you see disconnects.|r"]
         )
 
         -- Quality threshold (v2.4.0+): three per-rarity rows, each independently
@@ -400,7 +401,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- "sell up to quality X" model. Default all off; opt-in per rarity.
         local thresholdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         thresholdHeader:SetPoint("TOPLEFT", turboModeNote, "BOTTOMLEFT", -26, -24)
-        thresholdHeader:SetText("Quality Threshold")
+        thresholdHeader:SetText(L["Quality Threshold"])
         NS.AddHelpIcon(content, thresholdHeader, "LEFT", "RIGHT", 6, 0, "gate-quality-rules")
 
         -- v2.10.0: bind-type filter options shared across all four rarity rows.
@@ -410,9 +411,9 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- EC_compCache.getBindType so reagents/consumables/quest items are
         -- protected when bindFilter is "boe" or "bop".
         local EC_BIND_FILTER_OPTIONS = {
-            { text = "Any bind type", value = "any" },
-            { text = "BoE only", value = "boe" },
-            { text = "BoP only", value = "bop" },
+            { text = L["Any bind type"], value = "any" },
+            { text = L["BoE only"], value = "boe" },
+            { text = L["BoP only"], value = "bop" },
         }
         local function EC_BindFilterText(value)
             for _, entry in ipairs(EC_BIND_FILTER_OPTIONS) do
@@ -466,7 +467,7 @@ MerchantPanel:SetScript("OnShow", function(self)
 
             local lbl = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
             lbl:SetPoint("RIGHT", input, "LEFT", -6, 0)
-            lbl:SetText("max iLvl:")
+            lbl:SetText(L["max iLvl:"])
 
             -- v2.12.0: per-rarity "Use equipped iLvl" tickbox. When checked,
             -- the maxILvl input is ignored at runtime and the cap is the
@@ -494,7 +495,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             end
             local useEqText = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
             useEqText:SetPoint("RIGHT", useEqCB, "LEFT", -2, 0)
-            useEqText:SetText("Use equipped iLvl")
+            useEqText:SetText(L["Use equipped iLvl"])
 
             -- Re-anchor the rarity-row checkbox's auto-label so its right edge
             -- is bounded by the "Use equipped iLvl" text's left edge. The
@@ -518,10 +519,10 @@ MerchantPanel:SetScript("OnShow", function(self)
                 end
             end
 
-            useEqCB.tooltipText = "Use equipped iLvl"
-            useEqCB.tooltipRequirement = "When checked, the cap for this rarity is your currently-equipped iLvl in the same slot. "
-                .. "Items below auto-sell. Multi-slot items (rings, trinkets, weapons) compare against the "
-                .. "worst equipped slot. Empty slots are skipped."
+            useEqCB.tooltipText = L["Use equipped iLvl"]
+            useEqCB.tooltipRequirement = L["When checked, the cap for this rarity is your currently-equipped iLvl in the same slot. "]
+                .. L["Items below auto-sell. Multi-slot items (rings, trinkets, weapons) compare against the "]
+                .. L["worst equipped slot. Empty slots are skipped."]
 
             local function applyInputEnabled()
                 local on = DB.qualityRules[qualityIdx].useEquippedILvl == true
@@ -601,7 +602,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             -- "[x] Blue (Rare) max iLvl: [200] / Bind: [Any bind type]".
             local bindLbl = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
             bindLbl:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 26, -4)
-            bindLbl:SetText("Bind:")
+            bindLbl:SetText(L["Bind:"])
 
             local bindDD = CreateFrame(
                 "Frame",

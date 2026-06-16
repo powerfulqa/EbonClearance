@@ -35,6 +35,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- ============================================================
 -- Holds the auto-protect toggles + explanatory notes that previously
@@ -95,10 +96,10 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end
 
-        NS.MakeHeader(content, "Protection Settings", -16)
+        NS.MakeHeader(content, L["Protection Settings"], -16)
         local desc = NS.MakeLabel(
             content,
-            "Rules that keep specific items safe from selling. You can override any of them on a single item with Alt+Right-Click - Allow Sell.",
+            L["Rules that keep specific items safe from selling. You can override any of them on a single item with Alt+Right-Click - Allow Sell."],
             16,
             -44
         )
@@ -121,7 +122,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         autoEquipCB:SetChecked(DB.autoAddEquipped)
         local aeText = _G[autoEquipCB:GetName() .. "Text"]
         if aeText then
-            aeText:SetText("Keep gear you're wearing")
+            aeText:SetText(L["Keep gear you're wearing"])
             EC_compCache.setPanelWidth(aeText, 60)
             aeText:SetJustifyH("LEFT")
         end
@@ -157,7 +158,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         autoUpgradeCB:SetChecked(DB.autoProtectUpgrades)
         local auText = _G[autoUpgradeCB:GetName() .. "Text"]
         if auText then
-            auText:SetText("Keep upgrades found in bags")
+            auText:SetText(L["Keep upgrades found in bags"])
             EC_compCache.setPanelWidth(auText, 60)
             auText:SetJustifyH("LEFT")
         end
@@ -187,7 +188,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         autoSetCB:SetChecked(DB.autoProtectEquipmentSets)
         local asText = _G[autoSetCB:GetName() .. "Text"]
         if asText then
-            asText:SetText("Keep items in your saved equipment sets")
+            asText:SetText(L["Keep items in your saved equipment sets"])
             EC_compCache.setPanelWidth(asText, 60)
             asText:SetJustifyH("LEFT")
         end
@@ -225,7 +226,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         autoAffixCB:SetChecked(DB.protectAffixedRareItems)
         local aaText = _G[autoAffixCB:GetName() .. "Text"]
         if aaText then
-            aaText:SetText("Keep blue/purple items with affixes")
+            aaText:SetText(L["Keep blue/purple items with affixes"])
             EC_compCache.setPanelWidth(aaText, 60)
             aaText:SetJustifyH("LEFT")
         end
@@ -270,7 +271,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         dupeAffixCB:SetChecked(DB.affixAllowExactDupes)
         local daText = _G[dupeAffixCB:GetName() .. "Text"]
         if daText then
-            daText:SetText("Allow selling affixes you already have")
+            daText:SetText(L["Allow selling affixes you already have"])
             EC_compCache.setPanelWidth(daText, 86)
             daText:SetJustifyH("LEFT")
         end
@@ -326,10 +327,10 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 end
                 if not peOn then
                     dupeAffixNote:SetText(
-                        "|cff888888Project Ebonhold addon not detected. This option needs PE to know which affixes you have.|r"
+                        L["|cff888888Project Ebonhold addon not detected. This option needs PE to know which affixes you have.|r"]
                     )
                 else
-                    dupeAffixNote:SetText("|cff888888Turn on the affix protection above to use this option.|r")
+                    dupeAffixNote:SetText(L["|cff888888Turn on the affix protection above to use this option.|r"])
                 end
             end
         end
@@ -375,7 +376,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         procCB:SetChecked(DB.protectChanceOnHitItems)
         local pcText = _G[procCB:GetName() .. "Text"]
         if pcText then
-            pcText:SetText("Keep items with chance-on-hit procs")
+            pcText:SetText(L["Keep items with chance-on-hit procs"])
             EC_compCache.setPanelWidth(pcText, 60)
             pcText:SetJustifyH("LEFT")
         end
@@ -424,7 +425,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         unlearnedTomeCB:SetChecked(DB.protectUnlearnedTomes)
         local utText = _G[unlearnedTomeCB:GetName() .. "Text"]
         if utText then
-            utText:SetText("Keep unlearned tomes and recipes")
+            utText:SetText(L["Keep unlearned tomes and recipes"])
             EC_compCache.setPanelWidth(utText, 60)
             utText:SetJustifyH("LEFT")
         end
@@ -448,7 +449,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         allTomeCB:SetChecked(DB.protectAllTomes)
         local atText = _G[allTomeCB:GetName() .. "Text"]
         if atText then
-            atText:SetText("Keep them even after you learn them")
+            atText:SetText(L["Keep them even after you learn them"])
             EC_compCache.setPanelWidth(atText, 86)
             atText:SetJustifyH("LEFT")
         end
@@ -496,7 +497,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 if atText then
                     atText:SetTextColor(0.5, 0.5, 0.5)
                 end
-                allTomeNote:SetText("|cff888888Turn on the protection above to use this option.|r")
+                allTomeNote:SetText(L["|cff888888Turn on the protection above to use this option.|r"])
             end
         end
         self.UpdateAllTomeEnabled = UpdateAllTomeEnabled

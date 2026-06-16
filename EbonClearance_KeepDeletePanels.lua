@@ -27,6 +27,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local DeletePanel = CreateFrame("Frame", "EbonClearanceOptionsDeletion", InterfaceOptionsFramePanelContainer)
 DeletePanel.name = "Delete List"
@@ -39,11 +40,11 @@ DeletePanel:SetScript("OnShow", function(self)
             self.listUI:Refresh()
         end
     end, function(self)
-        local heading = NS.MakeHeader(self, "Deletion Settings", -16)
+        local heading = NS.MakeHeader(self, L["Deletion Settings"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
         local delDesc = NS.MakeLabel(
             self,
-            "Items on this list are destroyed when bags are scanned. This cannot be undone.",
+            L["Items on this list are destroyed when bags are scanned. This cannot be undone."],
             16,
             -44
         )
@@ -56,7 +57,7 @@ DeletePanel:SetScript("OnShow", function(self)
             delHint:SetWordWrap(true)
         end
         delHint:SetText(
-            "Add items by shift-clicking them, dragging them in, or typing the item ID below."
+            L["Add items by shift-clicking them, dragging them in, or typing the item ID below."]
         )
 
         local autoCB, refreshAutoCBEnabled
@@ -67,7 +68,7 @@ DeletePanel:SetScript("OnShow", function(self)
         delCB:SetChecked(DB.enableDeletion)
         local dt = _G[delCB:GetName() .. "Text"]
         if dt then
-            dt:SetText("Allow items to be deleted")
+            dt:SetText(L["Allow items to be deleted"])
             dt:SetWidth(420)
             dt:SetJustifyH("LEFT")
         end
@@ -107,7 +108,7 @@ DeletePanel:SetScript("OnShow", function(self)
         autoCB:SetChecked(DB.autoDeleteOnPickup)
         local autoText = _G[autoCB:GetName() .. "Text"]
         if autoText then
-            autoText:SetText("Auto-delete these items the moment they enter your bags")
+            autoText:SetText(L["Auto-delete these items the moment they enter your bags"])
             autoText:SetWidth(420)
             autoText:SetJustifyH("LEFT")
         end
@@ -147,7 +148,7 @@ DeletePanel:SetScript("OnShow", function(self)
             end
         end)
 
-        self.listUI = NS.CreateListUI(self, "Delete List", "deleteList", 16, -130)
+        self.listUI = NS.CreateListUI(self, L["Delete List"], "deleteList", 16, -130)
         -- v2.11.0: anchor BOTTOMRIGHT so the list stretches with the panel
         -- on Interface Options frame resize - mirrors the Whitelist /
         -- Blacklist / Account-Whitelist setups. Without this the list box
@@ -183,11 +184,11 @@ BlacklistPanel:SetScript("OnShow", function(self)
         -- Sell List rhythm (header + description + hint + list). DB field names
         -- unchanged so all event handlers, tooltip annotations, and slash commands
         -- continue to work without modification.
-        local heading = NS.MakeHeader(self, "Keep List", -16)
+        local heading = NS.MakeHeader(self, L["Keep List"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
         local blDesc = NS.MakeLabel(
             self,
-            "Items the addon should never touch. Good for things you'd rather sell at the auction house yourself.",
+            L["Items the addon should never touch. Good for things you'd rather sell at the auction house yourself."],
             16,
             -44
         )
@@ -203,7 +204,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
             blNote:SetWordWrap(true)
         end
         blNote:SetText(
-            "|cffaaaaaaAutomatic protection rules (equipped gear, upgrades, gear sets, affixes, chance-on-hit, tomes) are on the |r|cffffb84dProtection Settings|r|cffaaaaaa panel.|r"
+            L["|cffaaaaaaAutomatic protection rules (equipped gear, upgrades, gear sets, affixes, chance-on-hit, tomes) are on the |r|cffffb84dProtection Settings|r|cffaaaaaa panel.|r"]
         )
 
         -- Anchored to blNote so the hint stays below even when the
@@ -216,9 +217,9 @@ BlacklistPanel:SetScript("OnShow", function(self)
         if blHint.SetWordWrap then
             blHint:SetWordWrap(true)
         end
-        blHint:SetText("Add items by shift-clicking them, dragging them in, or typing the item ID.")
+        blHint:SetText(L["Add items by shift-clicking them, dragging them in, or typing the item ID."])
 
-        self.listUI = NS.CreateListUI(self, "Protected Items", "blacklist", 16, -130)
+        self.listUI = NS.CreateListUI(self, L["Protected Items"], "blacklist", 16, -130)
         self.listUI:ClearAllPoints()
         self.listUI:SetPoint("TOPLEFT", blHint, "BOTTOMLEFT", 0, -16)
         self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)

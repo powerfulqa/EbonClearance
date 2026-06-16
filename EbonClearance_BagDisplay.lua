@@ -49,6 +49,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local GetItemInfo = GetItemInfo
 local GetContainerItemID = GetContainerItemID
@@ -1007,7 +1008,7 @@ end
 -- touch EC_IsSellable, update this helper alongside.
 
 EC_compCache.qualityNames =
-    { [0] = "Junk", [1] = "Common", [2] = "Uncommon", [3] = "Rare", [4] = "Epic", [5] = "Legendary" }
+    { [0] = L["Junk"], [1] = L["Common"], [2] = L["Uncommon"], [3] = L["Rare"], [4] = L["Epic"], [5] = L["Legendary"] }
 
 function EC_compCache.describeSellability(bag, slot)
     local DB = NS.DB
@@ -1020,16 +1021,16 @@ function EC_compCache.describeSellability(bag, slot)
     local itemID = GetContainerItemID(bag, slot)
     if not itemID then
         return {
-            steps = { { name = "slot", passed = false, detail = "empty" } },
+            steps = { { name = "slot", passed = false, detail = L["empty"] } },
             wouldSell = false,
-            summary = "Empty slot",
+            summary = L["Empty slot"],
         }
     end
 
     local _, itemCount, locked = GetContainerItemInfo(bag, slot)
     if not itemCount or itemCount <= 0 then
-        step("count", false, "no items in slot")
-        return { steps = steps, wouldSell = false, summary = "Empty slot" }
+        step("count", false, L["no items in slot"])
+        return { steps = steps, wouldSell = false, summary = L["Empty slot"] }
     end
 
     local name, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
@@ -1048,11 +1049,11 @@ function EC_compCache.describeSellability(bag, slot)
     )
 
     if locked then
-        step("locked", false, "slot is locked (mid-pickup) - sell would skip this tick")
+        step("locked", false, L["slot is locked (mid-pickup) - sell would skip this tick"])
     end
 
     local hasSellPrice = sellPrice and sellPrice > 0
-    step("hasSellPrice", hasSellPrice, hasSellPrice and "yes" or "no (item cannot be vendored)")
+    step("hasSellPrice", hasSellPrice, hasSellPrice and L["yes"] or L["no (item cannot be vendored)"])
 
     -- Delete List wins over every sell signal (v2.37.0). Check it first
     -- so the trace agrees with the bag tint + tooltip annotation, and
@@ -1064,32 +1065,32 @@ function EC_compCache.describeSellability(bag, slot)
     local deletionEnabled = DB and DB.enableDeletion == true
     local willDelete = onDeleteList and deletionEnabled
     if willDelete then
-        step("deleteListVerdict", true, "WILL DELETE - on Delete List, Enable Deletion is on")
+        step("deleteListVerdict", true, L["WILL DELETE - on Delete List, Enable Deletion is on"])
     elseif onDeleteList then
         step(
             "deleteListVerdict",
             true,
-            "on Delete List but Enable Deletion is OFF - falling through to sell rules"
+            L["on Delete List but Enable Deletion is OFF - falling through to sell rules"]
         )
     else
-        step("deleteListVerdict", true, "not on Delete List")
+        step("deleteListVerdict", true, L["not on Delete List"])
     end
 
     local isJunk = (quality == 0) and hasSellPrice
-    step("greyAutoSell", isJunk, isJunk and "yes (grey with sell price)" or "n/a")
+    step("greyAutoSell", isJunk, isJunk and L["yes (grey with sell price)"] or L["n/a"])
 
     local onCharSell = DB and IsInSet(DB.whitelist, itemID) or false
     local onAcctSell = ADB and IsInSet(ADB.whitelist, itemID) or false
     local whitelistPass = hasSellPrice and (onCharSell or onAcctSell)
     local sellListDetail
     if onCharSell and onAcctSell then
-        sellListDetail = "yes (Character + Account Sell List)"
+        sellListDetail = L["yes (Character + Account Sell List)"]
     elseif onCharSell then
-        sellListDetail = "yes (Character Sell List)"
+        sellListDetail = L["yes (Character Sell List)"]
     elseif onAcctSell then
-        sellListDetail = "yes (Account Sell List)"
+        sellListDetail = L["yes (Account Sell List)"]
     else
-        sellListDetail = "no"
+        sellListDetail = L["no"]
     end
     step("onSellList", whitelistPass, sellListDetail)
 
@@ -1141,13 +1142,13 @@ function EC_compCache.describeSellability(bag, slot)
             qualityDetail = string.format("%s rule disabled", qName)
         end
     else
-        qualityDetail = "no rule applies (no sell price OR quality outside Common..Epic)"
+        qualityDetail = L["no rule applies (no sell price OR quality outside Common..Epic)"]
     end
     step("qualityRule", qualityPass, qualityDetail)
 
     if qualityPass and EC_compCache.isQuestItem and EC_compCache.isQuestItem(itemID) then
         qualityPass = false
-        step("questSafetyNet", false, "vetoed - quest item; explicit Sell List entry would override this")
+        step("questSafetyNet", false, L["vetoed - quest item; explicit Sell List entry would override this"])
     end
 
     if
@@ -1160,22 +1161,22 @@ function EC_compCache.describeSellability(bag, slot)
         step(
             "professionToolSafetyNet",
             false,
-            "vetoed - baseline-protected profession tool; explicit Sell List entry or Allow Sell override would bypass this"
+            L["vetoed - baseline-protected profession tool; explicit Sell List entry or Allow Sell override would bypass this"]
         )
     end
 
     local equipped = IsEquippedItem(itemID)
     if equipped then
-        step("equippedVeto", false, "VETO - item is currently equipped")
+        step("equippedVeto", false, L["VETO - item is currently equipped"])
     else
-        step("equippedVeto", true, "not currently equipped")
+        step("equippedVeto", true, L["not currently equipped"])
     end
 
     local blacklisted = DB and IsInSet(DB.blacklist, itemID) or false
     if blacklisted then
-        step("keepListVeto", false, "VETO - on Keep List")
+        step("keepListVeto", false, L["VETO - on Keep List"])
     else
-        step("keepListVeto", true, "not on Keep List")
+        step("keepListVeto", true, L["not on Keep List"])
     end
 
     local affixProtected = false
@@ -1203,18 +1204,18 @@ function EC_compCache.describeSellability(bag, slot)
                 or false
             local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown)
             if manualAllow then
-                step("affixProtection", true, "affix present, manually allow-listed via Alt+Right-Click")
+                step("affixProtection", true, L["affix present, manually allow-listed via Alt+Right-Click"])
             elseif autoDupe then
                 local how = descKnown
-                    and "you already have this affix"
-                    or "you already have this affix family at this rank"
+                    and L["you already have this affix"]
+                    or L["you already have this affix family at this rank"]
                 step("affixProtection", true, "affix present, selling allowed (" .. how .. ")")
             else
                 affixProtected = true
-                step("affixProtection", false, "VETO - Rare/Epic random affix detected")
+                step("affixProtection", false, L["VETO - Rare/Epic random affix detected"])
             end
         else
-            step("affixProtection", true, "no random affix on this item")
+            step("affixProtection", true, L["no random affix on this item"])
         end
     else
         -- v2.32.x: split the catch-all "n/a" message into the actual
@@ -1226,11 +1227,11 @@ function EC_compCache.describeSellability(bag, slot)
         -- in BuildQueue is a separate path; see `/ec sellinfo` is sell-
         -- only by design.
         if not DB or not DB.protectAffixedRareItems then
-            step("affixProtection", true, "n/a (affix protection toggle off)")
+            step("affixProtection", true, L["n/a (affix protection toggle off)"])
         elseif not quality or quality < 3 then
-            step("affixProtection", true, "n/a (quality below Rare)")
+            step("affixProtection", true, L["n/a (quality below Rare)"])
         else
-            step("affixProtection", true, "n/a (no positive sell signal - affix gate only fires for items the sell rules would otherwise touch; delete-list path is checked separately)")
+            step("affixProtection", true, L["n/a (no positive sell signal - affix gate only fires for items the sell rules would otherwise touch; delete-list path is checked separately)"])
         end
     end
 
@@ -1243,14 +1244,14 @@ function EC_compCache.describeSellability(bag, slot)
         and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     then
         if ADB and ADB.allowedItems and ADB.allowedItems[itemID] then
-            step("chanceOnHitProtection", true, "chance-on-hit proc, but item allow-listed")
+            step("chanceOnHitProtection", true, L["chance-on-hit proc, but item allow-listed"])
         else
             procProtected = true
             qualityPass = false
-            step("chanceOnHitProtection", false, "VETO - chance-on-hit proc detected (downgrades qualityRule veto)")
+            step("chanceOnHitProtection", false, L["VETO - chance-on-hit proc detected (downgrades qualityRule veto)"])
         end
     else
-        step("chanceOnHitProtection", true, "n/a")
+        step("chanceOnHitProtection", true, L["n/a"])
     end
 
     local positiveSignal = isJunk or qualityPass or whitelistPass
@@ -1264,15 +1265,15 @@ function EC_compCache.describeSellability(bag, slot)
         -- down. Steps above still run for educational value (the player
         -- can see what WOULD have happened if the item weren't on the
         -- Delete List), but the summary reflects the actual outcome.
-        summary = "|cffff4444WILL DELETE at the next vendor visit|r"
+        summary = L["|cffff4444WILL DELETE at the next vendor visit|r"]
     elseif wouldSell then
-        summary = "|cff00ff00WILL SELL at the next vendor visit|r"
+        summary = L["|cff00ff00WILL SELL at the next vendor visit|r"]
     elseif not positiveSignal then
-        summary = "|cffffb84dwon't sell - no rule matched|r"
+        summary = L["|cffffb84dwon't sell - no rule matched|r"]
     elseif vetoed then
-        summary = "|cffff4444won't sell - protected|r"
+        summary = L["|cffff4444won't sell - protected|r"]
     else
-        summary = "|cffff4444won't sell|r"
+        summary = L["|cffff4444won't sell|r"]
     end
 
     return { steps = steps, wouldSell = wouldSell, willDelete = willDelete, summary = summary }
@@ -1294,17 +1295,17 @@ function EC_compCache.printSellabilityTrace(bag, slot)
         end
     end
     if not (bag and slot) then
-        NS.PrintNice("|cffff4444No items in any bag to inspect.|r")
+        NS.PrintNice(L["|cffff4444No items in any bag to inspect.|r"])
         return
     end
 
     local r = EC_compCache.describeSellability(bag, slot)
-    NS.PrintNicef("|cffffff00=== Sellability trace: bag %d slot %d ===|r", bag, slot)
+    NS.PrintNicef(L["|cffffff00=== Sellability trace: bag %d slot %d ===|r"], bag, slot)
     for _, s in ipairs(r.steps) do
         local marker = s.passed and "|cff00ff00+|r" or "|cffff4444-|r"
         NS.PrintNicef("  %s %s - %s", marker, s.name, s.detail)
     end
-    NS.PrintNice("Result: " .. r.summary)
+    NS.PrintNicef(L["Result: %s"], r.summary)
 end
 
 -- Look up a bag-slot button's (bag, slot) from a hover. Works for both the

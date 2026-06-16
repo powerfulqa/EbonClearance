@@ -1,4 +1,4 @@
-# Help links + Stats panel split — Implementation Plan
+# Help links + Stats panel split - Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,27 +15,27 @@
 ## Files affected
 
 **New files:**
-- `EbonClearance_StatsPanel.lua` — new sub-panel holding every stat widget
+- `EbonClearance_StatsPanel.lua` - new sub-panel holding every stat widget
 
 **Modified files:**
-- `EbonClearance_MainPanel.lua` — strip stats widgets, leave welcome + orientation
-- `EbonClearance_Events.lua` — `RefreshStats` re-pointed; `InterfaceOptions_AddCategory` sort order updated; `helpSectionsCollapsed` defaults extended for new `processBags` key
-- `EbonClearance_HelpPanel.lua` — `id` fields on every entry, new Process Bags section, `NS.OpenHelpEntry` API, scroll-to-entry + flash logic, OnShow collapse defaults extended
-- `EbonClearance_PanelWidgets.lua` — new `MakeHelpIcon` primitive exposed as `NS.AddHelpIcon`
-- `EbonClearance_ProtectionPanel.lua` — strip notes, add `[?]` icons
-- `EbonClearance_MerchantPanel.lua` — strip notes, add `[?]` icons
-- `EbonClearance_ScavengerPanel.lua` — strip notes, add `[?]` icons
-- `EbonClearance_ItemHighlightingPanel.lua` — strip notes, add `[?]` icons
-- `EbonClearance_ProcessBagsPanel.lua` — strip notes, add `[?]` icons
-- `EbonClearance_SellListPanels.lua` — top-of-panel `[?]` on Sell List + Account Sell List
-- `EbonClearance_KeepDeletePanels.lua` — top-of-panel `[?]` on Keep + Delete
-- `EbonClearance_ProfilesPanel.lua` — top-of-panel `[?]` on Profiles + Import/Export
-- `EbonClearance.toc` — add `EbonClearance_StatsPanel.lua` to load order
-- `.github/workflows/release.yml` — add new file to packaging glob
-- `tests/test_perf_guardrails.lua` — Test 73 update, Tests 78-80 added, GPH invariants (Tests 22-23) re-pointed
-- `tests/test_layout_reactivity.lua` — add new file to SOURCE_PATHS
-- `tests/test_no_addon_references.lua` — add new file to SOURCE_PATHS
-- `CHANGELOG.md` — version entry
+- `EbonClearance_MainPanel.lua` - strip stats widgets, leave welcome + orientation
+- `EbonClearance_Events.lua` - `RefreshStats` re-pointed; `InterfaceOptions_AddCategory` sort order updated; `helpSectionsCollapsed` defaults extended for new `processBags` key
+- `EbonClearance_HelpPanel.lua` - `id` fields on every entry, new Process Bags section, `NS.OpenHelpEntry` API, scroll-to-entry + flash logic, OnShow collapse defaults extended
+- `EbonClearance_PanelWidgets.lua` - new `MakeHelpIcon` primitive exposed as `NS.AddHelpIcon`
+- `EbonClearance_ProtectionPanel.lua` - strip notes, add `[?]` icons
+- `EbonClearance_MerchantPanel.lua` - strip notes, add `[?]` icons
+- `EbonClearance_ScavengerPanel.lua` - strip notes, add `[?]` icons
+- `EbonClearance_ItemHighlightingPanel.lua` - strip notes, add `[?]` icons
+- `EbonClearance_ProcessBagsPanel.lua` - strip notes, add `[?]` icons
+- `EbonClearance_SellListPanels.lua` - top-of-panel `[?]` on Sell List + Account Sell List
+- `EbonClearance_KeepDeletePanels.lua` - top-of-panel `[?]` on Keep + Delete
+- `EbonClearance_ProfilesPanel.lua` - top-of-panel `[?]` on Profiles + Import/Export
+- `EbonClearance.toc` - add `EbonClearance_StatsPanel.lua` to load order
+- `.github/workflows/release.yml` - add new file to packaging glob
+- `tests/test_perf_guardrails.lua` - Test 73 update, Tests 78-80 added, GPH invariants (Tests 22-23) re-pointed
+- `tests/test_layout_reactivity.lua` - add new file to SOURCE_PATHS
+- `tests/test_no_addon_references.lua` - add new file to SOURCE_PATHS
+- `CHANGELOG.md` - version entry
 
 ---
 
@@ -232,7 +232,7 @@ InterfaceOptions_AddCategory(_G["EbonClearanceOptionsStats"])
 
 - [ ] **Step 2: Add to .toc load order**
 
-Modify `EbonClearance.toc` — insert `EbonClearance_StatsPanel.lua` after `EbonClearance_MainPanel.lua`:
+Modify `EbonClearance.toc` - insert `EbonClearance_StatsPanel.lua` after `EbonClearance_MainPanel.lua`:
 
 ```
 EbonClearance_MainPanel.lua
@@ -242,7 +242,7 @@ EbonClearance_PanelInfra.lua
 
 - [ ] **Step 3: Add to release.yml packaging glob**
 
-Modify `.github/workflows/release.yml` — add `EbonClearance_StatsPanel.lua` to the `cp` line:
+Modify `.github/workflows/release.yml` - add `EbonClearance_StatsPanel.lua` to the `cp` line:
 
 ```yaml
              EbonClearance_MainPanel.lua EbonClearance_StatsPanel.lua EbonClearance_PanelInfra.lua \
@@ -250,7 +250,7 @@ Modify `.github/workflows/release.yml` — add `EbonClearance_StatsPanel.lua` to
 
 - [ ] **Step 4: Add to all three test SOURCE_PATHS**
 
-Modify `tests/test_perf_guardrails.lua`, `tests/test_layout_reactivity.lua`, and `tests/test_no_addon_references.lua` — find the SOURCE_PATHS table and add `"EbonClearance_StatsPanel.lua"` after `"EbonClearance_MainPanel.lua"`:
+Modify `tests/test_perf_guardrails.lua`, `tests/test_layout_reactivity.lua`, and `tests/test_no_addon_references.lua` - find the SOURCE_PATHS table and add `"EbonClearance_StatsPanel.lua"` after `"EbonClearance_MainPanel.lua"`:
 
 ```lua
     "EbonClearance_MainPanel.lua",
@@ -261,7 +261,7 @@ Modify `tests/test_perf_guardrails.lua`, `tests/test_layout_reactivity.lua`, and
 - [ ] **Step 5: Syntax check + run failing test**
 
 Run: `cd "c:/Users/chris/Wow Addons/EbonClearance" && luac -p EbonClearance_StatsPanel.lua && lua tests/test_perf_guardrails.lua 2>&1 | tail -10`
-Expected: Test 80, 80a pass. Test 80b passes (panel.statsMoney is attached). Test 80c may still fail (MainPanel hasn't been stripped yet — that's Task 5).
+Expected: Test 80, 80a pass. Test 80b passes (panel.statsMoney is attached). Test 80c may still fail (MainPanel hasn't been stripped yet - that's Task 5).
 
 - [ ] **Step 6: Commit**
 
@@ -411,7 +411,7 @@ The block currently registers panels in this order (in EbonClearance_Events.lua)
 11. Profiles
 12. ImportExport
 
-Note: the Stats panel's own `InterfaceOptions_AddCategory` call (in `EbonClearance_StatsPanel.lua`) runs at file load, which is after all panels register in Events.lua's tail because StatsPanel.lua loads before Events.lua. Actually check `.toc` load order — StatsPanel loads before Events. So Stats registers first, then Events registers the rest at file scope. That orders Stats LAST in the sub-panel sort because addition order = display order.
+Note: the Stats panel's own `InterfaceOptions_AddCategory` call (in `EbonClearance_StatsPanel.lua`) runs at file load, which is after all panels register in Events.lua's tail because StatsPanel.lua loads before Events.lua. Actually check `.toc` load order - StatsPanel loads before Events. So Stats registers first, then Events registers the rest at file scope. That orders Stats LAST in the sub-panel sort because addition order = display order.
 
 To put Stats between Main and Merchant, the registration in Events.lua needs to happen AFTER StatsPanel registers itself. The cleanest fix: move the existing Events.lua sort-order block to call `InterfaceOptions_AddCategory` in a controlled order.
 
@@ -582,7 +582,7 @@ Expected: FAIL with "Count: 0 unique" because no entries have ids yet.
 
 In `EbonClearance_HelpPanel.lua`, edit each content entry in `EC_HELP_ENTRIES`. Section markers (entries with `section = "key"`) do NOT get ids. Content entries (those with `q = "..."` and `a = "..."`) DO. Use kebab-case stable identifiers.
 
-Full mapping (in order — these MUST be unique):
+Full mapping (in order - these MUST be unique):
 
 **Section 1: Getting started**
 - "What does EbonClearance do?" → `id = "what-does-ec-do"`
@@ -913,7 +913,7 @@ NS.AddHelpIcon = MakeHelpIcon
 
 - [ ] **Step 4: Add `GameTooltip` and `PlaySound` to .luacheckrc if not already allowed**
 
-Check `.luacheckrc` — `GameTooltip` and `PlaySound` should already be in the globals list. If `GameTooltip` is missing, add it. `PlaySound` is already there (verified earlier).
+Check `.luacheckrc` - `GameTooltip` and `PlaySound` should already be in the globals list. If `GameTooltip` is missing, add it. `PlaySound` is already there (verified earlier).
 
 - [ ] **Step 5: Run tests**
 
@@ -1620,15 +1620,15 @@ Wait for user to push the tag. Don't auto-tag per the verify-then-ship rule.
 
 ## Self-review
 
-**Spec coverage** — walked through the spec section-by-section:
+**Spec coverage** - walked through the spec section-by-section:
 - Part 1 (Stats panel split): Tasks 1-7 cover panel creation, RefreshStats re-pointing, strip from Main, sort order, GPH test re-pointing
 - Part 2 (Help-link foundation): Tasks 8-13 cover id fields, Process Bags section, AddHelpIcon, OpenHelpEntry, scroll-to-entry + flash, Test 78 integrity
 - Per-panel migration (acceptance criterion 4): Tasks 15-22 cover Protection, Merchant, Scavenger, Highlighting, Process Bags, list panels, Profiles, Main + Stats
 - Final integration (acceptance criteria 7-10): Tasks 23-25 cover linting, CHANGELOG, full sweep
 
-**Placeholder scan** — no TBDs, no "add appropriate error handling", no "similar to Task N", no orphan references. Test code is in every test step. Code is in every implementation step.
+**Placeholder scan** - no TBDs, no "add appropriate error handling", no "similar to Task N", no orphan references. Test code is in every test step. Code is in every implementation step.
 
-**Type/name consistency** — `NS.AddHelpIcon` used consistently across tasks. `_pendingScrollEntryId` named the same in OpenHelpEntry and refreshLayout. Section keys (`processBags`, etc.) consistent between OnShow defaults and section markers.
+**Type/name consistency** - `NS.AddHelpIcon` used consistently across tasks. `_pendingScrollEntryId` named the same in OpenHelpEntry and refreshLayout. Section keys (`processBags`, etc.) consistent between OnShow defaults and section markers.
 
 ---
 
@@ -1636,8 +1636,8 @@ Wait for user to push the tag. Don't auto-tag per the verify-then-ship rule.
 
 **Plan complete and saved to `docs/plans/2026-05-27-help-links-and-stats-panel.md`. Two execution options:**
 
-**1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration. Best for a plan this long; the subagent does Task N, reports, I review the diff, and we move on.
+**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration. Best for a plan this long; the subagent does Task N, reports, I review the diff, and we move on.
 
-**2. Inline Execution** — Execute tasks in this session using executing-plans, batching with checkpoints between phases. Slower but everything in one context.
+**2. Inline Execution** - Execute tasks in this session using executing-plans, batching with checkpoints between phases. Slower but everything in one context.
 
 **Which approach?**

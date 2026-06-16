@@ -17,6 +17,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local StatsPanel = CreateFrame("Frame", "EbonClearanceOptionsStats", InterfaceOptionsFramePanelContainer)
 StatsPanel.name = "Stats - Personal"
@@ -53,7 +54,7 @@ StatsPanel:SetScript("OnShow", function(self)
         -- as the public contract with RefreshStats - keep the literals.
         local panel = buildSelf
         -- Heading. Same -16 y offset as Keep List / Sell List etc.
-        local heading = NS.MakeHeader(content, "Stats - Personal", -16)
+        local heading = NS.MakeHeader(content, L["Stats - Personal"], -16)
         NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 8, 0, "stats-overview")
 
         -- v2.38.1: Character / Account view toggle. Sits between the
@@ -68,14 +69,14 @@ StatsPanel:SetScript("OnShow", function(self)
         charRadio:SetChecked(panel._statsView == "character")
         local charLbl = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         charLbl:SetPoint("LEFT", charRadio, "RIGHT", 4, 0)
-        charLbl:SetText("Character")
+        charLbl:SetText(L["Character"])
 
         local acctRadio = CreateFrame("CheckButton", nil, content, "UIRadioButtonTemplate")
         acctRadio:SetPoint("LEFT", charLbl, "RIGHT", 16, 0)
         acctRadio:SetChecked(panel._statsView == "account")
         local acctLbl = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         acctLbl:SetPoint("LEFT", acctRadio, "RIGHT", 4, 0)
-        acctLbl:SetText("Account")
+        acctLbl:SetText(L["Account"])
 
         charRadio:SetScript("OnClick", function()
             panel._statsView = "character"
@@ -119,7 +120,7 @@ StatsPanel:SetScript("OnShow", function(self)
             if startedAt > 0 then
                 startedAtNote:SetText(
                     string.format(
-                        "|cff888888Account totals counting from %s. Per-character history pre-v2.38.1 stays on Character view.|r",
+                        L["|cff888888Account totals counting from %s. Per-character history pre-v2.38.1 stays on Character view.|r"],
                         date("%Y-%m-%d", startedAt)
                     )
                 )
@@ -252,7 +253,7 @@ StatsPanel:SetScript("OnShow", function(self)
         statsNote:SetPoint("TOPLEFT", topZones, "BOTTOMLEFT", 0, -4)
         EC_compCache.setPanelWidth(statsNote, 16)
         statsNote:SetJustifyH("LEFT")
-        statsNote:SetText("|cff888888Stats don't account for items bought back from a merchant.|r")
+        statsNote:SetText(L["|cff888888Stats don't account for items bought back from a merchant.|r"])
         panel.statsNote = statsNote
 
         -- Reset Session button. Clears the in-memory session deltas (the
@@ -261,7 +262,7 @@ StatsPanel:SetScript("OnShow", function(self)
         local resetSessionBtn = CreateFrame("Button", "EbonClearanceResetSessionBtn", content, "UIPanelButtonTemplate")
         resetSessionBtn:SetSize(170, 22)
         resetSessionBtn:SetPoint("TOPLEFT", statsNote, "BOTTOMLEFT", 0, -10)
-        resetSessionBtn:SetText("Reset Session Stats")
+        resetSessionBtn:SetText(L["Reset Session Stats"])
         resetSessionBtn:SetScript("OnClick", function()
             if NS.ResetSession then
                 NS.ResetSession()
@@ -281,9 +282,9 @@ StatsPanel:SetScript("OnShow", function(self)
         resetBtn:SetPoint("LEFT", resetSessionBtn, "RIGHT", 8, 0)
         local function updateResetLabel()
             if panel._statsView == "account" then
-                resetBtn:SetText("Reset Lifetime (account)")
+                resetBtn:SetText(L["Reset Lifetime (account)"])
             else
-                resetBtn:SetText("Reset Lifetime (this character)")
+                resetBtn:SetText(L["Reset Lifetime (this character)"])
             end
         end
         updateResetLabel()

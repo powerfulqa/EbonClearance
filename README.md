@@ -22,6 +22,7 @@ A **Project Ebonhold-aware** bag manager. Out of the box it sells your junk and 
 - **Update nudge** (on by default). Tells you when a newer version is out. WoW 3.3.5a addons can't check the web, so EbonClearance learns the latest version from other users in your guild or group, then shows one chat line per session with a clickable copy-link to the latest release. Toggle it off on the main panel.
 - **Guild stats sharing** (opt-in, off by default). The **Stats - Guild** panel pools your guild's or group's best farming zones, most-sold items, totals, and sold-by-rarity counts from members who also run EbonClearance. Anonymous by default (optionally show your name), guild/group only, shown as a live snapshot. Most-sold rows show the item tooltip on hover.
 - **Reactive layout**, minimap button + LDB launcher, keybindings, first-run welcome, session + lifetime stats.
+- **French & German ready.** The addon reads your client's language and shows translated text where a translation exists, falling back to English otherwise. Translations are community-written; see [docs/TRANSLATING.md](docs/TRANSLATING.md) to help translate into your language.
 
 A complete enumeration of every feature lives in [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md). Behaviour history is in [CHANGELOG.md](CHANGELOG.md). For the design lineage and prior-art acknowledgement, see [NOTICE.md](NOTICE.md).
 
@@ -88,7 +89,9 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 - [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md) is the prescriptive guide for coding in this addon. Read it first: it covers 3.3.5a client gotchas, the file's architecture, naming conventions, the state machine, UI patterns and the decision not to embed Ace3.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) is a short list of known follow-up cleanups that weren't part of the last pass.
 
-A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 29 `.lua` files after the v2.32.0 file-split, the v2.36.0 Help / Stats panel splits, the v2.38.0 Quickstart panel, the v2.39.0 `EbonClearance_Comms.lua` addition, and the v2.40.0 guild-share files; the entry hub is `EbonClearance_Events.lua`.)
+- [docs/TRANSLATING.md](docs/TRANSLATING.md) is the guide for translating the addon into your language (French and German templates ship ready to fill in).
+
+A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 32 `.lua` files after the v2.32.0 file-split, the v2.36.0 Help / Stats panel splits, the v2.38.0 Quickstart panel, the v2.39.0 `EbonClearance_Comms.lua` addition, the v2.40.0 guild-share files, and the v2.43.0 localization files; the entry hub is `EbonClearance_Events.lua`.)
 
 ## Thanks
 

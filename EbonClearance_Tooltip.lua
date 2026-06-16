@@ -39,6 +39,11 @@ local EC_compCache = NS.compCache
 -- EbonClearance_Core.lua); per-call cost is one local read.
 local IsInSet = NS.IsInSet
 
+-- Localization lookup. Verdict labels are wrapped at the point they are
+-- built; see the EC-TRAP note on statusTag below for why the displayed
+-- string can no longer be introspected once it may be translated.
+local L = NS.L
+
 -- Allow Sell destination rewrite. Walks the explicit-list precedence
 -- chain when a protection (affix / chance-on-hit / tome) has been
 -- manually allow-listed and decides what the tooltip should say:
@@ -53,23 +58,26 @@ local IsInSet = NS.IsInSet
 -- The pre-extraction code duplicated this chain across the affix and
 -- tome blocks; centralising removes the drift surface so a future
 -- protection rule reuses the same precedence without paired edits.
-local function destinationLabel(id, currentLine)
+-- Returns (line, tag). tag is an English token the caller uses for logic
+-- (see statusTag below); the line is the localized display string. The
+-- blacklist case returns the caller's current line/tag unchanged.
+local function destinationLabel(id, currentLine, currentTag)
     local DB = NS.DB
     local ADB = NS.ADB
     if not DB then
         return nil
     end
     if IsInSet(DB.blacklist, id) then
-        return currentLine
+        return currentLine, currentTag
     end
     if IsInSet(DB.deleteList, id) and DB.enableDeletion then
-        return "|cff66ccff[EC]|r |cffff4444Will Delete|r"
+        return "|cff66ccff[EC]|r |cffff4444" .. L["Will Delete"] .. "|r", "willdelete"
     end
     if ADB and ADB.whitelist and IsInSet(ADB.whitelist, id) then
-        return "|cff66ccff[EC]|r |cffb6ffb6Will Sell (your Account List)|r"
+        return "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (your Account List)"] .. "|r", "willsell"
     end
     if IsInSet(DB.whitelist, id) then
-        return "|cff66ccff[EC]|r |cffb6ffb6Will Sell (your Character List)|r"
+        return "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (your Character List)"] .. "|r", "willsell"
     end
     return nil
 end
@@ -119,7 +127,14 @@ local function EC_AnnotateTooltip(tooltip)
     -- "Won't Sell (no value)" via the existing sellPrice nil-guards.
     local _, _, itemQuality, itemILvl, _, _, _, _, itemEquipLoc, _, itemSellPrice = GetItemInfo(id)
 
-    local statusLine
+    -- EC-TRAP: statusLine is the DISPLAYED verdict and may be translated, so
+    -- it can no longer be introspected for logic (a frFR client's "Vente" will
+    -- not match :find("Will Sell")). statusTag carries the English verdict
+    -- token instead - every statusLine assignment sets a matching tag, and the
+    -- downstream "is this a Will Sell / affix-rank / tome-known verdict?"
+    -- checks read the tag, never the string. Do NOT reintroduce
+    -- statusLine:find(...) for control flow.
+    local statusLine, statusTag
     if IsInSet(DB.blacklist, id) then
         -- v2.10.0: distinguish "user manually blacklisted this" from "the
         -- auto-protect-equipped path added it". DB.blacklistAuto is stamped
@@ -138,23 +153,25 @@ local function EC_AnnotateTooltip(tooltip)
             -- WHICH rule kept the item. Legacy boolean-true entries from
             -- v2.10.0 / v2.11.0 fall back to the generic label.
             if autoTag == "equipped" then
-                statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (equipped)|r"
+                statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (equipped)"] .. "|r"
             elseif autoTag == "upgrade" then
-                statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (upgrade)|r"
+                statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (upgrade)"] .. "|r"
             elseif autoTag == "set" then
                 -- v2.13.0: items from a saved Blizzard Equipment Manager set.
                 -- Most likely an off-set / dual-spec piece sitting in bags
                 -- between swaps; the tag promotes to "(equipped)" the next
                 -- time the user actually equips it.
-                statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (in gear set)|r"
+                statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (in gear set)"] .. "|r"
             else
-                statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (auto)|r"
+                statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (auto)"] .. "|r"
             end
         else
-            statusLine = "|cff66ccff[EC]|r |cffffb84dKeep|r"
+            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep"] .. "|r"
         end
+        statusTag = "keep"
     elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
-        statusLine = "|cff66ccff[EC]|r |cffff4444Will Delete|r"
+        statusLine = "|cff66ccff[EC]|r |cffff4444" .. L["Will Delete"] .. "|r"
+        statusTag = "willdelete"
     elseif IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id)) then
         -- Honesty: EC_IsSellable also requires sellPrice > 0 and not currently
         -- equipped. Without these checks the tooltip used to claim "Will Sell"
@@ -163,11 +180,14 @@ local function EC_AnnotateTooltip(tooltip)
         -- both reasons in warning-yellow so the user sees them at the point
         -- of decision instead of wondering why the cycle skipped them.
         if IsEquippedItem(id) then
-            statusLine = "|cff66ccff[EC]|r |cffffb84dWon't Sell (equipped)|r"
+            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Won't Sell (equipped)"] .. "|r"
+            statusTag = "wontsell"
         elseif not (itemSellPrice and itemSellPrice > 0) then
-            statusLine = "|cff66ccff[EC]|r |cffffb84dWon't Sell (no value)|r"
+            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Won't Sell (no value)"] .. "|r"
+            statusTag = "wontsell"
         else
-            statusLine = "|cff66ccff[EC]|r |cffb6ffb6Will Sell|r"
+            statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell"] .. "|r"
+            statusTag = "willsell"
         end
     elseif DB.qualityRules then
         local quality, ilvl, equipLoc, sellPrice = itemQuality, itemILvl, itemEquipLoc, itemSellPrice
@@ -179,14 +199,15 @@ local function EC_AnnotateTooltip(tooltip)
         -- Reported by an in-game tester via Discord: "I dont see the Will
         -- Sell - Junk".
         if quality == 0 and sellPrice and sellPrice > 0 then
-            statusLine = "|cff66ccff[EC]|r |cffb6ffb6Will Sell (junk)|r"
+            statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (junk)"] .. "|r"
+            statusTag = "willsell"
         elseif quality and quality >= 1 and quality <= 4 and sellPrice and sellPrice > 0 then
             local rule = DB.qualityRules[quality]
             if rule and rule.enabled then
-                local rarityName = (quality == 1) and "White"
-                    or (quality == 2) and "Green"
-                    or (quality == 3) and "Blue"
-                    or "Epic"
+                local rarityName = (quality == 1) and L["White"]
+                    or (quality == 2) and L["Green"]
+                    or (quality == 3) and L["Blue"]
+                    or L["Epic"]
                 local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
                 -- v2.12.0: split on useEquippedILvl mode. Dynamic-cap mode
                 -- mirrors EC_compCache.isDowngradeVsEquipped semantics so
@@ -210,7 +231,8 @@ local function EC_AnnotateTooltip(tooltip)
                     -- claim "Will Sell" when the merchant cycle will
                     -- silently skip. The whitelist match path above is
                     -- unaffected (whitelist overrides safety net).
-                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (quest item)|r"
+                    statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (quest item)"] .. "|r"
+                    statusTag = "keep"
                 elseif
                     matchesILvl
                     and EC_compCache.baselineProtectedIDs
@@ -223,7 +245,8 @@ local function EC_AnnotateTooltip(tooltip)
                     -- vetoes; the tooltip should say so. Allow Sell
                     -- override unsets this annotation (the item flows to
                     -- the normal sell path).
-                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (profession tool)|r"
+                    statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (profession tool)"] .. "|r"
+                    statusTag = "keep"
                 elseif matchesILvl then
                     -- v2.10.0: bind-filter check. EC_IsSellable applies this
                     -- AFTER the iLvl gate; the tooltip annotation has to
@@ -238,27 +261,33 @@ local function EC_AnnotateTooltip(tooltip)
                         end
                     end
                     if bindRejected then
-                        local fLabel = (bindFilter == "boe") and "BoE" or "BoP"
+                        local fLabel = (bindFilter == "boe") and L["BoE"] or L["BoP"]
                         statusLine = string.format(
-                            "|cff66ccff[EC]|r |cffffb84dKeep (%s rule wants %s only)|r",
+                            "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s rule wants %s only)"] .. "|r",
                             rarityName,
                             fLabel
                         )
+                        statusTag = "keep"
                     elseif matchedAgainstEquipped then
                         statusLine = string.format(
-                            "|cff66ccff[EC]|r |cffb6ffb6Will Sell (%s, lower than equipped)|r",
+                            "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (%s, lower than equipped)"] .. "|r",
                             rarityName
                         )
+                        statusTag = "willsell"
                     elseif cap == 0 then
-                        statusLine =
-                            string.format("|cff66ccff[EC]|r |cffb6ffb6Will Sell (%s)|r", rarityName)
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (%s)"] .. "|r",
+                            rarityName
+                        )
+                        statusTag = "willsell"
                     else
                         statusLine = string.format(
-                            "|cff66ccff[EC]|r |cffb6ffb6Will Sell (%s, iLvl %d, cap %d)|r",
+                            "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (%s, iLvl %d, cap %d)"] .. "|r",
                             rarityName,
                             ilvl,
                             cap
                         )
+                        statusTag = "willsell"
                     end
                 elseif matchedAgainstEquipped then
                     -- Dynamic-cap mode and the item didn't qualify. Two
@@ -273,28 +302,33 @@ local function EC_AnnotateTooltip(tooltip)
                     -- Both cases mean "kept because this could be useful";
                     -- "Potential Upgrade" is the user-friendly framing.
                     if not hasVisibleILvl then
-                        statusLine =
-                            string.format("|cff66ccff[EC]|r |cffffb84dKeep (%s, no item level)|r", rarityName)
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s, no item level)"] .. "|r",
+                            rarityName
+                        )
                     else
                         statusLine = string.format(
-                            "|cff66ccff[EC]|r |cffffb84dKeep (%s, possible upgrade)|r",
+                            "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s, possible upgrade)"] .. "|r",
                             rarityName
                         )
                     end
+                    statusTag = "keep"
                 elseif not hasVisibleILvl then
                     -- Fixed-cap mode; non-equippable has no visible iLvl.
                     statusLine = string.format(
-                        "|cff66ccff[EC]|r |cffffb84dKeep (%s, no item level)|r",
+                        "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s, no item level)"] .. "|r",
                         rarityName
                     )
+                    statusTag = "keep"
                 else
                     -- Fixed-cap mode; equippable item iLvl above cap.
                     statusLine = string.format(
-                        "|cff66ccff[EC]|r |cffffb84dKeep (%s, iLvl %d, cap %d)|r",
+                        "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s, iLvl %d, cap %d)"] .. "|r",
                         rarityName,
                         ilvl,
                         cap
                     )
+                    statusTag = "keep"
                 end
             end
         end
@@ -441,16 +475,20 @@ local function EC_AnnotateTooltip(tooltip)
                     -- Keep label unchanged. Returns nil when no list
                     -- claims it, in which case the manualAllow / autoDupe
                     -- branch picks its own fallback.
-                    local newLine = destinationLabel(id, statusLine)
+                    local newLine, newTag = destinationLabel(id, statusLine, statusTag)
                     if newLine then
                         statusLine = newLine
+                        statusTag = newTag
                     elseif manualAllow then
                         -- Allow Sell is on but no list claims it. An
                         -- existing "Will Sell (...)" verdict from the
                         -- quality-rule sweep already tells the truth;
                         -- otherwise prompt the user to pick a list.
-                        if not (statusLine and statusLine:find("Will Sell", 1, true)) then
-                            statusLine = "|cff66ccff[EC]|r |cffffea80Override on - add to a list to sell|r"
+                        if statusTag ~= "willsell" then
+                            statusLine = "|cff66ccff[EC]|r |cffffea80"
+                                .. L["Override on - add to a list to sell"]
+                                .. "|r"
+                            statusTag = "override"
                         end
                     else
                         -- autoDupe only, not on any list. v2.35.1: only
@@ -471,10 +509,12 @@ local function EC_AnnotateTooltip(tooltip)
                         -- is "rank known" - same as the dupe-allow-off
                         -- case, because the dupe-allow has nothing to
                         -- release.
-                        if statusLine and statusLine:find("Will Sell", 1, true) then
-                            statusLine = "|cff66ccff[EC]|r |cffb6ffb6Will Sell (you have this affix)|r"
+                        if statusTag == "willsell" then
+                            statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (you have this affix)"] .. "|r"
+                            statusTag = "willsell"
                         else
-                            statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (affix rank known)|r"
+                            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix rank known)"] .. "|r"
+                            statusTag = "affixknown"
                         end
                     end
                 elseif playerKnows or playerKnowsRank then
@@ -483,7 +523,8 @@ local function EC_AnnotateTooltip(tooltip)
                     -- via the v2.35.1 family+rank fallback when PE's
                     -- text disagrees at the same rank. Dupe-allow off
                     -- so protection still holds.
-                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (affix rank known)|r"
+                    statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix rank known)"] .. "|r"
+                    statusTag = "affixknown"
                 else
                     -- Player doesn't have this specific (family, rank)
                     -- pair in their collection. Could be a completely
@@ -491,7 +532,8 @@ local function EC_AnnotateTooltip(tooltip)
                     -- already own - the user's collection-side question
                     -- is "do I need this exact rank?" and the answer
                     -- is the same either way: yes.
-                    statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (affix rank needed)|r"
+                    statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix rank needed)"] .. "|r"
+                    statusTag = "affixneeded"
                 end
             end
         end
@@ -559,7 +601,7 @@ local function EC_AnnotateTooltip(tooltip)
         -- sell-side + delete-side decisions in EC_IsSellable and
         -- BuildQueue already check affix first, so this aligns the
         -- tooltip with the existing behaviour.
-        local affixKept = statusLine and statusLine:find("%(affix rank", 1, false)
+        local affixKept = (statusTag == "affixknown" or statusTag == "affixneeded")
         if onExplicit then
             -- Explicit list verdict stands; leave statusLine alone.
         elseif affixKept then
@@ -568,13 +610,17 @@ local function EC_AnnotateTooltip(tooltip)
             -- Allow Sell is on. If a quality-rule already produced a
             -- "Will Sell (...)" verdict, leave it alone. Otherwise
             -- prompt the user to pick a list.
-            if statusLine and statusLine:find("Will Sell", 1, true) then
+            if statusTag == "willsell" then
                 -- Existing verdict stands.
             else
-                statusLine = "|cff66ccff[EC]|r |cffffea80Override on - add to a list to sell|r"
+                statusLine = "|cff66ccff[EC]|r |cffffea80"
+                    .. L["Override on - add to a list to sell"]
+                    .. "|r"
+                statusTag = "override"
             end
         else
-            statusLine = "|cff66ccff[EC]|r |cffffb84dKeep (chance-on-hit proc)|r"
+            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (chance-on-hit proc)"] .. "|r"
+            statusTag = "keep"
         end
     end
 
@@ -586,7 +632,8 @@ local function EC_AnnotateTooltip(tooltip)
     -- "Protected - Tome". The aggressive "all tomes" toggle wins over
     -- "unlearned only" - same precedence as EC_IsSellable.
     local tomeProtected = false
-    local tomeReason
+    local tomeHave = false
+    local tomeKindLabel
     if (DB.protectAllTomes or DB.protectUnlearnedTomes)
         and EC_compCache.liveTooltipIsTome(tooltip, id)
     then
@@ -597,17 +644,15 @@ local function EC_AnnotateTooltip(tooltip)
         -- scrolls, PE Tome of Echo). The distinguishing field is the
         -- subtype - profession recipes carry a profession-name
         -- subtype; everything else falls through to "Tome".
-        local kindLabel = (EC_compCache.tomeKind and EC_compCache.tomeKind(id)) or "Tome"
+        tomeKindLabel = (EC_compCache.tomeKind and EC_compCache.tomeKind(id)) or L["Tome"]
         if DB.protectAllTomes then
             tomeProtected = true
-            tomeReason = EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
-                and ("(" .. kindLabel .. " you have)")
-                or ("(new " .. kindLabel .. ")")
+            tomeHave = EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id) and true or false
         elseif DB.protectUnlearnedTomes
             and not EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
         then
             tomeProtected = true
-            tomeReason = "(new " .. kindLabel .. ")"
+            tomeHave = false
         end
     end
     if tomeProtected then
@@ -622,14 +667,28 @@ local function EC_AnnotateTooltip(tooltip)
             -- Returns nil when no list claims it; the fallback picks an
             -- existing quality-rule "Will Sell" verdict if there is one,
             -- otherwise prompts the user to pick a list.
-            local newLine = destinationLabel(id, statusLine)
+            local newLine, newTag = destinationLabel(id, statusLine, statusTag)
             if newLine then
                 statusLine = newLine
-            elseif not (statusLine and statusLine:find("Will Sell", 1, true)) then
-                statusLine = "|cff66ccff[EC]|r |cffffea80Override on - add to a list to sell|r"
+                statusTag = newTag
+            elseif statusTag ~= "willsell" then
+                statusLine = "|cff66ccff[EC]|r |cffffea80"
+                    .. L["Override on - add to a list to sell"]
+                    .. "|r"
+                statusTag = "override"
             end
+        elseif tomeHave then
+            statusLine = string.format(
+                "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s you have)"] .. "|r",
+                tomeKindLabel
+            )
+            statusTag = "tome_have"
         else
-            statusLine = "|cff66ccff[EC]|r |cffffb84dKeep " .. tomeReason .. "|r"
+            statusLine = string.format(
+                "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (new %s)"] .. "|r",
+                tomeKindLabel
+            )
+            statusTag = "tome_new"
         end
     end
 
@@ -651,9 +710,9 @@ local function EC_AnnotateTooltip(tooltip)
         and EC_compCache.liveTooltipPlayerKnowsTome
         and EC_compCache.liveTooltipIsTome(tooltip, id)
         and EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
-        and not (statusLine and statusLine:find(" you have)", 1, true))
+        and statusTag ~= "tome_have"
     then
-        tooltip:AddLine("|cff888888Already known by this character|r")
+        tooltip:AddLine("|cff888888" .. L["Already known by this character"] .. "|r")
     end
     -- Opt-in item-ID annotation. Surfaces the numeric itemID under the
     -- EC verdict line for users filing bug reports or authoring Keep /
@@ -661,11 +720,11 @@ local function EC_AnnotateTooltip(tooltip)
     -- the top of this function from the |Hitem:NNNN| link, so this is a
     -- single conditional AddLine - no extra parsing cost.
     if DB.showItemIDOnTooltip then
-        tooltip:AddLine(string.format("|cff666666Item ID: %d|r", id))
+        tooltip:AddLine(string.format("|cff666666" .. L["Item ID: %d"] .. "|r", id))
     end
     -- Discoverability hint for the v2.3.0 right-click context menu. Shown on
     -- every bag/item-link tooltip so users know the action is available.
-    tooltip:AddLine("|cff666666Alt+Right-Click for EbonClearance menu|r")
+    tooltip:AddLine("|cff666666" .. L["Alt+Right-Click for EbonClearance menu"] .. "|r")
     tooltip.__EC_annotated = true
     tooltip:Show()
 end

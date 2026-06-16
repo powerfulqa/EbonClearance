@@ -24,6 +24,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- v2.38.0: Quickstart is a standalone modal-ish frame parented to
 -- UIParent (NOT an Interface Options sub-panel) so it doesn't show up
@@ -81,7 +82,7 @@ end
 do
     local titleFs = QuickstartPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     titleFs:SetPoint("TOP", QuickstartPanel, "TOP", 0, -18)
-    titleFs:SetText("EbonClearance - Quickstart")
+    titleFs:SetText(L["EbonClearance - Quickstart"])
 
     local closeX = CreateFrame("Button", nil, QuickstartPanel, "UIPanelCloseButton")
     closeX:SetPoint("TOPRIGHT", QuickstartPanel, "TOPRIGHT", -4, -4)
@@ -341,8 +342,8 @@ local ANSWER_MAP = {
 -- ============================================================================
 local PRESETS = {
     recommended = {
-        name = "Recommended",
-        desc = "Auto-sells outgrown gear. Protects what you're wearing. Sensible defaults for most players.",
+        name = L["Recommended"],
+        desc = L["Auto-sells outgrown gear. Protects what you're wearing. Sensible defaults for most players."],
         answers = {
             speed = "normal",
             autoLoot = "on",
@@ -363,8 +364,8 @@ local PRESETS = {
         },
     },
     cautious = {
-        name = "Cautious",
-        desc = "Same auto-sell as Recommended, plus protects items that might upgrade you and items in your gear sets.",
+        name = L["Cautious"],
+        desc = L["Same auto-sell as Recommended, plus protects items that might upgrade you and items in your gear sets."],
         answers = {
             speed = "normal",
             autoLoot = "on",
@@ -385,8 +386,8 @@ local PRESETS = {
         },
     },
     farmer = {
-        name = "Farmer",
-        desc = "Fast vendoring, sells Rares too (BoE only - quest gear stays). Closes bags after.",
+        name = L["Farmer"],
+        desc = L["Fast vendoring, sells Rares too (BoE only - quest gear stays). Closes bags after."],
         answers = {
             speed = "fast",
             autoLoot = "on",
@@ -407,8 +408,8 @@ local PRESETS = {
         },
     },
     power = {
-        name = "Power",
-        desc = "Turbo vendoring, deletes Delete-List items, drops the chance-on-hit safety net. Read the disconnect warning.",
+        name = L["Power"],
+        desc = L["Turbo vendoring, deletes Delete-List items, drops the chance-on-hit safety net. Read the disconnect warning."],
         answers = {
             speed = "turbo",
             autoLoot = "on",
@@ -535,12 +536,12 @@ local function EC_ApplyQuickstart(answers, fixedCaps, presetKey)
     if NS.PrintNicef then
         if presetKey and PRESETS[presetKey] then
             NS.PrintNicef(
-                "|cffb6ffb6Quickstart applied:|r |cffffd870%s|r preset. Type |cffffff00/ec|r any time to tweak.",
+                L["|cffb6ffb6Quickstart applied:|r |cffffd870%s|r preset. Type |cffffff00/ec|r any time to tweak."],
                 PRESETS[presetKey].name
             )
         else
             NS.PrintNicef(
-                "|cffb6ffb6Quickstart applied|r (tailored answers). Type |cffffff00/ec|r any time to tweak."
+                L["|cffb6ffb6Quickstart applied|r (tailored answers). Type |cffffff00/ec|r any time to tweak."]
             )
         end
     end
@@ -771,11 +772,11 @@ local function buildPanel(self, content)
     -- Body of build follows. Wrapped in pcall by the OnShow handler so
     -- any runtime error surfaces in chat instead of silently leaving
     -- the panel empty.
-        NS.MakeHeader(content, "Quickstart", -16)
+        NS.MakeHeader(content, L["Quickstart"], -16)
         local intro = NS.MakeLabel(
             content,
-            "Pick a preset for instant setup, or answer the questions for a tailored config.\n"
-                .. "|cffb6ffb6Every change applies immediately.|r Only |cffffd870settings|r change - your Sell, Keep, and Delete lists stay exactly as they are.",
+            L["Pick a preset for instant setup, or answer the questions for a tailored config.\n"]
+                .. L["|cffb6ffb6Every change applies immediately.|r Only |cffffd870settings|r change - your Sell, Keep, and Delete lists stay exactly as they are."],
             16,
             -44
         )
@@ -785,14 +786,14 @@ local function buildPanel(self, content)
         -- ---------------------------------------------------------------
         local presetLabel = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         presetLabel:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
-        presetLabel:SetText("|cffffd870Pick a preset to start fast:|r")
+        presetLabel:SetText(L["|cffffd870Pick a preset to start fast:|r"])
 
         local presetButtons = {}
         -- Active tag - smaller font, anchored CENTERED BELOW the active
         -- preset button so it doesn't look like it belongs to the
         -- neighbouring button.
         local presetActiveTag = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        presetActiveTag:SetText("|cffb6ffb6active|r")
+        presetActiveTag:SetText(L["|cffb6ffb6active|r"])
         presetActiveTag:Hide()
 
         local presetButtonRow = CreateFrame("Frame", nil, content)
@@ -831,7 +832,7 @@ local function buildPanel(self, content)
                 -- writes everything. The radios visibly snap to the
                 -- preset's answers AFTER the popup is accepted via the
                 -- refresh-driven repaint.
-                local dialog = StaticPopup_Show("EC_APPLY_QUICKSTART", p.name .. " preset")
+                local dialog = StaticPopup_Show("EC_APPLY_QUICKSTART", p.name .. L[" preset"])
                 if dialog then
                     local answersCopy = {}
                     for k, v in pairs(p.answers) do
@@ -892,7 +893,7 @@ local function buildPanel(self, content)
             presetDescLabel:SetWordWrap(true)
         end
         presetDescLabel:SetText(
-            "|cff888888Hover a preset for its description. Clicking shows a confirmation - presets change ~15 settings at once.|r"
+            L["|cff888888Hover a preset for its description. Clicking shows a confirmation - presets change ~15 settings at once.|r"]
         )
 
         -- ---------------------------------------------------------------
@@ -901,27 +902,27 @@ local function buildPanel(self, content)
 
         local refresh = refreshActiveTag
 
-        local sec1 = makeSectionHeader(content, "Section 1: Speed & Cycle", presetDescLabel, -20)
+        local sec1 = makeSectionHeader(content, L["Section 1: Speed & Cycle"], presetDescLabel, -20)
 
-        local lastAnchor = makeRadioGroup(content, sec1, "speed", "Q1. How fast should EC vendor at merchants?", {
-            { value = "normal", label = "Normal" },
-            { value = "fast", label = "Fast" },
-            { value = "turbo", label = "Turbo  |cffff8000(may disconnect on bad connections)|r" },
+        local lastAnchor = makeRadioGroup(content, sec1, "speed", L["Q1. How fast should EC vendor at merchants?"], {
+            { value = "normal", label = L["Normal"] },
+            { value = "fast", label = L["Fast"] },
+            { value = "turbo", label = L["Turbo  |cffff8000(may disconnect on bad connections)|r"] },
         }, refresh)
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "autoLoot", "Q2. Auto-loot cycle?", {
-            { value = "on", label = "Yes - Scavenger loots, then EC vendors when bags fill" },
-            { value = "off", label = "No - manual" },
+        lastAnchor = makeRadioGroup(content, lastAnchor, "autoLoot", L["Q2. Auto-loot cycle?"], {
+            { value = "on", label = L["Yes - Scavenger loots, then EC vendors when bags fill"] },
+            { value = "off", label = L["No - manual"] },
         }, refresh)
 
         lastAnchor = makeRadioGroup(
             content,
             lastAnchor,
             "fastLoot",
-            "Q3. Fast Loot (single-click clears loot windows)?",
+            L["Q3. Fast Loot (single-click clears loot windows)?"],
             {
-                { value = "on", label = "Yes" },
-                { value = "off", label = "No" },
+                { value = "on", label = L["Yes"] },
+                { value = "off", label = L["No"] },
             },
             refresh
         )
@@ -930,21 +931,21 @@ local function buildPanel(self, content)
             content,
             lastAnchor,
             "autoOpen",
-            "Q4. Auto-open lockboxes & engineered containers?",
+            L["Q4. Auto-open lockboxes & engineered containers?"],
             {
-                { value = "on", label = "Yes - after Pick Lock or when bags settle" },
-                { value = "off", label = "No - I'll open them manually" },
+                { value = "on", label = L["Yes - after Pick Lock or when bags settle"] },
+                { value = "off", label = L["No - I'll open them manually"] },
             },
             refresh
         )
 
-        local sec2 = makeSectionHeader(content, "Section 2: What EC Sells", lastAnchor, -20)
+        local sec2 = makeSectionHeader(content, L["Section 2: What EC Sells"], lastAnchor, -20)
 
-        lastAnchor = makeRadioGroup(content, sec2, "autoSell", "Q5. What should EC auto-sell?", {
-            { value = "none", label = "Only items I add to the Sell List myself" },
-            { value = "common", label = "Common items I've outgrown" },
-            { value = "commonUncommon", label = "Common + Uncommon items I've outgrown" },
-            { value = "upToRares", label = "Up through Rares (BoE only - protects quest gear)" },
+        lastAnchor = makeRadioGroup(content, sec2, "autoSell", L["Q5. What should EC auto-sell?"], {
+            { value = "none", label = L["Only items I add to the Sell List myself"] },
+            { value = "common", label = L["Common items I've outgrown"] },
+            { value = "commonUncommon", label = L["Common + Uncommon items I've outgrown"] },
+            { value = "upToRares", label = L["Up through Rares (BoE only - protects quest gear)"] },
         }, refresh)
 
         -- Q5b: iLvl mode. When "fixed" is selected, show 4 EditBoxes.
@@ -956,24 +957,24 @@ local function buildPanel(self, content)
         if fixedCapsLabel.SetWordWrap then
             fixedCapsLabel:SetWordWrap(true)
         end
-        fixedCapsLabel:SetText('Q5b. How should EC decide what\'s "outgrown"?')
+        fixedCapsLabel:SetText(L['Q5b. How should EC decide what\'s "outgrown"?'])
 
         local dynBtn = CreateFrame("CheckButton", nil, content, "UIRadioButtonTemplate")
         dynBtn:SetPoint("TOPLEFT", fixedCapsLabel, "BOTTOMLEFT", 16, -4)
         dynBtn:SetChecked(workingAnswers.ilvlMode == "dynamic")
         local dynLbl = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         dynLbl:SetPoint("LEFT", dynBtn, "RIGHT", 4, 0)
-        dynLbl:SetText("Compare to my currently-worn gear (dynamic, recommended)")
+        dynLbl:SetText(L["Compare to my currently-worn gear (dynamic, recommended)"])
 
         local fixBtn = CreateFrame("CheckButton", nil, content, "UIRadioButtonTemplate")
         fixBtn:SetPoint("TOPLEFT", dynBtn, "BOTTOMLEFT", 0, -2)
         fixBtn:SetChecked(workingAnswers.ilvlMode == "fixed")
         local fixLbl = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         fixLbl:SetPoint("LEFT", fixBtn, "RIGHT", 4, 0)
-        fixLbl:SetText("Use a fixed item-level cap per rarity:")
+        fixLbl:SetText(L["Use a fixed item-level cap per rarity:"])
 
         -- The four EditBox inputs - one per rarity. Show only when "fixed".
-        local rarityNames = { "White", "Green", "Blue", "Epic" }
+        local rarityNames = { L["White"], L["Green"], L["Blue"], L["Epic"] }
         local capBoxes = {}
         local lastCapRowAnchor = fixBtn
         for q = 1, 4 do
@@ -985,7 +986,7 @@ local function buildPanel(self, content)
             lbl:SetPoint("LEFT", row, "LEFT", 0, 0)
             lbl:SetWidth(80)
             lbl:SetJustifyH("LEFT")
-            lbl:SetText(rarityNames[q] .. " cap:")
+            lbl:SetText(rarityNames[q] .. L[" cap:"])
 
             local eb = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
             eb:SetSize(60, 20)
@@ -1083,90 +1084,90 @@ local function buildPanel(self, content)
         -- doesn't leave a phantom gap below hidden cap rows.
         updateCapBoxesVisible()
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "merchants", "Q6. Which merchants should EC work at?", {
-            { value = "goblin", label = "Goblin Merchant only" },
-            { value = "any", label = "Any vendor I open" },
-            { value = "both", label = "Both (any vendor, but prefer the Goblin)" },
+        lastAnchor = makeRadioGroup(content, lastAnchor, "merchants", L["Q6. Which merchants should EC work at?"], {
+            { value = "goblin", label = L["Goblin Merchant only"] },
+            { value = "any", label = L["Any vendor I open"] },
+            { value = "both", label = L["Both (any vendor, but prefer the Goblin)"] },
         }, refresh)
 
-        local sec3 = makeSectionHeader(content, "Section 3: What EC Protects", lastAnchor, -20)
+        local sec3 = makeSectionHeader(content, L["Section 3: What EC Protects"], lastAnchor, -20)
 
-        lastAnchor = makeRadioGroup(content, sec3, "protect", "Q7. What should EC auto-protect from selling?", {
-            { value = "nothing", label = "Nothing - I'll use the Keep List myself" },
-            { value = "wearing", label = "What I'm currently wearing" },
-            { value = "wearingUpgrades", label = "Currently wearing + items that would be upgrades" },
-            { value = "wearingUpgradesSets", label = "All of the above + items in my saved gear sets" },
+        lastAnchor = makeRadioGroup(content, sec3, "protect", L["Q7. What should EC auto-protect from selling?"], {
+            { value = "nothing", label = L["Nothing - I'll use the Keep List myself"] },
+            { value = "wearing", label = L["What I'm currently wearing"] },
+            { value = "wearingUpgrades", label = L["Currently wearing + items that would be upgrades"] },
+            { value = "wearingUpgradesSets", label = L["All of the above + items in my saved gear sets"] },
         }, refresh)
 
         lastAnchor = makeRadioGroup(
             content,
             lastAnchor,
             "safetyNets",
-            "Q8. Project Ebonhold safety nets (affix-protected items, chance-on-hit procs)?",
+            L["Q8. Project Ebonhold safety nets (affix-protected items, chance-on-hit procs)?"],
             {
-                { value = "all", label = "All on (recommended for PE)" },
-                { value = "critical", label = "Only critical (affix protection on, chance-on-hit off)" },
-                { value = "off", label = "Off - I'll decide what to keep myself" },
+                { value = "all", label = L["All on (recommended for PE)"] },
+                { value = "critical", label = L["Only critical (affix protection on, chance-on-hit off)"] },
+                { value = "off", label = L["Off - I'll decide what to keep myself"] },
             },
             refresh
         )
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "tomes", "Q9. Tome / recipe protection", {
-            { value = "unlearned", label = "Protect tomes I haven't learned yet (recommended)" },
+        lastAnchor = makeRadioGroup(content, lastAnchor, "tomes", L["Q9. Tome / recipe protection"], {
+            { value = "unlearned", label = L["Protect tomes I haven't learned yet (recommended)"] },
             {
                 value = "all",
-                label = "Protect ALL tomes - even ones I've already learned (useful for sharing with alts)",
+                label = L["Protect ALL tomes - even ones I've already learned (useful for sharing with alts)"],
             },
-            { value = "off", label = "Don't protect tomes" },
+            { value = "off", label = L["Don't protect tomes"] },
         }, refresh)
 
-        local sec4 = makeSectionHeader(content, "Section 4: At the Vendor", lastAnchor, -20)
+        local sec4 = makeSectionHeader(content, L["Section 4: At the Vendor"], lastAnchor, -20)
 
-        lastAnchor = makeRadioGroup(content, sec4, "repair", "Q10. Auto-repair gear at merchants?", {
-            { value = "gold", label = "Yes, pay from my gold" },
-            { value = "guild", label = "Yes, use guild bank funds if available" },
-            { value = "off", label = "No - I'll repair manually" },
+        lastAnchor = makeRadioGroup(content, sec4, "repair", L["Q10. Auto-repair gear at merchants?"], {
+            { value = "gold", label = L["Yes, pay from my gold"] },
+            { value = "guild", label = L["Yes, use guild bank funds if available"] },
+            { value = "off", label = L["No - I'll repair manually"] },
         }, refresh)
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "keepBags", "Q11. Keep bags open after EC's vendor cycle?", {
-            { value = "yes", label = "Yes - useful for buyback" },
-            { value = "no", label = "No - close them when done" },
+        lastAnchor = makeRadioGroup(content, lastAnchor, "keepBags", L["Q11. Keep bags open after EC's vendor cycle?"], {
+            { value = "yes", label = L["Yes - useful for buyback"] },
+            { value = "no", label = L["No - close them when done"] },
         }, refresh)
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "summon", "Q12. Auto-summon Goblin Merchant when bags fill up?", {
-            { value = "yes", label = "Yes" },
-            { value = "no", label = "No, I'll summon manually" },
+        lastAnchor = makeRadioGroup(content, lastAnchor, "summon", L["Q12. Auto-summon Goblin Merchant when bags fill up?"], {
+            { value = "yes", label = L["Yes"] },
+            { value = "no", label = L["No, I'll summon manually"] },
         }, refresh)
 
         lastAnchor = makeRadioGroup(
             content,
             lastAnchor,
             "delete",
-            "Q13. Allow EC to delete Delete-List items at vendors?",
+            L["Q13. Allow EC to delete Delete-List items at vendors?"],
             {
-                { value = "no", label = "No - don't delete anything automatically (default)" },
-                { value = "yes", label = "Yes - delete them when I'm at a vendor" },
+                { value = "no", label = L["No - don't delete anything automatically (default)"] },
+                { value = "yes", label = L["Yes - delete them when I'm at a vendor"] },
             },
             refresh
         )
 
-        local sec5 = makeSectionHeader(content, "Section 5: Visual Helpers", lastAnchor, -20)
+        local sec5 = makeSectionHeader(content, L["Section 5: Visual Helpers"], lastAnchor, -20)
 
-        lastAnchor = makeRadioGroup(content, sec5, "ilvlSurfaces", "Q14. Show item levels on equipment slots?", {
-            { value = "none", label = "Don't show item levels" },
-            { value = "bags", label = "On bag slots only" },
-            { value = "bagsPaperdoll", label = "Bag slots + paperdoll / inspect" },
-            { value = "everywhere", label = "Bag slots + paperdoll + merchant frames" },
+        lastAnchor = makeRadioGroup(content, sec5, "ilvlSurfaces", L["Q14. Show item levels on equipment slots?"], {
+            { value = "none", label = L["Don't show item levels"] },
+            { value = "bags", label = L["On bag slots only"] },
+            { value = "bagsPaperdoll", label = L["Bag slots + paperdoll / inspect"] },
+            { value = "everywhere", label = L["Bag slots + paperdoll + merchant frames"] },
         }, refresh)
 
         lastAnchor = makeRadioGroup(
             content,
             lastAnchor,
             "borders",
-            "Q15. Color-code bag-slot borders by EC's verdict?",
+            L["Q15. Color-code bag-slot borders by EC's verdict?"],
             {
-                { value = "on", label = "Yes (Red = delete, Cyan = sell, etc.)" },
-                { value = "off", label = "No" },
+                { value = "on", label = L["Yes (Red = delete, Cyan = sell, etc.)"] },
+                { value = "off", label = L["No"] },
             },
             refresh
         )
@@ -1182,7 +1183,7 @@ local function buildPanel(self, content)
         local closeBtn = CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
         closeBtn:SetSize(140, 26)
         closeBtn:SetPoint("LEFT", btnRow, "LEFT", 16, 0)
-        closeBtn:SetText("Close")
+        closeBtn:SetText(L["Close"])
         closeBtn:SetScript("OnClick", function()
             QuickstartPanel:Hide()
             PlaySound("igMainMenuOptionCheckBoxOff")
@@ -1197,7 +1198,7 @@ local function buildPanel(self, content)
             bottomFooter:SetWordWrap(true)
         end
         bottomFooter:SetText(
-            "|cff888888Quickstart only writes settings. Your Sell, Keep, and Delete lists are never touched.|r"
+            L["|cff888888Quickstart only writes settings. Your Sell, Keep, and Delete lists are never touched.|r"]
         )
 
         -- repaintRadios: re-snap every radio button to the workingAnswers.

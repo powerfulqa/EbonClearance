@@ -25,6 +25,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local ScavengerPanel = CreateFrame("Frame", "EbonClearanceOptionsScavenger", InterfaceOptionsFramePanelContainer)
 
@@ -57,10 +58,10 @@ ScavengerPanel:SetScript("OnShow", function(self)
             self.fastLootCB:SetChecked(DB.fastLoot)
         end
     end, function(self, content)
-        NS.MakeHeader(content, "Scavenger Settings", -16)
+        NS.MakeHeader(content, L["Scavenger Settings"], -16)
         NS.MakeLabel(
             content,
-            "Manages your |cffff7f7fGreedy Scavenger|r. Turn on the loot cycle to keep looting and selling automatically while your bags fill up.",
+            L["Manages your |cffff7f7fGreedy Scavenger|r. Turn on the loot cycle to keep looting and selling automatically while your bags fill up."],
             16,
             -44
         )
@@ -71,7 +72,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         sumCB:SetChecked(DB.summonGreedy)
         local st = _G[sumCB:GetName() .. "Text"]
         if st then
-            st:SetText("Summon |cffff7f7fGreedy Scavenger|r after selling")
+            st:SetText(L["Summon |cffff7f7fGreedy Scavenger|r after selling"])
             st:SetWidth(420)
             st:SetJustifyH("LEFT")
         end
@@ -101,7 +102,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceSummonOnlyOutOfCombatCB",
             sumCB,
-            "Only summon |cffff7f7fGreedy Scavenger|r when out of combat",
+            L["Only summon |cffff7f7fGreedy Scavenger|r when out of combat"],
             function()
                 return DB.summonOnlyOutOfCombat
             end,
@@ -121,7 +122,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceSummonDelaySlider",
             combatOnlyCB,
-            "Summon delay",
+            L["Summon delay"],
             0.0,
             3.0,
             0.1,
@@ -141,7 +142,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceAutoLootCycleCB",
             delaySlider,
-            "Enable auto-loot cycle (loot, sell, repeat)",
+            L["Enable auto-loot cycle (loot, sell, repeat)"],
             function()
                 return DB.autoLootCycle
             end,
@@ -176,7 +177,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceBagThresholdSlider",
             cycleCB,
-            "Bag slots remaining before selling",
+            L["Bag slots remaining before selling"],
             0,
             10,
             1,
@@ -196,7 +197,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceAutoOpenCB",
             threshSlider,
-            "Auto-open lootable containers from your bags",
+            L["Auto-open lootable containers from your bags"],
             function()
                 return DB.autoOpenContainers
             end,
@@ -214,7 +215,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if autoOpenNote.SetWordWrap then
             autoOpenNote:SetWordWrap(true)
         end
-        autoOpenNote:SetText("|cff888888Lockboxes that need a key or lockpick are skipped. Paused during combat.|r")
+        autoOpenNote:SetText(L["|cff888888Lockboxes that need a key or lockpick are skipped. Paused during combat.|r"])
 
         -- v2.16.0: Fast Loot. When on AND Blizzard's auto-loot CVar is
         -- effectively enabled (autoLootDefault XOR'd with the
@@ -227,7 +228,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceFastLootCB",
             autoOpenNote,
-            "Fast Loot (instant corpse looting)",
+            L["Fast Loot (instant corpse looting)"],
             function()
                 return DB.fastLoot
             end,
@@ -254,7 +255,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             fastLootNote:SetWordWrap(true)
         end
         fastLootNote:SetText(
-            "|cff888888Speeds up looting from corpses, fishing, gift bags, dungeons, and mailboxes. Uses your |cffffff00Auto Loot|r|cff888888 setting. |cffff7f7fGreedy Scavenger|r|cff888888 looting is already instant.|r"
+            L["|cff888888Speeds up looting from corpses, fishing, gift bags, dungeons, and mailboxes. Uses your |cffffff00Auto Loot|r|cff888888 setting. |cffff7f7fGreedy Scavenger|r|cff888888 looting is already instant.|r"]
         )
 
         -- v2.10.0: the v2.9.0 editable companion-name input boxes were removed
@@ -279,7 +280,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             rightClickHint:SetWordWrap(true)
         end
         rightClickHint:SetText(
-            "|cffffb84dTip:|r |cff888888Alt+Right-Click any bag item to Sell, Keep, Delete, or override protection.|r"
+            L["|cffffb84dTip:|r |cff888888Alt+Right-Click any bag item to Sell, Keep, Delete, or override protection.|r"]
         )
 
         -- Size the scroll content to fit the bottom-most widget so the scrollbar

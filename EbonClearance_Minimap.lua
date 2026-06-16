@@ -40,6 +40,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local function EC_UpdateMinimapPos()
     local DB = NS.DB
@@ -129,14 +130,14 @@ local function EC_CreateMinimapButton()
             -- gets a one-line note so silent no-op doesn't look broken.
             if InCombatLockdown and InCombatLockdown() then
                 EC_compCache.pendingOpenAfterCombat = "main"
-                NS.PrintNice("|cffffb84dSettings will open when combat ends.|r")
+                NS.PrintNice(L["|cffffb84dSettings will open when combat ends.|r"])
                 return
             end
             NS.OpenOptionsPanel("EbonClearanceOptionsMain")
         elseif button == "MiddleButton" then
             if InCombatLockdown and InCombatLockdown() then
                 EC_compCache.pendingOpenAfterCombat = "process"
-                NS.PrintNice("|cffffb84dProcess Bags will open when combat ends.|r")
+                NS.PrintNice(L["|cffffb84dProcess Bags will open when combat ends.|r"])
                 return
             end
             NS.OpenOptionsPanel("EbonClearanceOptionsProcessBags")
@@ -163,17 +164,17 @@ local function EC_CreateMinimapButton()
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("EbonClearance")
-        GameTooltip:AddLine("Left: Options  |  Middle: Process Bags  |  Right: Toggle Addon", 1, 1, 1)
-        local stateStr = (DB and DB.enabled ~= false) and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
-        GameTooltip:AddLine("Status: " .. stateStr)
+        GameTooltip:AddLine(L["Left: Options  |  Middle: Process Bags  |  Right: Toggle Addon"], 1, 1, 1)
+        local stateStr = (DB and DB.enabled ~= false) and L["|cff00ff00Enabled|r"] or L["|cffff4444Disabled|r"]
+        GameTooltip:AddLine(L["Status: "] .. stateStr)
         local freeSlots = NS.GetFreeBagSlots()
         local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
-        GameTooltip:AddLine("Free bag slots: " .. slotColor .. freeSlots .. "|r")
+        GameTooltip:AddLine(L["Free bag slots: "] .. slotColor .. freeSlots .. "|r")
 
         local sellCount, sellCopper = NS.PreviewSellable()
-        GameTooltip:AddLine(string.format("Sellable now: |cffffff00%d|r items", sellCount))
+        GameTooltip:AddLine(string.format(L["Sellable now: |cffffff00%d|r items"], sellCount))
         if sellCopper > 0 then
-            GameTooltip:AddLine("Est. value: " .. NS.CopperToColoredText(sellCopper))
+            GameTooltip:AddLine(L["Est. value: "] .. NS.CopperToColoredText(sellCopper))
         end
         GameTooltip:Show()
     end)
@@ -237,16 +238,16 @@ local function EC_CreateLDBLauncher()
         OnTooltipShow = function(tt)
             local DB = NS.DB
             tt:AddLine("EbonClearance")
-            tt:AddLine("Left-click: Options  |  Right-click: Toggle", 1, 1, 1)
-            local stateStr = (DB and DB.enabled ~= false) and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
-            tt:AddLine("Status: " .. stateStr)
+            tt:AddLine(L["Left-click: Options  |  Right-click: Toggle"], 1, 1, 1)
+            local stateStr = (DB and DB.enabled ~= false) and L["|cff00ff00Enabled|r"] or L["|cffff4444Disabled|r"]
+            tt:AddLine(L["Status: "] .. stateStr)
             local freeSlots = NS.GetFreeBagSlots()
             local slotColor = freeSlots >= 10 and "|cff00ff00" or (freeSlots >= 5 and "|cffffff00" or "|cffff4444")
-            tt:AddLine("Free bag slots: " .. slotColor .. freeSlots .. "|r")
+            tt:AddLine(L["Free bag slots: "] .. slotColor .. freeSlots .. "|r")
             local count, copper = NS.PreviewSellable()
-            tt:AddLine(string.format("Sellable now: |cffffff00%d|r items", count))
+            tt:AddLine(string.format(L["Sellable now: |cffffff00%d|r items"], count))
             if copper > 0 then
-                tt:AddLine("Est. value: " .. NS.CopperToColoredText(copper))
+                tt:AddLine(L["Est. value: "] .. NS.CopperToColoredText(copper))
             end
         end,
     })

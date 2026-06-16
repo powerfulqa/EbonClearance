@@ -15,7 +15,11 @@ _G.CreateFrame = function() return makeFrame() end
 _G.StaticPopupDialogs = {}
 
 -- Load with the addon vararg shape WoW uses: (addonName, NS).
-local NS = {}
+-- NS.L mirrors EbonClearance_Locale.lua's passthrough (the real addon loads
+-- the locale layer first), so file-scope L["..."] lookups resolve to English.
+local NS = { L = setmetatable({}, { __index = function(_, k)
+    return k
+end }) }
 local chunk = assert(loadfile("EbonClearance_Comms.lua"))
 chunk("EbonClearance", NS)
 

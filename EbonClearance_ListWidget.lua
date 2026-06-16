@@ -49,6 +49,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- v2.41.0: sort-direction arrows. The old up/down triangle glyphs
 -- (U+25B2 / U+25BC) are not in the 3.3.5 client font and rendered as a
@@ -63,13 +64,13 @@ local SORT_DESC = "|TInterface\\Buttons\\Arrow-Down-Up:14:14:0:0|t"
 -- old "ID" sort button - sorting by an item ID the row no longer shows is
 -- no use, but filtering by rarity pairs naturally with the coloured names.
 local EC_RARITY_FILTERS = {
-    { q = nil, name = "All" },
-    { q = 0, name = "Poor" },
-    { q = 1, name = "Common" },
-    { q = 2, name = "Uncommon" },
-    { q = 3, name = "Rare" },
-    { q = 4, name = "Epic" },
-    { q = 5, name = "Legendary" },
+    { q = nil, name = L["All"] },
+    { q = 0, name = L["Poor"] },
+    { q = 1, name = L["Common"] },
+    { q = 2, name = L["Uncommon"] },
+    { q = 3, name = L["Rare"] },
+    { q = 4, name = L["Epic"] },
+    { q = 5, name = L["Legendary"] },
 }
 
 -- v2.41.0: attach a plain-language hover tip to a control. HookScript so
@@ -127,7 +128,7 @@ function EC_compCache.makeListRowFactory(content, setTableName)
         )
         rm:SetSize(72, 18)
         rm:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        rm:SetText("Remove")
+        rm:SetText(L["Remove"])
         -- rm is a sibling of row (both children of content). Enabling
         -- mouse on row below would otherwise make the two compete for
         -- clicks where they overlap; pin rm one level higher so the
@@ -222,13 +223,13 @@ end
 function EC_compCache.buildListHeaderRow(box, setTableName)
     local secAdd = box:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     secAdd:SetPoint("TOPLEFT", 0, 0)
-    secAdd:SetText("Add to list")
+    secAdd:SetText(L["Add to list"])
 
     local addLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     addLabel:SetPoint("TOPLEFT", 4, -24)
     addLabel:SetWidth(64)
     addLabel:SetJustifyH("LEFT")
-    addLabel:SetText("Add item:")
+    addLabel:SetText(L["Add item:"])
 
     local addBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
     addBtn:SetSize(60, 20)
@@ -236,7 +237,7 @@ function EC_compCache.buildListHeaderRow(box, setTableName)
     -- sits ~4px below the row top, so the button is lifted 4px to line up
     -- with the field's centre (same trick as the v2.32.x sort buttons).
     addBtn:SetPoint("TOPRIGHT", box, "TOPRIGHT", 0, -20)
-    addBtn:SetText("Add")
+    addBtn:SetText(L["Add"])
 
     -- Not numeric: the input accepts an ID or an item name. shift-click /
     -- drag still fill in the numeric ID via the handlers below.
@@ -268,10 +269,10 @@ function EC_compCache.buildListHeaderRow(box, setTableName)
 
     EC_AddControlTip(
         input,
-        "Type an item ID, or an item name (exact, or part of a name to add matching items from your bags). "
-            .. "Shift-click or drag a bag item to fill in its ID."
+        L["Type an item ID, or an item name (exact, or part of a name to add matching items from your bags). "]
+            .. L["Shift-click or drag a bag item to fill in its ID."]
     )
-    EC_AddControlTip(addBtn, "Add the typed item ID or name to the list.")
+    EC_AddControlTip(addBtn, L["Add the typed item ID or name to the list."])
 
     return input, addBtn
 end
@@ -293,22 +294,22 @@ function EC_compCache.buildListSearchAndSortRow(box, setTableName)
 
     local secFind = box:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     secFind:SetPoint("TOPLEFT", 0, -60)
-    secFind:SetText("Find in list")
+    secFind:SetText(L["Find in list"])
 
     -- Clear All wipes the whole list; lives on the Find header line, hard-right.
     local clearAllBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
     clearAllBtn:SetSize(80, 20)
     clearAllBtn:SetPoint("TOPRIGHT", box, "TOPRIGHT", 0, -58)
-    clearAllBtn:SetText("Clear All")
+    clearAllBtn:SetText(L["Clear All"])
 
     local sortNameBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
     sortNameBtn:SetSize(74, 20)
     sortNameBtn:SetPoint("RIGHT", clearAllBtn, "LEFT", -8, 0)
-    sortNameBtn:SetText("Name " .. SORT_ASC)
+    sortNameBtn:SetText(L["Name "] .. SORT_ASC)
 
     local sortLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     sortLabel:SetPoint("RIGHT", sortNameBtn, "LEFT", -6, 0)
-    sortLabel:SetText("Sort:")
+    sortLabel:SetText(L["Sort:"])
 
     -- Search line: Search input on the left, the "Show:" rarity filter on
     -- the right (both narrow what's visible, so they group together). The
@@ -320,11 +321,11 @@ function EC_compCache.buildListSearchAndSortRow(box, setTableName)
 
     local rarityLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     rarityLabel:SetPoint("RIGHT", rarityDD, "LEFT", 14, 2)
-    rarityLabel:SetText("Show:")
+    rarityLabel:SetText(L["Show:"])
 
     local searchLabel = box:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     searchLabel:SetPoint("TOPLEFT", 0, -84)
-    searchLabel:SetText("Search:")
+    searchLabel:SetText(L["Search:"])
 
     local search = CreateFrame("EditBox", "EbonClearanceSearchInput_" .. setTableName, box, "InputBoxTemplate")
     search:SetAutoFocus(false)
@@ -335,9 +336,9 @@ function EC_compCache.buildListSearchAndSortRow(box, setTableName)
     search:SetText("")
     NS.StyleInputBox(search)
 
-    EC_AddControlTip(clearAllBtn, "Remove every item from this list.")
-    EC_AddControlTip(sortNameBtn, "Sort the list by item name. Click again to reverse.")
-    EC_AddControlTip(search, "Show only rows whose name contains this text.")
+    EC_AddControlTip(clearAllBtn, L["Remove every item from this list."])
+    EC_AddControlTip(sortNameBtn, L["Sort the list by item name. Click again to reverse."])
+    EC_AddControlTip(search, L["Show only rows whose name contains this text."])
 
     return search, sortNameBtn, clearAllBtn, rarityDD
 end
@@ -601,11 +602,11 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             -- exist but the search / rarity filter hid them all.
             if #keys == 0 then
                 emptyFS:SetText(
-                    "This list is empty. Add an item by ID or name above, "
-                        .. "or Alt+Right-Click an item in your bags."
+                    L["This list is empty. Add an item by ID or name above, "]
+                        .. L["or Alt+Right-Click an item in your bags."]
                 )
             else
-                emptyFS:SetText("No items match your search.")
+                emptyFS:SetText(L["No items match your search."])
             end
             emptyFS:Show()
             -- Height from the wrapped text so 2-3 line messages aren't clipped.
@@ -634,7 +635,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     clearAllBtn:SetScript("OnClick", function()
         local t = NS.GetListTable(setTableName)
         if not t or not next(t) then
-            NS.PrintNicef("|cff888888%s is already empty.|r", titleText)
+            NS.PrintNicef(L["|cff888888%s is already empty.|r"], titleText)
             PlaySound("igMainMenuOptionCheckBoxOff")
             return
         end
@@ -643,7 +644,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             dialog.data = function()
                 EC_ClearListWithPrune(NS.GetListTable(setTableName))
                 Refresh()
-                NS.PrintNicef('Cleared every item from "|cffffff00%s|r".', titleText)
+                NS.PrintNicef(L['Cleared every item from "|cffffff00%s|r".'], titleText)
                 PlaySound("igMainMenuOptionCheckBoxOn")
             end
         end
@@ -716,16 +717,16 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         added = added + bagAdded
         skipped = skipped + bagSkipped
         if added > 0 then
-            NS.PrintNicef("Added |cffffff00%d|r item(s) matching |cffffff00%s|r.", added, raw)
+            NS.PrintNicef(L["Added |cffffff00%d|r item(s) matching |cffffff00%s|r."], added, raw)
         else
             NS.PrintNicef(
-                "|cff888888No item found for |r|cffffff00%s|r|cff888888 in your bags or item cache. "
-                    .. "Tip: you can paste an item ID.|r",
+                L["|cff888888No item found for |r|cffffff00%s|r|cff888888 in your bags or item cache. "]
+                    .. L["Tip: you can paste an item ID.|r"],
                 raw
             )
         end
         if skipped > 0 then
-            NS.PrintNicef("Skipped |cffffff00%d|r already on another list.", skipped)
+            NS.PrintNicef(L["Skipped |cffffff00%d|r already on another list."], skipped)
         end
         input:SetText("")
         Refresh()
@@ -765,7 +766,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
         else
             sortMode = "name_asc"
         end
-        sortNameBtn:SetText(sortMode == "name_asc" and ("Name " .. SORT_ASC) or ("Name " .. SORT_DESC))
+        sortNameBtn:SetText(sortMode == "name_asc" and (L["Name "] .. SORT_ASC) or (L["Name "] .. SORT_DESC))
         Refresh()
     end)
 
@@ -781,7 +782,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
                 break
             end
         end
-        UIDropDownMenu_SetText(rarityDD, NS.ColorTextByQuality(q, (opt and opt.name) or "All"))
+        UIDropDownMenu_SetText(rarityDD, NS.ColorTextByQuality(q, (opt and opt.name) or L["All"]))
         CloseDropDownMenus()
         Refresh()
     end
@@ -797,7 +798,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             UIDropDownMenu_AddButton(info)
         end
     end)
-    UIDropDownMenu_SetText(rarityDD, NS.ColorTextByQuality(nil, "All"))
+    UIDropDownMenu_SetText(rarityDD, NS.ColorTextByQuality(nil, L["All"]))
 
     box.Refresh = Refresh
     return box
@@ -854,7 +855,7 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
 
     local scanLabel = rowFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     scanLabel:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
-    scanLabel:SetText("Add from bags:")
+    scanLabel:SetText(L["Add from bags:"])
 
     local function MakeBtn(prevAnchor, leftPad, label, qualityNum, colorWord)
         local b = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
@@ -863,9 +864,9 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
         b:SetText(label)
         b:SetScript("OnClick", function()
             local added, skipped = ScanBagsForQuality(qualityNum)
-            NS.PrintNicef("Scanned bags: added |cffffff00%d|r %s items to %s.", added, colorWord, listLabel)
+            NS.PrintNicef(L["Scanned bags: added |cffffff00%d|r %s items to %s."], added, colorWord, listLabel)
             if skipped and skipped > 0 then
-                NS.PrintNicef("Skipped |cffffff00%d|r already on another list.", skipped)
+                NS.PrintNicef(L["Skipped |cffffff00%d|r already on another list."], skipped)
             end
             if refreshFn then
                 refreshFn()
@@ -875,9 +876,9 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
         return b
     end
 
-    local btnWhite = MakeBtn(scanLabel, 8, "|cffffffffWhite|r", 1, "white")
-    local btnGreen = MakeBtn(btnWhite, 4, "|cff1eff00Green|r", 2, "green")
-    MakeBtn(btnGreen, 4, "|cff0070ddBlue|r", 3, "blue")
+    local btnWhite = MakeBtn(scanLabel, 8, L["|cffffffffWhite|r"], 1, L["white"])
+    local btnGreen = MakeBtn(btnWhite, 4, L["|cff1eff00Green|r"], 2, L["green"])
+    MakeBtn(btnGreen, 4, L["|cff0070ddBlue|r"], 3, L["blue"])
 
     return rowFrame
 end

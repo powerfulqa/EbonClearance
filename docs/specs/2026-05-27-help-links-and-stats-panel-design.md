@@ -46,7 +46,7 @@ Visual rhythm: the Main panel reads like a landing page; Stats reads like a dash
 
 Pre-condition: `RefreshStats` looks up `_G["EbonClearanceOptionsMain"]` and writes to its `statsX` attachments. Post-condition: it looks up `_G["EbonClearanceOptionsStats"]` for those writes. The ItemLabel warmup callback in `MainPanel.lua` (which schedules a `RefreshStats` after `GetItemInfo` cold cache settles) keeps its current behaviour but points at the new panel.
 
-If the user opens Main and then opens Stats, the cached values render immediately — no recompute on every panel show; `RefreshStats` runs on the relevant data-change events (vendor close, BAG_UPDATE, etc.) and on the Stats panel's `OnShow` so a fresh visit picks up the latest values.
+If the user opens Main and then opens Stats, the cached values render immediately - no recompute on every panel show; `RefreshStats` runs on the relevant data-change events (vendor close, BAG_UPDATE, etc.) and on the Stats panel's `OnShow` so a fresh visit picks up the latest values.
 
 ### Sort order
 
@@ -169,13 +169,13 @@ Every dense settings panel gets a `[?]` per setting or per logical group. The ma
 
 To support the [?] links, add these new entries to `EC_HELP_ENTRIES`. Process Bags is user-facing functionality that doesn't fit into the existing "Sell decisions" section (it's not a sell decision), so it gets its own section.
 
-**New Section 6 — "Process Bags"** (section key `processBags`, inserted after `discord` or as a new section between `labels` and `discord` — the implementation plan picks a position):
+**New Section 6 - "Process Bags"** (section key `processBags`, inserted after `discord` or as a new section between `labels` and `discord` - the implementation plan picks a position):
 
-- "What does Process Bags do?" (id: `process-bags-overview`) — short overview of the four modes + how to arm the cursor + cooldown behaviour
-- "Disenchant mode" (id: `process-disenchant`) — Enchanting required, what items qualify
-- "Mill mode" (id: `process-mill`) — Inscription, herbs
-- "Prospect mode" (id: `process-prospect`) — Jewelcrafting, ore
-- "Pick Locks mode" (id: `process-picklocks`) — Rogues, lockboxes
+- "What does Process Bags do?" (id: `process-bags-overview`) - short overview of the four modes + how to arm the cursor + cooldown behaviour
+- "Disenchant mode" (id: `process-disenchant`) - Enchanting required, what items qualify
+- "Mill mode" (id: `process-mill`) - Inscription, herbs
+- "Prospect mode" (id: `process-prospect`) - Jewelcrafting, ore
+- "Pick Locks mode" (id: `process-picklocks`) - Rogues, lockboxes
 
 **Existing sections** (Getting started, Troubleshooting, How sell decisions work, Tooltip labels, Reporting bugs) get `id` fields added to each entry but no new content. Existing collapse-state defaults stay (every section collapsed by default).
 
@@ -195,15 +195,15 @@ A "before/after" example for the Protection Settings panel: today it has roughly
 
 `tests/test_perf_guardrails.lua` gets new checks:
 
-**Test 78** — Cross-reference integrity:
+**Test 78** - Cross-reference integrity:
 - Scans every settings panel file for `NS.AddHelpIcon(...)` calls
 - Extracts the `entryId` string argument
 - Asserts every referenced id appears as `id = "..."` in `EbonClearance_HelpPanel.lua`
 - Fails the build if a panel references a missing or removed help id
 
-**Test 73 update** — bump expected section markers from 5 to 6 (the new `processBags` section). The existing test pattern lists all section keys; add `processBags` to the list.
+**Test 73 update** - bump expected section markers from 5 to 6 (the new `processBags` section). The existing test pattern lists all section keys; add `processBags` to the list.
 
-**Test 79** — Every Help entry has a unique id (no duplicates), and every id is non-empty. Catches copy-paste mistakes when adding new entries.
+**Test 79** - Every Help entry has a unique id (no duplicates), and every id is non-empty. Catches copy-paste mistakes when adding new entries.
 
 These catch drift when someone removes a Help entry without updating the panels that link to it, or adds an entry without an id, or accidentally reuses an id.
 

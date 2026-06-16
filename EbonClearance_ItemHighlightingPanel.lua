@@ -37,6 +37,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local CharPanel = CreateFrame("Frame", "EbonClearanceOptionsCharacter", InterfaceOptionsFramePanelContainer)
 CharPanel.name = "Item Highlighting"
@@ -61,7 +62,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- to `content` (the scroll-wrapped child) so resize follows the
         -- panel; `self.xxxCB = ...` storage stays on the panel frame
         -- so the OnShow refresh callback can still find the widgets.
-        NS.MakeHeader(content, "Item Highlighting", -16)
+        NS.MakeHeader(content, L["Item Highlighting"], -16)
         -- v2.30.x: panel repurposed from "Character Settings" to focus
         -- entirely on bag-item highlighting. The per-character enable
         -- allowlist was removed (minimap toggle covers that use case);
@@ -69,7 +70,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- DB.allowedChars sits dormant in the SV for downgrade safety.
         local bagDesc = NS.MakeLabel(
             content,
-            "Coloured borders around bag items so you can see what will sell, what's junk, and what's protected - at a glance. Icons are untouched.",
+            L["Coloured borders around bag items so you can see what will sell, what's junk, and what's protected - at a glance. Icons are untouched."],
             16,
             -44
         )
@@ -85,7 +86,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- the checkbox icon already; only the wrap width was the problem.
         local sbText = _G[sbCB:GetName() .. "Text"]
         if sbText then
-            sbText:SetText("Show borders")
+            sbText:SetText(L["Show borders"])
             sbText:SetJustifyH("LEFT")
         end
 
@@ -110,13 +111,13 @@ CharPanel:SetScript("OnShow", function(self)
         -- priority order: Delete first (highest visibility), then the
         -- two Sell lists, then Junk, then per-rarity rule.
         local SELL_BORDER_CATEGORIES = {
-            { key = "delete", label = "Delete List (red)" },
-            { key = "keep", label = "Keep List (white)" },
-            { key = "accountSell", label = "Account Sell List (green)" },
-            { key = "charSell", label = "Character Sell List (cyan)" },
-            { key = "affix", label = "Random affix items (purple)" },
-            { key = "junk", label = "Junk - greys (low-alpha grey)" },
-            { key = "rule", label = "Quality rule match (gold)" },
+            { key = "delete", label = L["Delete List (red)"] },
+            { key = "keep", label = L["Keep List (white)"] },
+            { key = "accountSell", label = L["Account Sell List (green)"] },
+            { key = "charSell", label = L["Character Sell List (cyan)"] },
+            { key = "affix", label = L["Random affix items (purple)"] },
+            { key = "junk", label = L["Junk - greys (low-alpha grey)"] },
+            { key = "rule", label = L["Quality rule match (gold)"] },
         }
         local catSwatchUpdaters = {}
 
@@ -180,7 +181,7 @@ CharPanel:SetScript("OnShow", function(self)
             )
             catBtn:SetSize(110, 22)
             catBtn:SetPoint("LEFT", catSwatch, "RIGHT", 6, 0)
-            catBtn:SetText("Change colour")
+            catBtn:SetText(L["Change colour"])
             catBtn:SetScript("OnClick", function()
                 local c = DB.sellBorderCategories[key].color
                 local function commit(r, g, b, a)
@@ -245,7 +246,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- indented per-category rows above.
         local iLvlHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         iLvlHeader:SetPoint("TOPLEFT", lastRowAnchor, "BOTTOMLEFT", -18, -16)
-        iLvlHeader:SetText("Item level on equipment slots")
+        iLvlHeader:SetText(L["Item level on equipment slots"])
 
         local iLvlMainCB = CreateFrame(
             "CheckButton",
@@ -257,7 +258,7 @@ CharPanel:SetScript("OnShow", function(self)
         iLvlMainCB:SetChecked(DB.itemLevelOverlay.enabled)
         local iLvlMainText = _G[iLvlMainCB:GetName() .. "Text"]
         if iLvlMainText then
-            iLvlMainText:SetText("Show item level on slots")
+            iLvlMainText:SetText(L["Show item level on slots"])
             iLvlMainText:SetJustifyH("LEFT")
         end
         if iLvlMainText then
@@ -265,9 +266,9 @@ CharPanel:SetScript("OnShow", function(self)
         end
 
         local ITEM_LEVEL_SUB_TOGGLES = {
-            { key = "bags", label = "On bags (and bank)" },
-            { key = "paperdoll", label = "On character sheet & inspect" },
-            { key = "merchant", label = "On merchant window" },
+            { key = "bags", label = L["On bags (and bank)"] },
+            { key = "paperdoll", label = L["On character sheet & inspect"] },
+            { key = "merchant", label = L["On merchant window"] },
         }
         local iLvlSubCBs = {}
 
@@ -343,7 +344,7 @@ CharPanel:SetScript("OnShow", function(self)
         _G[iLvlSlider:GetName() .. "High"]:SetText("20")
         local iLvlSliderText = _G[iLvlSlider:GetName() .. "Text"]
         if iLvlSliderText then
-            iLvlSliderText:SetText("Item level font size: " .. (DB.itemLevelOverlay.fontSize or 12))
+            iLvlSliderText:SetText(L["Item level font size: "] .. (DB.itemLevelOverlay.fontSize or 12))
         end
         iLvlSlider:SetScript("OnValueChanged", function(slider, value)
             value = math.floor((value or 12) + 0.5)
@@ -354,7 +355,7 @@ CharPanel:SetScript("OnShow", function(self)
             end
             DB.itemLevelOverlay.fontSize = value
             if iLvlSliderText then
-                iLvlSliderText:SetText("Item level font size: " .. value)
+                iLvlSliderText:SetText(L["Item level font size: "] .. value)
             end
             if NS.RefreshItemLevelOverlay then
                 NS.RefreshItemLevelOverlay()
@@ -395,7 +396,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- sell-border toggle.
         local tipHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         tipHeader:SetPoint("TOPLEFT", lastRowAnchor, "BOTTOMLEFT", -18, -16)
-        tipHeader:SetText("Tooltip")
+        tipHeader:SetText(L["Tooltip"])
 
         local idCB = CreateFrame(
             "CheckButton",
@@ -407,7 +408,7 @@ CharPanel:SetScript("OnShow", function(self)
         idCB:SetChecked(DB.showItemIDOnTooltip)
         local idCBText = _G[idCB:GetName() .. "Text"]
         if idCBText then
-            idCBText:SetText("Show item ID in tooltip")
+            idCBText:SetText(L["Show item ID in tooltip"])
             idCBText:SetJustifyH("LEFT")
         end
         idCB:SetScript("OnClick", function()
@@ -436,7 +437,7 @@ CharPanel:SetScript("OnShow", function(self)
         -- so they don't assume a /reload is required.
         local idHint = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         idHint:SetPoint("TOPLEFT", idCB, "BOTTOMLEFT", 4, -2)
-        idHint:SetText("|cff888888Move your cursor off and back on to refresh open tooltips.|r")
+        idHint:SetText(L["|cff888888Move your cursor off and back on to refresh open tooltips.|r"])
 
         -- Single refresh helper that re-syncs every category's swatch
         -- and checkbox state. Called from the REFRESH branch of

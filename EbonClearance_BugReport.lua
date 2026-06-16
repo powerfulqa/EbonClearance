@@ -21,6 +21,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 -- v2.38.3: bound where used so Test 65 (bind-IsInSet invariant) stays
 -- satisfied for the /ec processdebug per-slot blacklist gate.
 local IsInSet = NS.IsInSet
@@ -430,12 +431,12 @@ local function EC_EnsureCopyFrame()
 
     local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     title:SetPoint("TOP", 0, -14)
-    title:SetText("EbonClearance Bug Report")
+    title:SetText(L["EbonClearance Bug Report"])
     f.title = title
 
     local hint = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-    hint:SetText("|cff888888Press Ctrl+A then Ctrl+C to copy this report.|r")
+    hint:SetText(L["|cff888888Press Ctrl+A then Ctrl+C to copy this report.|r"])
 
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -476,9 +477,9 @@ end
 
 local function EC_ShowBugReport()
     EC_ShowCopyFrame(
-        "EbonClearance Bug Report",
+        L["EbonClearance Bug Report"],
         EC_BuildBugReport(),
-        "Bug report generated. Copy the text from the window."
+        L["Bug report generated. Copy the text from the window."]
     )
 end
 
@@ -530,9 +531,9 @@ end
 
 local function EC_ShowAffixDebugDump()
     EC_ShowCopyFrame(
-        "EbonClearance Affix Debug Dump",
+        L["EbonClearance Affix Debug Dump"],
         EC_BuildAffixDebugDump(),
-        "Affix debug dump generated. Copy the text from the window."
+        L["Affix debug dump generated. Copy the text from the window."]
     )
 end
 
@@ -744,9 +745,9 @@ end
 
 local function EC_ShowProcessDebugDump()
     EC_ShowCopyFrame(
-        "EbonClearance Process Bags Debug Dump",
+        L["EbonClearance Process Bags Debug Dump"],
         EC_BuildProcessDebugDump(),
-        "Process debug dump generated. Copy the text from the window."
+        L["Process debug dump generated. Copy the text from the window."]
     )
 end
 

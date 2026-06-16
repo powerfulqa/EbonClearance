@@ -39,6 +39,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- ============================================================
 -- v2.22.0 Process Bags panel
@@ -180,21 +181,21 @@ function EC_compCache.rearmProcessButton()
             -- Mode label only; the dynamic item name lives on the
             -- separate label below the button so a long item name
             -- can't overflow the fixed button width.
-            panel.castBtnLabel:SetText(string.format("Process Next (%s)", entry.mode))
+            panel.castBtnLabel:SetText(string.format(L["Process Next (%s)"], entry.mode))
         end
         if panel.nextItemLabel then
-            local short = (GetItemInfo(entry.itemID)) or "item"
-            panel.nextItemLabel:SetText(string.format("|cffaaaaaaNext:|r %s", short))
+            local short = (GetItemInfo(entry.itemID)) or L["item"]
+            panel.nextItemLabel:SetText(string.format(L["|cffaaaaaaNext:|r %s"], short))
         end
     else
         panel.castBtn:SetAttribute("macrotext", "")
         panel.castBtn:Disable()
         panel.armedSpellName = nil
         if panel.castBtnLabel then
-            panel.castBtnLabel:SetText("Process Next")
+            panel.castBtnLabel:SetText(L["Process Next"])
         end
         if panel.nextItemLabel then
-            panel.nextItemLabel:SetText("|cffaaaaaaNothing to process right now.|r")
+            panel.nextItemLabel:SetText(L["|cffaaaaaaNothing to process right now.|r"])
         end
     end
     EC_compCache.updateProcessSelection()
@@ -405,7 +406,7 @@ function EC_compCache.refreshProcessPanel()
             n = n + 1
         end
         if n > 0 then
-            panel.clearIgnoredBtn:SetText(string.format("Clear Ignored (%d)", n))
+            panel.clearIgnoredBtn:SetText(string.format(L["Clear Ignored (%d)"], n))
             panel.clearIgnoredBtn:Show()
         else
             panel.clearIgnoredBtn:Hide()
@@ -478,10 +479,10 @@ function EC_compCache.refreshProcessPanel()
             header:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", 0, rowY)
             header.mode = entry.mode
             local isCollapsed = collapsedModes[entry.mode] == true
-            local indicator = isCollapsed and "|cffaaaaaa>|r" or "|cffaaaaaav|r"
+            local indicator = isCollapsed and L["|cffaaaaaa>|r"] or L["|cffaaaaaav|r"]
             header.text:SetText(
                 string.format(
-                    "%s |cffffb84d%s|r |cffaaaaaa(%d)|r",
+                    L["%s |cffffb84d%s|r |cffaaaaaa(%d)|r"],
                     indicator,
                     entry.mode:upper(),
                     modeCounts[entry.mode]
@@ -550,8 +551,8 @@ function EC_compCache.refreshProcessPanel()
                         DB.processIgnored = DB.processIgnored or {}
                         DB.processIgnored[self.itemString] = true
                         NS.PrintNicef(
-                            "Ignored |cffb6ffb6%s|r in Process Bags. Click |cffffb84dClear Ignored|r on the panel to restore.",
-                            (GetItemInfo(self.itemID)) or "item"
+                            L["Ignored |cffb6ffb6%s|r in Process Bags. Click |cffffb84dClear Ignored|r on the panel to restore."],
+                            (GetItemInfo(self.itemID)) or L["item"]
                         )
                         EC_compCache.refreshProcessPanel()
                         PlaySound("igMainMenuOptionCheckBoxOn")
@@ -589,7 +590,7 @@ function EC_compCache.refreshProcessPanel()
             if entry.perCast and entry.perCast > 1 then
                 row.text:SetText(
                     string.format(
-                        "%s  |cffaaaaaax%d -> %d cast%s|r",
+                        L["%s  |cffaaaaaax%d -> %d cast%s|r"],
                         entry.link,
                         entry.count,
                         entry.casts,
@@ -597,7 +598,7 @@ function EC_compCache.refreshProcessPanel()
                     )
                 )
             else
-                row.text:SetText(string.format("%s  |cffaaaaaax%d|r", entry.link, entry.count))
+                row.text:SetText(string.format(L["%s  |cffaaaaaax%d|r"], entry.link, entry.count))
             end
             row:Show()
             rowY = rowY - 20
@@ -641,7 +642,7 @@ local function EC_ensureCombatPlaceholder(self)
     local fs = self:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     fs:SetPoint("CENTER")
     fs:SetJustifyH("CENTER")
-    fs:SetText("|cffffb84dProcess Bags will load when combat ends.|r")
+    fs:SetText(L["|cffffb84dProcess Bags will load when combat ends.|r"])
     fs:Hide()
     self.combatPlaceholder = fs
     return fs
@@ -735,13 +736,13 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         EC_compCache.armedSlot = nil
         EC_compCache.refreshProcessPanel()
     end, function(self, content)
-        local heading = NS.MakeHeader(content, "Process Bags", -16)
+        local heading = NS.MakeHeader(content, L["Process Bags"], -16)
         if NS.AddHelpIcon then
             NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 6, 0, "process-bags-overview")
         end
         local desc = NS.MakeLabel(
             content,
-            "Disenchant, mill, prospect, or pick locks in bulk. |cffffd870Left-click|r a row to select it. |cffffd870Right-click|r a row to hide it (|cffffb84dClear Ignored|r brings them back). Click |cffffb84dProcess Next|r to cast on the selected row.",
+            L["Disenchant, mill, prospect, or pick locks in bulk. |cffffd870Left-click|r a row to select it. |cffffd870Right-click|r a row to hide it (|cffffb84dClear Ignored|r brings them back). Click |cffffb84dProcess Next|r to cast on the selected row."],
             16,
             -44
         )
@@ -758,7 +759,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         -- Test 88av locks the wording + icon + FAQ entry together.
         local tip = NS.MakeLabel(
             content,
-            "|cff888888Tip: bind a key to Process Next in Key Bindings to advance the queue one cast per press.|r",
+            L["|cff888888Tip: bind a key to Process Next in Key Bindings to advance the queue one cast per press.|r"],
             16,
             -44
         )
@@ -770,7 +771,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
 
         local keepTip = NS.MakeLabel(
             content,
-            "|cff888888Items on your Keep List are hidden here - the Keep List wins over Process Bags. Remove an item from the Keep List to make it processable.|r",
+            L["|cff888888Items on your Keep List are hidden here - the Keep List wins over Process Bags. Remove an item from the Keep List to make it processable.|r"],
             16,
             -44
         )
@@ -787,7 +788,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         sbCB:SetChecked(DB.processIncludeSoulbound)
         local sbText = _G[sbCB:GetName() .. "Text"]
         if sbText then
-            sbText:SetText("Include Soulbound items (disenchant only)")
+            sbText:SetText(L["Include Soulbound items (disenchant only)"])
             EC_compCache.setPanelWidth(sbText, 60)
             sbText:SetJustifyH("LEFT")
         end
@@ -804,15 +805,15 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         -- DE quality cap dropdown
         local ddLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         ddLabel:SetPoint("TOPLEFT", sbCB, "BOTTOMLEFT", 0, -10)
-        ddLabel:SetText("Disenchant up to:")
+        ddLabel:SetText(L["Disenchant up to:"])
 
         local dd = CreateFrame("Frame", "EbonClearanceProcessDEQualityDD", content, "UIDropDownMenuTemplate")
         dd:SetPoint("LEFT", ddLabel, "RIGHT", -8, -2)
-        local qualityNames = { [2] = "Green", [3] = "Blue", [4] = "Epic" }
+        local qualityNames = { [2] = L["Green"], [3] = L["Blue"], [4] = L["Epic"] }
         UIDropDownMenu_SetWidth(dd, 100)
         local function ddSet(q)
             DB.processMaxDEQuality = q
-            UIDropDownMenu_SetText(dd, qualityNames[q] or "Epic")
+            UIDropDownMenu_SetText(dd, qualityNames[q] or L["Epic"])
             CloseDropDownMenus()
             EC_compCache.refreshProcessPanel()
         end
@@ -828,9 +829,9 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
                 UIDropDownMenu_AddButton(info)
             end
         end)
-        UIDropDownMenu_SetText(dd, qualityNames[DB.processMaxDEQuality or 4] or "Epic")
+        UIDropDownMenu_SetText(dd, qualityNames[DB.processMaxDEQuality or 4] or L["Epic"])
         function self:UpdateDEDropdownText()
-            UIDropDownMenu_SetText(dd, qualityNames[DB.processMaxDEQuality or 4] or "Epic")
+            UIDropDownMenu_SetText(dd, qualityNames[DB.processMaxDEQuality or 4] or L["Epic"])
         end
 
         -- Help icon for the disenchant settings row (soulbound checkbox
@@ -852,19 +853,19 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         else
             clearBtn:SetPoint("LEFT", dd, "RIGHT", 8, 2)
         end
-        clearBtn:SetText("Clear Ignored (0)")
+        clearBtn:SetText(L["Clear Ignored (0)"])
         clearBtn:Hide()
         clearBtn:SetScript("OnClick", function()
             DB.processIgnored = {}
-            NS.PrintNice("Process Bags ignored list cleared.")
+            NS.PrintNice(L["Process Bags ignored list cleared."])
             EC_compCache.refreshProcessPanel()
             PlaySound("igMainMenuOptionCheckBoxOn")
         end)
         clearBtn:SetScript("OnEnter", function(b)
             GameTooltip:SetOwner(b, "ANCHOR_TOP")
-            GameTooltip:SetText("Clear ignored list")
+            GameTooltip:SetText(L["Clear ignored list"])
             GameTooltip:AddLine(
-                "|cffaaaaaaRestores every item you've right-clicked to hide. Per-character.|r",
+                L["|cffaaaaaaRestores every item you've right-clicked to hide. Per-character.|r"],
                 1,
                 1,
                 1,
@@ -937,7 +938,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             empty:SetWordWrap(true)
         end
         empty:SetText(
-            "|cff888888No eligible items. Learn Disenchant, Milling, Prospecting, or Pick Lock and pick up some loot to fill this list.|r"
+            L["|cff888888No eligible items. Learn Disenchant, Milling, Prospecting, or Pick Lock and pick up some loot to fill this list.|r"]
         )
         empty:Hide()
         self.emptyState = empty
@@ -961,7 +962,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         castBtn:SetAttribute("type", "macro")
         castBtn:SetAttribute("macrotext", "")
         castBtn:RegisterForClicks("AnyUp")
-        castBtn:SetText("Process Next")
+        castBtn:SetText(L["Process Next"])
         self.castBtn = castBtn
         self.castBtnLabel = castBtn:GetFontString()
 
@@ -1019,9 +1020,9 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         end)
         skipBtn:SetScript("OnEnter", function(b)
             GameTooltip:SetOwner(b, "ANCHOR_TOP")
-            GameTooltip:SetText("Skip to next item")
+            GameTooltip:SetText(L["Skip to next item"])
             GameTooltip:AddLine(
-                "|cffaaaaaaCycle through the queue without casting. Sticks to the picked mode until it's empty.|r",
+                L["|cffaaaaaaCycle through the queue without casting. Sticks to the picked mode until it's empty.|r"],
                 1,
                 1,
                 1,
@@ -1034,7 +1035,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         local refreshBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
         refreshBtn:SetSize(100, 22)
         refreshBtn:SetPoint("LEFT", skipBtn, "RIGHT", 8, 0)
-        refreshBtn:SetText("Refresh")
+        refreshBtn:SetText(L["Refresh"])
         refreshBtn:SetScript("OnClick", function()
             -- Refresh resets the armed cursor + mode preference: the
             -- user is asking for a fresh start.

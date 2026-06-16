@@ -19,6 +19,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- ---------------------------------------------------------------------------
 -- EC_HELP_ENTRIES
@@ -34,547 +35,554 @@ local EC_HELP_ENTRIES = {
     -- ===================================================================
     -- Section 1: Getting started
     -- ===================================================================
-    { section = "gettingStarted", title = "Getting started" },
+    { section = "gettingStarted", title = L["Getting started"] },
 
     {
         id = "what-does-ec-do",
-        q = "What does EbonClearance do?",
-        a = "EbonClearance is a bag manager. When you visit a vendor, it auto-sells your junk and old gear, and protects anything important (gear you're wearing, upgrades, quest items, Project Ebonhold affixes). It can also delete items you don't want, summon the Goblin Merchant when bags fill up, and bulk-disenchant, mill, or prospect a stack of items.",
+        q = L["What does EbonClearance do?"],
+        a = L["EbonClearance is a bag manager. When you visit a vendor, it auto-sells your junk and old gear, and protects anything important (gear you're wearing, upgrades, quest items, Project Ebonhold affixes). It can also delete items you don't want, summon the Goblin Merchant when bags fill up, and bulk-disenchant, mill, or prospect a stack of items."],
         panel = nil,
     },
     {
         id = "first-steps-quickstart",
-        q = "I just installed this. Where do I start?",
-        a = "The fastest path is the |cffb6ffb6Quickstart|r panel - Interface Options > EbonClearance > Quickstart, or the Open Quickstart button on the Main panel. Pick one of the four presets (Recommended / Cautious / Farmer / Power) for a one-click setup, or answer the 15 short questions for a tailored config. Either way only changes |cffffd870settings|r - your Sell, Keep, and Delete lists are never touched. Fresh installs open Quickstart automatically on first login.",
+        q = L["I just installed this. Where do I start?"],
+        a = L["The fastest path is the |cffb6ffb6Quickstart|r panel - Interface Options > EbonClearance > Quickstart, or the Open Quickstart button on the Main panel. Pick one of the four presets (Recommended / Cautious / Farmer / Power) for a one-click setup, or answer the 15 short questions for a tailored config. Either way only changes |cffffd870settings|r - your Sell, Keep, and Delete lists are never touched. Fresh installs open Quickstart automatically on first login."],
         panel = "EbonClearanceOptionsQuickstart",
     },
     {
         id = "first-steps",
-        q = "I want to set things up manually. What should I do?",
-        a = "Out of the box, EbonClearance auto-sells grey junk every time you visit a vendor. To go further without Quickstart:\n1) Open Merchant Settings and turn on the rarities you want auto-sold (White / Green / Blue / Epic).\n2) Alt+Right-Click any item you never want sold to put it on your Keep List.\n3) Alt+Right-Click any item you always want sold to put it on your Sell List.\nVisit a merchant and it just works.",
+        q = L["I want to set things up manually. What should I do?"],
+        a = L["Out of the box, EbonClearance auto-sells grey junk every time you visit a vendor. To go further without Quickstart:\n1) Open Merchant Settings and turn on the rarities you want auto-sold (White / Green / Blue / Epic).\n2) Alt+Right-Click any item you never want sold to put it on your Keep List.\n3) Alt+Right-Click any item you always want sold to put it on your Sell List.\nVisit a merchant and it just works."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "what-are-the-lists",
-        q = "What are the Sell, Keep, and Delete lists?",
-        a = "Three lists that give you fine control over what happens at a vendor. Sell List: items you always want vendored. Keep List: items you never want touched. Delete List: items destroyed at the next merchant visit (with confirmation handled). The Keep List wins over the Sell List, and both win over the automatic quality rules. Add to any list by Alt+Right-Click on a bag item, or on the panel use the Add item box (type an item ID, or a name to add matching items from your bags). Each row shows the item's icon and a quality-colored name; hover it for the tooltip, and use Show: to filter the list by rarity.",
+        q = L["What are the Sell, Keep, and Delete lists?"],
+        a = L["Three lists that give you fine control over what happens at a vendor. Sell List: items you always want vendored. Keep List: items you never want touched. Delete List: items destroyed at the next merchant visit (with confirmation handled). The Keep List wins over the Sell List, and both win over the automatic quality rules. Add to any list by Alt+Right-Click on a bag item, or on the panel use the Add item box (type an item ID, or a name to add matching items from your bags). Each row shows the item's icon and a quality-colored name; hover it for the tooltip, and use Show: to filter the list by rarity."],
         panel = nil,
     },
     {
         id = "auto-delete-on-pickup",
-        q = "What does auto-delete on pickup do?",
-        a = "Off by default. When you turn it on (Delete List panel, under 'Allow items to be deleted'), items on your Delete List are destroyed the moment they enter your bags, instead of waiting for a vendor - handy for cutting vendor trips while farming. It uses the same protections as deleting at a vendor: affixed Rare/Epic drops are still shielded, but quest items, tomes, and tools are not (the Delete List is your explicit choice). Each deletion prints one chat line. It is instant and cannot be undone, so enabling asks you to confirm first.",
+        q = L["What does auto-delete on pickup do?"],
+        a = L["Off by default. When you turn it on (Delete List panel, under 'Allow items to be deleted'), items on your Delete List are destroyed the moment they enter your bags, instead of waiting for a vendor - handy for cutting vendor trips while farming. It uses the same protections as deleting at a vendor: affixed Rare/Epic drops are still shielded, but quest items, tomes, and tools are not (the Delete List is your explicit choice). Each deletion prints one chat line. It is instant and cannot be undone, so enabling asks you to confirm first."],
         panel = "EbonClearanceOptionsDeletion",
     },
     {
         id = "see-item-decision",
-        q = "How do I see what will happen to an item?",
-        a = "Hover any bag item with EbonClearance enabled and the tooltip shows what the addon will do: 'Keep', 'Will Sell', 'Will Delete', or 'Won't Sell' with a reason. For a full step-by-step, Alt+Shift+Right-Click the item, or type /ec sellinfo.",
+        q = L["How do I see what will happen to an item?"],
+        a = L["Hover any bag item with EbonClearance enabled and the tooltip shows what the addon will do: 'Keep', 'Will Sell', 'Will Delete', or 'Won't Sell' with a reason. For a full step-by-step, Alt+Shift+Right-Click the item, or type /ec sellinfo."],
         panel = nil,
     },
     {
         id = "slash-commands",
-        q = "What are the slash commands?",
-        a = "/ec opens the settings. /ec help prints the full command list. /ec sellinfo explains why a bag item will or won't sell. /ec bugreport opens a diagnostic snapshot. /ec clean finds items appearing on multiple lists. /ecdebug shows a bag scan summary.",
+        q = L["What are the slash commands?"],
+        a = L["/ec opens the settings. /ec help prints the full command list. /ec sellinfo explains why a bag item will or won't sell. /ec bugreport opens a diagnostic snapshot. /ec clean finds items appearing on multiple lists. /ecdebug shows a bag scan summary."],
         panel = nil,
     },
     {
         id = "stats-overview",
-        q = "What does the Stats panel show?",
-        a = "The Stats panel tracks lifetime totals from using EbonClearance: money earned, items sold, items deleted, repairs and repair cost, plus current-session gold-per-hour and your best gold-per-hour record (with the zone and date). Reset Session clears the session deltas; Reset Lifetime wipes the lifetime totals (with a confirmation popup). Stats don't include items bought back from vendors.",
+        q = L["What does the Stats panel show?"],
+        a = L["The Stats panel tracks lifetime totals from using EbonClearance: money earned, items sold, items deleted, repairs and repair cost, plus current-session gold-per-hour and your best gold-per-hour record (with the zone and date). Reset Session clears the session deltas; Reset Lifetime wipes the lifetime totals (with a confirmation popup). Stats don't include items bought back from vendors."],
         panel = "EbonClearanceOptionsStats",
     },
     {
         id = "stats-character-vs-account",
-        q = "Character view vs Account view in the Stats panel?",
-        a = "The toggle at the top of the Stats panel picks which totals to show. |cffb6ffb6Character|r shows just the currently logged-in character's lifetime totals - the original behaviour. |cffb6ffb6Account|r shows the same fields summed across every character on this account that has used EbonClearance. Account totals start at zero on v2.38.1 install and count forward; older per-character history stays on each character's own Character view. The Account view's Best Gold/Hour ribbon names which character set the record. |cffffd870Reset Lifetime|r is view-aware: in Character view it clears just this character; in Account view it clears just the account ledger, leaving every character's own totals intact.",
+        q = L["Character view vs Account view in the Stats panel?"],
+        a = L["The toggle at the top of the Stats panel picks which totals to show. |cffb6ffb6Character|r shows just the currently logged-in character's lifetime totals - the original behaviour. |cffb6ffb6Account|r shows the same fields summed across every character on this account that has used EbonClearance. Account totals start at zero on v2.38.1 install and count forward; older per-character history stays on each character's own Character view. The Account view's Best Gold/Hour ribbon names which character set the record. |cffffd870Reset Lifetime|r is view-aware: in Character view it clears just this character; in Account view it clears just the account ledger, leaving every character's own totals intact."],
         panel = "EbonClearanceOptionsStats",
     },
     {
         id = "guild-sharing",
-        q = "What is the Stats - Guild panel?",
-        a = "Stats - Guild pools data from guildmates (and group members) who also run EbonClearance and have opted in: their best farming zones, combined totals, and most-sold items. It is anonymous by default and guild/group only - nothing is shared server-wide. Two boxes on the panel: 'Share my farming data with my guild' turns your sharing on (off by default), and 'Show my name with my shared data' optionally attaches your name (only available while sharing is on). The view is a live snapshot taken when you open the panel or click Refresh - it is not saved, so it reflects whoever is online and sharing right now. Your own lifetime stats keep growing as usual; the guild view just re-pools everyone's current totals each time you look.",
+        q = L["What is the Stats - Guild panel?"],
+        a = L["Stats - Guild pools data from guildmates (and group members) who also run EbonClearance and have opted in: their best farming zones, combined totals, and most-sold items. It is anonymous by default and guild/group only - nothing is shared server-wide. Two boxes on the panel: 'Share my farming data with my guild' turns your sharing on (off by default), and 'Show my name with my shared data' optionally attaches your name (only available while sharing is on). The view is a live snapshot taken when you open the panel or click Refresh - it is not saved, so it reflects whoever is online and sharing right now. Your own lifetime stats keep growing as usual; the guild view just re-pools everyone's current totals each time you look."],
         panel = "EbonClearanceOptionsGuild",
     },
     {
         id = "what-are-profiles",
-        q = "What are Profiles? (and how are they different from Quickstart?)",
-        a = "Profiles are named snapshots of your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r. Save your current lists as a profile, then later swap to a different one in a single click. Quickstart presets are different: they configure the addon's |cffffd870behaviour|r (speed, auto-sell rules, protections) but never touch your lists. The two systems are complementary - profiles for lists, Quickstart for settings. Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>.",
+        q = L["What are Profiles? (and how are they different from Quickstart?)"],
+        a = L["Profiles are named snapshots of your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r. Save your current lists as a profile, then later swap to a different one in a single click. Quickstart presets are different: they configure the addon's |cffffd870behaviour|r (speed, auto-sell rules, protections) but never touch your lists. The two systems are complementary - profiles for lists, Quickstart for settings. Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>."],
         panel = "EbonClearanceOptionsProfiles",
     },
     {
         id = "what-is-import-export",
-        q = "What does Import / Export do?",
-        a = "Import/Export packs your EbonClearance setup into a copyable text string you can share with another character or another player. Export writes the current setup (Sell List, Keep List, Delete List, and account-wide settings) into the export box; copy it with Ctrl+C. Import reads a pasted string and applies it. Tick 'Full settings pack' to include protection toggles + merchant rules + everything, not just the lists.",
+        q = L["What does Import / Export do?"],
+        a = L["Import/Export packs your EbonClearance setup into a copyable text string you can share with another character or another player. Export writes the current setup (Sell List, Keep List, Delete List, and account-wide settings) into the export box; copy it with Ctrl+C. Import reads a pasted string and applies it. Tick 'Full settings pack' to include protection toggles + merchant rules + everything, not just the lists."],
         panel = "EbonClearanceOptionsImportExport",
     },
     {
         id = "version-update-alert",
-        q = "How do I know when there's a new version?",
-        a = 'If another EbonClearance user in your guild or group has a newer version, you get one chat line at login telling you an update is available, with the download link. Turn this off with the "Tell me when an update is available" box on the main EbonClearance panel. EbonClearance cannot check for updates on its own; it learns the latest version from other players running it.',
+        q = L["How do I know when there's a new version?"],
+        a = L['If another EbonClearance user in your guild or group has a newer version, you get one chat line at login telling you an update is available, with the download link. Turn this off with the "Tell me when an update is available" box on the main EbonClearance panel. EbonClearance cannot check for updates on its own; it learns the latest version from other players running it.'],
         panel = nil,
     },
 
     -- ===================================================================
     -- Section 2: Troubleshooting
     -- ===================================================================
-    { section = "troubleshooting", title = "Troubleshooting" },
+    { section = "troubleshooting", title = L["Troubleshooting"] },
 
     {
         id = "tshoot-not-working",
-        q = "Why isn't the addon doing anything?",
-        a = "The most common cause is that the master Enable toggle got switched off (a right-click on the minimap button toggles it). When EbonClearance is disabled, it stops selling, looting, summoning the Goblin Merchant, and annotating tooltips - but the |cffb6ffb6Sell-border tint|r on bag items is a separate setting, so the addon still |cffffd870looks|r active when it isn't. Three ways to turn it back on: tick the |cffb6ffb6Enable EbonClearance|r checkbox at the top of the panel below, right-click the EbonClearance minimap icon, or type |cffffff00/ec enable|r in chat. Use |cffffff00/ec status|r if you just want to check the current state.",
+        q = L["Why isn't the addon doing anything?"],
+        a = L["The most common cause is that the master Enable toggle got switched off (a right-click on the minimap button toggles it). When EbonClearance is disabled, it stops selling, looting, summoning the Goblin Merchant, and annotating tooltips - but the |cffb6ffb6Sell-border tint|r on bag items is a separate setting, so the addon still |cffffd870looks|r active when it isn't. Three ways to turn it back on: tick the |cffb6ffb6Enable EbonClearance|r checkbox at the top of the panel below, right-click the EbonClearance minimap icon, or type |cffffff00/ec enable|r in chat. Use |cffffff00/ec status|r if you just want to check the current state."],
         panel = "EbonClearanceOptionsMain",
     },
     {
         id = "tshoot-why-not-selling",
-        q = "Why isn't this item selling?",
-        a = "Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints each check and tells you which one is keeping the item. Usually one of the protection toggles is catching it - the panel below has all of them.",
+        q = L["Why isn't this item selling?"],
+        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints each check and tells you which one is keeping the item. Usually one of the protection toggles is catching it - the panel below has all of them."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "tshoot-equipped-keep",
-        q = "EbonClearance keeps adding my equipped gear to the Keep List.",
-        a = "By default, EbonClearance protects gear you're currently wearing so you don't accidentally sell it. Untick 'Keep gear you're wearing' in the panel below to turn this off.",
+        q = L["EbonClearance keeps adding my equipped gear to the Keep List."],
+        a = L["By default, EbonClearance protects gear you're currently wearing so you don't accidentally sell it. Untick 'Keep gear you're wearing' in the panel below to turn this off."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "tshoot-upgrade-keep",
-        q = "Items keep appearing on the Keep List as 'Keep (upgrade)' that I want to sell.",
-        a = "EbonClearance auto-adds items with a higher item level than what you're currently wearing in that slot, so you don't accidentally vendor a useful piece. Old entries (gear you've since replaced) clean up automatically. To turn off the auto-add entirely, untick 'Keep looted upgrades' in the panel below.",
+        q = L["Items keep appearing on the Keep List as 'Keep (upgrade)' that I want to sell."],
+        a = L["EbonClearance auto-adds items with a higher item level than what you're currently wearing in that slot, so you don't accidentally vendor a useful piece. Old entries (gear you've since replaced) clean up automatically. To turn off the auto-add entirely, untick 'Keep looted upgrades' in the panel below."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "tshoot-affix-rank",
-        q = "What does 'Keep (affix rank known)' or 'Keep (affix rank needed)' mean?",
-        a = "Project Ebonhold affixes are the special abilities on Rare and Epic gear (like 'of Inner Light III'). EbonClearance protects these items so you can extract the affix at the Anvil. 'Rank known' means you already have that exact rank; 'Rank needed' means you don't yet. Alt+Right-Click an item to allow selling a specific affix you no longer want.",
+        q = L["What does 'Keep (affix rank known)' or 'Keep (affix rank needed)' mean?"],
+        a = L["Project Ebonhold affixes are the special abilities on Rare and Epic gear (like 'of Inner Light III'). EbonClearance protects these items so you can extract the affix at the Anvil. 'Rank known' means you already have that exact rank; 'Rank needed' means you don't yet. Alt+Right-Click an item to allow selling a specific affix you no longer want."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "tshoot-per-char-lists",
-        q = "Why are my Sell / Keep / Delete lists different on each character?",
-        a = "Each character has its own Sell, Keep, and Delete lists - what you set up on one character won't affect another. For items you want every character to vendor, use the Account Sell List.",
+        q = L["Why are my Sell / Keep / Delete lists different on each character?"],
+        a = L["Each character has its own Sell, Keep, and Delete lists - what you set up on one character won't affect another. For items you want every character to vendor, use the Account Sell List."],
         panel = nil,
     },
     {
         id = "share-sell-list-across-chars",
-        q = "How do I share a Sell List across all my characters?",
-        a = "Open the Account Sell List panel below. Items added there are shared across every character and combined with each character's own list when you visit a merchant.",
+        q = L["How do I share a Sell List across all my characters?"],
+        a = L["Open the Account Sell List panel below. Items added there are shared across every character and combined with each character's own list when you visit a merchant."],
         panel = "EbonClearanceOptionsAccountWhitelist",
     },
     {
         id = "tshoot-goblin-not-summoning",
-        q = "The Goblin Merchant isn't being summoned when my bags fill up.",
-        a = "Three things must all be on: 'Summon Greedy Scavenger', 'Auto-Loot Cycle', and you need the Greedy Scavenger / Goblin Merchant ability in your spellbook. Check the panel below.",
+        q = L["The Goblin Merchant isn't being summoned when my bags fill up."],
+        a = L["Three things must all be on: 'Summon Greedy Scavenger', 'Auto-Loot Cycle', and you need the Greedy Scavenger / Goblin Merchant ability in your spellbook. Check the panel below."],
         panel = "EbonClearanceOptionsScavenger",
     },
     {
         id = "tshoot-bag-borders",
-        q = "The bag-slot border colors aren't showing.",
-        a = "They're off by default. Tick 'Show borders' in the panel below, then turn on the categories you want colored (Delete, Keep, Account Sell, Character Sell, Affix, Junk, Rule).",
+        q = L["The bag-slot border colors aren't showing."],
+        a = L["They're off by default. Tick 'Show borders' in the panel below, then turn on the categories you want colored (Delete, Keep, Account Sell, Character Sell, Affix, Junk, Rule)."],
         panel = "EbonClearanceOptionsCharacter",
     },
     {
         id = "tshoot-item-level-overlay",
-        q = "Show item levels on your gear slots",
-        a = "Tick 'Show item level on slots' in the panel below to paint the iLvl in the bottom-right corner of every equippable item. The setting has 3 sub-toggles: bags (default on when the master flips on), character sheet & inspect, and merchant. Consumables and quest items are skipped. Quality-coloured.",
+        q = L["Show item levels on your gear slots"],
+        a = L["Tick 'Show item level on slots' in the panel below to paint the iLvl in the bottom-right corner of every equippable item. The setting has 3 sub-toggles: bags (default on when the master flips on), character sheet & inspect, and merchant. Consumables and quest items are skipped. Quality-coloured."],
         panel = "EbonClearanceOptionsCharacter",
     },
     {
         id = "tshoot-disable-per-char",
-        q = "How do I disable EbonClearance on one specific character?",
-        a = "Three ways: untick the |cffb6ffb6Enable EbonClearance|r checkbox at the top of the Main panel, right-click the minimap button on that character, or type |cffffff00/ec disable|r in chat. The setting is per-character; other characters stay enabled. Type |cffffff00/ec status|r any time to check the current state.",
+        q = L["How do I disable EbonClearance on one specific character?"],
+        a = L["Three ways: untick the |cffb6ffb6Enable EbonClearance|r checkbox at the top of the Main panel, right-click the minimap button on that character, or type |cffffff00/ec disable|r in chat. The setting is per-character; other characters stay enabled. Type |cffffff00/ec status|r any time to check the current state."],
         panel = "EbonClearanceOptionsMain",
     },
     {
         id = "tshoot-sellinfo",
-        q = "How do I see exactly why a bag item will or won't sell?",
-        a = "Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints the full step-by-step decision in chat.",
+        q = L["How do I see exactly why a bag item will or won't sell?"],
+        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints the full step-by-step decision in chat."],
         panel = nil,
     },
     {
         id = "tshoot-keep-list-hides-process",
-        q = "My herbs / ore aren't showing in Process Bags.",
-        a = "Items on the Keep List are intentionally hidden from Process Bags' Disenchant / Mill / Prospect / Pick Locks lists - the Keep List wins over everything, including bulk processing. If you've added a herb or ore to the Keep List (manually or by auto-protect rules), it won't appear here. Open the panel below to remove items from the Keep List and they'll show up in Process Bags again.",
+        q = L["My herbs / ore aren't showing in Process Bags."],
+        a = L["Items on the Keep List are intentionally hidden from Process Bags' Disenchant / Mill / Prospect / Pick Locks lists - the Keep List wins over everything, including bulk processing. If you've added a herb or ore to the Keep List (manually or by auto-protect rules), it won't appear here. Open the panel below to remove items from the Keep List and they'll show up in Process Bags again."],
         panel = "EbonClearanceOptionsBlacklist",
     },
 
     -- ===================================================================
     -- Section 3: Sell decision gates
     -- ===================================================================
-    { section = "gates", title = "How sell decisions work" },
+    { section = "gates", title = L["How sell decisions work"] },
 
     {
         id = "gate-order-of-checks",
-        q = "Order of checks",
-        a = "When you visit a vendor, EbonClearance walks every bag item through these checks in order:\n1) Has a vendor price?\n2) Grey, on the Sell List, or matches a quality rule?\n3) Currently equipped?\n4) On the Keep List?\n5) Has a protected affix?\n6) Has a 'Chance on hit' proc?\n7) A tome or recipe?\nThe first 'no, keep it' stops the chain; the first 'yes, sell it' queues the item.",
+        q = L["Order of checks"],
+        a = L["When you visit a vendor, EbonClearance walks every bag item through these checks in order:\n1) Has a vendor price?\n2) Grey, on the Sell List, or matches a quality rule?\n3) Currently equipped?\n4) On the Keep List?\n5) Has a protected affix?\n6) Has a 'Chance on hit' proc?\n7) A tome or recipe?\nThe first 'no, keep it' stops the chain; the first 'yes, sell it' queues the item."],
         panel = nil,
     },
     {
         id = "gate-grey-items",
-        q = "Grey items always sell",
-        a = "Grey items (poor quality junk) always sell at vendors, regardless of any other setting. As long as the item has a vendor price, it goes.",
+        q = L["Grey items always sell"],
+        a = L["Grey items (poor quality junk) always sell at vendors, regardless of any other setting. As long as the item has a vendor price, it goes."],
         panel = nil,
     },
     {
         id = "gate-vendor-price",
-        q = "Items must have a vendor price",
-        a = "EbonClearance never auto-sells items with no vendor price - the vendor wouldn't pay for them. If you want items like this gone, use the Delete List instead.",
+        q = L["Items must have a vendor price"],
+        a = L["EbonClearance never auto-sells items with no vendor price - the vendor wouldn't pay for them. If you want items like this gone, use the Delete List instead."],
         panel = "EbonClearanceOptionsDeletion",
     },
     {
         id = "gate-quality-rules",
-        q = "Quality rules (White / Green / Blue / Epic)",
-        a = "Separate auto-sell rules per rarity, in Merchant Settings. Each can be turned on or off independently, with its own item-level threshold to decide which items of that rarity get vendored.",
+        q = L["Quality rules (White / Green / Blue / Epic)"],
+        a = L["Separate auto-sell rules per rarity, in Merchant Settings. Each can be turned on or off independently, with its own item-level threshold to decide which items of that rarity get vendored."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-fixed-vs-equipped-ilvl",
-        q = "Fixed iLvl cap vs. Use equipped iLvl",
-        a = "Two ways to decide which items get auto-sold per rarity. 'Fixed iLvl cap': sells anything at or below the number you set. 'Use equipped iLvl': sells anything lower than what you're currently wearing in that slot. Empty slots are skipped in the second mode, so you won't lose gear meant for an empty slot.",
+        q = L["Fixed iLvl cap vs. Use equipped iLvl"],
+        a = L["Two ways to decide which items get auto-sold per rarity. 'Fixed iLvl cap': sells anything at or below the number you set. 'Use equipped iLvl': sells anything lower than what you're currently wearing in that slot. Empty slots are skipped in the second mode, so you won't lose gear meant for an empty slot."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-bind-type",
-        q = "Bind-type filter",
-        a = "An extra restriction per rarity: Any (sells both trade-able and soulbound), BoE only (only sells trade-able items), or BoP only (only sells soulbound). Items without any bind line (consumables, reagents) are only included when set to 'Any'.",
+        q = L["Bind-type filter"],
+        a = L["An extra restriction per rarity: Any (sells both trade-able and soulbound), BoE only (only sells trade-able items), or BoP only (only sells soulbound). Items without any bind line (consumables, reagents) are only included when set to 'Any'."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-repair",
-        q = "Repair gear while selling",
-        a = "When on, EbonClearance pays to repair your gear at every merchant visit that has a repair option. Saves the manual click. Only repairs from your own gold by default; turn on 'Repair from guild bank' below to spend guild funds when available.",
+        q = L["Repair gear while selling"],
+        a = L["When on, EbonClearance pays to repair your gear at every merchant visit that has a repair option. Saves the manual click. Only repairs from your own gold by default; turn on 'Repair from guild bank' below to spend guild funds when available."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-guild-bank-repair",
-        q = "Repair from guild bank",
-        a = "When on AND 'Repair gear while selling' is also on, EbonClearance prefers guild-bank funds for the repair (when you have guild-repair permission) and falls back to your own gold if the guild bank can't cover it. No effect when 'Repair gear while selling' is off.",
+        q = L["Repair from guild bank"],
+        a = L["When on AND 'Repair gear while selling' is also on, EbonClearance prefers guild-bank funds for the repair (when you have guild-repair permission) and falls back to your own gold if the guild bank can't cover it. No effect when 'Repair gear while selling' is off."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-keep-bags-open",
-        q = "Keep bags open after a vendor",
-        a = "When on, your bags stay open after EbonClearance finishes its sell + delete sweep at a merchant. Useful if you want to review what got sold or pick something up to buy back. When off, bags close on their own once the cycle finishes.",
+        q = L["Keep bags open after a vendor"],
+        a = L["When on, your bags stay open after EbonClearance finishes its sell + delete sweep at a merchant. Useful if you want to review what got sold or pick something up to buy back. When off, bags close on their own once the cycle finishes."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-fast-mode",
-        q = "Fast Mode",
-        a = "Speeds up the sell cycle (0.05s between items instead of the default 0.1s) and raises the per-visit cap from 80 to 160 items. Useful when you have full bags of grey junk and want them gone in seconds. The faster pace can occasionally disconnect on laggy realms; turn it off if you see disconnects after vendoring.",
+        q = L["Fast Mode"],
+        a = L["Speeds up the sell cycle (0.05s between items instead of the default 0.1s) and raises the per-visit cap from 80 to 160 items. Useful when you have full bags of grey junk and want them gone in seconds. The faster pace can occasionally disconnect on laggy realms; turn it off if you see disconnects after vendoring."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-turbo-mode",
-        q = "Turbo Mode",
-        a = "Pops 4 items off the queue per cycle instead of 1, so a full bag empties in seconds. Combine with Fast Mode (0.05s interval) for the fastest possible clear - bag-clear in under two seconds with full bags. Default off. Like Fast Mode, the faster cycle can disconnect on laggy realms; turn it off if you see disconnects. The 'About N sells per second' readout under the slider always reflects what the current combination will do.",
+        q = L["Turbo Mode"],
+        a = L["Pops 4 items off the queue per cycle instead of 1, so a full bag empties in seconds. Combine with Fast Mode (0.05s interval) for the fastest possible clear - bag-clear in under two seconds with full bags. Default off. Like Fast Mode, the faster cycle can disconnect on laggy realms; turn it off if you see disconnects. The 'About N sells per second' readout under the slider always reflects what the current combination will do."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-equipped-never-sells",
-        q = "Currently-equipped items never sell",
-        a = "Even when on the Sell List, EbonClearance won't vendor anything you're currently wearing. Unequip first if you want it sold. Turn on 'Keep gear sets' if you also want gear from Blizzard's Equipment Manager protected.",
+        q = L["Currently-equipped items never sell"],
+        a = L["Even when on the Sell List, EbonClearance won't vendor anything you're currently wearing. Unequip first if you want it sold. Turn on 'Keep gear sets' if you also want gear from Blizzard's Equipment Manager protected."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "gate-keep-list-blocks",
-        q = "Keep List blocks selling",
-        a = "Items on the Keep List are protected from every auto-sell rule. The Keep List always wins - even if the same item is also on the Sell List, the Keep List blocks it. Add items by Alt+Right-Click or via the Keep List panel.",
+        q = L["Keep List blocks selling"],
+        a = L["Items on the Keep List are protected from every auto-sell rule. The Keep List always wins - even if the same item is also on the Sell List, the Keep List blocks it. Add items by Alt+Right-Click or via the Keep List panel."],
         panel = "EbonClearanceOptionsBlacklist",
     },
     {
         id = "gate-affix-protection",
-        q = "Project Ebonhold affix protection",
-        a = "Project Ebonhold affixes are the special abilities on Rare and Epic gear (like 'of Inner Light III'). EbonClearance never auto-sells these so you can extract them at the Anvil. To allow selling them: use Alt+Right-Click 'Allow Sell' on individual items, or turn on 'Allow exact-rank duplicates' for affixes you already own.",
+        q = L["Project Ebonhold affix protection"],
+        a = L["Project Ebonhold affixes are the special abilities on Rare and Epic gear (like 'of Inner Light III'). EbonClearance never auto-sells these so you can extract them at the Anvil. To allow selling them: use Alt+Right-Click 'Allow Sell' on individual items, or turn on 'Allow exact-rank duplicates' for affixes you already own."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "gate-allow-rank-dupes",
-        q = "Allow exact-rank duplicates",
-        a = "Once you've extracted an affix at a certain rank, duplicates aren't useful. Turn this on and EbonClearance allows selling extras of affixes you already own at that rank. The item still needs a Sell List entry or matching quality rule to actually sell - this just removes the affix protection.",
+        q = L["Allow exact-rank duplicates"],
+        a = L["Once you've extracted an affix at a certain rank, duplicates aren't useful. Turn this on and EbonClearance allows selling extras of affixes you already own at that rank. The item still needs a Sell List entry or matching quality rule to actually sell - this just removes the affix protection."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "gate-manual-allow-sell",
-        q = "Manual Allow Sell (Alt+Right-Click)",
-        a = "Alt+Right-Click an item to mark one specific affix as 'safe to sell'. Every future drop with that exact affix will skip the protection. Works across all your characters. Alt+Right-Click and pick the same option to undo.",
+        q = L["Manual Allow Sell (Alt+Right-Click)"],
+        a = L["Alt+Right-Click an item to mark one specific affix as 'safe to sell'. Every future drop with that exact affix will skip the protection. Works across all your characters. Alt+Right-Click and pick the same option to undo."],
         panel = nil,
     },
     {
         id = "gate-chance-on-hit",
-        q = "Chance-on-hit protection",
-        a = "Items with a 'Chance on hit:' line have a proc spell you can extract at the Anvil. EbonClearance protects these so you don't sell them by accident. Use Alt+Right-Click 'Allow Sell' to vendor a specific item anyway.",
+        q = L["Chance-on-hit protection"],
+        a = L["Items with a 'Chance on hit:' line have a proc spell you can extract at the Anvil. EbonClearance protects these so you don't sell them by accident. Use Alt+Right-Click 'Allow Sell' to vendor a specific item anyway."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "gate-tome-recipe",
-        q = "Tome / recipe protection",
-        a = "Plans, Schematics, Patterns, Recipes, class tomes, and mount scrolls are protected from auto-sell so you don't accidentally vendor a learnable spell. Alt+Right-Click 'Allow Sell' to override. 'Protect all tomes / recipes' decides whether already-learned items are also protected (useful for saving spares for the auction house or alts).",
+        q = L["Tome / recipe protection"],
+        a = L["Plans, Schematics, Patterns, Recipes, class tomes, and mount scrolls are protected from auto-sell so you don't accidentally vendor a learnable spell. Alt+Right-Click 'Allow Sell' to override. 'Protect all tomes / recipes' decides whether already-learned items are also protected (useful for saving spares for the auction house or alts)."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "gate-quest-items",
-        q = "Quest item safety net",
-        a = "Quest items never auto-sell from a quality rule, even when the rule matches. You can still manually add a quest item to the Sell List if you really want it gone - your direct action overrides the safety net.",
+        q = L["Quest item safety net"],
+        a = L["Quest items never auto-sell from a quality rule, even when the rule matches. You can still manually add a quest item to the Sell List if you really want it gone - your direct action overrides the safety net."],
         panel = nil,
     },
     {
         id = "gate-profession-tools",
-        q = "Profession tool safety net",
-        a = "Fishing poles, mining picks, the Skinning Knife, the Blacksmith Hammer, and the Arclight Spanner are always protected from auto-sell. Add one to the Sell List manually if you have a duplicate to vendor.",
+        q = L["Profession tool safety net"],
+        a = L["Fishing poles, mining picks, the Skinning Knife, the Blacksmith Hammer, and the Arclight Spanner are always protected from auto-sell. Add one to the Sell List manually if you have a duplicate to vendor."],
         panel = nil,
     },
     {
         id = "gate-delete-list",
-        q = "Delete List path",
-        a = "Items on the Delete List are destroyed at your next merchant visit (when 'Enable Deletion' is turned on). The same affix, chance-on-hit, and tome protections apply on the delete path - use Alt+Right-Click 'Allow Sell' to override.",
+        q = L["Delete List path"],
+        a = L["Items on the Delete List are destroyed at your next merchant visit (when 'Enable Deletion' is turned on). The same affix, chance-on-hit, and tome protections apply on the delete path - use Alt+Right-Click 'Allow Sell' to override."],
         panel = "EbonClearanceOptionsDeletion",
     },
 
     -- ===================================================================
     -- Section 4: Tooltip labels
     -- ===================================================================
-    { section = "labels", title = "Tooltip labels" },
+    { section = "labels", title = L["Tooltip labels"] },
 
     {
         id = "label-keep",
-        q = "Keep",
-        a = "Plain 'Keep' (no parens) means you manually added this item to your Keep List, either via Alt+Right-Click or the Keep List panel.",
+        q = L["Keep"],
+        a = L["Plain 'Keep' (no parens) means you manually added this item to your Keep List, either via Alt+Right-Click or the Keep List panel."],
         panel = "EbonClearanceOptionsBlacklist",
     },
     {
         id = "label-keep-equipped",
-        q = "Keep (equipped)",
-        a = "EbonClearance auto-added this item because you're currently wearing it. The protection lasts as long as it's equipped.",
+        q = L["Keep (equipped)"],
+        a = L["EbonClearance auto-added this item because you're currently wearing it. The protection lasts as long as it's equipped."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-keep-upgrade",
-        q = "Keep (upgrade)",
-        a = "EbonClearance auto-added this item because its item level is higher than what you're wearing in that slot. If you replace your gear, old entries clean up automatically.",
+        q = L["Keep (upgrade)"],
+        a = L["EbonClearance auto-added this item because its item level is higher than what you're wearing in that slot. If you replace your gear, old entries clean up automatically."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-keep-gear-set",
-        q = "Keep (in gear set)",
-        a = "EbonClearance auto-added this item because it's part of a saved gear set in Blizzard's Equipment Manager. Useful for off-spec gear you carry in your bags.",
+        q = L["Keep (in gear set)"],
+        a = L["EbonClearance auto-added this item because it's part of a saved gear set in Blizzard's Equipment Manager. Useful for off-spec gear you carry in your bags."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-keep-auto",
-        q = "Keep (auto)",
-        a = "An older auto-tag from before EbonClearance v2.12.0. Works the same as the more specific 'Keep (equipped/upgrade/gear set)' tags, but the exact origin was lost during an addon upgrade.",
+        q = L["Keep (auto)"],
+        a = L["An older auto-tag from before EbonClearance v2.12.0. Works the same as the more specific 'Keep (equipped/upgrade/gear set)' tags, but the exact origin was lost during an addon upgrade."],
         panel = "EbonClearanceOptionsBlacklist",
     },
     {
         id = "label-keep-quest",
-        q = "Keep (quest item)",
-        a = "EbonClearance flagged this as a quest item. Quality rules won't auto-sell it. If you really want it gone, add it to the Sell List manually.",
+        q = L["Keep (quest item)"],
+        a = L["EbonClearance flagged this as a quest item. Quality rules won't auto-sell it. If you really want it gone, add it to the Sell List manually."],
         panel = nil,
     },
     {
         id = "label-keep-prof-tool",
-        q = "Keep (profession tool)",
-        a = "Profession tool like a fishing pole or mining pick. Always protected. Use Alt+Right-Click 'Allow Sell' to vendor a duplicate.",
+        q = L["Keep (profession tool)"],
+        a = L["Profession tool like a fishing pole or mining pick. Always protected. Use Alt+Right-Click 'Allow Sell' to vendor a duplicate."],
         panel = nil,
     },
     {
         id = "label-affix-rank-known",
-        q = "Keep (affix rank known)",
-        a = "Project Ebonhold affix on the item, and you already own this exact rank. The item is still protected. Turn on 'Allow exact-rank duplicates' in Protection Settings if you want extras to auto-sell.",
+        q = L["Keep (affix rank known)"],
+        a = L["Project Ebonhold affix on the item, and you already own this exact rank. The item is still protected. Turn on 'Allow exact-rank duplicates' in Protection Settings if you want extras to auto-sell."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-affix-rank-needed",
-        q = "Keep (affix rank needed)",
-        a = "Project Ebonhold affix on the item that you don't yet own at this rank. Protected so you can extract it at the Anvil.",
+        q = L["Keep (affix rank needed)"],
+        a = L["Project Ebonhold affix on the item that you don't yet own at this rank. Protected so you can extract it at the Anvil."],
         panel = nil,
     },
     {
         id = "label-chance-on-hit",
-        q = "Keep (chance-on-hit proc)",
-        a = "Item has a 'Chance on hit:' proc you can extract at the Anvil. Protected from auto-sell. Use Alt+Right-Click 'Allow Sell' to vendor a specific one anyway.",
+        q = L["Keep (chance-on-hit proc)"],
+        a = L["Item has a 'Chance on hit:' proc you can extract at the Anvil. Protected from auto-sell. Use Alt+Right-Click 'Allow Sell' to vendor a specific one anyway."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-new-tome-recipe",
-        q = "Keep (new Tome) / Keep (new Recipe)",
-        a = "A tome or recipe you haven't learned yet. Protected so you can learn it - just right-click the item. Turn off tome/recipe protection in Protection Settings if you'd rather sell them.",
+        q = L["Keep (new Tome) / Keep (new Recipe)"],
+        a = L["A tome or recipe you haven't learned yet. Protected so you can learn it - just right-click the item. Turn off tome/recipe protection in Protection Settings if you'd rather sell them."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-tome-have",
-        q = "Keep (Tome you have) / Keep (Recipe you have)",
-        a = "A tome or recipe you've already learned. Only shows up when 'Protect all tomes / recipes' is turned on. Useful if you save spares for the auction house or alts.",
+        q = L["Keep (Tome you have) / Keep (Recipe you have)"],
+        a = L["A tome or recipe you've already learned. Only shows up when 'Protect all tomes / recipes' is turned on. Useful if you save spares for the auction house or alts."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-already-known",
-        q = "Already known by this character",
-        a = "A grey line under the EC verdict. Appears on any tome or recipe your character has already learned, even when tome/recipe protection is off. Quick visual cue when you're deciding whether to vendor a duplicate or save it for an alt.",
+        q = L["Already known by this character"],
+        a = L["A grey line under the EC verdict. Appears on any tome or recipe your character has already learned, even when tome/recipe protection is off. Quick visual cue when you're deciding whether to vendor a duplicate or save it for an alt."],
         panel = nil,
     },
     {
         id = "label-list-affix-gated",
-        q = "(affix-gated) tag on a list entry",
-        a = "A small grey tag in the Sell / Keep / Delete list panels. Shows the item carries a random affix. The list rule applies to the base itemID, but each drop has its own affix roll - protection still filters per-drop, so adding the itemID to a Sell List does not blanket-sell every future drop. Tag appears the first time you hover the item after adding it (or right away if you add it via Alt+Right-Click).",
+        q = L["(affix-gated) tag on a list entry"],
+        a = L["A small grey tag in the Sell / Keep / Delete list panels. Shows the item carries a random affix. The list rule applies to the base itemID, but each drop has its own affix roll - protection still filters per-drop, so adding the itemID to a Sell List does not blanket-sell every future drop. Tag appears the first time you hover the item after adding it (or right away if you add it via Alt+Right-Click)."],
         panel = nil,
     },
     {
         id = "label-list-hit-proc",
-        q = "(Hit-proc) tag on a list entry",
-        a = "Same idea as (affix-gated) but for items carrying a chance-on-hit proc. The list rule covers the base itemID, but each drop has its own proc - protection still filters per-drop. Adding an itemID with a proc to a Sell List does not blanket-sell every future drop.",
+        q = L["(Hit-proc) tag on a list entry"],
+        a = L["Same idea as (affix-gated) but for items carrying a chance-on-hit proc. The list rule covers the base itemID, but each drop has its own proc - protection still filters per-drop. Adding an itemID with a proc to a Sell List does not blanket-sell every future drop."],
         panel = nil,
     },
     {
         id = "label-will-sell",
-        q = "Will Sell",
-        a = "Item is on your Sell List. EbonClearance will vendor it the next time you visit a merchant.",
+        q = L["Will Sell"],
+        a = L["Item is on your Sell List. EbonClearance will vendor it the next time you visit a merchant."],
         panel = "EbonClearanceOptionsWhitelist",
     },
     {
         id = "label-will-sell-account",
-        q = "Will Sell (your Account List)",
-        a = "Item is on your Account Sell List (shared across all characters). Will vendor at the next merchant visit.",
+        q = L["Will Sell (your Account List)"],
+        a = L["Item is on your Account Sell List (shared across all characters). Will vendor at the next merchant visit."],
         panel = "EbonClearanceOptionsAccountWhitelist",
     },
     {
         id = "label-will-sell-char",
-        q = "Will Sell (your Character List)",
-        a = "Item is on this character's Sell List. Will vendor at the next merchant visit.",
+        q = L["Will Sell (your Character List)"],
+        a = L["Item is on this character's Sell List. Will vendor at the next merchant visit."],
         panel = "EbonClearanceOptionsWhitelist",
     },
     {
         id = "label-will-sell-junk",
-        q = "Will Sell (junk)",
-        a = "Grey item with a vendor price. Always sells regardless of other settings.",
+        q = L["Will Sell (junk)"],
+        a = L["Grey item with a vendor price. Always sells regardless of other settings."],
         panel = nil,
     },
     {
         id = "label-will-sell-quality-rule",
-        q = "Will Sell (Blue, lower than equipped), etc.",
-        a = "A quality rule matched. The text in parentheses tells you which one. 'Lower than equipped' means the rule is set to compare against your currently-worn iLvl. 'iLvl X, cap N' means a fixed iLvl cap matched.",
+        q = L["Will Sell (Blue, lower than equipped), etc."],
+        a = L["A quality rule matched. The text in parentheses tells you which one. 'Lower than equipped' means the rule is set to compare against your currently-worn iLvl. 'iLvl X, cap N' means a fixed iLvl cap matched."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "label-will-sell-affix-dupe",
-        q = "Will Sell (you have this affix)",
-        a = "You already own this affix at this rank, AND something else (a Sell List entry or quality rule) marks the item for sale. The item will vendor as a duplicate.",
+        q = L["Will Sell (you have this affix)"],
+        a = L["You already own this affix at this rank, AND something else (a Sell List entry or quality rule) marks the item for sale. The item will vendor as a duplicate."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-will-delete",
-        q = "Will Delete",
-        a = "Item is on the Delete List, and Deletion is turned on. EbonClearance will destroy it at your next merchant visit (the confirmation popup is handled for you).",
+        q = L["Will Delete"],
+        a = L["Item is on the Delete List, and Deletion is turned on. EbonClearance will destroy it at your next merchant visit (the confirmation popup is handled for you)."],
         panel = "EbonClearanceOptionsDeletion",
     },
     {
         id = "label-wont-sell-equipped",
-        q = "Won't Sell (equipped)",
-        a = "Item is on the Sell List but you're currently wearing it. Unequip first if you want it sold.",
+        q = L["Won't Sell (equipped)"],
+        a = L["Item is on the Sell List but you're currently wearing it. Unequip first if you want it sold."],
         panel = nil,
     },
     {
         id = "label-wont-sell-no-value",
-        q = "Won't Sell (no value)",
-        a = "Item is on the Sell List but it has no vendor price. EbonClearance can't sell items vendors won't buy. Try the Delete List if you want it gone.",
+        q = L["Won't Sell (no value)"],
+        a = L["Item is on the Sell List but it has no vendor price. EbonClearance can't sell items vendors won't buy. Try the Delete List if you want it gone."],
         panel = "EbonClearanceOptionsDeletion",
     },
     {
         id = "label-override-no-rule",
-        q = "Override on - add to a list to sell",
-        a = "You've marked this affix or proc as 'Allow Sell', but the item isn't on any Sell List and no quality rule matches it. The override removes the protection, but you still need a Sell List entry or matching rule to actually vendor it.",
+        q = L["Override on - add to a list to sell"],
+        a = L["You've marked this affix or proc as 'Allow Sell', but the item isn't on any Sell List and no quality rule matches it. The override removes the protection, but you still need a Sell List entry or matching rule to actually vendor it."],
         panel = nil,
     },
 
     -- ===================================================================
     -- Section 5: Process Bags
     -- ===================================================================
-    { section = "processBags", title = "Process Bags" },
+    { section = "processBags", title = L["Process Bags"] },
 
     {
         id = "process-bags-overview",
-        q = "What does Process Bags do?",
-        a = "Process Bags is a bulk processor for materials in your bags. Open it from /ec, pick a mode (Disenchant, Mill, Prospect, or Pick Locks), and the panel shows every item that qualifies. Click the Cast button on the panel to process the current item; click again for the next one. The addon respects the spell's cooldown and skips items that don't qualify. Useful for turning a stack of green drops into Enchant dust without 30 manual right-clicks. Note: items on your Keep List are intentionally hidden from this panel.",
+        q = L["What does Process Bags do?"],
+        a = L["Process Bags is a bulk processor for materials in your bags. Open it from /ec, pick a mode (Disenchant, Mill, Prospect, or Pick Locks), and the panel shows every item that qualifies. Click the Cast button on the panel to process the current item; click again for the next one. The addon respects the spell's cooldown and skips items that don't qualify. Useful for turning a stack of green drops into Enchant dust without 30 manual right-clicks. Note: items on your Keep List are intentionally hidden from this panel."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-disenchant",
-        q = "Disenchant mode",
-        a = "Requires the Enchanting profession. The panel lists eligible Uncommon (Green) and Rare (Blue) Weapons / Armor. Click the Cast button to disenchant the current item into dust, essences, and shards; click again for the next one. Items without Enchanting eligibility are skipped.",
+        q = L["Disenchant mode"],
+        a = L["Requires the Enchanting profession. The panel lists eligible Uncommon (Green) and Rare (Blue) Weapons / Armor. Click the Cast button to disenchant the current item into dust, essences, and shards; click again for the next one. Items without Enchanting eligibility are skipped."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-mill",
-        q = "Mill mode",
-        a = "Requires the Inscription profession. The panel lists stacks of 5+ herbs. Click the Cast button to mill the current stack into pigments; click again for the next stack. Stacks smaller than 5 are skipped.",
+        q = L["Mill mode"],
+        a = L["Requires the Inscription profession. The panel lists stacks of 5+ herbs. Click the Cast button to mill the current stack into pigments; click again for the next stack. Stacks smaller than 5 are skipped."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-prospect",
-        q = "Prospect mode",
-        a = "Requires the Jewelcrafting profession. The panel lists stacks of 5+ ore. Click the Cast button to prospect the current stack into gems and rare prospects; click again for the next stack. Stacks smaller than 5 are skipped.",
+        q = L["Prospect mode"],
+        a = L["Requires the Jewelcrafting profession. The panel lists stacks of 5+ ore. Click the Cast button to prospect the current stack into gems and rare prospects; click again for the next stack. Stacks smaller than 5 are skipped."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-picklocks",
-        q = "Pick Locks mode",
-        a = "Requires the Rogue Pick Lock ability. The panel lists lockboxes (Junkboxes, Mageweave Pouches, Heavy Junkboxes, etc.). Click the Cast button to open the current lockbox; click again for the next one.",
+        q = L["Pick Locks mode"],
+        a = L["Requires the Rogue Pick Lock ability. The panel lists lockboxes (Junkboxes, Mageweave Pouches, Heavy Junkboxes, etc.). Click the Cast button to open the current lockbox; click again for the next one."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-keybind",
-        q = "Can I keep casting without using the mouse?",
-        a = "Yes. Open |cffffd870Esc menu > Key Bindings|r, find the |cffb6ffb6EbonClearance|r section, and bind |cffb6ffb6Process Next|r to a key. Each press fires one cast (WoW doesn't auto-repeat keybinds, so holding the key does nothing - press it again for the next item). The queue runs in a fixed order: |cffb6ffb6Disenchant|r first, then |cffb6ffb6Mill|r, then |cffb6ffb6Prospect|r, then |cffb6ffb6Pick Locks|r. Within each section items sort by quality (Disenchant) or name. Use the |cffb6ffb6>|r arrow next to the Cast button to skip past every remaining entry of the current mode and jump to the next mode (handy when you want to mill before clearing Disenchant junk). See the |cffffd870swirl|r entry for why the button briefly stays inert between casts.",
+        q = L["Can I keep casting without using the mouse?"],
+        a = L["Yes. Open |cffffd870Esc menu > Key Bindings|r, find the |cffb6ffb6EbonClearance|r section, and bind |cffb6ffb6Process Next|r to a key. Each press fires one cast (WoW doesn't auto-repeat keybinds, so holding the key does nothing - press it again for the next item). The queue runs in a fixed order: |cffb6ffb6Disenchant|r first, then |cffb6ffb6Mill|r, then |cffb6ffb6Prospect|r, then |cffb6ffb6Pick Locks|r. Within each section items sort by quality (Disenchant) or name. Use the |cffb6ffb6>|r arrow next to the Cast button to skip past every remaining entry of the current mode and jump to the next mode (handy when you want to mill before clearing Disenchant junk). See the |cffffd870swirl|r entry for why the button briefly stays inert between casts."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-missing-items",
-        q = "Why isn't an item in Process Bags?",
-        a = "Process Bags hides anything the protections would also stop the vendor from selling: Keep List items, currently equipped gear, items with a 'Chance on hit:' proc (so you don't disenchant a proc weapon you might want to extract), items with a protected affix you haven't extracted yet, and unlearned tomes / recipes. Stack-size matters too - Mill and Prospect require stacks of 5+. To force a specific item through, Alt+Right-Click it and pick 'Allow Sell' (adds the itemID to the allow list) or remove it from the Keep List.",
+        q = L["Why isn't an item in Process Bags?"],
+        a = L["Process Bags hides anything the protections would also stop the vendor from selling: Keep List items, currently equipped gear, items with a 'Chance on hit:' proc (so you don't disenchant a proc weapon you might want to extract), items with a protected affix you haven't extracted yet, and unlearned tomes / recipes. Stack-size matters too - Mill and Prospect require stacks of 5+. To force a specific item through, Alt+Right-Click it and pick 'Allow Sell' (adds the itemID to the allow list) or remove it from the Keep List."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
         id = "process-cooldown-swirl",
-        q = "What's the swirl on the Process Next button?",
-        a = "A short post-click lockout that lasts the spell's cast time, with a 1.5 second floor. While the swirl is up the Cast button is intentionally inert - if you click during the cast or global cooldown the |cffffd870/cast|r line would silently no-op and the follow-up |cffffd870/use|r would |cffffb84dequip|r the item instead of processing it. Wait for the swirl to clear, then click again. The floor matters on servers where Mill / Prospect / Disenchant cast times have been shortened below the GCD.",
+        q = L["What's the swirl on the Process Next button?"],
+        a = L["A short post-click lockout that lasts the spell's cast time, with a 1.5 second floor. While the swirl is up the Cast button is intentionally inert - if you click during the cast or global cooldown the |cffffd870/cast|r line would silently no-op and the follow-up |cffffd870/use|r would |cffffb84dequip|r the item instead of processing it. Wait for the swirl to clear, then click again. The floor matters on servers where Mill / Prospect / Disenchant cast times have been shortened below the GCD."],
         panel = "EbonClearanceOptionsProcessBags",
     },
 
     -- ===================================================================
     -- Section 6: Reporting bugs
     -- ===================================================================
-    { section = "discord", title = "Reporting bugs" },
+    { section = "discord", title = L["Reporting bugs"] },
 
     {
         id = "bug-report-flow",
-        q = "Found a bug? Here's how to report it",
-        a = "1) Type /ec bugreport. EbonClearance opens a window with a diagnostic snapshot.\n2) Click in the window, press Ctrl+A to select all, then Ctrl+C to copy.\n3) Click the button below to copy the EbonClearance Discord thread link.\n4) Open the link in your browser, paste the report, and tag @serv so I see it.",
+        q = L["Found a bug? Here's how to report it"],
+        a = L["1) Type /ec bugreport. EbonClearance opens a window with a diagnostic snapshot.\n2) Click in the window, press Ctrl+A to select all, then Ctrl+C to copy.\n3) Click the button below to copy the EbonClearance Discord thread link.\n4) Open the link in your browser, paste the report, and tag @serv so I see it."],
         url = "https://discord.com/channels/1429854156444794884/1491764725288009748",
     },
     {
         id = "bug-report-contents",
-        q = "What does /ec bugreport include?",
-        a = "Your character name, addon version, current Sell / Keep / Delete list sizes, the last few bag-scan results, and your protection settings. No personal info, no full settings dump - just enough context to reproduce the issue.",
+        q = L["What does /ec bugreport include?"],
+        a = L["Your character name, addon version, current Sell / Keep / Delete list sizes, the last few bag-scan results, and your protection settings. No personal info, no full settings dump - just enough context to reproduce the issue."],
         panel = nil,
     },
     {
         id = "bug-dm-vs-thread",
-        q = "Direct message vs. the thread",
-        a = "Post in the thread - other players hit the same bugs and the public answer helps everyone.",
+        q = L["Direct message vs. the thread"],
+        a = L["Post in the thread - other players hit the same bugs and the public answer helps everyone."],
         panel = nil,
     },
     {
         id = "bug-affix-debug",
-        q = "Affix detection bug? Record an event trail",
-        a = "If a tooltip says 'Keep (affix rank known)' but the merchant cycle still sells the item, run |cffffff00/ec affixdebug on|r to start recording. Reproduce the bug (hover the item, hit the vendor, etc.), then run |cffffff00/ec affixdebug dump|r - a copyable window opens with the event log. Paste that into the bug report. Sub-commands: on, off, status, dump, clear.",
+        q = L["Affix detection bug? Record an event trail"],
+        a = L["If a tooltip says 'Keep (affix rank known)' but the merchant cycle still sells the item, run |cffffff00/ec affixdebug on|r to start recording. Reproduce the bug (hover the item, hit the vendor, etc.), then run |cffffff00/ec affixdebug dump|r - a copyable window opens with the event log. Paste that into the bug report. Sub-commands: on, off, status, dump, clear."],
         panel = nil,
     },
     {
         id = "bug-process-debug",
-        q = "Process Bags missing herbs / ores / disenchant targets?",
-        a = "If Disenchant works but Milling / Prospecting don't show your items (or vice versa), run |cffffff00/ec processdebug|r. A copyable window opens listing every Process Bags gate: which profession spells the client recognises, every bag slot's scan result, and the buildProcessSummary entry counts. Paste that into the bug report so we can pin down which layer fails on your setup (private-server spell IDs, custom tooltip markers, etc.).",
+        q = L["Process Bags missing herbs / ores / disenchant targets?"],
+        a = L["If Disenchant works but Milling / Prospecting don't show your items (or vice versa), run |cffffff00/ec processdebug|r. A copyable window opens listing every Process Bags gate: which profession spells the client recognises, every bag slot's scan result, and the buildProcessSummary entry counts. Paste that into the bug report so we can pin down which layer fails on your setup (private-server spell IDs, custom tooltip markers, etc.)."],
         panel = nil,
+    },
+    {
+        id = "help-translate",
+        q = L["Can I use EbonClearance in French or German? Can I help translate?"],
+        a = L["Yes. EbonClearance shows French or German text when your game client is set to that language, and falls back to English for anything not yet translated. Translations are written by players. Want to help translate into your language? Open the link below to the project page, then read docs/TRANSLATING.md - it walks you through filling in a language file. Anything you leave blank just stays English."],
+        url = "https://github.com/powerfulqa/EbonClearance",
+        urlLabel = L["Copy project link"],
     },
 }
 
@@ -796,7 +804,7 @@ end
 local EC_COPY_URL_DATA = { url = "" }
 if not StaticPopupDialogs["EC_COPY_URL"] then
     StaticPopupDialogs["EC_COPY_URL"] = {
-        text = "Press Ctrl+C to copy the URL, then paste into your browser:",
+        text = L["Press Ctrl+C to copy the URL, then paste into your browser:"],
         button1 = OKAY,
         hasEditBox = true,
         editBoxWidth = 350,
@@ -1000,11 +1008,11 @@ HelpPanel:SetScript("OnShow", function(self)
         -- edge). Without a y arg, the heading butts right against the
         -- panel's top edge and the whole stack reads as misaligned
         -- relative to the other Interface Options sub-panels.
-        local heading = NS.MakeHeader and NS.MakeHeader(content, "Help / Troubleshooting", -16)
+        local heading = NS.MakeHeader and NS.MakeHeader(content, L["Help / Troubleshooting"], -16)
             or content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
         if not NS.MakeHeader then
             heading:SetPoint("TOPLEFT", content, "TOPLEFT", 16, -16)
-            heading:SetText("Help / Troubleshooting")
+            heading:SetText(L["Help / Troubleshooting"])
         end
 
         local intro = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -1015,7 +1023,7 @@ HelpPanel:SetScript("OnShow", function(self)
             intro:SetWordWrap(true)
         end
         intro:SetText(
-            "|cff888888Common issues, sell-decision gates, and tooltip label meanings. Click a section header to expand / collapse.|r"
+            L["|cff888888Common issues, sell-decision gates, and tooltip label meanings. Click a section header to expand / collapse.|r"]
         )
 
         -- Chrome-wrapped content area for the FAQ entries. Uses Keep
@@ -1167,7 +1175,7 @@ HelpPanel:SetScript("OnShow", function(self)
                     local urlValue = entry.url
                     local btn = CreateFrame("Button", nil, chrome, "UIPanelButtonTemplate")
                     btn:SetSize(180, 22)
-                    btn:SetText("Copy Discord URL")
+                    btn:SetText(entry.urlLabel or L["Copy Discord URL"])
                     btn:SetScript("OnClick", function()
                         EC_COPY_URL_DATA.url = urlValue
                         StaticPopup_Show("EC_COPY_URL")
@@ -1179,17 +1187,17 @@ HelpPanel:SetScript("OnShow", function(self)
                     -- renames don't require updating the help table.
                     local btn = CreateFrame("Button", nil, chrome, "UIPanelButtonTemplate")
                     btn:SetSize(180, 22)
-                    btn:SetText("Open Settings")
+                    btn:SetText(L["Open Settings"])
                     btn:SetScript("OnEnter", function()
                         local target = _G[panelKey]
                         if target and target.name then
-                            btn:SetText("Open " .. target.name)
+                            btn:SetText(L["Open "] .. target.name)
                         end
                     end)
                     btn:SetScript("OnLeave", function()
                         local target = _G[panelKey]
                         if target and target.name then
-                            btn:SetText("Open " .. target.name)
+                            btn:SetText(L["Open "] .. target.name)
                         end
                     end)
                     -- Resolve the label immediately on build so it
@@ -1197,7 +1205,7 @@ HelpPanel:SetScript("OnShow", function(self)
                     do
                         local target = _G[panelKey]
                         if target and target.name then
-                            btn:SetText("Open " .. target.name)
+                            btn:SetText(L["Open "] .. target.name)
                         end
                     end
                     btn:SetScript("OnClick", function()

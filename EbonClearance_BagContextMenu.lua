@@ -38,6 +38,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 -- IsInSet binding intentionally not imported here; the bag-context popup
 -- doesn't consult set membership directly (the list-mutation helpers it
@@ -50,10 +51,10 @@ local EC_compCache = NS.compCache
 -- and fixed handlers. EC_ShowItemContextMenu sets per-row text + OnClick on
 -- every show; the buttons created in EC_BuildCtxFrame are empty placeholders.
 local EC_CTX_ROWS = {
-    { kind = "list", setName = "whitelist", label = "Sell List (this character)" },
-    { kind = "list", setName = "accountWhitelist", label = "Sell List (account-wide)" },
-    { kind = "list", setName = "blacklist", label = "Keep List" },
-    { kind = "list", setName = "deleteList", label = "Delete List" },
+    { kind = "list", setName = "whitelist", label = L["Sell List (this character)"] },
+    { kind = "list", setName = "accountWhitelist", label = L["Sell List (account-wide)"] },
+    { kind = "list", setName = "blacklist", label = L["Keep List"] },
+    { kind = "list", setName = "deleteList", label = L["Delete List"] },
     { kind = "sellNow" },
     { kind = "cancel" },
 }
@@ -274,7 +275,7 @@ local function EC_ShowItemContextMenu(button)
                 -- users clean up stale entries, including for unsellable
                 -- items that may have been added before their price was
                 -- known.
-                btn:SetText("|cffff8000Remove from " .. row.label .. "|r")
+                btn:SetText(L["|cffff8000Remove from "] .. row.label .. "|r")
                 btn:SetScript("OnClick", function()
                     NS.RemoveItemFromList(row.setName, itemID, row.label)
                     frame:Hide()
@@ -338,7 +339,7 @@ local function EC_ShowItemContextMenu(button)
             -- visible because itemAllowed is true.
             local hasManualMark = procAllowed or affixManualAllowed or tomeAllowed
             if hasManualMark then
-                btn:SetText("|cffff8000Remove from Allow List|r")
+                btn:SetText(L["|cffff8000Remove from Allow List|r"])
                 btn:SetScript("OnClick", function()
                     -- procAllowed and tomeAllowed share the same
                     -- ADB.allowedItems[itemID] flag; clearing once
@@ -350,7 +351,7 @@ local function EC_ShowItemContextMenu(button)
                         ADB.allowedAffixes[affixKey] = nil
                     end
                     frame:Hide()
-                    NS.PrintNicef("Removed %s from Allow List.", itemName)
+                    NS.PrintNicef(L["Removed %s from Allow List."], itemName)
                     -- Cascade: removing Allow Sell expresses the user intent
                     -- "re-protect this proc / affix item from auto-selling".
                     -- If the item is also on a Sell List, the protection
@@ -367,8 +368,8 @@ local function EC_ShowItemContextMenu(button)
                     -- no-ops when the item isn't on the list, prints its
                     -- own "Removed X from <list>" line when it does, and
                     -- handles panel refresh + border repaint.
-                    NS.RemoveItemFromList("whitelist", itemID, "Character Sell List")
-                    NS.RemoveItemFromList("accountWhitelist", itemID, "Account Sell List")
+                    NS.RemoveItemFromList("whitelist", itemID, L["Character Sell List"])
+                    NS.RemoveItemFromList("accountWhitelist", itemID, L["Account Sell List"])
                     -- Border repaint covers the case where neither sell
                     -- list contained the item (so RemoveItemFromList no-
                     -- op'd and didn't trigger its own repaint). Same
@@ -383,7 +384,7 @@ local function EC_ShowItemContextMenu(button)
                 -- Auto-allowed (affix dupe gate); no manual state.
                 rowHidden = true
             elseif hasProtection then
-                btn:SetText("Allow Sell")
+                btn:SetText(L["Allow Sell"])
                 btn:SetScript("OnClick", function()
                     -- Mark each protection layer that applies. In the
                     -- common case only one of (affix, proc, tome) is
@@ -395,7 +396,7 @@ local function EC_ShowItemContextMenu(button)
                         ADB.allowedAffixes = ADB.allowedAffixes or {}
                         ADB.allowedAffixes[affixKey] = true
                         NS.PrintNicef(
-                            "Marked affix %s as allowed. Future drops with this affix will auto-sell.",
+                            L["Marked affix %s as allowed. Future drops with this affix will auto-sell."],
                             tostring(affixData.name or affixKey)
                         )
                         marked = true
@@ -405,7 +406,7 @@ local function EC_ShowItemContextMenu(button)
                         ADB.allowedItems[itemID] = true
                         if not marked then
                             NS.PrintNicef(
-                                "Marked %s as allowed. Future drops will auto-sell.",
+                                L["Marked %s as allowed. Future drops will auto-sell."],
                                 itemName
                             )
                         end
@@ -423,7 +424,7 @@ local function EC_ShowItemContextMenu(button)
                 rowHidden = true
             end
         elseif row.kind == "cancel" then
-            btn:SetText("Cancel")
+            btn:SetText(L["Cancel"])
             btn:SetScript("OnClick", function()
                 frame:Hide()
             end)

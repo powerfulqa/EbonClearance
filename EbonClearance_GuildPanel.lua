@@ -21,6 +21,7 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+local L = NS.L
 
 local GuildPanel = CreateFrame(
     "Frame",
@@ -35,14 +36,14 @@ local VALUE_X = 200
 
 -- Rarity names indexed by quality constant (q = 0..7).
 local QUALITY_NAMES = {
-    [0] = "Poor",
-    [1] = "Common",
-    [2] = "Uncommon",
-    [3] = "Rare",
-    [4] = "Epic",
-    [5] = "Legendary",
-    [6] = "Artifact",
-    [7] = "Heirloom",
+    [0] = L["Poor"],
+    [1] = L["Common"],
+    [2] = L["Uncommon"],
+    [3] = L["Rare"],
+    [4] = L["Epic"],
+    [5] = L["Legendary"],
+    [6] = L["Artifact"],
+    [7] = L["Heirloom"],
 }
 
 -- repaintGuildPanel: shared repaint body used by both the OnShow
@@ -107,7 +108,7 @@ repaintGuildPanel = function()
                     or tostring(e.copper)
                 row.left:SetText(e.name)
                 row.right:SetText(
-                    copperStr .. " (from " .. e.contributors .. ")"
+                    copperStr .. L[" (from "] .. e.contributors .. ")"
                 )
                 row:Show()
             else
@@ -127,7 +128,7 @@ repaintGuildPanel = function()
             row.right:SetText("")
             row:Hide()
         end
-        panel._zoneEmptyRow.left:SetText("No zones shared yet.")
+        panel._zoneEmptyRow.left:SetText(L["No zones shared yet."])
         panel._zoneEmptyRow.right:SetText("")
         panel._zoneEmptyRow:Show()
     end
@@ -157,10 +158,10 @@ repaintGuildPanel = function()
         if #named > 0 then
             sharedByVal = table.concat(named, ", ")
             if anon > 0 then
-                sharedByVal = sharedByVal .. " (+" .. anon .. " anonymous)"
+                sharedByVal = sharedByVal .. " (+" .. anon .. L[" anonymous)"]
             end
         else
-            sharedByVal = "all anonymous"
+            sharedByVal = L["all anonymous"]
         end
 
         totRows.members.right:SetText(tostring(agg.memberCount or 0))
@@ -184,7 +185,7 @@ repaintGuildPanel = function()
         totRows.bestGPH:Hide()
         totRows.sharedBy:Hide()
         panel._totalsEmptyRow.left:SetText(
-            "Open with guildmates online, or click Refresh."
+            L["Open with guildmates online, or click Refresh."]
         )
         panel._totalsEmptyRow.right:SetText("")
         panel._totalsEmptyRow:Show()
@@ -206,7 +207,7 @@ repaintGuildPanel = function()
         if #parts > 0 then
             panel._qualityFS:SetText(table.concat(parts, "  "))
         else
-            panel._qualityFS:SetText("None shared yet.")
+            panel._qualityFS:SetText(L["None shared yet."])
         end
     end
 
@@ -234,7 +235,7 @@ repaintGuildPanel = function()
                 local e = entries[i]
                 row.left:SetText(e.name)
                 row.right:SetText(
-                    "|cffffd100" .. e.count .. "|r sold (from " .. e.contributors .. ")"
+                    "|cffffd100" .. e.count .. L["|r sold (from "] .. e.contributors .. ")"
                 )
                 row.itemID = e.id
                 row:Show()
@@ -254,7 +255,7 @@ repaintGuildPanel = function()
             row.itemID = nil
             row:Hide()
         end
-        panel._itemEmptyRow.left:SetText("No items shared yet.")
+        panel._itemEmptyRow.left:SetText(L["No items shared yet."])
         panel._itemEmptyRow.right:SetText("")
         panel._itemEmptyRow:Show()
     end
@@ -275,16 +276,16 @@ GuildPanel:SetScript("OnShow", function(self)
     end, function(buildSelf, content)
         -- Build pass: runs once on the first OnShow.
 
-        local heading = NS.MakeHeader(content, "Stats - Guild", -16)
+        local heading = NS.MakeHeader(content, L["Stats - Guild"], -16)
         if NS.AddHelpIcon then
             NS.AddHelpIcon(content, heading, "LEFT", "RIGHT", 8, 0, "guild-sharing")
         end
 
         local descLabel = NS.MakeLabel(
             content,
-            "See what your guild is farming and selling, pooled from members"
+            L["See what your guild is farming and selling, pooled from members"
                 .. " who opt in. Guild and group only. Shared anonymously"
-                .. " unless a member turns on Show my name.",
+                .. " unless a member turns on Show my name."],
             16,
             -44
         )
@@ -296,7 +297,7 @@ GuildPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceGuildShareCB",
             descLabel,
-            "Share my farming data with my guild (anonymous)",
+            L["Share my farming data with my guild (anonymous)"],
             function()
                 return EbonClearanceDB and EbonClearanceDB.shareGuildData
             end,
@@ -319,7 +320,7 @@ GuildPanel:SetScript("OnShow", function(self)
             content,
             "EbonClearanceGuildNameCB",
             optInCB,
-            "Show my name with my shared data",
+            L["Show my name with my shared data"],
             function() return EbonClearanceDB and EbonClearanceDB.shareGuildName end,
             function(v) if EbonClearanceDB then EbonClearanceDB.shareGuildName = v end end,
             -8
@@ -354,7 +355,7 @@ GuildPanel:SetScript("OnShow", function(self)
             nil, "ARTWORK", "GameFontNormalLarge"
         )
         zonesHeader:SetPoint("TOPLEFT", nameCB, "BOTTOMLEFT", 0, -16)
-        zonesHeader:SetText("Guild's Best Farming Zones")
+        zonesHeader:SetText(L["Guild's Best Farming Zones"])
 
         -- Pre-create a fixed pool of 5 zone rows + 1 empty-state row.
         -- The first row anchors under the sub-header; subsequent rows
@@ -373,7 +374,7 @@ GuildPanel:SetScript("OnShow", function(self)
         end
         -- Empty-state row (visible when no data).
         local zoneEmptyRow = makeRow(content, zonesHeader, -8)
-        zoneEmptyRow.left:SetText("No zones shared yet.")
+        zoneEmptyRow.left:SetText(L["No zones shared yet."])
         zoneEmptyRow.right:SetText("")
         buildSelf._zoneEmptyRow = zoneEmptyRow
 
@@ -390,7 +391,7 @@ GuildPanel:SetScript("OnShow", function(self)
         totalsHeader:SetPoint(
             "TOPLEFT", buildSelf._zoneRows[5], "BOTTOMLEFT", 0, -16
         )
-        totalsHeader:SetText("Guild Totals")
+        totalsHeader:SetText(L["Guild Totals"])
 
         -- Pre-create the fixed set of totals rows.
         local totRows = {}
@@ -401,14 +402,14 @@ GuildPanel:SetScript("OnShow", function(self)
             return row
         end
 
-        totRows.members = makeTotRow("Members shared:", totalsHeader, -8)
-        totRows.gold    = makeTotRow("Combined gold:", totRows.members, -2)
-        totRows.items   = makeTotRow("Combined items sold:", totRows.gold, -2)
-        totRows.bestGPH = makeTotRow("Best gold/hour seen:", totRows.items, -2)
+        totRows.members = makeTotRow(L["Members shared:"], totalsHeader, -8)
+        totRows.gold    = makeTotRow(L["Combined gold:"], totRows.members, -2)
+        totRows.items   = makeTotRow(L["Combined items sold:"], totRows.gold, -2)
+        totRows.bestGPH = makeTotRow(L["Best gold/hour seen:"], totRows.items, -2)
         -- "Shared by" row: extra gap above so the first line clears the
         -- "Best gold/hour seen" row; doubled height so a two-line wrap
         -- has room; value anchored TOPLEFT so overflow grows downward.
-        totRows.sharedBy = makeTotRow("Shared by:", totRows.bestGPH, -10)
+        totRows.sharedBy = makeTotRow(L["Shared by:"], totRows.bestGPH, -10)
         totRows.sharedBy:SetHeight(28)
         totRows.sharedBy.right:ClearAllPoints()
         totRows.sharedBy.right:SetPoint("TOPLEFT", totRows.sharedBy, "TOPLEFT", VALUE_X, 0)
@@ -427,7 +428,7 @@ GuildPanel:SetScript("OnShow", function(self)
         -- Empty-state row (visible when memberCount == 0).
         local totalsEmptyRow = makeRow(content, totalsHeader, -8)
         totalsEmptyRow.left:SetText(
-            "Open with guildmates online, or click Refresh."
+            L["Open with guildmates online, or click Refresh."]
         )
         totalsEmptyRow.right:SetText("")
         buildSelf._totalsEmptyRow = totalsEmptyRow
@@ -439,7 +440,7 @@ GuildPanel:SetScript("OnShow", function(self)
         qualHeader:SetPoint(
             "TOPLEFT", totRows.sharedBy, "BOTTOMLEFT", 0, -16
         )
-        qualHeader:SetText("Guild Sold by Quality")
+        qualHeader:SetText(L["Guild Sold by Quality"])
 
         local qualityFS = content:CreateFontString(
             nil, "ARTWORK", "GameFontHighlight"
@@ -451,7 +452,7 @@ GuildPanel:SetScript("OnShow", function(self)
         if qualityFS.SetWordWrap then
             qualityFS:SetWordWrap(true)
         end
-        qualityFS:SetText("None shared yet.")
+        qualityFS:SetText(L["None shared yet."])
         buildSelf._qualityFS = qualityFS
 
         -- ---- Guild's Most-Sold Items ----
@@ -461,7 +462,7 @@ GuildPanel:SetScript("OnShow", function(self)
         itemsHeader:SetPoint(
             "TOPLEFT", qualityFS, "BOTTOMLEFT", 0, -16
         )
-        itemsHeader:SetText("Guild's Most-Sold Items")
+        itemsHeader:SetText(L["Guild's Most-Sold Items"])
 
         -- Pre-create a fixed pool of 5 item rows + 1 empty-state row.
         buildSelf._itemRows = {}
@@ -491,7 +492,7 @@ GuildPanel:SetScript("OnShow", function(self)
         end
         -- Empty-state row (visible when no data).
         local itemEmptyRow = makeRow(content, itemsHeader, -8)
-        itemEmptyRow.left:SetText("No items shared yet.")
+        itemEmptyRow.left:SetText(L["No items shared yet."])
         itemEmptyRow.right:SetText("")
         buildSelf._itemEmptyRow = itemEmptyRow
 
@@ -505,7 +506,7 @@ GuildPanel:SetScript("OnShow", function(self)
         refreshBtn:SetPoint(
             "TOPLEFT", buildSelf._itemRows[5], "BOTTOMLEFT", 0, -12
         )
-        refreshBtn:SetText("Refresh")
+        refreshBtn:SetText(L["Refresh"])
         refreshBtn:SetScript("OnClick", function()
             if NS.GuildShare and NS.GuildShare.RequestNow then
                 NS.GuildShare.RequestNow()

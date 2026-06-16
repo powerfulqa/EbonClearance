@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.43.0
+
+French and German language support. Every player-facing string in the addon can now be translated, with automatic English fallback for anything not yet done. Added for the influx of French and German players on the server.
+
+- **Localization framework (no external libraries).** A tiny layer reads your client's language at login and shows translated text where a translation exists. On an English client nothing changes. Adding a language is a single new file plus one `.toc` line, no other code changes.
+- **Full coverage.** Chat messages, every settings panel, tooltips, confirmation popups, the Quickstart wizard, slash-command help, and the entire 86-entry Help / FAQ are wrapped for translation.
+- **Community-translated.** French (`frFR`) and German (`deDE`) template files ship with every English string ready to fill in. Translations are written by players; an unfilled entry simply shows English, so partial translations are safe. See [docs/TRANSLATING.md](docs/TRANSLATING.md) to help.
+- **Internal:** new `EbonClearance_Locale.lua` + `EbonClearance_Locale_frFR.lua` + `EbonClearance_Locale_deDE.lua` (loaded right after Core). The tooltip verdict logic was decoupled from its displayed label (a new English `statusTag` token drives control flow) so localized labels can't break the sell / keep / delete decisions. New `tests/test_locale_integrity.lua` validates placeholder parity, color-code balance, and no em dashes in every translation.
+
+No schema changes (locale follows the client). Safe overwrite from v2.42.x.
+
 ### v2.42.1
 
 Patch release. Fixes a destructive bug in v2.42.0's auto-delete-on-pickup feature: the sweep ignored the master Enable toggle.

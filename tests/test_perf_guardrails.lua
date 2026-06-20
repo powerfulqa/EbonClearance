@@ -4036,6 +4036,19 @@ do
         bd:find("affixRankRule") ~= nil
             and bd:find("is below your 'Sell affixes below rank") ~= nil,
         "the trace must surface the rank rule as a distinct step alongside qualityRule / onSellList so /ec sellinfo correctly reports WHY a low-rank affixed item is selling. The wording mirrors the in-game slider label for player recognisability.")
+    check("Test 92l: EC_IsSellable's exit recheck stays symmetric with the entrance gate",
+        (function()
+            local n, pat = 0, "isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass"
+            local s, e = 1, nil
+            while true do
+                s, e = ev:find(pat, s, true)
+                if not s then break end
+                n = n + 1
+                s = e + 1
+            end
+            return n >= 2
+        end)(),
+        "v2.44.1 bug: the entrance gate at the top of EC_IsSellable added affixRankPass / autoDupePass as positive sell signals, but a stale exit recheck below the chance-on-hit / tome blocks still used the old 3-term predicate (isJunk / qualityPass / whitelistPass). Items passing purely via affixRankPass or autoDupePass entered the function then silently returned false at the exit gate. The tooltip + /ec sellinfo trace re-implement the predicate separately and reported WILL SELL while the vendor cycle skipped the item. Both rechecks must use the same 5-term predicate so the trace and the seller agree.")
     check("Test 92h: rank slider Help entry exists",
         (function()
             local hp = fileSrc("EbonClearance_HelpPanel.lua")

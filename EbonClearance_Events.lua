@@ -4460,9 +4460,14 @@ local function EC_IsSellable(bag, slot, junkOnly)
         end
     end
     -- After the chance-on-hit / tome downgrades, if no positive sell
-    -- signal remains (isJunk / qualityPass / whitelistPass), the item
-    -- is no longer sellable. Recheck the predicate the main guard uses.
-    if not (isJunk or qualityPass or whitelistPass) then
+    -- signal remains, the item is no longer sellable. Recheck the
+    -- same predicate the main guard at the top of the function uses
+    -- so the v2.44.0 affixRankPass / autoDupePass paths survive this
+    -- exit gate. EC-TRAP: don't trim affixRankPass / autoDupePass out
+    -- of this recheck "to match the original v2.20.x recheck" - they
+    -- are positive sell signals and dropping them silently breaks the
+    -- /ec rules vs vendor cycle agreement (was the v2.44.1 bug).
+    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass) then
         return false
     end
     return true, link, itemID, sellPrice, itemCount

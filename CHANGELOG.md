@@ -5,6 +5,22 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.1
+
+Patch fix for a v2.44.0 regression that left affixed items stuck in bags.
+
+**Bug fix: items the rules say to sell were being skipped at the vendor.**
+
+Reported by Serv: five Epic affixed items the tooltip and `/ec sellinfo` both labeled `Will Sell (you have this affix)` were silently retained at the Goblin Merchant. `EC_IsSellable` has a final recheck below the chance-on-hit and tome blocks that catches items whose only positive sell signal has been downgraded to false. In v2.44.0 that recheck still used the old 3-term predicate (`isJunk or qualityPass or whitelistPass`) and never learned about the two new positive signals (`affixRankPass`, `autoDupePass`). Items selling purely via the rank slider OR "Allow selling affixes you already have" entered `EC_IsSellable` then silently returned false at the exit gate.
+
+- **Exit gate now uses the same 5-term predicate as the entrance gate.** Items passing via `affixRankPass` or `autoDupePass` make it all the way through the function the way v2.44.0 intended. Tooltip / `/ec sellinfo` trace / vendor cycle all agree again.
+- **Regression test pinned.** `tests/test_perf_guardrails.lua` Test 92l counts occurrences of the 5-term predicate in `EC_IsSellable` and fails if either copy drifts back to the 3-term shape. EC-TRAP comment placed at the exit gate so a future "match the v2.20.x recheck" simplification fails the test instead of recreating the bug.
+
+No setting changes, no schema changes, no migrations.
+
+---
+
+
 ### v2.44.0
 
 Three Murlocked-reported items rolled into one minor: a bug fix and two new opt-in controls for affix-heavy and PvP-loot farming.

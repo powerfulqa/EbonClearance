@@ -124,7 +124,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             combatOnlyCB,
             L["Summon delay"],
             0.0,
-            3.0,
+            20.0,
             0.1,
             function()
                 return DB.summonDelay or 1.6

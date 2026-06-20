@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.2
+
+Tiny QoL tweak adopted from a community fork.
+
+- **Summon Delay slider now goes up to 20.0s** (was capped at 3.0s). Default stays 1.6s; existing players see no change. The slider lets you push the Greedy Scavenger summon further back when you want a longer wait between closing the merchant and the pet appearing. The consumer is a single one-shot `EC_Delay(DB.summonDelay, SummonGreedyScavenger)` call, so the value flows through unchanged regardless of magnitude.
+
+Credit: change suggested by Juggalo187 in a personal fork.
+
+---
+
+
 ### v2.44.1
 
 Patch fix for a v2.44.0 regression that left affixed items stuck in bags.

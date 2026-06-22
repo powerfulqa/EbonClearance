@@ -4140,6 +4140,61 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- v2.44.5 Test 95: scavenger -> goblin swap diagnostic + watchdog.
+-- ---------------------------------------------------------------------------
+-- nohsi + Shandrax reported a stuck swap: bags full, scavenger still out,
+-- bagFullSince stamped 20+ seconds ago, lootCycleState still LOOTING. One
+-- of EC_HandleBagFullForCycle's early-return gates is silently blocking
+-- but the existing bug report doesn't expose enough state to know which.
+--
+-- This release adds (1) NS.GetSwapDiagnostics exposing the four state
+-- values that gate the swap, (2) four new lines in /ec bugreport's
+-- Runtime State section, and (3) a watchdog that force-resets the cycle
+-- after 7.5s in the stuck signature so the player isn't grounded.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local br = fileSrc("EbonClearance_BugReport.lua")
+    check("Test 95a: NS.GetSwapDiagnostics exposes the four gate values",
+        ev:find("NS%.GetSwapDiagnostics") ~= nil
+            and ev:find("vendorRunning%s*=%s*EC_compCache%.vendorRunning") ~= nil
+            and ev:find("summonGoblinPending%s*=%s*EC_summonGoblinPending") ~= nil
+            and ev:find("summonGoblinTimer%s*=%s*EC_summonGoblinTimer") ~= nil
+            and ev:find("goblinRetryCount%s*=%s*EC_goblinRetryCount") ~= nil,
+        "BugReport.lua can't see the file-scope locals EC_summonGoblinPending / EC_summonGoblinTimer / EC_goblinRetryCount directly. NS.GetSwapDiagnostics is the bridge; without it the four new bugreport lines fail. The function MUST return all four fields - dropping any leaves a future stuck-swap report without enough data to pinpoint the gate.")
+    check("Test 95b: /ec bugreport prints the four swap-diagnostic lines",
+        br:find('"Vendor Running: "') ~= nil
+            and br:find('"Goblin Summon Pending: "') ~= nil
+            and br:find('"Goblin Summon Timer: ') ~= nil
+            and br:find('"Goblin Retry Count: "') ~= nil
+            and br:find("NS%.GetSwapDiagnostics") ~= nil,
+        "the Runtime State section of /ec bugreport must surface all four diagnostics so the next stuck-swap report names the culprit gate. Calling NS.GetSwapDiagnostics keeps the BugReport file decoupled from Events.lua's file-scope locals.")
+    check("Test 95c: EC_BagFullWatchdog exists with the 7.5s stuck threshold",
+        ev:find("local function EC_BagFullWatchdog%(%)") ~= nil
+            and ev:find("EC_BAG_FULL_STUCK_S%s*=%s*7%.5") ~= nil,
+        "the watchdog must trigger only after 5x the hysteresis window (BAG_FULL_CONFIRM_S = 1.5s) so it never false-positives on a clean cycle. The 7.5s constant being named (not inlined) makes future tuning a one-line change.")
+    check("Test 95d: watchdog gated on the full stuck signature",
+        ev:find("EC_compCache%.lootCycleState ~= STATE%.LOOTING") ~= nil
+            and ev:find("EC_compCache%.bagFullSince%s+<=%s+0") ~= nil
+            and ev:find("free%s+>%s+%(DB%.bagFullThreshold or 2%)") ~= nil
+            and ev:find("InCombatLockdown%(%)") ~= nil
+            and ev:find("IsMounted%(%)") ~= nil,
+        "the watchdog must verify EVERY gate of the stuck signature before force-resetting: state is LOOTING (not already in a clean transition), bagFullSince is set, bags are still full, not mounted, not in combat. Dropping any of these risks spurious resets that disrupt a normal cycle.")
+    check("Test 95e: watchdog force-resets vendorRunning + bagFullSince + lootCycleState",
+        ev:find("EC_compCache%.vendorRunning%s*=%s*false") ~= nil
+            and ev:find("EC_compCache%.bagFullSince%s*=%s*nil") ~= nil
+            and ev:find("EC_compCache%.lootCycleState%s*=%s*STATE%.IDLE") ~= nil
+            and ev:find("EC_BagFullWatchdog%(%)") ~= nil,
+        "force-reset must clear vendorRunning (the leading suspect for what's stuck) AND bagFullSince (the hysteresis stamp) AND transition lootCycleState back to IDLE. The pet tick will re-sync from IDLE on its next pass. The function must also be hooked into the OnUpdate at the bottom of the pet-check frame - without the hook the watchdog never runs.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
 -- ---------------------------------------------------------------------------
 -- Bug reported by SLG: "constantly summoning Greedy Scavenger after

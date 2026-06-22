@@ -2319,6 +2319,66 @@ local function EC_HandleBagFullForCycle()
     EC_goblinRetryCount = 0
 end
 
+-- v2.44.5: watchdog for the bag-full → goblin-summon swap. nohsi + Shandrax
+-- both reported the swap getting stuck: bags full, scavenger still out,
+-- bagFullSince stamped 20+ seconds ago, lootCycleState still LOOTING. One
+-- of EC_HandleBagFullForCycle's five early-return gates is silently
+-- blocking the transition. Leading suspect: EC_compCache.vendorRunning
+-- stuck at true (the only gate not currently surfaced in /ec bugreport).
+--
+-- The watchdog detects this stuck signature and force-resets the cycle to
+-- IDLE; the next pet tick re-syncs scavenger-out and EC_HandleBagFullForCycle
+-- re-arms. 7.5 s is 5x the BAG_FULL_CONFIRM_S hysteresis window - well past
+-- any normal-case retry. Hooked from EC_petCheckFrame's OnUpdate so the
+-- 5 s pet-tick cadence applies.
+local EC_BAG_FULL_STUCK_S = 7.5
+local function EC_BagFullWatchdog()
+    if not DB or not DB.autoLootCycle then
+        return
+    end
+    if EC_compCache.lootCycleState ~= STATE.LOOTING then
+        return
+    end
+    if not EC_compCache.bagFullSince or EC_compCache.bagFullSince <= 0 then
+        return
+    end
+    if (GetTime() - EC_compCache.bagFullSince) < EC_BAG_FULL_STUCK_S then
+        return
+    end
+    local free = EC_GetFreeBagSlots()
+    if free > (DB.bagFullThreshold or 2) then
+        -- Bags freed up but the hysteresis stamp wasn't cleared - clean it.
+        EC_compCache.bagFullSince = nil
+        return
+    end
+    if IsMounted() then
+        return
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        return
+    end
+    -- Stuck signature confirmed. Force-reset the cycle. EC_compCache.vendorRunning
+    -- gets cleared because it's the leading suspect for the original block; if
+    -- it was legitimately true, the worker's next OnUpdate at line ~4861
+    -- already handles vendorRunning=false + merchant-closed by exiting cleanly.
+    PrintNice(L["|cffffb84dScavenger swap cycle appeared stuck; resetting. If this recurs, please send /ec bugreport.|r"])
+    EC_compCache.vendorRunning = false
+    EC_compCache.bagFullSince = nil
+    EC_compCache.lootCycleState = STATE.IDLE
+end
+
+-- v2.44.5: expose the four state values that pinpoint which gate of
+-- EC_HandleBagFullForCycle is blocking. Consumed by /ec bugreport so the
+-- next stuck-swap report names the culprit instead of leaving us to guess.
+NS.GetSwapDiagnostics = function()
+    return {
+        vendorRunning = EC_compCache.vendorRunning,
+        summonGoblinPending = EC_summonGoblinPending,
+        summonGoblinTimer = EC_summonGoblinTimer,
+        goblinRetryCount = EC_goblinRetryCount,
+    }
+end
+
 -- ===========================================================================
 -- Auto-open lootable containers
 -- ---------------------------------------------------------------------------
@@ -4051,6 +4111,11 @@ EC_petCheckFrame:SetScript("OnUpdate", function(_, elapsed)
     end
     EC_petCheckElapsed = 0
     EC_PetCheckTick()
+    -- v2.44.5: bag-full watchdog runs on the same 1-5 s cadence as the
+    -- pet tick. Detects a stuck swap cycle and force-resets so the player
+    -- isn't permanently grounded with full bags + a scavenger that won't
+    -- swap to the goblin merchant. Definition is near EC_HandleBagFullForCycle.
+    EC_BagFullWatchdog()
 end)
 
 -- pendingDelete state was promoted from a file-scope local to

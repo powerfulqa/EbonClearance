@@ -167,6 +167,17 @@ local function EC_BuildBugReport()
     else
         add("Bag-Full Threshold Hit: -")
     end
+    -- v2.44.5: swap-cycle gate diagnostics. nohsi + Shandrax both hit a
+    -- stuck swap (bags full, scavenger still out, cycle never advancing).
+    -- These four fields pinpoint which gate of EC_HandleBagFullForCycle is
+    -- blocking: vendorRunning stuck true is the leading suspect.
+    if NS.GetSwapDiagnostics then
+        local d = NS.GetSwapDiagnostics()
+        add("Vendor Running: " .. tostring(d.vendorRunning))
+        add("Goblin Summon Pending: " .. tostring(d.summonGoblinPending))
+        add(string.format("Goblin Summon Timer: %.2fs", tonumber(d.summonGoblinTimer) or 0))
+        add("Goblin Retry Count: " .. tostring(d.goblinRetryCount))
+    end
     add("")
 
     add("--- Sell Rules ---")

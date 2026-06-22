@@ -5,6 +5,24 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.5
+
+Defensive patch for a rare stuck-state in the scavenger -> goblin swap.
+
+**Bug fix: scavenger-to-goblin swap could get stuck if a vendor-cycle flag was left set.**
+
+Reported by nohsi + Shandrax. When bags fill above the threshold, EbonClearance dismisses the Greedy Scavenger and summons the Goblin Merchant. Two players hit a state where the swap silently never fires - bags full, scavenger still out, no goblin, cycle hung in 'looting' for 20+ seconds. The bug-report data shows `EC_HandleBagFullForCycle` is being early-returned at one of its five gates; the leading suspect is `vendorRunning` getting stuck `true` from a prior cycle. No code in the swap path has changed in 90 days, so this is a latent state-corruption being newly noticed, not a regression introduced by a recent release.
+
+- **New watchdog tick** runs on the existing 1-5s pet-check cadence. If the cycle has been in the stuck signature (`lootCycleState == LOOTING` + `bagFullSince` stamped >7.5s ago + bags still full + not mounted + not in combat) it force-resets `vendorRunning`, `bagFullSince`, and the loot-cycle state to IDLE, then prints one chat line ("Scavenger swap cycle appeared stuck; resetting. If this recurs, please send /ec bugreport.") so the player knows what happened. The pet tick re-syncs scavenger-out and the cycle re-arms on the next BAG_UPDATE.
+- **Four new diagnostic lines in `/ec bugreport`**: Vendor Running, Goblin Summon Pending, Goblin Summon Timer, Goblin Retry Count. These pinpoint which gate of `EC_HandleBagFullForCycle` is blocking when a stuck-swap is reported. Without them we were guessing at the root cause; with them the next report names the culprit.
+
+7.5s is 5x the hysteresis confirmation window, well past any normal-case retry, so the watchdog can't false-positive on a clean cycle. Tests 95a-e pin the diagnostic exposure, the watchdog body, and the OnUpdate hook.
+
+If you've never seen the stuck-swap symptom this release changes nothing for you. The watchdog is silent on healthy cycles.
+
+---
+
+
 ### v2.44.4
 
 Tiny QoL toggle.

@@ -4195,6 +4195,44 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- v2.44.6 Test 96: tooltip annotation routes "no slot mapping" items
+-- away from the misleading "possible upgrade" label.
+-- ---------------------------------------------------------------------------
+-- Reported by Serv: a Rogue saw "Keep (Blue, possible upgrade)" on a
+-- Doomshot (item 12654, INVTYPE_AMMO). INVTYPE_AMMO has no entry in
+-- EC_compCache.INVTYPE_SLOTS, so isDowngradeVsEquipped returns false
+-- with reason "no_slot_mapping". The tooltip used to lump this into
+-- the same branch as legitimate upgrade candidates, falsely framing
+-- ammo / bags / tabards / class-restricted relics as "possible upgrade".
+-- The underlying sell/keep logic was always correct (checkBagsForUpgrades
+-- skips these); this was a label-only bug.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local tt = fileSrc("EbonClearance_Tooltip.lua")
+    local de = fileSrc("EbonClearance_Locale_deDE.lua")
+    local fr = fileSrc("EbonClearance_Locale_frFR.lua")
+    check("Test 96a: tooltip captures the reason from isDowngradeVsEquipped",
+        tt:find("local downgrade, reason = EC_compCache%.isDowngradeVsEquipped") ~= nil
+            and tt:find("equipReason%s*=%s*reason") ~= nil,
+        "isDowngradeVsEquipped already returned (boolean, reason) - the tooltip just wasn't reading the reason. Without capturing it, every false-return collapses into 'possible upgrade' regardless of whether the item is genuinely an upgrade candidate or simply has no equipment slot to compare against (ammo, bags, tabards, etc.).")
+    check("Test 96b: tooltip routes no_slot_mapping / not_equippable to a 'Won't Sell' label",
+        tt:find('equipReason == "no_slot_mapping" or equipReason == "not_equippable"') ~= nil
+            and tt:find('L%["Won\'t Sell %(%%s, no equipment slot%)"%]') ~= nil
+            and tt:find('statusTag = "wontsell"') ~= nil,
+        "items with no slot mapping must show 'Won't Sell (Rarity, no equipment slot)' with statusTag=wontsell. The user needs to understand the addon is DECLINING to evaluate them (mirroring Won't Sell (equipped) / Won't Sell (no value)), NOT actively keeping them as upgrade candidates. Reframed mid-v2.44.6 after the user pointed out that 'Keep' implied protection.")
+    check("Test 96c: locale templates carry the new key",
+        de:find('%["Won\'t Sell %(%%s, no equipment slot%)"%] = ""') ~= nil
+            and fr:find('%["Won\'t Sell %(%%s, no equipment slot%)"%] = ""') ~= nil,
+        "every new English key must have a matching empty-template entry in the fr/de locale files so community translators have a slot to fill. Without these, the locale-integrity test (test_locale_integrity.lua) misses the key on its next pass.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
 -- ---------------------------------------------------------------------------
 -- Bug reported by SLG: "constantly summoning Greedy Scavenger after

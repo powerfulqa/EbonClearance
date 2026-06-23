@@ -5,6 +5,26 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.6
+
+Tooltip-label fix for items the dynamic-cap rule can't evaluate (ammo, bags, tabards, class-restricted relics).
+
+**Bug fix: 'Keep (possible upgrade)' tooltip was mislabelling items with no equipment slot.**
+
+Reported by Serv: a Rogue's tooltip showed `Keep (Blue, possible upgrade)` on a Doomshot (Rare ammo, item 12654, `INVTYPE_AMMO`). `INVTYPE_AMMO` doesn't appear in `EC_compCache.INVTYPE_SLOTS`, so the underlying `isDowngradeVsEquipped` correctly returned `false, "no_slot_mapping"` and the auto-rule pass + `checkBagsForUpgrades` both correctly left the item alone. **The bug was only in the tooltip annotation**: it read the boolean return but ignored the reason, lumping "no slot to compare against" together with "real upgrade candidate" under the same `matchedAgainstEquipped` branch.
+
+Worse, the original "Keep" framing implied active protection. The addon isn't actively protecting ammo - it's declining to evaluate it. New label is `Won't Sell (<rarity>, no equipment slot)` with `statusTag = "wontsell"`, mirroring the existing `Won't Sell (equipped)` and `Won't Sell (no value)` labels. The honest framing: the dynamic-cap rule has no equipped slot to compare ammo / bags / tabards / class-restricted relics against, so the auto-rule passes on them. Add to Sell List if you want them gone.
+
+- Tooltip captures the reason from `isDowngradeVsEquipped` and routes `no_slot_mapping` / `not_equippable` items to the new `Won't Sell (<rarity>, no equipment slot)` label.
+- `Keep (<rarity>, possible upgrade)` is unchanged for genuine upgrade candidates (multi-slot empty slots, items at-or-above the lowest populated slot).
+- New locale key added to the fr/de templates as empty strings for community translators.
+- Test 96a-c pin the routing.
+
+No setting changes, no schema changes, no functional behaviour change. Pure tooltip wording.
+
+---
+
+
 ### v2.44.5
 
 Defensive patch for a rare stuck-state in the scavenger -> goblin swap.

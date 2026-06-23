@@ -214,11 +214,23 @@ local function EC_AnnotateTooltip(tooltip)
                 -- the tooltip is honest about what will / won't sell.
                 local matchesILvl = false
                 local matchedAgainstEquipped = false
+                -- v2.44.6: capture the reason isDowngradeVsEquipped gives
+                -- back so the "Keep (possible upgrade)" branch below can
+                -- distinguish "this item type has no equipment slot we
+                -- can compare against" (ammo, bags, tabards, class-
+                -- restricted relics) from "real upgrade candidate". Both
+                -- previously fell into the "possible upgrade" branch,
+                -- mislabelling Doomshot etc. Reported by Serv.
+                local equipReason = nil
                 local cap = rule.maxILvl or 0
                 if rule.useEquippedILvl then
                     matchedAgainstEquipped = true
-                    if hasVisibleILvl and EC_compCache.isDowngradeVsEquipped(id, ilvl, equipLoc) then
-                        matchesILvl = true
+                    if hasVisibleILvl then
+                        local downgrade, reason = EC_compCache.isDowngradeVsEquipped(id, ilvl, equipLoc)
+                        if downgrade then
+                            matchesILvl = true
+                        end
+                        equipReason = reason
                     end
                 else
                     matchesILvl = (cap == 0) or (hasVisibleILvl and ilvl <= cap)
@@ -290,29 +302,52 @@ local function EC_AnnotateTooltip(tooltip)
                         statusTag = "willsell"
                     end
                 elseif matchedAgainstEquipped then
-                    -- Dynamic-cap mode and the item didn't qualify. Two
-                    -- distinct cases collapse to one user-facing message:
-                    --   * "empty_slot": rule short-circuited because at least
-                    --     one candidate slot is empty - the looted item could
-                    --     fill it (relevant for dual-wielders).
-                    --   * "at_or_above": actual iLvl compare happened and the
-                    --     looted item met or exceeded the lowest populated
-                    --     slot - could be an upgrade for the weakest slot in
-                    --     a multi-slot equipLoc, or a same-iLvl sidegrade.
-                    -- Both cases mean "kept because this could be useful";
-                    -- "Potential Upgrade" is the user-friendly framing.
-                    if not hasVisibleILvl then
+                    -- Dynamic-cap mode and the item didn't qualify. Routes
+                    -- on the reason isDowngradeVsEquipped gave us:
+                    --   * "no_slot_mapping" / "not_equippable": item has
+                    --     no equipment slot the addon can reason about
+                    --     (ammo, bags, tabards, class-restricted relics).
+                    --     v2.44.6: distinct "Won't Sell" label so the
+                    --     player understands the addon ISN'T actively
+                    --     protecting these as upgrades - it's just
+                    --     declining to evaluate them. statusTag flips
+                    --     from "keep" to "wontsell" to match the
+                    --     framing of Won't Sell (equipped) and Won't
+                    --     Sell (no value). EC-TRAP: don't reframe this
+                    --     as "Keep" - the user (Serv on Doomshot/AMMO)
+                    --     reasonably read "Keep" as "the addon thinks
+                    --     I should hold onto this", which is the
+                    --     opposite of what's actually happening.
+                    --   * "empty_slot": rule short-circuited because at
+                    --     least one candidate slot is empty - the looted
+                    --     item could fill it (relevant for dual-wielders).
+                    --   * "at_or_above": actual iLvl compare happened and
+                    --     the looted item met or exceeded the lowest
+                    --     populated slot - could be an upgrade for the
+                    --     weakest slot in a multi-slot equipLoc, or a
+                    --     same-iLvl sidegrade.
+                    -- "empty_slot" and "at_or_above" both mean "kept because
+                    -- this could be useful"; "possible upgrade" is the
+                    -- user-friendly framing for both.
+                    if equipReason == "no_slot_mapping" or equipReason == "not_equippable" then
+                        statusLine = string.format(
+                            "|cff66ccff[EC]|r |cffffb84d" .. L["Won't Sell (%s, no equipment slot)"] .. "|r",
+                            rarityName
+                        )
+                        statusTag = "wontsell"
+                    elseif not hasVisibleILvl then
                         statusLine = string.format(
                             "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s, no item level)"] .. "|r",
                             rarityName
                         )
+                        statusTag = "keep"
                     else
                         statusLine = string.format(
                             "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s, possible upgrade)"] .. "|r",
                             rarityName
                         )
+                        statusTag = "keep"
                     end
-                    statusTag = "keep"
                 elseif not hasVisibleILvl then
                     -- Fixed-cap mode; non-equippable has no visible iLvl.
                     statusLine = string.format(

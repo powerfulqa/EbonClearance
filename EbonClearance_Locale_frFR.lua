@@ -659,6 +659,7 @@ NS.RegisterLocale("frFR", {
     ["Will Sell (%s, iLvl %d, cap %d)"] = "",
     ["Keep (%s, no item level)"] = "",
     ["Keep (%s, possible upgrade)"] = "",
+    ["Won't Sell (%s, no equipment slot)"] = "",
     ["Keep (%s, iLvl %d, cap %d)"] = "",
     ["Override on - add to a list to sell"] = "",
     ["Will Sell (you have this affix)"] = "",

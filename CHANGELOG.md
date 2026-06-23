@@ -5,6 +5,25 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.7
+
+Workaround for the minimap-frame clash with magnifier / replacement addons.
+
+**New: hide the EC minimap button.**
+
+Reported by Safra. The EC minimap button creates a frame parented to `Minimap` at frame level 8. Some minimap-replacement / magnifier addons (Magnify-WotLK was the trigger) hook the Minimap frame in ways that clash with a child button, with reports as severe as the entire minimap turning black. No EC code paints anywhere on the minimap canvas; this is purely a third-party-hook interaction. Without a confirmed root cause we can fix from our side, ship the workaround:
+
+- **Main panel checkbox** "Show the EbonClearance minimap button" (default ON, existing players see no change).
+- **`/ec minimap on|off|reset` slash command** — `reset` re-centres the button to its default angle (220 deg) for players whose drag-handler placed the button somewhere unreachable.
+- **EC stays fully functional with the button hidden:** open settings via `/ec`, the LDB launcher (Bazooka, Titan Panel, ChocolateBar), or your key binding.
+
+`DB.minimapButton = true` lives at the per-character level (each character can independently show/hide). Help FAQ entry "Hide the EbonClearance minimap button" documents the workaround.
+
+If you've never seen the minimap-clash symptom, this release changes nothing for you.
+
+---
+
+
 ### v2.44.6
 
 Tooltip-label fix for items the dynamic-cap rule can't evaluate (ammo, bags, tabards, class-restricted relics).

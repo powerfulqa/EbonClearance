@@ -161,6 +161,16 @@ local function EC_CreateMinimapButton()
         icon:SetDesaturated(true)
     end
 
+    -- v2.44.7: respect DB.minimapButton on creation. If the player has
+    -- previously turned the button off (e.g. to work around a Minimap-
+    -- frame clash with a magnifier addon), the button is created in a
+    -- hidden state so we don't briefly flash on screen at login. The
+    -- panel checkbox + /ec minimap slash command flip visibility at
+    -- runtime via NS.SetMinimapButtonVisible.
+    if DB and DB.minimapButton == false then
+        btn:Hide()
+    end
+
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("EbonClearance")
@@ -253,7 +263,29 @@ local function EC_CreateLDBLauncher()
     })
 end
 
+-- v2.44.7: runtime visibility toggle for the EC minimap button. Called by
+-- the Main panel checkbox + the /ec minimap slash command. Idempotent;
+-- a missing button (creation skipped on a fresh fault) is silently
+-- tolerated.
+local function EC_SetMinimapButtonVisible(visible)
+    local DB = NS.DB
+    if DB then
+        DB.minimapButton = visible and true or false
+    end
+    local btn = _G["EbonClearanceMinimapButton"]
+    if not btn then
+        return
+    end
+    if visible then
+        btn:Show()
+        EC_UpdateMinimapPos()
+    else
+        btn:Hide()
+    end
+end
+
 NS.UpdateMinimapPos = EC_UpdateMinimapPos
 NS.CreateMinimapButton = EC_CreateMinimapButton
 NS.CreateTargetMerchantButton = EC_CreateTargetMerchantButton
 NS.CreateLDBLauncher = EC_CreateLDBLauncher
+NS.SetMinimapButtonVisible = EC_SetMinimapButtonVisible

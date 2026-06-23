@@ -4233,6 +4233,58 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- v2.44.7 Test 97: minimap-button hide toggle (Safra ask / Magnify-WotLK clash).
+-- ---------------------------------------------------------------------------
+-- Safra reported the minimap turning black with EC enabled. Magnify-WotLK
+-- was the suspected clash partner (both addons hook the Minimap frame).
+-- Without a confirmed root cause, ship a workaround: a player-facing
+-- toggle that hides the EC minimap button entirely. EC stays fully
+-- functional via the LDB launcher, /ec slash, and key bindings.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local mm = fileSrc("EbonClearance_Minimap.lua")
+    local mp = fileSrc("EbonClearance_MainPanel.lua")
+    local hp = fileSrc("EbonClearance_HelpPanel.lua")
+    local rm = fileSrc("README.md")
+    check("Test 97a: DB.minimapButton seeded in EnsureDB with default true",
+        ev:find("DB%.minimapButton%s*=%s*true") ~= nil,
+        "must default ON - existing players see no change. The off switch is the workaround for the Magnify-WotLK clash + any future minimap-hook conflict.")
+    check("Test 97b: EC_CreateMinimapButton respects DB.minimapButton on creation",
+        mm:find("DB%.minimapButton == false") ~= nil
+            and mm:find("btn:Hide%(%)") ~= nil,
+        "the button must be created in a hidden state when DB.minimapButton is false, not just :Hide()'d after a brief flash. Without this the button briefly paints on screen at login before the visibility helper catches up.")
+    check("Test 97c: NS.SetMinimapButtonVisible exposes the runtime toggle",
+        mm:find("function EC_SetMinimapButtonVisible%(visible%)") ~= nil
+            and mm:find("NS%.SetMinimapButtonVisible") ~= nil,
+        "the Main panel checkbox + /ec minimap slash command both flip the button via this helper. Without the NS export, the checkbox writes to DB.minimapButton but the button itself doesn't show/hide until /reload.")
+    check("Test 97d: Main panel surfaces the minimap-button checkbox",
+        mp:find("EbonClearanceMinimapButtonCB") ~= nil
+            and mp:find("DB%.minimapButton") ~= nil
+            and mp:find("NS%.SetMinimapButtonVisible") ~= nil,
+        "the toggle must live on the Main panel near the version-alert checkbox so players who hit the Minimap-frame clash discover the workaround without needing the slash command.")
+    check("Test 97e: /ec minimap slash subcommand dispatches on/off/reset",
+        ev:find('cmd == "minimap"') ~= nil
+            and ev:find('sub == "on" or sub == "show"') ~= nil
+            and ev:find('sub == "off" or sub == "hide"') ~= nil
+            and ev:find('sub == "reset"') ~= nil
+            and ev:find('DB%.minimapButtonAngle = 220') ~= nil,
+        "the slash command needs to accept on/show, off/hide, and reset subcommands. Reset must restore the default angle (220) AND call NS.UpdateMinimapPos so the button reflows immediately. Aliases (on/show, off/hide) are belt-and-braces - players reach for both.")
+    check("Test 97f: Help FAQ entry exists for the minimap-button toggle",
+        hp:find('id = "gate%-minimap%-button"') ~= nil,
+        "the toggle is the workaround for a known third-party clash (Magnify-WotLK). A Help FAQ entry is the discoverable path so players who hit the clash don't have to read CHANGELOG to find the fix.")
+    check("Test 97g: README slash-commands table includes /ec minimap",
+        rm:find("`/ec minimap on\\|off\\|reset`") ~= nil,
+        "contributors and players reading the README slash-commands table must see the new command. v2.44.x release process: any new slash command gets a README row in the same patch.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
 -- ---------------------------------------------------------------------------
 -- Bug reported by SLG: "constantly summoning Greedy Scavenger after

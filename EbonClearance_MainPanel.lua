@@ -713,11 +713,34 @@ local function BuildMainPanel(panel, content)
         -14
     )
 
+    -- v2.44.7: show / hide the EC minimap button. Workaround for clashes
+    -- with minimap-replacement / magnifier addons (Magnify-WotLK was the
+    -- trigger). EC stays fully functional with the button hidden via the
+    -- LDB launcher, slash commands, and key bindings.
+    local minimapButtonCB = NS.AddCheckbox(
+        content,
+        "EbonClearanceMinimapButtonCB",
+        versionAlertCB,
+        L["Show the EbonClearance minimap button"],
+        function()
+            return DB and DB.minimapButton ~= false
+        end,
+        function(v)
+            if NS.SetMinimapButtonVisible then
+                NS.SetMinimapButtonVisible(v)
+            elseif DB then
+                DB.minimapButton = v and true or false
+            end
+        end,
+        -2
+    )
+
     -- Slash commands reference.
     -- Stats widgets + Reset buttons moved to EbonClearance_StatsPanel.lua
-    -- in v2.36.x; this anchor chain now goes mainTip -> versionAlertCB -> cmdHeader.
+    -- in v2.36.x; this anchor chain now goes mainTip -> versionAlertCB ->
+    -- minimapButtonCB -> cmdHeader.
     local cmdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cmdHeader:SetPoint("TOPLEFT", versionAlertCB, "BOTTOMLEFT", 0, -20)
+    cmdHeader:SetPoint("TOPLEFT", minimapButtonCB, "BOTTOMLEFT", 0, -20)
     cmdHeader:SetText(L["Slash Commands"])
 
     -- v2.37.6: per-row slash command list. Each row gets a [Run] button
@@ -776,6 +799,14 @@ local function BuildMainPanel(panel, content)
             run = "rules",
             label = "|cffffff00/ec rules|r  "
                 .. L["See every active rule + the order EC applies them"],
+        },
+        {
+            -- v2.44.7: `||` renders as a literal pipe inside a WoW UI font
+            -- string. A single `|r` would terminate the |cffffff00 colour
+            -- block and the trailing "eset" would render in the default
+            -- colour ("on|offeset" - reported by Serv).
+            label = "|cffffff00/ec minimap on||off||reset|r  "
+                .. L["Show, hide, or re-centre the EC minimap button"],
         },
         {
             run = "bugreport",

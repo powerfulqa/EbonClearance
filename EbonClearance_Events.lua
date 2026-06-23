@@ -1190,6 +1190,15 @@ local function EnsureDB()
     if type(DB.minimapButtonAngle) ~= "number" then
         DB.minimapButtonAngle = 220
     end
+    -- v2.44.7: minimap button visibility toggle. Default ON (existing
+    -- players see no change). Off-switch is the workaround for clashes
+    -- with minimap-replacement / magnifier addons (Magnify-WotLK was
+    -- the trigger - Safra's report). EC stays fully functional with
+    -- the button hidden: slash commands, the LDB launcher (Bazooka /
+    -- Titan Panel), and key bindings all still work.
+    if type(DB.minimapButton) ~= "boolean" then
+        DB.minimapButton = true
+    end
     -- Opt-in slot-frame border tint that highlights bag items the current
     -- rule chain would sell at the next vendor visit. Texture sits on a
     -- frame-overlay sublevel ABOVE the slot's quality-border but does not
@@ -6005,6 +6014,35 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             NS.ShowRuleSummary()
         else
             PrintNice("|cffff4444Rule summary is unavailable.|r")
+        end
+        return
+    end
+
+    if cmd == "minimap" then
+        -- v2.44.7: show / hide / reset the EC minimap button.
+        -- Workaround for clashes with minimap-replacement / magnifier
+        -- addons (Magnify-WotLK clash reported by Safra).
+        local sub = string.lower(rest or "")
+        if sub == "on" or sub == "show" then
+            if NS.SetMinimapButtonVisible then
+                NS.SetMinimapButtonVisible(true)
+            end
+            PrintNice(L["|cffb6ffb6Minimap button shown.|r"])
+        elseif sub == "off" or sub == "hide" then
+            if NS.SetMinimapButtonVisible then
+                NS.SetMinimapButtonVisible(false)
+            end
+            PrintNice(L["|cffffb84dMinimap button hidden. Use /ec, the LDB launcher, or your keybinding.|r"])
+        elseif sub == "reset" then
+            DB.minimapButtonAngle = 220
+            if NS.UpdateMinimapPos then
+                NS.UpdateMinimapPos()
+            end
+            PrintNice(L["|cffb6ffb6Minimap button position reset.|r"])
+        else
+            local state = (DB.minimapButton ~= false) and L["shown"] or L["hidden"]
+            PrintNicef(L["Minimap button is currently |cffffff00%s|r."], state)
+            PrintNice(L["Usage: /ec minimap on||off||reset"])
         end
         return
     end

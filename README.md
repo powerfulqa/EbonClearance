@@ -74,6 +74,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report (includes a list of your loaded addons for conflict diagnosis) |
 | `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell - per-predicate chain trace (also available via Alt+Shift+Right-Click on the item) |
 | `/ec rules` | Open a plain-English summary of every active rule + the order EC applies them (also the "Current Rules" button on the Main panel) |
+| `/ec minimap on\|off\|reset` | Show, hide, or re-centre the EC minimap button (use `off` if it clashes with a minimap-replacement / magnifier addon) |
 | `/ec affixdebug on\|off\|status\|dump\|clear` | Record affix-detection events for bug reports; `dump` opens a copyable window with the event log |
 | `/ec processdebug` | Diagnostic: open a copyable window listing every Process Bags gate (recognised profession spells, per-slot scan results) for bug reports |
 | `/ec perf` | Show EbonClearance's memory, CPU, cache and list sizes |

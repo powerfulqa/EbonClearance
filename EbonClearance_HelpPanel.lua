@@ -572,6 +572,12 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsMain",
     },
     {
+        id = "gate-minimap-button",
+        q = L["Hide the EbonClearance minimap button"],
+        a = L["The Main panel has a 'Show the EbonClearance minimap button' checkbox. Turn it off if the button clashes with another minimap addon (some magnifier and minimap-replacement addons hook the Minimap frame in ways that conflict). EbonClearance still works the same way with the button hidden - open the settings via /ec, the LDB launcher (Bazooka, Titan Panel, ChocolateBar), or your key binding. /ec minimap on / off / reset is the slash-command equivalent (reset re-centres the button to its default angle)."],
+        panel = "EbonClearanceOptionsMain",
+    },
+    {
         id = "bug-report-flow",
         q = L["Found a bug? Here's how to report it"],
         a = L["1) Type /ec bugreport. EbonClearance opens a window with a diagnostic snapshot.\n2) Click in the window, press Ctrl+A to select all, then Ctrl+C to copy.\n3) Click the button below to copy the EbonClearance Discord thread link.\n4) Open the link in your browser, paste the report, and tag @serv so I see it."],

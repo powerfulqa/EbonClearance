@@ -4256,10 +4256,10 @@ do
     check("Test 97a: DB.minimapButton seeded in EnsureDB with default true",
         ev:find("DB%.minimapButton%s*=%s*true") ~= nil,
         "must default ON - existing players see no change. The off switch is the workaround for the Magnify-WotLK clash + any future minimap-hook conflict.")
-    check("Test 97b: EC_CreateMinimapButton respects DB.minimapButton on creation",
-        mm:find("DB%.minimapButton == false") ~= nil
-            and mm:find("btn:Hide%(%)") ~= nil,
-        "the button must be created in a hidden state when DB.minimapButton is false, not just :Hide()'d after a brief flash. Without this the button briefly paints on screen at login before the visibility helper catches up.")
+    check("Test 97b: EC_CreateMinimapButton skips creation entirely when DB.minimapButton is false",
+        mm:find('if DB%.minimapButton == false then\n%s*return\n%s*end') ~= nil
+            and mm:find("EC_CreateMinimapButton%(%)") ~= nil,
+        "v2.44.8 (Safra): v2.44.7's 'create then Hide()' wasn't enough - the act of parenting a child frame to Minimap was itself the trigger (some host UI replacements hook Minimap-frame children aggressively). Must early-return BEFORE any CreateFrame call when DB.minimapButton is false. NS.SetMinimapButtonVisible(true) lazy-creates when the player flips the toggle back on. EC-TRAP: don't reinstate the 'create then Hide()' pattern - it leaves a Minimap-parented child frame that a host UI hook reacts to.")
     check("Test 97c: NS.SetMinimapButtonVisible exposes the runtime toggle",
         mm:find("function EC_SetMinimapButtonVisible%(visible%)") ~= nil
             and mm:find("NS%.SetMinimapButtonVisible") ~= nil,

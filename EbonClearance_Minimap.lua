@@ -63,6 +63,17 @@ local function EC_CreateMinimapButton()
     if _G["EbonClearanceMinimapButton"] then
         return
     end -- only create once
+    -- v2.44.8: skip creation entirely when the player has the toggle off.
+    -- v2.44.7's "create then Hide()" wasn't enough for Safra's report -
+    -- even with the button hidden, the act of parenting a child frame to
+    -- Minimap (which some host UI replacements hook aggressively) turned
+    -- her minimap canvas black. Skipping creation removes the Minimap-
+    -- parented child entirely; no parent-child link exists for a host
+    -- UI hook to react to. NS.SetMinimapButtonVisible(true) lazy-creates
+    -- if the player flips the toggle back on without a /reload.
+    if DB.minimapButton == false then
+        return
+    end
 
     local btn = CreateFrame("Button", "EbonClearanceMinimapButton", Minimap)
     btn:SetSize(31, 31)
@@ -161,16 +172,6 @@ local function EC_CreateMinimapButton()
         icon:SetDesaturated(true)
     end
 
-    -- v2.44.7: respect DB.minimapButton on creation. If the player has
-    -- previously turned the button off (e.g. to work around a Minimap-
-    -- frame clash with a magnifier addon), the button is created in a
-    -- hidden state so we don't briefly flash on screen at login. The
-    -- panel checkbox + /ec minimap slash command flip visibility at
-    -- runtime via NS.SetMinimapButtonVisible.
-    if DB and DB.minimapButton == false then
-        btn:Hide()
-    end
-
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("EbonClearance")
@@ -264,23 +265,35 @@ local function EC_CreateLDBLauncher()
 end
 
 -- v2.44.7: runtime visibility toggle for the EC minimap button. Called by
--- the Main panel checkbox + the /ec minimap slash command. Idempotent;
--- a missing button (creation skipped on a fresh fault) is silently
--- tolerated.
+-- the Main panel checkbox + the /ec minimap slash command.
+-- v2.44.8: lazy-creates the button when flipping ON if creation was
+-- skipped at ADDON_LOADED (DB.minimapButton was false). Required because
+-- EC_CreateMinimapButton now early-returns instead of "create then Hide".
 local function EC_SetMinimapButtonVisible(visible)
     local DB = NS.DB
     if DB then
         DB.minimapButton = visible and true or false
     end
     local btn = _G["EbonClearanceMinimapButton"]
-    if not btn then
-        return
-    end
     if visible then
-        btn:Show()
-        EC_UpdateMinimapPos()
+        if not btn then
+            -- Creation was skipped at ADDON_LOADED. Create now that the
+            -- player has flipped the toggle on. DB.minimapButton is true
+            -- (we just set it), so the early-return inside the function
+            -- doesn't trip.
+            if NS.CreateMinimapButton then
+                NS.CreateMinimapButton()
+            end
+            btn = _G["EbonClearanceMinimapButton"]
+        end
+        if btn then
+            btn:Show()
+            EC_UpdateMinimapPos()
+        end
     else
-        btn:Hide()
+        if btn then
+            btn:Hide()
+        end
     end
 end
 

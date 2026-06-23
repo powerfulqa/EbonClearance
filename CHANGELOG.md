@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.8
+
+Sharper workaround for the minimap-clash symptom.
+
+**Bug fix follow-up: hide toggle now skips button creation entirely.**
+
+Reported by Safra. v2.44.7's "create then `Hide()`" hide-button toggle didn't fix her black-minimap symptom - even with the button hidden, the minimap canvas still went black as long as EC was loaded. Testing also ruled out fresh-SavedVariables and a third-party-fork mismatch as the cause. The remaining hypothesis: **the act of parenting a child frame to Minimap is itself the trigger**, regardless of whether the child is visible. Some host UI replacements hook Minimap-frame children aggressively, and the visibility state of EC's button is irrelevant once the parent-child link exists.
+
+- `EC_CreateMinimapButton` now early-returns BEFORE any `CreateFrame` call when `DB.minimapButton == false`. No Minimap-parented child frame is ever created. The parent-child link doesn't exist; a host UI hook has nothing to react to.
+- `NS.SetMinimapButtonVisible(true)` lazy-creates the button via `NS.CreateMinimapButton` when the player flips the toggle back on without a /reload.
+- Test 97b updated to lock the skip-creation behaviour. EC-TRAP comment placed so a future "always create, just hide" cleanup attempt fails CI rather than recreating the bug.
+
+If the v2.44.7 hide toggle fixed your symptom, v2.44.8 changes nothing visible. If you previously hit a minimap clash and the v2.44.7 toggle didn't help, this version's stronger workaround should.
+
+---
+
+
 ### v2.44.7
 
 Workaround for the minimap-frame clash with magnifier / replacement addons.

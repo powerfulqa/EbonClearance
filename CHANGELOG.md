@@ -5,6 +5,26 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.45.0
+
+**Unranked PE affix detection.** Skoll's Fang of Vampirism / Thunderfury / Viscous Hammer of Resurgence and other PE transferred-proc weapons are now recognised as PE affixes (which is what they ARE in PE's data model), not just defended through the v2.44.11 chance-on-hit safety net. Reported by Zukii; diagnosed against test weapons by Serv.
+
+PE's transferred-proc system applies a chance-on-hit proc to a target item as an `@affix@`-wrapped description line, but it does NOT add a rank suffix to the title (the source proc doesn't have ranks). v2.20.0's `parseAffixFromTitle` required a Roman-numeral suffix as the discriminator vs vanilla `ItemRandomSuffix.dbc` entries (`of the Bear`, `of the Owl`, etc.) - which rejected the legitimate unranked PE affixes too.
+
+- **`bagSlotAffixData` + `liveTooltipAffixData` fall back to the `@affix@` marker** when `parseAffixFromTitle` returns nil. The marker IS PE's authentic discriminator - it wraps PE-managed effect text on the raw scan tooltip and is absent from vanilla suffix items. Returns `{ name, rank = nil, description }` for unranked affixes.
+- **Family-name fallback for unranked affixes.** PE injects different wording on item-side ("your Strength is increased by 10 for 15 seconds") vs spell-side ("your Strength is increased for 15 seconds") - so the description-text match misses even when the player has the affix learned. The fix matches by affix family name instead: `playerHasAffixFamily("Resurgence")` returns true if the spellbook has any spell that parses to that family. Mirrors the v2.35.1 family+rank fallback for ranked affixes.
+- **`playerHasAffixFamily` widened:** pre-v2.45.0 it required `next(ranks) ~= nil` in the family's ranks table; the spellbook walk only inserts rank entries when the spell title carries a Roman numeral, so unranked spells like "Resurgence" left the ranks table empty and the check rejected them. v2.45.0 returns true on family-key presence alone. Ranked affixes still go through the strict (family, rank) check via `playerHasAffixRank` - unchanged.
+- **Tooltip labels for rank=nil:** `Keep (affix known)` / `Keep (affix needed)` instead of `Keep (affix rank known)` / `Keep (affix rank needed)`. Same `statusTag` so bag-border tints and other downstream surfaces stay identical.
+- **Cache-poison guard widened:** `stableNoAffix` now requires both "no Roman suffix" AND "no @affix@ marker" before caching false. Prevents a cold-tooltip scan from masking an unranked PE affix for the rest of the session.
+- **`/ec scandebug` enhanced** with catalog-lookup diagnostics: `playerHasAffixDescription`, `playerHasAffixFamily`, normalised description / family name, catalog entry counts. Future "affix detection misses" reports come with the right data first try.
+
+The v2.44.11 chance-on-hit defensive catch stays in place as a belt-and-braces fallback. When both fire, the affix gate runs first in `EC_IsSellable` so the more-specific protection wins.
+
+End-state behaviour matches Zukii's ask: "the addon thinks about the thing as a proc on hit and not an affix to be learnt" - now it thinks of it as an affix, and once the affix is extracted (spellbook has the engraving), every item with that affix releases automatically when "Allow selling affixes you already have" is on.
+
+---
+
+
 ### v2.44.12
 
 Diagnostic command added. The v2.44.10 / v2.44.11 chance-on-hit pattern fixes haven't landed on Zukii's transferred-proc weapons; before guessing a third pattern, capturing what EC's hidden scan tooltip actually sees.

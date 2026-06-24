@@ -362,8 +362,19 @@ function EC_compCache.buildProcessSummary()
                                 local affixKey = affix.description
                                     and EC_compCache.normaliseAffixDesc(affix.description)
                                 local manualAllow = affixKey and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
-                                local autoDupe = DB.affixAllowExactDupes
-                                    and EC_compCache.playerHasAffixDescription(affix.description)
+                                local descKnown = EC_compCache.playerHasAffixDescription(affix.description)
+                                -- v2.45.0: family-name fallback for
+                                -- unranked PE affixes (transferred
+                                -- procs). Item-side and spell-side
+                                -- description text disagree on these,
+                                -- so descKnown often misses. Family
+                                -- name match catches it.
+                                local familyKnown = (not descKnown)
+                                    and (not affix.rank)
+                                    and affix.name
+                                    and EC_compCache.playerHasAffixFamily
+                                    and EC_compCache.playerHasAffixFamily(affix.name)
+                                local autoDupe = DB.affixAllowExactDupes and (descKnown or familyKnown)
                                 -- v2.44.0: rank-floor opt-out. Mirrors
                                 -- the sell-path + delete-path so an
                                 -- affixed item below the user's

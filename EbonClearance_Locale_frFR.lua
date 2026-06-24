@@ -681,6 +681,8 @@ NS.RegisterLocale("frFR", {
     ["Will Sell (you have this affix)"] = "",
     ["Keep (affix rank known)"] = "",
     ["Keep (affix rank needed)"] = "",
+    ["Keep (affix known)"] = "",
+    ["Keep (affix needed)"] = "",
     ["Keep (chance-on-hit proc)"] = "",
     ["Tome"] = "",
     ["Keep (%s you have)"] = "",

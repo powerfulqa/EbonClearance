@@ -4355,6 +4355,83 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- v2.45.0 Test 99: unranked PE affix detection via @affix@ marker.
+-- ---------------------------------------------------------------------------
+-- PE's transferred-proc system applies chance-on-hit procs to target items
+-- as @affix@-marked tooltip lines WITHOUT a rank suffix in the title (the
+-- source proc doesn't have ranks). v2.20.0 narrowed parseAffixFromTitle to
+-- require a Roman-numeral rank suffix as a discriminator vs vanilla
+-- ItemRandomSuffix.dbc entries (of the Bear etc.). That rejected the
+-- legitimate unranked PE affixes too, so silent-sell.
+--
+-- v2.45.0 fix: bagSlotAffixData + liveTooltipAffixData fall back to the
+-- @affix@ marker when parseAffixFromTitle returns nil. The marker IS
+-- PE's authentic discriminator - it wraps PE-managed effect text on the
+-- raw scan tooltip and is absent from vanilla suffix items. rank=nil
+-- flows through all downstream consumers (gates already had affix.rank
+-- guards from v2.44.0 / v2.35.1 - we lean on those).
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local prot = fileSrc("EbonClearance_Protection.lua")
+    local tt = fileSrc("EbonClearance_Tooltip.lua")
+    local de = fileSrc("EbonClearance_Locale_deDE.lua")
+    local fr = fileSrc("EbonClearance_Locale_frFR.lua")
+    check("Test 99a: bagSlotAffixData has unranked-affix fallback via @affix@ marker",
+        prot:find("v2%.45%.0: unranked PE affix fallback") ~= nil
+            and prot:find("EC_compCache%.scanTooltipForAffixDesc%(\"EbonClearanceScanTooltip\"%)") ~= nil
+            and prot:find('name = affixName, rank = nil, description = unrankedDesc') ~= nil,
+        "when parseAffixFromTitle returns nil (no Roman-numeral suffix), the function MUST consult scanTooltipForAffixDesc to detect @affix@-wrapped PE descriptions. Without this fallback, every PE transferred-proc weapon (Zukii's Skoll's Fang of Thunderfury, etc.) silently bypasses affix protection. The data object's rank field must be nil for unranked affixes so downstream rank-gated logic (affixRankPass, rankBelow) short-circuits cleanly.")
+    check("Test 99b: liveTooltipAffixData mirrors the unranked fallback",
+        tt and prot:find("function EC_compCache%.liveTooltipAffixData") ~= nil
+            and prot:find("rank = nil, description = unrankedDesc") ~= nil,
+        "the live-tooltip path needs the same fallback so the tooltip annotation correctly labels unranked affixes. Without parity, the tooltip and EC_IsSellable disagree on these items (tooltip says 'Will Sell' while the gate protects them).")
+    check("Test 99c: stableNoAffix gate respects @affix@ marker absence",
+        prot:find("stableNoAffix = .- and not unrankedDesc") ~= nil,
+        "the cache-poison guard's stableNoAffix decision must also check for the @affix@ marker; otherwise a transferred-proc item that's parsed before its scan-tooltip resolves caches as false and is never re-evaluated. Existing rule: only cache false when both 'no Roman suffix' AND 'no @affix@ marker' hold.")
+    check("Test 99d: tooltip emits 'Keep (affix known)' / 'Keep (affix needed)' for rank=nil",
+        tt:find('L%["Keep %(affix known%)"%]') ~= nil
+            and tt:find('L%["Keep %(affix needed%)"%]') ~= nil
+            and tt:find("if affix%.rank then") ~= nil,
+        "rank=nil PE affixes (transferred procs) shouldn't claim 'rank known' / 'rank needed' - there's no rank to call out. Branch on affix.rank: emit the existing labels for ranked, the new 'affix known' / 'affix needed' for unranked. Same statusTag (affixknown / affixneeded) so the bag-border tint and downstream code stays the same.")
+    check("Test 99e: new locale keys present in fr/de templates",
+        de:find('%["Keep %(affix known%)"%] = ""') ~= nil
+            and de:find('%["Keep %(affix needed%)"%] = ""') ~= nil
+            and fr:find('%["Keep %(affix known%)"%] = ""') ~= nil
+            and fr:find('%["Keep %(affix needed%)"%] = ""') ~= nil,
+        "new English keys 'Keep (affix known)' and 'Keep (affix needed)' must have matching empty-template entries in fr/de so the locale-integrity test sees them on its next pass.")
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local proc = fileSrc("EbonClearance_Process.lua")
+    check("Test 99f: playerHasAffixFamily returns true on family-key presence",
+        prot:find("return ranks ~= nil") ~= nil
+            and prot:find("families%[fc%.family%]%[fc%.rank%] = true") ~= nil,
+        "v2.45.0 widened the family-only lookup. Pre-v2.45.0 the check required next(ranks) ~= nil which rejected unranked affixes (their ranks table stays empty because parseAffixNameRank returns rank=nil and the scan only inserts rank entries when frank is a number). Without the widening, an extracted Resurgence (family in spellbook, ranks table empty) reports playerHasAffixFamily false and items with that affix never release via autoDupe. The per-rank insert (families[fc.family][fc.rank] = true) stays in place for ranked affixes - playerHasAffixRank still works.")
+    check("Test 99g: EC_IsSellable autoDupe release uses family-name fallback for unranked",
+        ev:find("local familyKnown = %(not descKnown%)") ~= nil
+            and ev:find("and %(not affix%.rank%)") ~= nil
+            and ev:find("playerHasAffixFamily%(affix%.name%)") ~= nil
+            and ev:find("descKnown or rankKnown or familyKnown") ~= nil,
+        "the affix-protection autoDupe release must use playerHasAffixFamily(affix.name) as the third fallback for unranked items. PE injects different wording on item-side and spell-side for transferred procs, so description-text match misses even when the player has the affix extracted; family-name match catches it. Gated on (not affix.rank) so ranked affixes still use the strict (family, rank) check.")
+    check("Test 99h: autoDupePass positive signal also uses family-name fallback",
+        ev:find("playerHasAffixFamily%(affixForRank%.name%)") ~= nil
+            and ev:find("autoDupePass = %(descKnown or rankKnown or familyKnown%)") ~= nil,
+        "the autoDupePass positive sell signal (separate from the affix-protection release) must also honour familyKnown so the v2.44.0 'Allow selling affixes you already have' toggle treats unranked extracted affixes as sellable. Without this, the toggle effectively does nothing for transferred-proc weapons.")
+    check("Test 99i: Process Bags affix-guard uses family-name fallback",
+        proc:find("local familyKnown") ~= nil
+            and proc:find("playerHasAffixFamily%(affix%.name%)") ~= nil,
+        "Process Bags' affix-guard runs the same affix logic on items the player might Disenchant. Without the family-name fallback, unranked extracted affixes block disenchant even when the player has them learned - inconsistent with the sell-path behaviour.")
+    check("Test 99j: tooltip playerKnowsFamily branch + autoDupe release + Keep (affix known) label",
+        tt:find("local playerKnowsFamily") ~= nil
+            and tt:find("playerKnows or playerKnowsRank or playerKnowsFamily") ~= nil,
+        "the tooltip must mirror EC_IsSellable's family-name fallback so the displayed verdict matches the actual sell outcome. autoDupe gets the third disjunct; the 'Keep (affix known)' label also routes through playerKnowsFamily so the player sees 'I have this' instead of 'I don't have this' for unranked extracted affixes.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
 -- ---------------------------------------------------------------------------
 -- Bug reported by SLG: "constantly summoning Greedy Scavenger after

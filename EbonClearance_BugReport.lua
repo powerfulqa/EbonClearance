@@ -1079,9 +1079,46 @@ local function EC_BuildScanDebugDump(bag, slot)
                     tostring(affix.description and affix.description:sub(1, 80) or "nil")
                 )
             )
+            -- v2.45.0: catalog-lookup diagnostics. When the tooltip
+            -- says "affix needed" but the player believes they own
+            -- the affix, these lines reveal whether the catalog
+            -- contains a description-text match, a family-name match,
+            -- or nothing at all. Critical for diagnosing PE's
+            -- item-side vs spell-side text disagreements on unranked
+            -- transferred-proc affixes.
+            if affix.description and EC_compCache.playerHasAffixDescription then
+                add("playerHasAffixDescription: " .. tostring(EC_compCache.playerHasAffixDescription(affix.description)))
+            end
+            if affix.name and EC_compCache.playerHasAffixFamily then
+                add("playerHasAffixFamily:      " .. tostring(EC_compCache.playerHasAffixFamily(affix.name)))
+            end
+            if affix.description and EC_compCache.normaliseAffixDesc then
+                local norm = EC_compCache.normaliseAffixDesc(affix.description)
+                add("normalised description:    '" .. tostring(norm and norm:sub(1, 80) or "nil") .. "'")
+            end
+            if affix.name and EC_compCache.normaliseAffixFamily then
+                local norm = EC_compCache.normaliseAffixFamily(affix.name)
+                add("normalised family name:    '" .. tostring(norm) .. "'")
+            end
         else
             add("bagSlotAffixData:    nil")
         end
+    end
+    -- Catalog size + any sample entries that look related (first ~30
+    -- chars of the item's description appearing in any catalog entry).
+    if EC_compCache.knownAffixDescriptions then
+        local descCount = 0
+        for _ in pairs(EC_compCache.knownAffixDescriptions) do
+            descCount = descCount + 1
+        end
+        add(string.format("knownAffixDescriptions: %d entries", descCount))
+    end
+    if EC_compCache.knownAffixFamilyRanks then
+        local famCount = 0
+        for _ in pairs(EC_compCache.knownAffixFamilyRanks) do
+            famCount = famCount + 1
+        end
+        add(string.format("knownAffixFamilyRanks:  %d entries", famCount))
     end
     return table.concat(lines, "\n")
 end

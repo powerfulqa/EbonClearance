@@ -473,6 +473,21 @@ local function EC_AnnotateTooltip(tooltip)
                     and EC_compCache.playerHasAffixRank
                     and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
                     or false
+                -- v2.45.0: family-name fallback for unranked PE affixes.
+                -- Same shape as the EC_IsSellable affix-protection gate
+                -- + Process Bags affix-guard. When the player has the
+                -- spell in their spellbook (so the family is known)
+                -- but the item-side description has resolved values
+                -- ("by 10 Strength") that don't match the spell-side
+                -- templated text ("Strength is increased"), this is
+                -- the only signal that catches the "yes I have it".
+                local playerKnowsFamily = (not playerKnows)
+                    and (not playerKnowsRank)
+                    and (not affix.rank)
+                    and affix.name
+                    and EC_compCache.playerHasAffixFamily
+                    and EC_compCache.playerHasAffixFamily(affix.name)
+                    or false
                 -- v2.37.x diagnostic: log the lookup result so a future
                 -- "rank needed" misfire report can be debugged from the
                 -- affix-debug dump rather than by guessing. Includes
@@ -501,7 +516,7 @@ local function EC_AnnotateTooltip(tooltip)
                 -- AND dupe-allow is on, the affix protection releases too
                 -- (matches what the user requested when shipping the
                 -- family + rank fallback).
-                local autoDupe = DB.affixAllowExactDupes and (playerKnows or playerKnowsRank)
+                local autoDupe = DB.affixAllowExactDupes and (playerKnows or playerKnowsRank or playerKnowsFamily)
                 -- v2.44.0: rank-floor opt-out. Mirrors the sell-path
                 -- so the tooltip reflects the true outcome when an
                 -- affixed item is below the player's chosen rank
@@ -600,13 +615,19 @@ local function EC_AnnotateTooltip(tooltip)
                             .. "|r"
                         statusTag = "willsell"
                     end
-                elseif playerKnows or playerKnowsRank then
+                elseif playerKnows or playerKnowsRank or playerKnowsFamily then
                     -- The player has this exact (family, rank) - either
                     -- via description-text match (the v2.23.0 path) or
                     -- via the v2.35.1 family+rank fallback when PE's
-                    -- text disagrees at the same rank. Dupe-allow off
-                    -- so protection still holds.
-                    statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix rank known)"] .. "|r"
+                    -- text disagrees at the same rank, or via the
+                    -- v2.45.0 family-name-only fallback for unranked
+                    -- PE transferred procs. Dupe-allow off so
+                    -- protection still holds.
+                    if affix.rank then
+                        statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix rank known)"] .. "|r"
+                    else
+                        statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix known)"] .. "|r"
+                    end
                     statusTag = "affixknown"
                 else
                     -- Player doesn't have this specific (family, rank)
@@ -615,7 +636,12 @@ local function EC_AnnotateTooltip(tooltip)
                     -- already own - the user's collection-side question
                     -- is "do I need this exact rank?" and the answer
                     -- is the same either way: yes.
-                    statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix rank needed)"] .. "|r"
+                    -- v2.45.0: rank=nil case uses the affix-only label.
+                    if affix.rank then
+                        statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix rank needed)"] .. "|r"
+                    else
+                        statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (affix needed)"] .. "|r"
+                    end
                     statusTag = "affixneeded"
                 end
             end

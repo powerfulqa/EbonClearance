@@ -4430,7 +4430,15 @@ local function EC_IsSellable(bag, slot, junkOnly)
             and affixForRank.rank
             and EC_compCache.playerHasAffixRank
             and EC_compCache.playerHasAffixRank(affixForRank.name, affixForRank.rank)
-        autoDupePass = (descKnown or rankKnown) and true or false
+        -- v2.45.0: family-name fallback for unranked PE affixes.
+        -- See the matching note in the affix-protection gate below.
+        local familyKnown = (not descKnown)
+            and (not rankKnown)
+            and (not affixForRank.rank)
+            and affixForRank.name
+            and EC_compCache.playerHasAffixFamily
+            and EC_compCache.playerHasAffixFamily(affixForRank.name)
+        autoDupePass = (descKnown or rankKnown or familyKnown) and true or false
     end
     if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass) then
         return false
@@ -4487,7 +4495,22 @@ local function EC_IsSellable(bag, slot, junkOnly)
                 and EC_compCache.playerHasAffixRank
                 and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
                 or false
-            local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown)
+            -- v2.45.0: unranked PE affix family fallback. PE injects
+            -- different wording on item-side (resolved values like
+            -- "by 10") vs spell-side (templated, value omitted), so
+            -- description-text match misses. Family-name match
+            -- catches this when the player has the affix in their
+            -- spellbook. ONLY fires for unranked affixes (rank=nil)
+            -- so ranked affixes still go through the strict (family,
+            -- rank) check.
+            local familyKnown = (not descKnown)
+                and (not rankKnown)
+                and (not affix.rank)
+                and affix.name
+                and EC_compCache.playerHasAffixFamily
+                and EC_compCache.playerHasAffixFamily(affix.name)
+                or false
+            local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown or familyKnown)
             -- v2.44.0: rank-floor opt-out. When the player sets a
             -- minimum sell rank, affixes BELOW that rank fall through
             -- to normal sell rules - the protection only holds for

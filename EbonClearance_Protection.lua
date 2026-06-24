@@ -389,6 +389,43 @@ function EC_compCache.bagSlotAffixData(bag, slot)
     local titleText = titleFS:GetText() or ""
     local data = EC_compCache.parseAffixFromTitle(titleText, baseName)
     if not data then
+        -- v2.45.0: unranked PE affix fallback. parseAffixFromTitle
+        -- requires a trailing Roman-numeral rank suffix (v2.20.0
+        -- narrowing to avoid misfiring on vanilla ItemRandomSuffix.dbc
+        -- entries like "of the Bear"). But PE's transferred-proc
+        -- system applies chance-on-hit procs to a target item as a
+        -- PE @affix@ line WITHOUT adding a rank suffix to the title
+        -- (the source proc doesn't have ranks). For these, the right
+        -- discriminator is the @affix@ marker itself (PE wraps the
+        -- effect description in @affix@...@affix@ on the raw scan
+        -- tooltip; standard vanilla suffixes don't have markers).
+        -- Reported by Zukii / confirmed by scandebug dump on Skoll's
+        -- Fang of Thunderfury (itemID 49227).
+        local unrankedDesc = EC_compCache.scanTooltipForAffixDesc("EbonClearanceScanTooltip")
+        if unrankedDesc and titleText ~= "" then
+            local affixName
+            if titleText:sub(1, #baseName + 1) == (baseName .. " ") then
+                affixName = titleText:sub(#baseName + 2)
+            elseif titleText ~= baseName then
+                affixName = titleText
+            end
+            if affixName and affixName ~= "" then
+                data = { name = affixName, rank = nil, description = unrankedDesc }
+                if itemString then
+                    EC_compCache.affixDataCache[itemString] = data
+                end
+                AffixDebugDump("bag.affix.unranked", {
+                    bag = bag,
+                    slot = slot,
+                    itemID = itemID,
+                    itemString = itemString,
+                    title = titleText,
+                    name = data.name,
+                    description = data.description,
+                })
+                return data
+            end
+        end
         -- Cache-poison guard. A fresh affixed drop sometimes hits this
         -- function before its tooltip's TextLeft1 has fully resolved
         -- (the link's suffix-DBC field needs a client-side load pass).
@@ -401,18 +438,17 @@ function EC_compCache.bagSlotAffixData(bag, slot)
         --
         -- Fix: only cache `false` when we can positively identify the
         -- item as not a PE roguelite affix. The stable discriminator is
-        -- the trailing roman-numeral rank suffix; its absence in a
-        -- non-empty title is conclusive (standard ItemRandomSuffix.dbc
-        -- entries like "of the Bear" also fall into this bucket and
-        -- get cached cheaply). Empty / unparseable titles, AND titles
-        -- that DO have a roman suffix but failed parseAffixFromTitle
-        -- for some other reason, are NOT cached so the next call
+        -- the trailing roman-numeral rank suffix OR the @affix@ marker
+        -- (v2.45.0); the absence of BOTH in a non-empty title is
+        -- conclusive (standard ItemRandomSuffix.dbc entries like "of
+        -- the Bear" fall into this bucket and get cached cheaply).
+        -- Empty / unparseable titles are NOT cached so the next call
         -- retries cleanly after the client finishes loading the link.
         -- EC-TRAP: do NOT cache `false` unconditionally on a nil parse. A
         -- cold-tooltip scan would then mask the affix for the whole session
         -- and the item gets vendored while the tooltip shows Keep. The
         -- bagSlotAffixData cache-poison test in tests/test_perf_guardrails.lua locks this.
-        local stableNoAffix = titleText ~= "" and titleText:match(" [IVXLCDM]+$") == nil
+        local stableNoAffix = titleText ~= "" and titleText:match(" [IVXLCDM]+$") == nil and not unrankedDesc
         if itemString and stableNoAffix then
             EC_compCache.affixDataCache[itemString] = false
         end
@@ -475,8 +511,56 @@ function EC_compCache.liveTooltipAffixData(tooltip, itemID)
     if not titleFS or not titleFS.GetText then
         return nil
     end
-    local data = EC_compCache.parseAffixFromTitle(titleFS:GetText(), baseName)
+    local titleText = titleFS:GetText() or ""
+    local data = EC_compCache.parseAffixFromTitle(titleText, baseName)
     if not data then
+        -- v2.45.0: unranked PE affix fallback (mirror of bagSlotAffixData).
+        -- PE transferred-proc items have an @affix@-marked description
+        -- but no rank suffix in the title. Fall back to the marker as
+        -- the discriminator. Vanilla "of the Bear"-style suffixes won't
+        -- have markers, so this stays narrow to real PE items.
+        local unrankedDesc = EC_compCache.scanTooltipForAffixDesc(tname)
+        -- PE strips @affix@ markers from the LIVE tooltip before display;
+        -- if scanTooltipForAffixDesc returned nil from the live tip, try
+        -- the bag-slot cache backfill (which uses the offscreen tip
+        -- with markers intact).
+        if not unrankedDesc and tooltip.GetItem then
+            local _, link = tooltip:GetItem()
+            local itemString = link and link:match("item[%-?%d:]+")
+            if itemString then
+                local cached = EC_compCache.affixDataCache[itemString]
+                if type(cached) == "table" and cached.description then
+                    unrankedDesc = cached.description
+                elseif link and GetContainerNumSlots and GetContainerItemLink then
+                    for bag = 0, 4 do
+                        local n = GetContainerNumSlots(bag) or 0
+                        for slot = 1, n do
+                            if GetContainerItemLink(bag, slot) == link then
+                                local bagData = EC_compCache.bagSlotAffixData(bag, slot)
+                                if bagData and bagData.description then
+                                    unrankedDesc = bagData.description
+                                end
+                                break
+                            end
+                        end
+                        if unrankedDesc then
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        if unrankedDesc and titleText ~= "" then
+            local affixName
+            if titleText:sub(1, #baseName + 1) == (baseName .. " ") then
+                affixName = titleText:sub(#baseName + 2)
+            elseif titleText ~= baseName then
+                affixName = titleText
+            end
+            if affixName and affixName ~= "" then
+                return { name = affixName, rank = nil, description = unrankedDesc }
+            end
+        end
         return nil
     end
     data.description = EC_compCache.scanTooltipForAffixDesc(tname)
@@ -646,9 +730,19 @@ function EC_compCache.playerHasAffixFamily(name)
     if key == "" then
         return false
     end
+    -- v2.45.0: family-key presence IS the truth. Pre-v2.45.0 the
+    -- check required next(ranks) ~= nil, which rejected unranked
+    -- PE transferred-proc affixes - their spells parse out a family
+    -- name but no rank suffix, so the ranks table stays empty (the
+    -- scan only inserts rank entries when frank is a number).
+    -- For unranked affixes, "family key exists" = "we encountered
+    -- this affix family in the spellbook" = "player has learned it".
+    -- For ranked affixes, the rank-specific entries still drive
+    -- playerHasAffixRank; the family-key existence alone is enough
+    -- for playerHasAffixFamily.
     local ranks = EC_compCache.knownAffixFamilyRanks
         and EC_compCache.knownAffixFamilyRanks[key]
-    return ranks ~= nil and next(ranks) ~= nil
+    return ranks ~= nil
 end
 
 -- v2.35.1: exact (family, rank) lookup. Returns true iff the player

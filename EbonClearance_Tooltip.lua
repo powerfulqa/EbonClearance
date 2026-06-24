@@ -220,7 +220,7 @@ local function EC_AnnotateTooltip(tooltip)
                 -- can compare against" (ammo, bags, tabards, class-
                 -- restricted relics) from "real upgrade candidate". Both
                 -- previously fell into the "possible upgrade" branch,
-                -- mislabelling Doomshot etc. Reported by Serv.
+                -- mislabelling Doomshot etc.
                 local equipReason = nil
                 local cap = rule.maxILvl or 0
                 if rule.useEquippedILvl then
@@ -314,7 +314,7 @@ local function EC_AnnotateTooltip(tooltip)
                     --     from "keep" to "wontsell" to match the
                     --     framing of Won't Sell (equipped) and Won't
                     --     Sell (no value). EC-TRAP: don't reframe this
-                    --     as "Keep" - the user (Serv on Doomshot/AMMO)
+                    --     as "Keep" - a Doomshot/AMMO test case
                     --     reasonably read "Keep" as "the addon thinks
                     --     I should hold onto this", which is the
                     --     opposite of what's actually happening.

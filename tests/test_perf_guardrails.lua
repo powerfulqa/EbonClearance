@@ -4198,8 +4198,8 @@ end
 -- v2.44.6 Test 96: tooltip annotation routes "no slot mapping" items
 -- away from the misleading "possible upgrade" label.
 -- ---------------------------------------------------------------------------
--- Reported by Serv: a Rogue saw "Keep (Blue, possible upgrade)" on a
--- Doomshot (item 12654, INVTYPE_AMMO). INVTYPE_AMMO has no entry in
+-- Caught while testing on a Rogue: a Doomshot (item 12654, INVTYPE_AMMO)
+-- showed "Keep (Blue, possible upgrade)" in its tooltip. INVTYPE_AMMO has no entry in
 -- EC_compCache.INVTYPE_SLOTS, so isDowngradeVsEquipped returns false
 -- with reason "no_slot_mapping". The tooltip used to lump this into
 -- the same branch as legitimate upgrade candidates, falsely framing

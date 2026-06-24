@@ -438,10 +438,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 -- rank slider directly below. The two are an OR -
                 -- without this note, players hit the confusion that
                 -- "I set the slider to 3 but rank-IV items still
-                -- sell because I have this on too." Real player
-                -- feedback (Serv): toggles felt like they were
-                -- fighting until each one's scope was explained at
-                -- the toggle itself.
+                -- sell because I have this on too." Toggles felt
+                -- like they were fighting until each one's scope
+                -- was explained at the toggle itself.
                 if DB.affixAllowExactDupes then
                     dupeAffixNote:SetText(
                         L["|cff888888Sells affixes at ranks you already own. Independent of the rank slider below.|r"]

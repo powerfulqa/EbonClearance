@@ -804,7 +804,7 @@ local function BuildMainPanel(panel, content)
             -- v2.44.7: `||` renders as a literal pipe inside a WoW UI font
             -- string. A single `|r` would terminate the |cffffff00 colour
             -- block and the trailing "eset" would render in the default
-            -- colour ("on|offeset" - reported by Serv).
+            -- colour (rendered as "on|offeset" until this fix).
             label = "|cffffff00/ec minimap on||off||reset|r  "
                 .. L["Show, hide, or re-centre the EC minimap button"],
         },

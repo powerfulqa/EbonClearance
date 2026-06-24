@@ -607,7 +607,7 @@ local function EC_BuildRuleSummary()
     -- wonder why affixed items are still selling. The slider's positive-
     -- signal semantics correctly override the parent's keep intent, but
     -- it's easy to forget the slider value when "keep" is what's freshest
-    -- in mind. Real player report (Serv) drove this addition.
+    -- in mind. Caught while testing drove this addition.
     local rankFloor = DB.affixMinSellRank or 0
     local bothOn = (rankFloor > 0) and DB.affixAllowExactDupes
     if bothOn and DB.protectAffixedRareItems then

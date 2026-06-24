@@ -5656,6 +5656,15 @@ do
                         and hpS:find("bug%-process%-debug") ~= nil,
                     "The /ec processdebug command must have: a builder (EC_BuildProcessDebugDump), namespace exposure (NS.ShowProcessDebugDump), a slash handler in Events.lua, a row in Main panel's SLASH_ROWS, AND a Help FAQ entry. Players hitting Mill/Prospect detection bugs need a paste-and-share dump path - same shape /ec affixdebug took for the affix pipeline."
                 )
+                check(
+                    "Test 88ak2: /ec scandebug diagnostic wired end-to-end (v2.44.12)",
+                    brS:find("EC_BuildScanDebugDump") ~= nil
+                        and brS:find("NS%.ShowScanDebugDump%s*=") ~= nil
+                        and evSrc:find('cmd == "scandebug"') ~= nil
+                        and evSrc:find("NS%.ShowScanDebugDump%(bag, slot%)") ~= nil
+                        and mpS4:find("scandebug") ~= nil,
+                    "Zukii's report (v2.44.11 still didn't catch transferred-proc weapons) confirmed that string-pattern fixes on the chance-on-hit detector are guessing in the dark - we couldn't tell whether the proc text was in EC's hidden scan tooltip at all. /ec scandebug dumps every TextLeft line + parsed detection-helper results so future similar reports come with the real signal. Must have: builder (EC_BuildScanDebugDump), namespace exposure (NS.ShowScanDebugDump), slash handler in Events.lua, row in Main panel's SLASH_ROWS."
+                )
                 -- v2.38.3: the scan tooltip silently loses SetOwner
                 -- mid-session (another addon iterating UIParent children
                 -- triggers a Hide), after which raw SetBagItem populates

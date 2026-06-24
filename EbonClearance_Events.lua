@@ -6047,6 +6047,30 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         return
     end
 
+    if cmd == "scandebug" then
+        -- v2.44.12: scan-tooltip diagnostic. Dumps every TextLeft line
+        -- of the hidden EbonClearanceScanTooltip after SetBagItem on
+        -- the given bag slot, plus the parsed detection-helper outputs.
+        -- Use when an item silently sells despite seeming to have an
+        -- affix or proc - reveals whether the proc/affix text is in
+        -- the scan tooltip at all, or whether PE's enrichment skips
+        -- hidden tooltips (the leading hypothesis for Zukii's report).
+        -- Usage: /ec scandebug <bag> <slot>
+        local bagS, slotS = rest:match("^(%S+)%s+(%S+)")
+        local bag = tonumber(bagS)
+        local slot = tonumber(slotS)
+        if not bag or not slot then
+            PrintNice(L["Usage: /ec scandebug <bag> <slot>"])
+            return
+        end
+        if NS.ShowScanDebugDump then
+            NS.ShowScanDebugDump(bag, slot)
+        else
+            PrintNice("|cffff4444Scan debug helper unavailable.|r")
+        end
+        return
+    end
+
     if cmd == "processdebug" then
         -- v2.38.3: one-shot diagnostic for the Process Bags engine.
         -- Opens a copyable window with every gate that decides whether

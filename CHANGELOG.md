@@ -5,6 +5,24 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.12
+
+Diagnostic command added. The v2.44.10 / v2.44.11 chance-on-hit pattern fixes haven't landed on Zukii's transferred-proc weapons; before guessing a third pattern, capturing what EC's hidden scan tooltip actually sees.
+
+**New: `/ec scandebug <bag> <slot>` diagnostic command.**
+
+Opens a copyable window with every TextLeft line of the hidden `EbonClearanceScanTooltip` after `SetBagItem`, plus the parsed outputs of `parseAffixFromTitle`, `scanTooltipForAffixDesc`, `itemHasChanceOnHit`, and `bagSlotAffixData`. Reveals whether the proc / affix description is in the hidden tooltip at all, or whether PE's tooltip enrichment skips hidden tooltips (the leading hypothesis for why v2.44.10 / v2.44.11 didn't fix Zukii's silent-sell).
+
+- Slash command: `/ec scandebug <bag> <slot>`. Bag and slot are required; the bag-slot location of the affected item can be found by hovering it and reading the tooltip header in some bag addons, or just experimenting (bag 0 is the backpack, slots count from 1).
+- Output sections: Item Context, Scan Tooltip Lines (1-30, the same lines EC's predicates read), and Detection Results.
+- Same copy-frame chrome as `/ec bugreport` / `/ec processdebug` / `/ec affixdebug dump` so the output can be pasted into a Discord report.
+- Listed in the README slash-commands table and the Main panel's slash-row reference.
+
+No behaviour change for the auto-sell / Keep / Delete pipelines. The proper fix for transferred-proc detection lands in a later release once we know what's actually in the scan tooltip.
+
+---
+
+
 ### v2.44.11
 
 Follow-up to v2.44.10: the pattern was anchored to line start; PE wraps proc text in `@affix@` markers so the anchor failed.

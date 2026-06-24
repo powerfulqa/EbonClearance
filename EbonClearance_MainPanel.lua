@@ -813,6 +813,10 @@ local function BuildMainPanel(panel, content)
             label = "|cffffff00/ec bugreport|r  " .. L["Generate a report to share when something's wrong"],
         },
         {
+            label = "|cffffff00/ec scandebug <bag> <slot>|r  "
+                .. L["Diagnostic: dump the scan tooltip lines for a bag slot"],
+        },
+        {
             run = "affixdebug status",
             label = "|cffffff00/ec affixdebug status|r  " .. L["Show recording state + row count"],
         },

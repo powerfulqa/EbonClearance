@@ -77,6 +77,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec minimap on\|off\|reset` | Show, hide, or re-centre the EC minimap button (use `off` if it clashes with a minimap-replacement / magnifier addon) |
 | `/ec affixdebug on\|off\|status\|dump\|clear` | Record affix-detection events for bug reports; `dump` opens a copyable window with the event log |
 | `/ec processdebug` | Diagnostic: open a copyable window listing every Process Bags gate (recognised profession spells, per-slot scan results) for bug reports |
+| `/ec scandebug <bag> <slot>` | Diagnostic: dump the hidden scan-tooltip lines for a bag slot (for "this item silently sells despite having an affix or proc" reports) |
 | `/ec perf` | Show EbonClearance's memory, CPU, cache and list sizes |
 | `/ec commtest` | Diagnostic: check that addon messages are delivered on this server and preview the update nudge (works solo) |
 | `/ec guildtest` | Diagnostic: preview the Stats - Guild panel with simulated members (works solo) |

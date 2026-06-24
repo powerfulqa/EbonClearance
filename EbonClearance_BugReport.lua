@@ -985,7 +985,117 @@ local function EC_ShowProcessDebugDump()
     )
 end
 
+-- v2.44.12: scan-tooltip diagnostic. PE's tooltip enrichment (the
+-- @affix@ marker injection that the chance-on-hit and affix detectors
+-- key off) may or may not fire on hidden tooltips depending on the
+-- server's tooltip-hook pattern. When a reported item silently sells
+-- despite seeming to have an affix or proc, this dump shows EXACTLY
+-- what EC's scan tooltip sees vs what the live tooltip would show.
+-- Output sections:
+--   * Item context (link, itemID, baseName, equipLoc, quality, ilvl)
+--   * Detection results (parseAffixFromTitle, itemHasChanceOnHit,
+--     bagSlotAffixData) so a reader can correlate "what the scanner
+--     saw" with "what the gates decided"
+--   * Raw scan-tooltip lines 1-30 (the source-of-truth for every
+--     EC_compCache.scanBagItem-backed predicate)
+local function EC_BuildScanDebugDump(bag, slot)
+    local lines = {}
+    local function add(s)
+        lines[#lines + 1] = s
+    end
+    add(string.format("=== EbonClearance Scan Tooltip Debug (bag %d slot %d) ===", bag, slot))
+    add("Version: " .. (NS.GetVersion and NS.GetVersion() or "unknown"))
+    add(string.format("Date: %s", date and date("%Y-%m-%d %H:%M") or "?"))
+    add("")
+    local itemID = GetContainerItemID and GetContainerItemID(bag, slot)
+    local link = GetContainerItemLink and GetContainerItemLink(bag, slot)
+    if not itemID then
+        add("ERROR: no item in bag " .. bag .. " slot " .. slot .. ".")
+        return table.concat(lines, "\n")
+    end
+    local baseName, _, quality, ilvl, _, _, _, _, equipLoc = GetItemInfo(itemID)
+    local _, count = GetContainerItemInfo(bag, slot)
+    add("--- Item Context ---")
+    add("link:     " .. tostring(link))
+    add("itemID:   " .. tostring(itemID))
+    add("baseName: " .. tostring(baseName))
+    add("count:    " .. tostring(count))
+    add("quality:  " .. tostring(quality))
+    add("ilvl:     " .. tostring(ilvl))
+    add("equipLoc: " .. tostring(equipLoc))
+    add("")
+    add("--- Scan Tooltip Lines (after scanBagItem) ---")
+    local titleTxt
+    if EC_compCache.scanBagItem then
+        EC_compCache.scanBagItem(bag, slot)
+        local empty = true
+        for i = 1, 30 do
+            local fs = _G["EbonClearanceScanTooltipTextLeft" .. i]
+            local txt = fs and fs.GetText and fs:GetText()
+            if txt and txt ~= "" then
+                add(string.format("  [%d] %s", i, txt))
+                empty = false
+                if i == 1 then
+                    titleTxt = txt
+                end
+            end
+        end
+        if empty then
+            add("  (no text lines populated - SetBagItem returned an empty tooltip)")
+        end
+    else
+        add("ERROR: EC_compCache.scanBagItem missing.")
+    end
+    add("")
+    add("--- Detection Results ---")
+    if EC_compCache.parseAffixFromTitle and baseName and titleTxt then
+        local parsed = EC_compCache.parseAffixFromTitle(titleTxt, baseName)
+        if parsed then
+            add(string.format("parseAffixFromTitle: name='%s', rank=%s", tostring(parsed.name), tostring(parsed.rank)))
+        else
+            add("parseAffixFromTitle: nil (no rank suffix in title; vanilla suffix or unranked PE)")
+        end
+    end
+    if EC_compCache.scanTooltipForAffixDesc then
+        local desc = EC_compCache.scanTooltipForAffixDesc("EbonClearanceScanTooltip")
+        if desc then
+            add("scanTooltipForAffixDesc: '" .. desc:sub(1, 80) .. (desc:len() > 80 and "..." or "") .. "'")
+        else
+            add("scanTooltipForAffixDesc: nil (no @affix@ marker in raw tooltip)")
+        end
+    end
+    if EC_compCache.itemHasChanceOnHit then
+        local hits = EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+        add("itemHasChanceOnHit:  " .. tostring(hits))
+    end
+    if EC_compCache.bagSlotAffixData then
+        local affix = EC_compCache.bagSlotAffixData(bag, slot)
+        if affix then
+            add(
+                string.format(
+                    "bagSlotAffixData:    name='%s', rank=%s, description='%s'",
+                    tostring(affix.name),
+                    tostring(affix.rank),
+                    tostring(affix.description and affix.description:sub(1, 80) or "nil")
+                )
+            )
+        else
+            add("bagSlotAffixData:    nil")
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
+local function EC_ShowScanDebugDump(bag, slot)
+    EC_ShowCopyFrame(
+        L["EbonClearance Scan Tooltip Debug"],
+        EC_BuildScanDebugDump(bag, slot),
+        L["Scan debug dump generated. Copy the text from the window."]
+    )
+end
+
 NS.ShowBugReport = EC_ShowBugReport
 NS.ShowAffixDebugDump = EC_ShowAffixDebugDump
 NS.ShowProcessDebugDump = EC_ShowProcessDebugDump
+NS.ShowScanDebugDump = EC_ShowScanDebugDump
 NS.ShowRuleSummary = EC_ShowRuleSummary

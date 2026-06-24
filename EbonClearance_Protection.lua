@@ -1113,6 +1113,24 @@ function EC_compCache.lineLooksLikeChanceProc(txt)
     if txt:find("^Equip:%s*Chance to%s+%a") then
         return true
     end
+    -- v2.44.10: PE's transferred-proc system applies a chance-on-hit
+    -- proc to a target item as a tooltip line that uses a different
+    -- phrasing than the vanilla "Chance on hit:" / "Equip: Chance to"
+    -- anchors - "Your spells and abilities have a chance to steal
+    -- life from the target..." (Vampirism on Skoll's Fang, reported
+    -- by Zukii). Anchored on "Your <subject> have/has a chance to
+    -- <verb>" so unrelated text containing "chance to" doesn't false-
+    -- positive the auto-sell sweep. EC-TRAP: a proper fix lives in
+    -- the affix-detection layer (these procs are PE affixes that
+    -- happen to lack a rank suffix); this pattern extension is the
+    -- defensive layer that stops the silent sell until the affix
+    -- detection refactor lands.
+    if txt:find("^Your%s.- have a chance to%s+%a") then
+        return true
+    end
+    if txt:find("^Your%s.- has a chance to%s+%a") then
+        return true
+    end
     return false
 end
 

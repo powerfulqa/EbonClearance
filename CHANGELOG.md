@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.10
+
+Defensive fix for PE transferred-proc weapons silently selling.
+
+**Bug fix: chance-on-hit detector missed PE's transferred-proc tooltip phrasing.**
+
+Caught by Zukii: a Shaman saw `Skoll's Fang of Vampirism` (Blue, itemID 49227, ilvl 187) tagged `Will Sell (Blue, lower than equipped)` even with `Protect Affixed Rare Items` + `Protect Chance-on-Hit Items` both on and Vampirism not in the extracted-affix catalog. Root cause: PE's transferred-proc system applies a chance-on-hit proc to a target item using a tooltip phrasing that didn't match either of EC's two existing anchors. Vampirism's line reads "Your spells and abilities have a chance to steal life from the target..." - neither `Chance on hit:` (the vanilla `ITEM_SPELL_TRIGGER_ONPROC` constant) nor `Equip: Chance to <verb>` (the v2.26.0 Quillshooter-style PPM anchor) catches it. The chance-on-hit safety net never fired and the auto-sell rule vendored the weapon.
+
+- `lineLooksLikeChanceProc` now also matches `^Your%s.- have a chance to%s+%a` and the singular `has a chance to` form. Anchored on `Your <subject> have/has a chance to <verb>` so unrelated text containing "chance to" doesn't false-positive the auto-sell sweep.
+- Conceptually this is a defensive layer: PE actually models transferred procs as affixes (the `@affix@`-marked tooltip line), and the proper fix lives in the affix-detection code (unranked-affix support). That's a wider refactor coming in the next release. Until then the chance-on-hit detector keeps these items protected.
+- Tests 13 / 14 expanded to pin the two new patterns alongside the existing ones.
+
+If the chance-on-hit gate false-positives a proc you DO want to sell, Alt+Right-Click → Allow Sell adds the itemID to your allow list (same override as the existing chance-on-hit detection).
+
+---
+
+
 ### v2.44.9
 
 Crystallized / Mote condensing via a new Process Bags Convert mode + panel tidy.

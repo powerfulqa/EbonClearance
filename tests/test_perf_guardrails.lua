@@ -475,6 +475,14 @@ do
     check("detector also matches the Equip: Chance to <verb> pattern",
           hasEquipPattern,
           "v2.26.0: Quillshooter-style PPM procs use Equip: Chance to <verb>; without this pattern they slip past protection")
+    local hasTransferredHave = src:find('"%^Your%%s%.%- have a chance to%%s%+%%a"') ~= nil
+    local hasTransferredHas = src:find('"%^Your%%s%.%- has a chance to%%s%+%%a"') ~= nil
+    check("detector matches PE transferred-proc 'Your X have a chance to' pattern",
+          hasTransferredHave,
+          "v2.44.10: PE's transferred-proc system applies chance-on-hit procs to target items using a different tooltip phrasing than vanilla ('Your spells and abilities have a chance to steal life from the target...'). Without this pattern Vampirism-style procs slip past chance-on-hit protection and auto-sell. Zukii's report (Skoll's Fang of Vampirism, itemID 49227) confirms the silent-sell path.")
+    check("detector matches PE transferred-proc 'Your X has a chance to' singular pattern",
+          hasTransferredHas,
+          "singular form covers proc descriptions where the subject is singular ('Your weapon has a chance to...'); same v2.44.10 PE-transferred-proc category as the plural form above.")
 end
 
 -- ---------------------------------------------------------------------------

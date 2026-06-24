@@ -3511,11 +3511,21 @@ function EC_compCache.isDowngradeVsEquipped(itemID, lootedILvl, equipLoc)
     -- every 1H in bags (reported by "Perfect Bidoof"). When the main
     -- hand holds an INVTYPE_2HWEAPON, narrow the candidate slots to
     -- {16} only so the comparison happens against the equipped 2H.
-    -- Single-slot offhand equipLocs (SHIELD / HOLDABLE / WEAPONOFFHAND)
-    -- keep their current behaviour: the slot really is empty + the
-    -- looted item is a different playstyle commitment, separate
-    -- judgment call.
-    if equipLoc == "INVTYPE_WEAPON" then
+    -- v2.45.1: mirror this for OFFHAND equipLocs (SHIELD / HOLDABLE /
+    -- WEAPONOFFHAND). When MH is a 2H, slot 17 is locked empty and an
+    -- offhand item can't actually fill it - the player would have to
+    -- swap out their 2H first. Reported by Zukii: an offhand looted
+    -- while a staff was equipped showed "Keep (Green, possible
+    -- upgrade)" because empty_slot returned not_a_downgrade. The
+    -- comparison-against-the-2H baseline is what real players want:
+    -- low-level offhand drops vendor when the player has chosen 2H,
+    -- and only items genuinely above the 2H's iLvl get the upgrade
+    -- flag (still rare in practice but theoretically right).
+    if equipLoc == "INVTYPE_WEAPON"
+        or equipLoc == "INVTYPE_SHIELD"
+        or equipLoc == "INVTYPE_HOLDABLE"
+        or equipLoc == "INVTYPE_WEAPONOFFHAND"
+    then
         local mhLink = GetInventoryItemLink and GetInventoryItemLink("player", 16)
         if mhLink then
             local _, _, _, _, _, _, _, _, mhEquipLoc = GetItemInfo(mhLink)

@@ -4429,6 +4429,13 @@ do
         tt:find("local playerKnowsFamily") ~= nil
             and tt:find("playerKnows or playerKnowsRank or playerKnowsFamily") ~= nil,
         "the tooltip must mirror EC_IsSellable's family-name fallback so the displayed verdict matches the actual sell outcome. autoDupe gets the third disjunct; the 'Keep (affix known)' label also routes through playerKnowsFamily so the player sees 'I have this' instead of 'I don't have this' for unranked extracted affixes.")
+    check("Test 99k: isDowngradeVsEquipped narrows offhand-equipLoc items to slot 16 when MH is 2H",
+        ev:find('equipLoc == "INVTYPE_WEAPON"') ~= nil
+            and ev:find('or equipLoc == "INVTYPE_SHIELD"') ~= nil
+            and ev:find('or equipLoc == "INVTYPE_HOLDABLE"') ~= nil
+            and ev:find('or equipLoc == "INVTYPE_WEAPONOFFHAND"') ~= nil
+            and ev:find('mhEquipLoc == "INVTYPE_2HWEAPON"') ~= nil,
+        "v2.45.1 (Zukii): the v2.33.x narrowing handled 1H weapons vs 2H MH but explicitly opted out of the symmetric offhand case. When a player wields a 2H, slot 17 is locked empty and an offhand drop can't actually fill it. Without the mirror fix, isDowngradeVsEquipped hits its empty_slot bailout and returns not_a_downgrade -> the tooltip falsely labels 'Keep (Green, possible upgrade)' on offhands that the player can't equip. The narrowing makes offhand drops compare against the 2H's iLvl so the auto-rule disposes of low-iLvl offhands when the player has chosen 2H. checkBagsForUpgrades intentionally does NOT get the same narrowing - its conservative empty-slot bailout still prevents high-iLvl offhands from spam-flooding the Keep List for committed-2H players.")
 end
 
 -- ---------------------------------------------------------------------------

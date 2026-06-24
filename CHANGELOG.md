@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.45.1
+
+**Bug fix: offhand drops were labelled "Keep (possible upgrade)" when the player wields a 2H.**
+
+Reported by Zukii: equipping a staff (or any `INVTYPE_2HWEAPON`) leaves slot 17 locked empty. Looting an offhand-equipLoc item (`INVTYPE_SHIELD` / `INVTYPE_HOLDABLE` / `INVTYPE_WEAPONOFFHAND`) hit `isDowngradeVsEquipped`'s `empty_slot` bailout (slot 17's iLvl is 0) and returned not-a-downgrade. The tooltip then fell into the `matchedAgainstEquipped` branch and labelled the offhand `Keep (Green, possible upgrade)` despite the player being unable to dual-wield with a 2H equipped.
+
+v2.33.x had already fixed the symmetric case for 1H weapons (narrow candidate slots to `{16}` when MH is 2H so the 1H compares against the 2H's iLvl). The original v2.33.x comment explicitly noted: *"Single-slot offhand equipLocs (SHIELD / HOLDABLE / WEAPONOFFHAND) keep their current behaviour: the slot really is empty + the looted item is a different playstyle commitment, separate judgment call."* That judgment turned out wrong for the typical case - players committed to 2H builds get a steady stream of low-iLvl offhand drops mislabelled as upgrades.
+
+- `isDowngradeVsEquipped` now applies the same `{16}` narrowing to offhand-equipLoc items when MH is `INVTYPE_2HWEAPON`. Offhand drops are compared against the 2H's iLvl, so the auto-rule disposes of low-iLvl offhands when the player has chosen 2H.
+- `checkBagsForUpgrades` does NOT get the symmetric fix: its conservative `empty_slot` bailout still prevents high-iLvl offhands from spam-flooding the Keep List for players committed to 2H builds.
+- Test 99k pins the contract.
+
+If you actively alternate between 2H and 1H+offhand setups, add specific offhands you want to retain to your Keep List - the auto-rule now treats offhand-when-using-2H the same way it treats 1H-when-using-2H since v2.33.x.
+
+---
+
+
 ### v2.45.0
 
 **Unranked PE affix detection.** Skoll's Fang of Vampirism / Thunderfury / Viscous Hammer of Resurgence and other PE transferred-proc weapons are now recognised as PE affixes (which is what they ARE in PE's data model), not just defended through the v2.44.11 chance-on-hit safety net. Reported by Zukii; diagnosed against test weapons by Serv.

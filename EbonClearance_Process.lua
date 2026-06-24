@@ -404,6 +404,20 @@ function EC_compCache.buildProcessSummary()
                         mode = "Lockpick"
                         spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_PICK_LOCK) or "Pick Lock"
                         perCast = 1
+                    elseif EC_compCache.canConvertElemental(itemID) then
+                        -- v2.44.9: Crystallized / Mote condensing.
+                        -- No spell to cast - the lower-tier item's
+                        -- OnUse triggers the server-side conversion
+                        -- when used via /use bag slot. perCast = 10
+                        -- so casts = floor(count / 10) reads "1 cast
+                        -- = 1 Eternal/Primal" for the player.
+                        -- spellName stays nil; rearmProcessButton
+                        -- generates a /use-only macro when nil.
+                        if count >= 10 then
+                            mode = "Convert"
+                            spellName = nil
+                            perCast = 10
+                        end
                     end
                     if mode then
                         results[#results + 1] = {
@@ -436,7 +450,7 @@ function EC_compCache.buildProcessSummary()
     for _, e in ipairs(results) do
         e.name = (GetItemInfo(e.itemID)) or ""
     end
-    local modeOrder = { Disenchant = 1, Mill = 2, Prospect = 3, Lockpick = 4 }
+    local modeOrder = { Disenchant = 1, Mill = 2, Prospect = 3, Lockpick = 4, Convert = 5 }
     table.sort(results, function(a, b)
         if a.mode ~= b.mode then
             return modeOrder[a.mode] < modeOrder[b.mode]
@@ -449,5 +463,59 @@ function EC_compCache.buildProcessSummary()
         return a.name < b.name
     end)
     return results
+end
+
+-- ---------------------------------------------------------------------------
+-- v2.44.9 Crystallized / Mote condensing (Process Bags Convert mode).
+-- ---------------------------------------------------------------------------
+-- Lower-tier elemental reagents convert 10:1 to their upper-tier form via
+-- a vanilla WoW OnUse effect: right-click a stack of 10 Crystallized Fire
+-- (or Mote of Fire) and the server consumes 10 and grants 1 Eternal Fire
+-- (or Primal Fire). No profession requirement.
+--
+-- EC-TRAP: an earlier draft of this feature tried to auto-fire from the
+-- BAG_UPDATE debounce. That hit WoW 3.3.5a's secure-execution protection:
+-- UseContainerItem on items whose OnUse casts a spell is taint-restricted
+-- to hardware-event-driven secure call chains. The popup "EbonClearance
+-- has been blocked from an action only available to the Blizzard UI"
+-- fires when an insecure Lua context tries this. The Process Bags engine
+-- already does the secure-button dance (SecureActionButton + macrotext
+-- triggered by a player click), so Convert lives there as a 5th process
+-- mode alongside Disenchant / Mill / Prospect / Lockpick - one click per
+-- stack. If a future patch tries to "make Convert automatic" via the
+-- debounce, expect the same security popup; the only way to fully auto
+-- is a secure hardware event the addon can't synthesise.
+--
+-- itemIDs:
+--   * WotLK Crystallized 37700-37705 (six elemental schools).
+--   * TBC Motes 22572-22578 (seven schools - Air/Earth/Fire/Life/Mana/
+--     Shadow/Water; Mote of Mana has no WotLK equivalent).
+local CONVERTIBLE_ELEMENTALS = {
+    -- WotLK Crystallized -> Eternal
+    [37700] = true, -- Crystallized Air     -> Eternal Air
+    [37701] = true, -- Crystallized Earth   -> Eternal Earth
+    [37702] = true, -- Crystallized Fire    -> Eternal Fire
+    [37703] = true, -- Crystallized Shadow  -> Eternal Shadow
+    [37704] = true, -- Crystallized Life    -> Eternal Life
+    [37705] = true, -- Crystallized Water   -> Eternal Water
+    -- TBC Motes -> Primals
+    [22572] = true, -- Mote of Air          -> Primal Air
+    [22573] = true, -- Mote of Earth        -> Primal Earth
+    [22574] = true, -- Mote of Fire         -> Primal Fire
+    [22575] = true, -- Mote of Life         -> Primal Life
+    [22576] = true, -- Mote of Mana         -> Primal Mana
+    [22577] = true, -- Mote of Shadow       -> Primal Shadow
+    [22578] = true, -- Mote of Water        -> Primal Water
+}
+
+EC_compCache.CONVERTIBLE_ELEMENTALS = CONVERTIBLE_ELEMENTALS
+
+-- Eligibility predicate for the Convert mode. Mirrors canMill / canProspect
+-- in shape: returns true when the item is a known lower-tier elemental
+-- AND the count gate is met (10 per conversion). The list-veto + ignored
+-- + equipped + chance-on-hit gates already live in buildProcessSummary
+-- above this branch; we don't duplicate them here.
+function EC_compCache.canConvertElemental(itemID)
+    return itemID and CONVERTIBLE_ELEMENTALS[itemID] == true
 end
 

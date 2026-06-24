@@ -4285,6 +4285,64 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- v2.44.9 Test 98: Convert mode in Process Bags (Crystallized / Motes).
+-- ---------------------------------------------------------------------------
+-- 10-stacks of lower-tier elementals (Crystallized Fire, Mote of Fire,
+-- etc.) UseContainerItem-condense to 1 upper-tier (Eternal Fire, Primal
+-- Fire) via the item's OnUse effect. WoW 3.3.5a security model does not
+-- allow this insecurely (OnUse triggers a server spell, which is taint-
+-- restricted), so Convert lives as a 5th Process Bags mode driven by
+-- the existing SecureActionButton macro flow - one click per stack.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local pr = fileSrc("EbonClearance_Process.lua")
+    local pbp = fileSrc("EbonClearance_ProcessBagsPanel.lua")
+    local hp = fileSrc("EbonClearance_HelpPanel.lua")
+    check("Test 98a: CONVERTIBLE_ELEMENTALS table contains all 6 Crystallized + 7 Mote itemIDs",
+        pr:find("%[37700%] = true") ~= nil
+            and pr:find("%[37701%] = true") ~= nil
+            and pr:find("%[37702%] = true") ~= nil
+            and pr:find("%[37703%] = true") ~= nil
+            and pr:find("%[37704%] = true") ~= nil
+            and pr:find("%[37705%] = true") ~= nil
+            and pr:find("%[22572%] = true") ~= nil
+            and pr:find("%[22573%] = true") ~= nil
+            and pr:find("%[22574%] = true") ~= nil
+            and pr:find("%[22575%] = true") ~= nil
+            and pr:find("%[22576%] = true") ~= nil
+            and pr:find("%[22577%] = true") ~= nil
+            and pr:find("%[22578%] = true") ~= nil,
+        "the conversion table must cover ALL 13 lower-tier elementals: WotLK Crystallized 37700-37705 (Air/Earth/Fire/Shadow/Life/Water) and TBC Motes 22572-22578 (Air/Earth/Fire/Life/Mana/Shadow/Water). Missing an itemID means that school silently never appears in the Convert section.")
+    check("Test 98b: canConvertElemental predicate exists",
+        pr:find("function EC_compCache%.canConvertElemental%(itemID%)") ~= nil
+            and pr:find("CONVERTIBLE_ELEMENTALS%[itemID%]") ~= nil,
+        "the predicate mirrors canMill / canProspect in shape: takes an itemID, returns true iff the itemID is a known lower-tier elemental. The count gate (>= 10) lives in buildProcessSummary so the predicate stays cheap and stateless.")
+    check("Test 98c: buildProcessSummary has a Convert branch with perCast = 10",
+        pr:find('mode = "Convert"') ~= nil
+            and pr:find("perCast = 10") ~= nil
+            and pr:find("count >= 10") ~= nil
+            and pr:find("EC_compCache%.canConvertElemental") ~= nil,
+        "the new branch must use the Convert mode name, gate on count >= 10 (the conversion ratio), and set perCast = 10 so the panel reports 1 cast per 10-stack. spellName stays nil for this branch - the macro generation handles the no-spell case.")
+    check("Test 98d: modeOrder includes Convert as the 5th mode",
+        pr:find("Convert = 5") ~= nil,
+        "the section appears below Disenchant / Mill / Prospect / Lockpick in the panel. Without an explicit modeOrder entry the table.sort comparator hits a nil index and the Convert entries float to a random position in the list.")
+    check("Test 98e: rearmProcessButton macro handles nil spellName",
+        pbp:find('entry%.spellName and entry%.spellName ~= ""') ~= nil
+            and pbp:find('"/use %%d %%d"') ~= nil,
+        "Convert entries have no spell to cast. The macro builder must emit a /use-only macrotext when spellName is nil/empty, otherwise SetAttribute writes 'cast nil\\n/use bag slot' and the macro silently fails on click.")
+    check("Test 98f: Help FAQ entry process-convert exists and links to ProcessBags panel",
+        hp:find('id = "process%-convert"') ~= nil
+            and hp:find('Convert mode %(Crystallized / Motes%)') ~= nil,
+        "players who see the new 'Convert' section need an in-game explanation of what it does + why it's not automatic (3.3.5a secure-execution restriction). The Help FAQ entry documents the one-click-per-stack flow and the list-veto rule for opting individual itemIDs out.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
 -- ---------------------------------------------------------------------------
 -- Bug reported by SLG: "constantly summoning Greedy Scavenger after
@@ -5785,13 +5843,12 @@ do
                     "canDisenchant must read equipLoc (9th GetItemInfo return, unlocalised) and reject INVTYPE_BAG / INVTYPE_QUIVER / INVTYPE_TABARD / INVTYPE_BODY (and INVTYPE_AMMO for belt-and-braces). Without this, a green-quality bag passes IsEquippableItem + the quality gate and the queue shows it for Disenchant; the server then refuses the cast and the player has to skip it manually."
                 )
                 check(
-                    "Test 88av: Process Bags keybind tip rewritten + help icon + FAQ entry wired",
+                    "Test 88av: Process Bags keybind help icon + FAQ entry wired (tip text dropped in v2.44.9)",
                     pbpSrc:find("hold it to drain") == nil
-                        and pbpSrc:find("one cast per press") ~= nil
                         and pbpSrc:find('"process%-keybind"') ~= nil
                         and hpS:find('id = "process%-keybind"') ~= nil
                         and hpS:find('panel = "EbonClearanceOptionsProcessBags"') ~= nil,
-                    "Process Bags tip must not promise hold-to-drain behaviour (WoW fires keybinds once per press; the addon cannot auto-repeat a SecureActionButton click). The new tip text must say 'one cast per press', a help icon next to it must deep-link to the process-keybind FAQ entry, and that entry must exist in EbonClearance_HelpPanel.lua with the EbonClearanceOptionsProcessBags panel link. A future contributor who removes any of the three pieces sees this test go red."
+                    "Process Bags must NOT promise hold-to-drain behaviour anywhere (WoW fires keybinds once per press; the addon cannot auto-repeat a SecureActionButton click). The grey 'Tip:' label was removed in v2.44.9 since the same content is in the process-keybind FAQ entry the [?] icon deep-links to. The icon now sits on the desc line; the FAQ entry must still exist with the EbonClearanceOptionsProcessBags panel link so a player who clicks the icon lands on the right page."
                 )
                 check(
                     "Test 88au: Process Bags cast button has a post-click lockout with effective-cast-time floor",

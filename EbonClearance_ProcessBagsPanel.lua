@@ -168,10 +168,17 @@ function EC_compCache.rearmProcessButton()
         end
     end
     if entry then
-        panel.castBtn:SetAttribute(
-            "macrotext",
-            string.format("/cast %s\n/use %d %d", entry.spellName, entry.bag, entry.slot)
-        )
+        -- v2.44.9: Convert mode has no spell to cast - the lower-tier
+        -- item's OnUse fires the server-side condensation when /use
+        -- bag slot resolves. For spell modes (Disenchant / Mill /
+        -- Prospect / Lockpick) the macro stays /cast + /use.
+        local macroText
+        if entry.spellName and entry.spellName ~= "" then
+            macroText = string.format("/cast %s\n/use %d %d", entry.spellName, entry.bag, entry.slot)
+        else
+            macroText = string.format("/use %d %d", entry.bag, entry.slot)
+        end
+        panel.castBtn:SetAttribute("macrotext", macroText)
         panel.castBtn:Enable()
         -- v2.40.1: stash the armed spell name so the GCD listener
         -- knows which cooldown to watch and the rearm path can paint
@@ -746,27 +753,16 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             16,
             -44
         )
-
-        -- v2.41.2: tip text rewritten. The old wording promised
-        -- holding the keybind would drain a stack, which is
-        -- factually wrong: WoW fires bound actions once per
-        -- keypress and does not honour OS keyboard repeat for
-        -- keybinds. A real player report (Ralickan, on v2.41.x)
-        -- followed the tip, held the key, and saw nothing happen.
-        -- The [?] icon to the right of this label deep-links to
-        -- the process-keybind FAQ entry for the full keyboard-only
-        -- mental model (queue order, skip arrow, cooldown swirl).
-        -- Test 88av locks the wording + icon + FAQ entry together.
-        local tip = NS.MakeLabel(
-            content,
-            L["|cff888888Tip: bind a key to Process Next in Key Bindings to advance the queue one cast per press.|r"],
-            16,
-            -44
-        )
-        tip:ClearAllPoints()
-        tip:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -8)
+        -- v2.44.9: keybind [?] icon hoisted onto the desc line. The
+        -- old "Tip: bind a key..." grey label was dropped because
+        -- the same content lives in the process-keybind FAQ entry
+        -- the icon deep-links to. One less line of chrome on the
+        -- panel; the icon stays so players who want the keyboard-
+        -- mode mental model (queue order, skip arrow, cooldown
+        -- swirl, "one press per cast" caveat) still find it.
+        -- Test 88av locks the FAQ entry + icon target together.
         if NS.AddHelpIcon then
-            NS.AddHelpIcon(content, tip, "LEFT", "RIGHT", 6, 0, "process-keybind")
+            NS.AddHelpIcon(content, desc, "TOPLEFT", "TOPRIGHT", 6, 0, "process-keybind")
         end
 
         local keepTip = NS.MakeLabel(
@@ -776,7 +772,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             -44
         )
         keepTip:ClearAllPoints()
-        keepTip:SetPoint("TOPLEFT", tip, "BOTTOMLEFT", 0, -4)
+        keepTip:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -8)
 
         local sbCB = CreateFrame(
             "CheckButton",

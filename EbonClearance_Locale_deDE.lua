@@ -36,6 +36,7 @@ NS.RegisterLocale("deDE", {
     ["|cff888888Tip: bind a key to Process Next in Key Bindings to advance the queue one cast per press.|r"] = "",
     ["|cff888888Items on your Keep List are hidden here - the Keep List wins over Process Bags. Remove an item from the Keep List to make it processable.|r"] = "",
     ["Include Soulbound items (disenchant only)"] = "",
+    ["Convert mode (Crystallized / Motes)"] = "",
     ["Disenchant up to:"] = "",
     ["Green"] = "",
     ["Blue"] = "",

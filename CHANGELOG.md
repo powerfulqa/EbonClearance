@@ -5,6 +5,28 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.9
+
+Crystallized / Mote condensing via a new Process Bags Convert mode + panel tidy.
+
+**New: Convert mode in Process Bags (Crystallized / Motes).**
+
+Asked for by ayres on Discord; Serv extended the scope to cover the BC-era Mote tier since it follows the identical mechanic. Any stack of 10+ Crystallized Fire (or Crystallized Earth / Air / Water / Shadow / Life) shows up in the new Convert section of Process Bags. Click Process Next (or use the keybind) and EbonClearance right-clicks the stack, which the game converts to 1 Eternal of the same school. Same flow for the BC-era 10-stack Motes (Mote of Fire / Earth / Air / Water / Life / Mana / Shadow) which condense to Primals. No profession required.
+
+Implementation note: an earlier draft tried to fire conversions automatically from the BAG_UPDATE debounce, which hit WoW 3.3.5a's secure-execution wall. UseContainerItem on items whose OnUse casts a server-side spell is taint-restricted to hardware-event-driven secure call chains. Process Bags already does the secure-button dance (SecureActionButton + macrotext triggered by a player click), so Convert slots in as a 5th processing type alongside Disenchant / Mill / Prospect / Lockpick. One click per stack instead of zero clicks; the addon still does 100% of the discovery work.
+
+- **All 13 lower-tier itemIDs covered:** WotLK Crystallized 37700-37705 + TBC Motes 22572-22578.
+- **Standard Process Bags vetoes apply:** any itemID on your Keep List / Sell List / Delete List is hidden from the Convert section so you can keep / sell / destroy specific elementals as intended.
+- **Convert macro is `/use bag slot` only** (no `/cast`), because the OnUse on the lower-tier item is what triggers the server-side condensation.
+- **Help FAQ entry "Convert mode (Crystallized / Motes)"** documents the one-click flow and the 3.3.5a security reason auto-fire isn't possible.
+
+**Tidy: Process Bags panel dropped the redundant "Tip:" line.**
+
+The grey "Tip: bind a key to Process Next..." label said the same thing the [?] icon's FAQ entry already says in more detail. Removed the line; hoisted the [?] up to attach to the description line above so the keybind explainer is still one click away. One less line of chrome on the panel.
+
+---
+
+
 ### v2.44.8
 
 Sharper workaround for the minimap-clash symptom.

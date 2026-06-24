@@ -559,6 +559,12 @@ local EC_HELP_ENTRIES = {
         a = L["A short post-click lockout that lasts the spell's cast time, with a 1.5 second floor. While the swirl is up the Cast button is intentionally inert - if you click during the cast or global cooldown the |cffffd870/cast|r line would silently no-op and the follow-up |cffffd870/use|r would |cffffb84dequip|r the item instead of processing it. Wait for the swirl to clear, then click again. The floor matters on servers where Mill / Prospect / Disenchant cast times have been shortened below the GCD."],
         panel = "EbonClearanceOptionsProcessBags",
     },
+    {
+        id = "process-convert",
+        q = L["Convert mode (Crystallized / Motes)"],
+        a = L["Any stack of 10+ Crystallized Fire (or Crystallized Earth / Air / Water / Shadow / Life) shows up in the Convert section of Process Bags. Click Process Next (or use the keybind) and EbonClearance right-clicks the stack, which the game converts to 1 Eternal of the same school. Same flow for the BC-era 10-stack Motes (Mote of Fire / Earth / Air / Water / Life / Mana / Shadow), which condense to Primals. No profession required. WoW 3.3.5a's security model doesn't let an addon fire this automatically (the OnUse casts a server-side spell, which is taint-restricted), so it goes through the same one-click-per-cast secure button as Mill and Prospect. To opt a specific itemID out of the Convert queue, add it to your Keep List / Sell List / Delete List - the standard Process Bags vetoes apply."],
+        panel = "EbonClearanceOptionsProcessBags",
+    },
 
     -- ===================================================================
     -- Section 6: Reporting bugs

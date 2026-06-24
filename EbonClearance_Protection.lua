@@ -1113,22 +1113,27 @@ function EC_compCache.lineLooksLikeChanceProc(txt)
     if txt:find("^Equip:%s*Chance to%s+%a") then
         return true
     end
-    -- v2.44.10: PE's transferred-proc system applies a chance-on-hit
-    -- proc to a target item as a tooltip line that uses a different
-    -- phrasing than the vanilla "Chance on hit:" / "Equip: Chance to"
-    -- anchors - "Your spells and abilities have a chance to steal
-    -- life from the target..." (Vampirism on Skoll's Fang, reported
-    -- by Zukii). Anchored on "Your <subject> have/has a chance to
-    -- <verb>" so unrelated text containing "chance to" doesn't false-
-    -- positive the auto-sell sweep. EC-TRAP: a proper fix lives in
-    -- the affix-detection layer (these procs are PE affixes that
-    -- happen to lack a rank suffix); this pattern extension is the
-    -- defensive layer that stops the silent sell until the affix
-    -- detection refactor lands.
-    if txt:find("^Your%s.- have a chance to%s+%a") then
+    -- v2.44.10 / v2.44.11: PE's transferred-proc system applies a
+    -- chance-on-hit proc to a target item as a tooltip line that
+    -- uses a different phrasing than the vanilla "Chance on hit:" /
+    -- "Equip: Chance to" anchors - "Your spells and abilities have a
+    -- chance to steal life from the target..." (Vampirism on Skoll's
+    -- Fang, reported by Zukii). v2.44.10 anchored on ^Your<...> which
+    -- failed because PE wraps the proc text in @affix@...@affix@
+    -- markers on the raw scan-tooltip line (the actual line reads
+    -- "@affix@Your spells and abilities have a chance to..." - the
+    -- first character is @ not Y). v2.44.11 drops the ^ anchor;
+    -- "Your <subject> have/has a chance to <verb>" matched anywhere
+    -- in the line is specific enough to avoid common false-positives
+    -- on Rare/Epic equipment. EC-TRAP: a proper fix lives in the
+    -- affix-detection layer (these procs are PE affixes that lack a
+    -- rank suffix); this pattern extension is the defensive layer
+    -- that stops the silent sell until the affix detection refactor
+    -- lands.
+    if txt:find("Your%s.- have a chance to%s+%a") then
         return true
     end
-    if txt:find("^Your%s.- has a chance to%s+%a") then
+    if txt:find("Your%s.- has a chance to%s+%a") then
         return true
     end
     return false

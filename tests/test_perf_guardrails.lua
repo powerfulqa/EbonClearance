@@ -475,14 +475,18 @@ do
     check("detector also matches the Equip: Chance to <verb> pattern",
           hasEquipPattern,
           "v2.26.0: Quillshooter-style PPM procs use Equip: Chance to <verb>; without this pattern they slip past protection")
-    local hasTransferredHave = src:find('"%^Your%%s%.%- have a chance to%%s%+%%a"') ~= nil
-    local hasTransferredHas = src:find('"%^Your%%s%.%- has a chance to%%s%+%%a"') ~= nil
+    local hasTransferredHave = src:find('"Your%%s%.%- have a chance to%%s%+%%a"') ~= nil
+    local hasTransferredHas = src:find('"Your%%s%.%- has a chance to%%s%+%%a"') ~= nil
+    local hasNoLineStartAnchor = src:find('"%^Your%%s%.%- have a chance to') == nil
     check("detector matches PE transferred-proc 'Your X have a chance to' pattern",
           hasTransferredHave,
-          "v2.44.10: PE's transferred-proc system applies chance-on-hit procs to target items using a different tooltip phrasing than vanilla ('Your spells and abilities have a chance to steal life from the target...'). Without this pattern Vampirism-style procs slip past chance-on-hit protection and auto-sell. Zukii's report (Skoll's Fang of Vampirism, itemID 49227) confirms the silent-sell path.")
+          "v2.44.10 / v2.44.11: PE's transferred-proc system applies chance-on-hit procs to target items using a different tooltip phrasing than vanilla ('Your spells and abilities have a chance to steal life from the target...'). Without this pattern Vampirism-style procs slip past chance-on-hit protection and auto-sell. Zukii's report (Skoll's Fang of Vampirism, itemID 49227) confirmed the silent-sell path.")
     check("detector matches PE transferred-proc 'Your X has a chance to' singular pattern",
           hasTransferredHas,
-          "singular form covers proc descriptions where the subject is singular ('Your weapon has a chance to...'); same v2.44.10 PE-transferred-proc category as the plural form above.")
+          "singular form covers proc descriptions where the subject is singular; same PE-transferred-proc category as the plural form above.")
+    check("transferred-proc pattern is NOT anchored to line start (v2.44.11)",
+          hasNoLineStartAnchor,
+          "v2.44.11: PE wraps the proc text in @affix@...@affix@ markers on the raw scan-tooltip line. The line starts with '@', not 'Y', so a ^Your anchor fails to match. Confirmed by Zukii's v2.44.10 /ec sellinfo trace showing 'chanceOnHitProtection - n/a' on Skoll's Fang of Thunderfury despite v2.44.10 shipping the pattern. Without dropping the anchor every PE transferred-proc weapon still silent-sells.")
 end
 
 -- ---------------------------------------------------------------------------

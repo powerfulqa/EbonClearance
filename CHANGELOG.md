@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.44.11
+
+Follow-up to v2.44.10: the pattern was anchored to line start; PE wraps proc text in `@affix@` markers so the anchor failed.
+
+**Bug fix: v2.44.10's chance-on-hit pattern matched against raw scan-tooltip text that starts with `@affix@`, not `Your`.**
+
+Caught by Zukii: confirmed v2.44.10 was loaded (header `Version: v2.44.10`) but `/ec sellinfo` on `Skoll's Fang of Thunderfury` still showed `chanceOnHitProtection - n/a`. The pattern `^Your%s.- have a chance to%s+%a` anchored on line start - but PE wraps the proc text in `@affix@...@affix@` markers on the raw scan tooltip, so the actual line reads `@affix@Your spells and abilities have a chance to Blasts your enemy with lightning...@affix@` and the `^` anchor never matched. The scanTooltipForAffixDesc function (which DOES catch the markers) was the clue.
+
+- Dropped the `^` anchor: `Your <subject> have/has a chance to <verb>` matched anywhere in the line. The PE-marker prefix is no longer a blocker.
+- Test 14 pinned to verify the pattern is NOT line-start-anchored (regression guard against re-anchoring).
+- The proper affix-detection refactor (treating PE transferred procs as unranked affixes via the `@affix@` marker discriminator) is still coming in v2.45.0. v2.44.11 is the defensive belt that stops the silent sell now.
+
+If you had v2.44.10 loaded but still saw PE transferred-proc weapons in the Will Sell verdict, update to v2.44.11 and they'll route through chance-on-hit protection on the next /reload.
+
+---
+
+
 ### v2.44.10
 
 Defensive fix for PE transferred-proc weapons silently selling.

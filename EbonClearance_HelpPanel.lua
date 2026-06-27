@@ -242,6 +242,18 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsDeletion",
     },
     {
+        id = "gate-merchant-mode",
+        q = L["Sell at: which merchants?"],
+        a = L["The 'Sell at:' dropdown picks WHERE the auto-sell + repair cycle runs (it never changes what sells). |cffb6ffb6Goblin Merchant Only|r limits it to the summoned Greedy Goblin - handy if you only want bags cleared during farming. |cffb6ffb6Normal Merchants Only|r runs at regular vendors but not the Goblin. |cffb6ffb6All Merchants|r (the default) runs at either."],
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
+        id = "gate-sell-speed",
+        q = L["Time between sells (sell speed)"],
+        a = L["How long EbonClearance waits between each vendored item. Lower = faster; the readout under the slider shows the resulting 'sells per second'. The default 0.1s is safe on most realms. Fast Mode and Turbo Mode (below) override or multiply this for an even quicker clear. A very fast pace can occasionally trip a realm's anti-spam disconnect; raise the interval if vendoring disconnects you."],
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
         id = "gate-quality-rules",
         q = L["Quality rules (White / Green / Blue / Epic)"],
         a = L["Separate auto-sell rules per rarity, in Merchant Settings. Each can be turned on or off independently, with its own item-level threshold to decide which items of that rarity get vendored."],

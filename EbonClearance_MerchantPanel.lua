@@ -160,6 +160,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         UIDropDownMenu_SetWidth(modeDD, 180)
         UIDropDownMenu_SetText(modeDD, GetModeText(DB.merchantMode))
         UIDropDownMenu_Initialize(modeDD, MerchantModeInit)
+        NS.AddHelpIcon(content, modeDD, "LEFT", "RIGHT", 4, 2, "gate-merchant-mode")
 
         self.RefreshMerchantModeDropDown = function()
             UIDropDownMenu_SetText(modeDD, GetModeText(DB.merchantMode))
@@ -262,6 +263,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         )
         self.speedSlider = speedSlider
         speedSlider:SetWidth(200)
+        NS.AddHelpIcon(content, speedSlider, "LEFT", "TOPRIGHT", 6, 0, "gate-sell-speed")
 
         -- v2.37.7: live items/sec readout. Updated whenever the slider
         -- moves OR when Fast Mode / Turbo Mode toggles flip the

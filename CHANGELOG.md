@@ -5,6 +5,18 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.46.2
+
+**Help: documented the last two Merchant Settings controls.**
+
+The "Sell at:" merchant-mode dropdown and the "Time between sells" sell-speed slider were the only Merchant Settings controls without a `[?]` help icon. Both now have one, deep-linking into the Help / FAQ panel (and findable via the new search box):
+
+- **"Sell at: which merchants?"** - Goblin Merchant only / Normal Merchants only / All Merchants, and that it controls WHERE selling runs, not what sells.
+- **"Time between sells (sell speed)"** - lower is faster, the sells-per-second readout, how Fast / Turbo Mode interact with it, and the disconnect caveat on very fast pacing.
+
+---
+
+
 ### v2.46.1
 
 **Fix: the Loot Log counted items taken from the mailbox (and the auction house, trade, guild bank, and crafting).**

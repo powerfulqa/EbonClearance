@@ -5,6 +5,18 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.46.3
+
+**Help: every Merchant and Scavenger setting now has a `[?]`, and the bind-filter icon points to the right place.**
+
+- **Per-rarity rows (Merchant Settings)** now carry two correctly-targeted help icons: the one beside "Use equipped iLvl" explains the fixed-cap vs. equipped-iLvl decision, and the one beside the "Bind:" dropdown explains the bind-type filter. Previously the row's single icon - sitting next to "Bind:" - linked to the iLvl entry, so clicking it gave the wrong help.
+- **Scavenger Settings** gains a dedicated **"Scavenger & looting"** Help section, and every control there now has a `[?]`: Summon after selling, Only summon out of combat, Summon delay, Auto-loot cycle, Bag slots remaining before selling, Auto-open lootable containers, and Fast Loot. (The summon and cycle icons previously pointed at a generic troubleshooting entry.)
+
+All findable through the Help panel's search box.
+
+---
+
+
 ### v2.46.2
 
 **Help: documented the last two Merchant Settings controls.**

@@ -499,6 +499,13 @@ MerchantPanel:SetScript("OnShow", function(self)
             useEqText:SetPoint("RIGHT", useEqCB, "LEFT", -2, 0)
             useEqText:SetText(L["Use equipped iLvl"])
 
+            -- iLvl-mode help: [?] sits just left of the "Use equipped iLvl"
+            -- toggle (the controls it explains), deep-linking the fixed-cap
+            -- vs. equipped-iLvl entry. The bind-filter [?] on the second
+            -- line below links to its own entry, so each icon matches the
+            -- control beside it.
+            local ilvlHelp = NS.AddHelpIcon(content, useEqText, "RIGHT", "LEFT", -2, 0, "gate-fixed-vs-equipped-ilvl")
+
             -- Re-anchor the rarity-row checkbox's auto-label so its right edge
             -- is bounded by the "Use equipped iLvl" text's left edge. The
             -- shared AddCheckbox helper applies a fixed 420 px label width
@@ -511,7 +518,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             if rowLabel then
                 rowLabel:ClearAllPoints()
                 rowLabel:SetPoint("LEFT", cb, "RIGHT", 4, 1)
-                rowLabel:SetPoint("RIGHT", useEqText, "LEFT", -8, 0)
+                rowLabel:SetPoint("RIGHT", ilvlHelp, "LEFT", -4, 0)
                 rowLabel:SetJustifyH("LEFT")
                 if rowLabel.SetWordWrap then
                     rowLabel:SetWordWrap(false)
@@ -637,13 +644,11 @@ MerchantPanel:SetScript("OnShow", function(self)
             UIDropDownMenu_SetText(bindDD, EC_BindFilterText(DB.qualityRules[qualityIdx].bindFilter))
             UIDropDownMenu_Initialize(bindDD, BindFilterInit)
 
-            -- Per-row help icon deep-linking into the Help entry that
-            -- explains the Fixed-iLvl-cap vs. Use-equipped-iLvl decision.
-            -- Placed after the bind dropdown on the row's second line so
-            -- the icon has horizontal breathing room without colliding
-            -- with the row's first-line widgets (rarity label / useEq /
-            -- maxILvl input).
-            NS.AddHelpIcon(content, bindDD, "LEFT", "RIGHT", 4, 2, "gate-fixed-vs-equipped-ilvl")
+            -- Per-row help icon for the bind-type filter, sitting right
+            -- after the Bind dropdown it explains (the fixed-vs-equipped
+            -- iLvl decision has its own [?] up on line 1 next to the
+            -- "Use equipped iLvl" toggle).
+            NS.AddHelpIcon(content, bindDD, "LEFT", "RIGHT", 4, 2, "gate-bind-type")
 
             return cb, input, bindDD, useEqCB
         end

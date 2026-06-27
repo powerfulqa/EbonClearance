@@ -615,7 +615,55 @@ local EC_HELP_ENTRIES = {
     },
 
     -- ===================================================================
-    -- Section 6: Reporting bugs
+    -- Section 6: Scavenger & looting
+    -- ===================================================================
+    { section = "scavenger", title = L["Scavenger & looting"] },
+
+    {
+        id = "scav-summon",
+        q = L["Summon Greedy Scavenger after selling"],
+        a = L["When on, EbonClearance re-summons your Greedy Scavenger pet after a sell pass so it keeps vending your loot while you farm. Needs the Greedy Scavenger pet on your account. Turning the auto-loot cycle on below forces this on too."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+    {
+        id = "scav-combat-only",
+        q = L["Only summon out of combat"],
+        a = L["When on, EbonClearance waits until you're out of combat before (re)summoning the Scavenger, instead of summoning mid-fight. Leave it off for the fastest farming loop; turn it on if mid-combat summons feel disruptive."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+    {
+        id = "scav-summon-delay",
+        q = L["Summon delay"],
+        a = L["How long EbonClearance waits before re-summoning the Scavenger after it goes away. A short delay avoids fighting the game's own summon timing right after a vendor or a leash. Raise it if you see the pet summon-flicker; lower it for a snappier loop."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+    {
+        id = "scav-autoloot-cycle",
+        q = L["Auto-loot cycle (loot, sell, repeat)"],
+        a = L["The hands-free farming loop: EbonClearance keeps the Scavenger out, lets it loot and vendor, and when your bags get low on free space it summons the Goblin Merchant so selling continues. Turning this on also turns on 'Summon Greedy Scavenger'. The 'Bag slots remaining' slider below sets how full bags get before it acts."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+    {
+        id = "scav-bag-threshold",
+        q = L["Bag slots remaining before selling"],
+        a = L["The free-bag-slot trigger for the auto-loot cycle. When your free slots drop to this number, EbonClearance summons the Goblin Merchant so the Scavenger can keep selling. Lower = let bags fill more before acting; higher = act sooner. Has no effect unless the auto-loot cycle is on."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+    {
+        id = "scav-auto-open",
+        q = L["Auto-open lootable containers"],
+        a = L["When on, EbonClearance opens lootable containers sitting in your bags (gift bags, treasure pouches, and similar) so you don't have to right-click each one. Lockboxes that need a key or a lockpick are skipped, and it pauses during combat."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+    {
+        id = "scav-fast-loot",
+        q = L["Fast Loot (instant corpse looting)"],
+        a = L["Speeds up looting from corpses, fishing, gift bags, dungeons, and mailboxes by draining the loot window the instant it opens. It uses your game's |cffffff00Auto Loot|r setting, so turn Auto Loot on for the full effect. The Greedy Scavenger's own looting is already instant, so this mainly helps your manual looting."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+
+    -- ===================================================================
+    -- Section 7: Reporting bugs
     -- ===================================================================
     { section = "discord", title = L["Reporting bugs"] },
 

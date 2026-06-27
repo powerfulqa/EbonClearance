@@ -95,7 +95,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             -- LEFT using GetStringWidth (the actual rendered text width)
             -- so the icon sits right after the visible label, clickable.
             local strW = (st.GetStringWidth and st:GetStringWidth()) or 0
-            NS.AddHelpIcon(content, st, "LEFT", "LEFT", strW + 6, 0, "tshoot-goblin-not-summoning")
+            NS.AddHelpIcon(content, st, "LEFT", "LEFT", strW + 6, 0, "scav-summon")
         end
 
         local combatOnlyCB = NS.AddCheckbox(
@@ -112,6 +112,13 @@ ScavengerPanel:SetScript("OnShow", function(self)
             -8
         )
         self.combatOnlyCB = combatOnlyCB
+        do
+            local t = _G[combatOnlyCB:GetName() .. "Text"]
+            if t then
+                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
+                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-combat-only")
+            end
+        end
 
         -- Hide chat + hide bubbles checkboxes were removed: this is now
         -- baked-in addon behaviour. DB.hideGreedyChat /
@@ -137,6 +144,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         )
         self.delaySlider = delaySlider
         delaySlider:SetWidth(200)
+        NS.AddHelpIcon(content, delaySlider, "LEFT", "TOPRIGHT", 6, 0, "scav-summon-delay")
 
         local cycleCB = NS.AddCheckbox(
             content,
@@ -164,7 +172,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
             -- 420px text-frame width makes text:RIGHT unreachable for short
             -- labels. Anchor LEFT-to-LEFT past GetStringWidth instead.
             local strW = (cycleCBText.GetStringWidth and cycleCBText:GetStringWidth()) or 0
-            NS.AddHelpIcon(content, cycleCBText, "LEFT", "LEFT", strW + 6, 0, "tshoot-goblin-not-summoning")
+            NS.AddHelpIcon(content, cycleCBText, "LEFT", "LEFT", strW + 6, 0, "scav-autoloot-cycle")
         end
 
         -- threshSlider used to anchor to a multi-line cycleNote FontString
@@ -192,6 +200,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         )
         self.threshSlider = threshSlider
         threshSlider:SetWidth(200)
+        NS.AddHelpIcon(content, threshSlider, "LEFT", "TOPRIGHT", 6, 0, "scav-bag-threshold")
 
         local autoOpenCB = NS.AddCheckbox(
             content,
@@ -207,6 +216,13 @@ ScavengerPanel:SetScript("OnShow", function(self)
             -16
         )
         self.autoOpenCB = autoOpenCB
+        do
+            local t = _G[autoOpenCB:GetName() .. "Text"]
+            if t then
+                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
+                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-auto-open")
+            end
+        end
 
         local autoOpenNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         autoOpenNote:SetPoint("TOPLEFT", autoOpenCB, "BOTTOMLEFT", 26, -2)
@@ -246,6 +262,13 @@ ScavengerPanel:SetScript("OnShow", function(self)
         fastLootCB:ClearAllPoints()
         fastLootCB:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", -26, -10)
         self.fastLootCB = fastLootCB
+        do
+            local t = _G[fastLootCB:GetName() .. "Text"]
+            if t then
+                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
+                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-fast-loot")
+            end
+        end
 
         local fastLootNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         fastLootNote:SetPoint("TOPLEFT", fastLootCB, "BOTTOMLEFT", 26, -2)

@@ -56,6 +56,7 @@ local EC_CTX_ROWS = {
     { kind = "list", setName = "blacklist", label = L["Keep List"] },
     { kind = "list", setName = "deleteList", label = L["Delete List"] },
     { kind = "sellNow" },
+    { kind = "sellinfo", label = L["Sell Info"] },
     { kind = "cancel" },
 }
 
@@ -213,12 +214,36 @@ local function EC_ShowItemContextMenu(button)
         and affixData.description
         and EC_compCache.normaliseAffixDesc
         and EC_compCache.normaliseAffixDesc(affixData.description)
+    -- Sell Known Recipes carve-out. A learned profession recipe of an
+    -- enabled quality is going to SELL (via recipePass in EC_IsSellable),
+    -- so it must NOT be treated as a protected tome here - otherwise the
+    -- menu hides the Sell / Keep / Delete rows behind an "Allow Sell" gate
+    -- for an item that already sells. Mirrors the recipeSellable carve-out
+    -- in EC_IsSellable and the tooltip.
+    local recipeSellable = false
+    if DB.sellKnownRecipes
+        and sellPrice
+        and sellPrice > 0
+        and EC_compCache.itemIsTome
+        and EC_compCache.itemIsTome(bag, slot, itemID)
+        and EC_compCache.tomeKind
+        and EC_compCache.tomeKind(itemID) == "Recipe"
+        and EC_compCache.playerKnowsTomeSpell
+        and EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+    then
+        local _, _, rq = GetItemInfo(itemID)
+        if rq and DB.sellKnownRecipeQualities and DB.sellKnownRecipeQualities[rq] then
+            recipeSellable = true
+        end
+    end
     -- Tome protection: same per-itemID storage as chance-on-hit
     -- (ADB.allowedItems[itemID]), so the Allow Sell / Remove from
     -- Allow List flow shares those branches. The unlearned-only mode
     -- gates on playerKnowsTomeSpell; protectAllTomes is unconditional.
+    -- Skipped for recipeSellable items (they sell, so no Allow Sell gate).
     local hasTome = false
-    if (DB.protectAllTomes or DB.protectUnlearnedTomes)
+    if not recipeSellable
+        and (DB.protectAllTomes or DB.protectUnlearnedTomes)
         and EC_compCache.itemIsTome
         and EC_compCache.itemIsTome(bag, slot, itemID)
     then
@@ -423,6 +448,21 @@ local function EC_ShowItemContextMenu(button)
             else
                 rowHidden = true
             end
+        elseif row.kind == "sellinfo" then
+            -- Same per-item decision trace as `/ec sellinfo`, for the
+            -- clicked slot. Always shown (works even on protected items)
+            -- so the player can always inspect why an item will or won't
+            -- sell. Capture bag/slot from the outer locals: frame.bag /
+            -- frame.slot are cleared by the OnHide handler, so reading
+            -- them after frame:Hide() would be nil.
+            btn:SetText(L["Sell Info"])
+            btn:SetScript("OnClick", function()
+                frame:Hide()
+                if EC_compCache.printSellabilityTrace then
+                    EC_compCache.printSellabilityTrace(bag, slot)
+                end
+            end)
+            btn:Enable()
         elseif row.kind == "cancel" then
             btn:SetText(L["Cancel"])
             btn:SetScript("OnClick", function()

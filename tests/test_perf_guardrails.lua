@@ -3449,7 +3449,11 @@ do
             )
             check(
                 "EC_IsSellable tome block considers whitelistPass in the gate",
-                eventsSrc:find("%(qualityPass or whitelistPass%)%s*\n%s*and %(DB%.protectAllTomes") ~= nil,
+                -- `.-` tolerates the `and not recipePass` carve-out line
+                -- between the signal check and the toggle check: Sell Known
+                -- Recipes wins over the tome veto for learned recipes, but
+                -- whitelistPass must still lead into the gate.
+                eventsSrc:find("%(qualityPass or whitelistPass%).-and %(DB%.protectAllTomes") ~= nil,
                 "the tome gate must include whitelistPass so the protection fires even for Sell List entries"
             )
         end

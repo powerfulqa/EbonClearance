@@ -740,10 +740,33 @@ local function EC_AnnotateTooltip(tooltip)
     -- unmarked default is "Protected - Tome (unlearned)" or
     -- "Protected - Tome". The aggressive "all tomes" toggle wins over
     -- "unlearned only" - same precedence as EC_IsSellable.
+    -- Sell Known Recipes eligibility for THIS character. A learned
+    -- profession recipe of an enabled quality is sellable when the feature
+    -- is on. Computed before the tome-protection block so it can carve the
+    -- recipe out of that veto: the sell opt-in wins over "keep all tomes"
+    -- for learned recipes, while non-recipe tomes and unknown recipes stay
+    -- protected. Learn-state is read from this character's live tooltip.
+    local recipeSellable = DB.sellKnownRecipes
+        and itemSellPrice
+        and itemSellPrice > 0
+        and not IsEquippedItem(id)
+        and itemQuality
+        and DB.sellKnownRecipeQualities
+        and DB.sellKnownRecipeQualities[itemQuality]
+        and EC_compCache.liveTooltipIsTome
+        and EC_compCache.tomeKind
+        and EC_compCache.liveTooltipPlayerKnowsTome
+        and EC_compCache.liveTooltipIsTome(tooltip, id)
+        and EC_compCache.tomeKind(id) == "Recipe"
+        and EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
+        and true
+        or false
+
     local tomeProtected = false
     local tomeHave = false
     local tomeKindLabel
     if (DB.protectAllTomes or DB.protectUnlearnedTomes)
+        and not recipeSellable
         and EC_compCache.liveTooltipIsTome(tooltip, id)
     then
         -- Label the protection accurately. GetItemInfo's class is
@@ -799,6 +822,25 @@ local function EC_AnnotateTooltip(tooltip)
             )
             statusTag = "tome_new"
         end
+    end
+
+    -- Sell Known Recipes verdict. EC_IsSellable sells a learned recipe via
+    -- recipePass independently of the per-rarity quality rules, so the
+    -- tooltip must say "Will Sell" even when the quality-rule branch above
+    -- stamped a "Keep (...)" label on it (e.g. a recipe has no equip slot
+    -- to compare against in compare-to-equipped mode). Override that here -
+    -- but never override the real Keep List or Delete List (those win in
+    -- the engine too), and don't bother relabelling an existing Will Sell.
+    -- EC-TRAP: gate on statusTag (English token), never the localized
+    -- statusLine.
+    if recipeSellable
+        and statusTag ~= "willsell"
+        and statusTag ~= "willdelete"
+        and not IsInSet(DB.blacklist, id)
+        and not (IsInSet(DB.deleteList, id) and DB.enableDeletion)
+    then
+        statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (known recipe)"] .. "|r"
+        statusTag = "willsell"
     end
 
     if statusLine then

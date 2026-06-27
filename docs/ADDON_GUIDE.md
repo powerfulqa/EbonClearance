@@ -220,7 +220,13 @@ four groups:
   panel.
 - **Stats**: `totalCopper`, `totalItemsSold`, `totalItemsDeleted`,
   `totalRepairs`, `totalRepairCopper`, `soldItemCounts`,
-  `deletedItemCounts`, `inventoryWorthTotal`, `inventoryWorthCount`.
+  `deletedItemCounts`, `inventoryWorthTotal`, `inventoryWorthCount`,
+  `lootedItemCounts` (v2.46.0; per-character loot ledger, `itemID ->
+  quantity`, in `PER_CHAR_FIELDS`, drives the Loot Log's Character view).
+- **Recipe selling** (v2.46.0): `sellKnownRecipes` (bool) +
+  `sellKnownRecipeQualities` (`{[1..4] = bool}`). Account-wide-stored like
+  the `protect*Tomes` toggles, but learn-state is read per-character at
+  decision time. See the "Sell Known Recipes" gotcha.
 - **UI**: `minimapButtonAngle`, `allowedChars`.
 
 `EbonClearanceAccountDB` is a separate, account-wide table holding only
@@ -231,8 +237,10 @@ four groups:
 and account whitelists.
 
 In-memory only (not saved): `EC_session = { copper, sold, deleted,
-repairs, repairCopper }`. Reset by the Reset Session button on the main
-page or on `/reload`.
+repairs, repairCopper }`, and `EC_lootSession` (`itemID -> quantity`, the
+Loot Log's Session view). Both reset by the Reset Session button on the
+Stats panel or on `/reload`. The account-wide loot mirror lives at
+`EbonClearanceAccountDB.accountStats.lootedItemCounts`.
 
 `EnsureDB()` is the **only** place defaults are written. Adding a new
 setting means: pick the group, add a default line inside `EnsureDB()`,
@@ -510,6 +518,7 @@ Not wired into CI, but enforce in review:
 - `/ec clean apply` - auto-resolve list conflicts (precedence:
   blacklist > deleteList > whitelist).
 - `/ec bugreport` - diagnostic dump for issue reports.
+- `/ec loot` - open the Loot Log window (`NS.ToggleLootWindow`). v2.46.0.
 - `/ec rules` - plain-English summary of every active rule + the
   precedence EC uses to decide DELETE / SELL / KEEP. Same surface as
   the "Current Rules" button on the Main panel. Surfaces explicit
@@ -523,6 +532,7 @@ commands):
 - `EBONCLEARANCE_TOGGLE_SETTINGS` → `EbonClearance_ToggleSettings()`.
 - `EBONCLEARANCE_TOGGLE_ENABLED` → `EbonClearance_ToggleEnabled()`.
 - `EBONCLEARANCE_FORCE_SELL` → `EbonClearance_ForceSell()`.
+- `EBONCLEARANCE_TOGGLE_LOOTLOG` → `EbonClearance_ToggleLootLog()`. v2.46.0.
 
 Slash commands and binding handlers are registered at the very bottom
 of `EbonClearance.lua`.
@@ -1177,6 +1187,68 @@ reagents that happen to be blue quality. This matches user mental model
 ("sell BoE blues only" should not touch reagents) and is the reason the
 filter check is INSIDE the `qualityPass` branch, not outside it.
 
+### Sell Known Recipes logic is mirrored in FOUR places (v2.46.0)
+
+The "sell recipes you already know" rule is a positive sell signal
+(`recipePass`) for a profession recipe (`tomeKind == "Recipe"`) the
+character has learned (`playerKnowsTomeSpell`), gated per rarity via
+`DB.sellKnownRecipeQualities`. Crucially it **overrides the tome-protection
+veto** for learned recipes - including `protectAllTomes` ("keep them even
+after you learn them"). Non-recipe tomes and unlearned recipes are
+untouched.
+
+That override has to be applied in **four** independent code paths that
+each re-derive the verdict (they deliberately mirror, not call, the engine
+- see "Grey items are always sold"). If you change the rule, change all
+four or they drift:
+
+1. `EC_IsSellable` (EbonClearance_Events.lua) - computes `recipePass`; the
+   tome-veto gate carries `and not recipePass` to carve out learned recipes.
+2. `describeSellability` (EbonClearance_BagDisplay.lua) - the `/ec sellinfo`
+   trace; emits the `knownRecipeRule` step and excludes `recipePass` items
+   from the `tomeProtection` veto step.
+3. `EC_AnnotateTooltip` (EbonClearance_Tooltip.lua) - computes
+   `recipeSellable` BEFORE the tome block, skips the tome block for it, and
+   overrides a quality-rule "keep" verdict (but never the real Keep/Delete
+   list) with `statusTag = "willsell"`.
+4. `EC_ShowItemContextMenu` (EbonClearance_BagContextMenu.lua) - computes
+   `recipeSellable` so a sellable learned recipe shows the normal
+   Sell/Keep/Delete rows instead of the protected-item "Allow Sell" gate.
+
+The toggle (`DB.sellKnownRecipes`) is account-wide like the sibling
+`protect*Tomes` toggles, but the learn-state is read per-character from the
+live tooltip at decision time, so the same account setting yields different
+results per alt.
+
+### Loot Log capture is a bag-delta, not loot events (v2.46.0)
+
+The Loot Log counts items by **net bag increase**, scanned from the
+BAG_UPDATE debounce flush (`EC_ScanLootDelta`, the last step in
+`EC_compCache.bagUpdateFrame`'s OnUpdate). It is NOT driven by
+`CHAT_MSG_LOOT`, because the Greedy Scavenger drops its haul straight into
+bags without firing a "you receive loot" line - chat parsing only ever saw
+hand-looted items. The delta scan catches every source (manual loot,
+auto-loot cycle, Scavenger) uniformly.
+
+Guards that keep the delta honest (do not remove):
+
+- **First scan only baselines** (existing bag contents are not "loot").
+- **Skips while a transaction window is open** (`MerchantFrame`,
+  `BankFrame`, `MailFrame`, `TradeFrame`, `AuctionFrame`, `TradeSkillFrame`,
+  etc.) so vendor buys / bank or mail withdrawals / crafting output are not
+  counted - it re-baselines instead.
+- **Skips while the cursor holds an item** (`CursorHasItem`) so a bag
+  reorganise (pick up, drop back) does not credit a phantom +1.
+
+Storage is per-itemID aggregate counts (never an event log), in three
+places: in-memory `EC_lootSession` (Session view), per-character
+`DB.lootedItemCounts` (Character view, in `PER_CHAR_FIELDS`), and
+account-wide `ADB.accountStats.lootedItemCounts` (Account view). `EC_BumpLoot`
+writes all three; `EC_ClearLoot(scope)` wipes one in place. The window
+(`EbonClearanceLootWindow`, built lazily in EbonClearance_StatsPanel.lua) is
+a fixed/ resizable floating frame, so it is outside the reactive-width
+contract that governs Interface Options sub-panels.
+
 ### PE affix detection uses three sources, not one (v2.23.0+)
 
 The affix-protection system (`protectAffixedRareItems`) and the v2.23.0
@@ -1189,7 +1261,15 @@ signals:
    the presence discriminator; it gates the protection rule. Standard
    `ItemRandomSuffix.dbc` entries (`of the Bear`, etc.) don't end with
    roman numerals, so they aren't false-positive protected. (v2.20.0
-   narrowing.)
+   narrowing.) **v2.45.0 unranked fallback:** transferred procs
+   (Vampirism, Resurgence, Thunderfury) carry an affix line but no
+   Roman-numeral suffix. When `parseAffixFromTitle` returns nil but
+   the scan tooltip still contains an `@affix@`-wrapped description,
+   `bagSlotAffixData` / `liveTooltipAffixData` synthesise an
+   `{ name = <title-tail-after-base-name>, rank = nil, description }`
+   record. Downstream code (tooltip labels, dupe-allow gate) special-
+   cases `rank == nil` and labels these as `Keep (affix known)` /
+   `Keep (affix needed)` rather than the ranked variants.
 
 2. **`@affix@`-wrapped tooltip line** - PE wraps each affix's effect
    text with literal `@affix@` sentinel markers in the raw tooltip
@@ -1256,7 +1336,27 @@ this; the diff is recorded in commit history.
 
 Diagnostic commands `/ec affixdump`, `/ec affixfind <text>`, and
 `/ec procdump` are undocumented but useful for inspecting the known
-set when chasing match failures.
+set when chasing match failures. **`/ec scandebug`** (v2.44.12+,
+documented) opens a copyable window with the raw scan-tooltip text,
+parsed affix data, catalog-lookup results
+(`playerHasAffixDescription`, `playerHasAffixFamily`, both
+normalised forms), and the byte-level dump of the affix line for the
+bag slot under the mouse - the diagnostic of choice for "this item
+silently sold" reports.
+
+**v2.45.0 family-lookup widening.** `playerHasAffixFamily` returns
+true when the per-family ranks table exists at all
+(`return ranks ~= nil`) rather than only when it has at least one
+rank entry (`return next(ranks) ~= nil`). `refreshKnownAffixes`
+inserts a rank entry only when the spellbook scan recovered a
+numeric rank; unranked engraving spells leave `families[family]`
+as an empty table. Before the widening, unranked-known affixes were
+matched on description but failed the family lookup, so the dupe
+gate auto-released them even when the player had extracted them.
+The tooltip and auto-dupe paths now consult
+`(playerKnows or playerKnowsRank or playerKnowsFamily)` so an
+unranked-known affix surfaces as `Keep (affix known)` and respects
+the `affixAllowExactDupes` toggle.
 
 ### Allow Sell override (v2.26.0 / v2.27.0)
 

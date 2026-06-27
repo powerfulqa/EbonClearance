@@ -10,4 +10,7 @@
     <Binding name="EBONCLEARANCE_FORCE_SELL" category="EbonClearance">
         EbonClearance_ForceSell()
     </Binding>
+    <Binding name="EBONCLEARANCE_TOGGLE_LOOTLOG" category="EbonClearance">
+        EbonClearance_ToggleLootLog()
+    </Binding>
 </Bindings>

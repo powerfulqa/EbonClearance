@@ -116,6 +116,17 @@ local function EC_BuildBugReport()
     add("Protect Chance-on-Hit Items: " .. tostring(DB.protectChanceOnHitItems))
     add("Protect Unlearned Tomes: " .. tostring(DB.protectUnlearnedTomes))
     add("Protect All Tomes: " .. tostring(DB.protectAllTomes))
+    add("Sell Known Recipes: " .. tostring(DB.sellKnownRecipes))
+    if DB.sellKnownRecipes then
+        local rq = DB.sellKnownRecipeQualities or {}
+        add(string.format(
+            "  Recipe qualities (W/G/B/E): %s/%s/%s/%s",
+            tostring(rq[1] == true),
+            tostring(rq[2] == true),
+            tostring(rq[3] == true),
+            tostring(rq[4] == true)
+        ))
+    end
     -- v2.30.x: the per-character allowlist feature was decommissioned;
     -- DB.enableOnlyListedChars is force-disabled in EnsureDB and the
     -- bug report no longer surfaces the legacy fields.
@@ -692,6 +703,8 @@ local function EC_BuildRuleSummary()
         "    - 'Sell affixes below rank' (currently %s) and this rank is below it",
         (DB.affixMinSellRank and DB.affixMinSellRank > 0) and tostring(DB.affixMinSellRank) or "off"
     ))
+    add("    - It's a profession recipe you already know, and")
+    add("      'Sell recipes you already know' is " .. onoff(DB.sellKnownRecipes))
     add("")
     add("  ...AND NOTHING blocks it:")
     add("    - You're currently wearing it -> keep")
@@ -726,6 +739,7 @@ local function EC_BuildRuleSummary()
     add("  Keep items with chance-on-hit procs:      " .. onoff(DB.protectChanceOnHitItems))
     add("  Keep unlearned tomes and recipes:         " .. onoff(DB.protectUnlearnedTomes))
     add("  Keep all tomes (even learned):            " .. onoff(DB.protectAllTomes))
+    add("  Sell recipes you already know:            " .. onoff(DB.sellKnownRecipes))
     local sellCount = 0
     if DB.whitelist then
         for _ in pairs(DB.whitelist) do
@@ -816,6 +830,7 @@ local function EC_BuildProcessDebugDump()
     add(string.format("  ITEM_PROSPECTABLE = '%s'", tostring(ITEM_PROSPECTABLE)))
     add(string.format("  ITEM_SOULBOUND    = '%s'", tostring(ITEM_SOULBOUND)))
     add(string.format("  LOCKED            = '%s'", tostring(LOCKED)))
+    add(string.format("  ITEM_SPELL_KNOWN  = '%s'", tostring(ITEM_SPELL_KNOWN)))
     add("")
 
     local DB = NS.DB

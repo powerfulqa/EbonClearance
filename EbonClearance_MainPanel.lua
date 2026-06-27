@@ -791,9 +791,8 @@ local function BuildMainPanel(panel, content)
                 .. L["Find old 'Upgrade'-tagged Keep List items |cffaaaaaa(add 'apply' to remove)|r"],
         },
         {
-            run = "sellinfo",
-            label = "|cffffff00/ec sellinfo|r  "
-                .. L["Explain why an item will or won't sell |cffaaaaaa(or Alt+Shift+Right-Click)|r"],
+            run = "loot",
+            label = "|cffffff00/ec loot|r  " .. L["Open the Loot Log window"],
         },
         {
             run = "rules",

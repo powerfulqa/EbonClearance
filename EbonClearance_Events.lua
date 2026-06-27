@@ -289,6 +289,11 @@ local PER_CHAR_FIELDS = {
     bestGPH = true,
     bestGPHAt = true,
     bestGPHZone = true,
+    -- Per-character loot ledger (itemID -> total quantity looted by this
+    -- character, persisted). The Loot Log's Character scope reads this; the
+    -- account-wide aggregate lives in ADB.accountStats.lootedItemCounts and
+    -- the live session view in the in-memory EC_lootSession.
+    lootedItemCounts = true,
     -- v2.36.x Help / FAQ panel per-section collapse state. Stored
     -- per-character so each character can independently choose which
     -- sections (troubleshooting / gates / labels) are expanded vs
@@ -501,6 +506,14 @@ local function EnsureAccountDB()
     if type(AS.copperByZone) ~= "table" then
         AS.copperByZone = {}
     end
+    -- Session loot tracker, account-wide running total. Keyed by itemID ->
+    -- total quantity looted across all characters since install. Aggregate
+    -- only (one integer per distinct item), so it stays bounded. The live
+    -- session view is held in memory (NS.lootSession); this is the
+    -- persisted side the loot window's Account scope reads.
+    if type(AS.lootedItemCounts) ~= "table" then
+        AS.lootedItemCounts = {}
+    end
     if type(AS.bestGPH) ~= "number" then
         AS.bestGPH = 0
     end
@@ -652,6 +665,9 @@ local function EnsureDB()
     NS.DB = DB
     EnsureAccountDB()
 
+    if type(DB.lootedItemCounts) ~= "table" then
+        DB.lootedItemCounts = {}
+    end
     if type(DB.deleteList) ~= "table" then
         DB.deleteList = {}
     end
@@ -879,6 +895,27 @@ local function EnsureDB()
     end
     if type(DB.protectAllTomes) ~= "boolean" then
         DB.protectAllTomes = false
+    end
+    -- Sell Known Recipes. Opt-in auto-sell of profession recipes the
+    -- character has ALREADY learned (tooltip shows "Already known"). The
+    -- toggle is account-wide like the protect* toggles above, but the
+    -- learn-state is read per-character from the live tooltip at sell
+    -- time (playerKnowsTomeSpell), so each alt only sells the recipes IT
+    -- knows. Per-quality gate so a player can sell known white/green
+    -- recipes while keeping known blue/purple ones (e.g. for the auction
+    -- house). Default OFF (every auto-action is opt-in). "Protect all
+    -- tomes" wins outright and disables this signal.
+    if type(DB.sellKnownRecipes) ~= "boolean" then
+        DB.sellKnownRecipes = false
+    end
+    if type(DB.sellKnownRecipeQualities) ~= "table" then
+        DB.sellKnownRecipeQualities = { [1] = true, [2] = true, [3] = true, [4] = true }
+    else
+        for q = 1, 4 do
+            if type(DB.sellKnownRecipeQualities[q]) ~= "boolean" then
+                DB.sellKnownRecipeQualities[q] = true
+            end
+        end
     end
     -- v2.22.0: Process Bags panel. Lets the player batch-cast their
     -- profession spells (Disenchant / Mill / Prospect) on eligible
@@ -1439,6 +1476,16 @@ local EC_session = {
 }
 NS.session = EC_session
 
+-- Session loot ledger. Keyed by itemID -> total quantity looted this
+-- session. In-memory only (clears on /reload and Reset Session). This is
+-- an AGGREGATE, not an event log: storage is one small integer per
+-- distinct item, so it stays bounded no matter how long the farm runs.
+-- The persisted account-wide running total lives in
+-- ADB.accountStats.lootedItemCounts (see EC_BumpLoot). Exposed on NS so
+-- the Stats panel's loot window can read it.
+local EC_lootSession = {}
+NS.lootSession = EC_lootSession
+
 local function EC_ResetSession()
     EC_session.copper = 0
     EC_session.sold = 0
@@ -1446,8 +1493,38 @@ local function EC_ResetSession()
     EC_session.repairs = 0
     EC_session.repairCopper = 0
     EC_session.startedAt = GetTime()
+    -- Wipe the session loot ledger in place (keep the same table object so
+    -- NS.lootSession references held by the loot window stay valid).
+    for k in pairs(EC_lootSession) do
+        EC_lootSession[k] = nil
+    end
 end
 NS.ResetSession = EC_ResetSession
+
+-- Clear one scope of the loot ledger. "session" wipes the in-memory
+-- session table; "account" wipes the persisted account-wide bucket. Both
+-- wipe in place so existing table references stay valid.
+local function EC_ClearLoot(scope)
+    if scope == "account" then
+        local AS = ADB and ADB.accountStats
+        if AS and AS.lootedItemCounts then
+            for k in pairs(AS.lootedItemCounts) do
+                AS.lootedItemCounts[k] = nil
+            end
+        end
+    elseif scope == "character" then
+        if DB and DB.lootedItemCounts then
+            for k in pairs(DB.lootedItemCounts) do
+                DB.lootedItemCounts[k] = nil
+            end
+        end
+    else
+        for k in pairs(EC_lootSession) do
+            EC_lootSession[k] = nil
+        end
+    end
+end
+NS.ClearLoot = EC_ClearLoot
 
 -- v2.38.1: every per-character stat write mirrors into ADB.accountStats
 -- so the Stats panel's Account view aggregates totals across all
@@ -1482,6 +1559,122 @@ local function EC_BumpStatBucket(bucket, key, delta)
         ADB.accountStats[bucket][key] = (ADB.accountStats[bucket][key] or 0) + delta
     end
 end
+
+-- Session loot tracker bump. Writes the in-memory session ledger and the
+-- persisted account-wide running total. Deliberately NOT routed through
+-- EC_BumpStat / EC_BumpStatBucket: those also mirror into a per-character
+-- DB bucket, but loot tracking is session + account only (no per-character
+-- lifetime view by design). Aggregate per itemID, so it never grows into
+-- an event log.
+local function EC_BumpLoot(itemID, qty)
+    if not itemID then
+        return
+    end
+    qty = qty or 1
+    if qty <= 0 then
+        return
+    end
+    EC_lootSession[itemID] = (EC_lootSession[itemID] or 0) + qty
+    if DB then
+        DB.lootedItemCounts = DB.lootedItemCounts or {}
+        DB.lootedItemCounts[itemID] = (DB.lootedItemCounts[itemID] or 0) + qty
+    end
+    if ADB and ADB.accountStats then
+        ADB.accountStats.lootedItemCounts = ADB.accountStats.lootedItemCounts or {}
+        ADB.accountStats.lootedItemCounts[itemID] = (ADB.accountStats.lootedItemCounts[itemID] or 0) + qty
+    end
+end
+
+-- Loot capture. We track NET BAG INCREASES rather than parsing
+-- CHAT_MSG_LOOT, because the Greedy Scavenger pet drops its haul straight
+-- into your bags without firing a "you receive loot" chat line - so chat
+-- parsing only ever saw what the PLAYER looted by hand. A bag-delta scan
+-- catches every source uniformly: manual loot, the auto-loot cycle, AND
+-- the Scavenger. Summing per itemID across all bags means moving or
+-- splitting stacks nets to zero (no false count); only genuine increases
+-- are recorded.
+--
+-- Runs from the BAG_UPDATE debounce flush (already coalesced for the
+-- Scavenger's rapid multi-item bursts), so it costs one bag walk per
+-- settled burst - no tooltip scans. To avoid counting non-loot inflows
+-- (vendor buys / buybacks, bank or mail withdrawals, trade, auction,
+-- crafting output), the scan only DIFFS when no transactional window is
+-- open; while one is open it just re-baselines the snapshot so the next
+-- open-world loot diffs against the right starting point.
+local EC_lootBagSnapshot = {}
+local EC_lootSnapshotReady = false
+
+-- True while a window is open through which items legitimately enter bags
+-- without being "loot" (so we shouldn't count the delta as looted).
+local function EC_LootTransactionWindowOpen()
+    local frames = {
+        MerchantFrame,
+        BankFrame,
+        GuildBankFrame,
+        MailFrame,
+        OpenMailFrame,
+        TradeFrame,
+        AuctionFrame,
+        TradeSkillFrame,
+        CraftFrame,
+    }
+    for _, f in ipairs(frames) do
+        if f and f.IsShown and f:IsShown() then
+            return true
+        end
+    end
+    return false
+end
+
+-- Build a fresh { itemID = totalCount } snapshot across bags 0-4.
+local function EC_BuildBagSnapshot()
+    local snap = {}
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag) or 0
+        for slot = 1, slots do
+            local id = GetContainerItemID(bag, slot)
+            if id then
+                local _, count = GetContainerItemInfo(bag, slot)
+                snap[id] = (snap[id] or 0) + (count or 1)
+            end
+        end
+    end
+    return snap
+end
+
+-- Diff current bags against the last snapshot and record positive deltas as
+-- looted. Called from the BAG_UPDATE debounce flush. The first call after
+-- login / reload only baselines (existing bag contents are not "loot").
+local function EC_ScanLootDelta()
+    -- Master enable gate, consistent with the other debounce-driven scans.
+    if NS.IsAddonEnabledForChar and not NS.IsAddonEnabledForChar() then
+        return
+    end
+    -- Skip entirely while an item is on the cursor: a bag reorganise picks
+    -- an item up (total count drops) then drops it back (count returns).
+    -- Leaving the snapshot untouched until the cursor clears means the
+    -- round-trip nets to zero instead of crediting a phantom +1. Any real
+    -- loot that lands while the cursor is busy is caught on the next scan.
+    if CursorHasItem and CursorHasItem() then
+        return
+    end
+    local snap = EC_BuildBagSnapshot()
+    -- While a transactional window is open, or on the very first scan, just
+    -- re-baseline without crediting any delta as loot.
+    if not EC_lootSnapshotReady or EC_LootTransactionWindowOpen() then
+        EC_lootBagSnapshot = snap
+        EC_lootSnapshotReady = true
+        return
+    end
+    for id, count in pairs(snap) do
+        local prev = EC_lootBagSnapshot[id] or 0
+        if count > prev then
+            EC_BumpLoot(id, count - prev)
+        end
+    end
+    EC_lootBagSnapshot = snap
+end
+NS.ScanLootDelta = EC_ScanLootDelta
 
 -- Keep bags open when merchant closes
 local EC_keepBagsFlag = false
@@ -2508,6 +2701,14 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- destructive path.
     if EC_compCache.runAutoMarkResilience then
         EC_compCache.runAutoMarkResilience()
+    end
+    -- Loot tracker bag-delta scan. Runs last in the flush: auto-delete-on-
+    -- pickup confirms its delete asynchronously (via the delete popup on a
+    -- later tick), so a just-looted Delete-List item is still in bags when
+    -- this scan runs and gets counted before the async delete removes it on
+    -- a subsequent burst.
+    if EC_ScanLootDelta then
+        EC_ScanLootDelta()
     end
 end)
 
@@ -4450,7 +4651,37 @@ local function EC_IsSellable(bag, slot, junkOnly)
             and EC_compCache.playerHasAffixFamily(affixForRank.name)
         autoDupePass = (descKnown or rankKnown or familyKnown) and true or false
     end
-    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass) then
+    -- Sell Known Recipes: standalone auto-sell signal for profession
+    -- recipes the character has already learned. Gated per-quality.
+    -- Unknown / unreadable recipes never qualify (playerKnowsTomeSpell
+    -- returns false), so they stay safe. tomeKind == "Recipe" restricts
+    -- this to profession crafting items (spell tomes, class books, and
+    -- mount scrolls are excluded). Recipe knowledge is per-character, so
+    -- the live tooltip scan is the source of truth. Not gated by junkOnly's
+    -- merchant mode (mirrors qualityPass/whitelistPass).
+    --
+    -- Precedence: this is the user's explicit "sell my known recipes"
+    -- action, so it OVERRIDES the tome-protection veto below for the
+    -- specific case of known recipes - including "Keep all tomes/recipes
+    -- even after you learn them" (protectAllTomes). That keep-toggle still
+    -- protects non-recipe tomes (class books, mount scrolls) and unknown
+    -- recipes; it just stops shadowing this opt-in for learned recipes.
+    local recipePass = false
+    if not junkOnly
+        and hasSellPrice
+        and DB.sellKnownRecipes
+        and quality
+        and quality >= 1
+        and quality <= 4
+        and DB.sellKnownRecipeQualities
+        and DB.sellKnownRecipeQualities[quality]
+        and EC_compCache.itemIsTome(bag, slot, itemID)
+        and EC_compCache.tomeKind(itemID) == "Recipe"
+        and EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+    then
+        recipePass = true
+    end
+    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass) then
         return false
     end
     if IsEquippedItem(itemID) or blacklisted then
@@ -4561,7 +4792,12 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- Allow Sell is the acknowledgment that the protection is being
     -- overridden. protectAllTomes wins over protectUnlearnedTomes when
     -- both are on.
+    -- `not recipePass`: a known profession recipe the user opted to sell
+    -- via Sell Known Recipes is carved out of the tome veto (it wins over
+    -- protectAllTomes for that specific case). Non-recipe tomes and unknown
+    -- recipes never set recipePass, so their protection is unaffected.
     if (qualityPass or whitelistPass)
+        and not recipePass
         and (DB.protectAllTomes or DB.protectUnlearnedTomes)
         and EC_compCache.itemIsTome(bag, slot, itemID)
     then
@@ -4583,7 +4819,7 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- of this recheck "to match the original v2.20.x recheck" - they
     -- are positive sell signals and dropping them silently breaks the
     -- /ec rules vs vendor cycle agreement (was the v2.44.1 bug).
-    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass) then
+    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass) then
         return false
     end
     return true, link, itemID, sellPrice, itemCount
@@ -5479,6 +5715,7 @@ _G["BINDING_NAME_CLICK EbonClearanceProcessCastBtn:LeftButton"] = "Process Next"
 BINDING_NAME_EBONCLEARANCE_TOGGLE_SETTINGS = "Open/close settings"
 BINDING_NAME_EBONCLEARANCE_TOGGLE_ENABLED = "Toggle enabled"
 BINDING_NAME_EBONCLEARANCE_FORCE_SELL = "Force sell at current merchant"
+BINDING_NAME_EBONCLEARANCE_TOGGLE_LOOTLOG = "Open/close Loot Log"
 -- Cross-list intent groups for the add-time conflict guard:
 --   keep   = whitelist (per-character) + accountWhitelist (account-wide)
 --   sell   = blacklist
@@ -5671,6 +5908,13 @@ function EbonClearance_ToggleSettings()
         InterfaceOptionsFrame:Hide()
     else
         NS.OpenOptionsPanel("EbonClearanceOptionsMain")
+    end
+end
+
+function EbonClearance_ToggleLootLog()
+    EnsureDB()
+    if NS.ToggleLootWindow then
+        NS.ToggleLootWindow()
     end
 end
 
@@ -6155,6 +6399,14 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         local slot = tonumber(slotArg)
         if EC_compCache.printSellabilityTrace then
             EC_compCache.printSellabilityTrace(bag, slot)
+        end
+        return
+    end
+
+    if cmd == "loot" then
+        EnsureDB()
+        if NS.ToggleLootWindow then
+            NS.ToggleLootWindow()
         end
         return
     end

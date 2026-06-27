@@ -70,13 +70,19 @@ local EC_HELP_ENTRIES = {
     {
         id = "see-item-decision",
         q = L["How do I see what will happen to an item?"],
-        a = L["Hover any bag item with EbonClearance enabled and the tooltip shows what the addon will do: 'Keep', 'Will Sell', 'Will Delete', or 'Won't Sell' with a reason. For a full step-by-step, Alt+Shift+Right-Click the item, or type /ec sellinfo."],
+        a = L["Hover any bag item with EbonClearance enabled and the tooltip shows what the addon will do: 'Keep', 'Will Sell', 'Will Delete', or 'Won't Sell' with a reason. For a full step-by-step, Alt+Right-Click the item and pick 'Sell Info' (or Alt+Shift+Right-Click, or type /ec sellinfo)."],
+        panel = nil,
+    },
+    {
+        id = "sell-info-menu",
+        q = L["What does 'Sell Info' on the right-click menu do?"],
+        a = L["Alt+Right-Click a bag item and choose |cffb6ffb6Sell Info|r to print a step-by-step trace of how EbonClearance decided to keep, sell, or delete that exact item. It lists each check (sell price, your lists, quality rule, known-recipe rule, affix / chance-on-hit / tome protection) with a + or - and ends with the final verdict. It is the same readout as /ec sellinfo, for the item you clicked. Use it whenever an item isn't doing what you expected at a vendor."],
         panel = nil,
     },
     {
         id = "slash-commands",
         q = L["What are the slash commands?"],
-        a = L["/ec opens the settings. /ec help prints the full command list. /ec sellinfo explains why a bag item will or won't sell. /ec bugreport opens a diagnostic snapshot. /ec clean finds items appearing on multiple lists. /ecdebug shows a bag scan summary."],
+        a = L["/ec opens the settings. /ec help prints the full command list. /ec sellinfo explains why a bag item will or won't sell. /ec loot opens the Loot Log window. /ec bugreport opens a diagnostic snapshot. /ec clean finds items appearing on multiple lists. /ecdebug shows a bag scan summary."],
         panel = nil,
     },
     {
@@ -89,6 +95,12 @@ local EC_HELP_ENTRIES = {
         id = "stats-character-vs-account",
         q = L["Character view vs Account view in the Stats panel?"],
         a = L["The toggle at the top of the Stats panel picks which totals to show. |cffb6ffb6Character|r shows just the currently logged-in character's lifetime totals - the original behaviour. |cffb6ffb6Account|r shows the same fields summed across every character on this account that has used EbonClearance. Account totals start at zero on v2.38.1 install and count forward; older per-character history stays on each character's own Character view. The Account view's Best Gold/Hour ribbon names which character set the record. |cffffd870Reset Lifetime|r is view-aware: in Character view it clears just this character; in Account view it clears just the account ledger, leaving every character's own totals intact."],
+        panel = "EbonClearanceOptionsStats",
+    },
+    {
+        id = "session-loot",
+        q = L["What is the Loot Log window?"],
+        a = L["A window that lists what you've looted and how much. It counts everything that lands in your bags - your own loot, the auto-loot cycle, and the Greedy Scavenger's haul. Open it with the |cffb6ffb6Loot Log|r button on the Stats panel, by typing /ec loot, or with a key you bind under Key Bindings > EbonClearance. Each row shows the count and that item's share of your total looted volume, so you can eyeball what's common vs rare in a farm spot. Sort by Name, Count, or % (click again to flip the order), use Show: to filter by rarity, and drag the bottom-right corner to resize. Hold |cffb6ffb6Alt|r and hover a row for a plain-English read on what EbonClearance will do with that item. Three views: |cffb6ffb6Session|r (looted since login; resets on /reload or Reset Session Stats), |cffb6ffb6Character|r (this character's lifetime), and |cffb6ffb6Account|r (a running total across all your characters). Counts are tallied per item, so the window stays light no matter how long you farm. Clear wipes whichever view you're looking at."],
         panel = "EbonClearanceOptionsStats",
     },
     {
@@ -131,6 +143,12 @@ local EC_HELP_ENTRIES = {
         id = "tshoot-why-not-selling",
         q = L["Why isn't this item selling?"],
         a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints each check and tells you which one is keeping the item. Usually one of the protection toggles is catching it - the panel below has all of them."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "tshoot-allow-sell-gate",
+        q = L["Why does Alt+Right-Click only show 'Allow Sell' on some items?"],
+        a = L["That item is |cffffb84dprotected|r, so the menu hides the Sell / Keep / Delete rows until you consciously unlock it. Three things trigger protection: a Project Ebonhold affix on a Rare/Epic, a 'Chance on hit:' proc, or a tome/recipe while 'Keep unlearned tomes and recipes' (or 'Keep them even after you learn them') is on. Click |cffb6ffb6Allow Sell|r to lift the protection for that item, then the full menu opens. Recipes are a special case: if you've turned on 'Sell recipes you already know' for that rarity, learned recipes of that rarity skip the gate and show the normal menu - so a Blue recipe still shows Allow Sell until you tick Blue under Sell recipes you already know."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
@@ -320,6 +338,12 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
+        id = "gate-sell-known-recipes",
+        q = L["Sell recipes you already know"],
+        a = L["Off by default. When you turn it on (in the panel below, with the tome controls), profession recipes this character has ALREADY learned are auto-sold at vendors, gated per rarity (White / Green / Blue / Epic). Recipes you have not learned yet are never sold. Learn-state is checked per character, so each alt only sells the recipes it knows. If 'Protect all tomes / recipes' is on, it wins and nothing recipe-like sells."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
         id = "gate-quest-items",
         q = L["Quest item safety net"],
         a = L["Quest items never auto-sell from a quality rule, even when the rule matches. You can still manually add a quest item to the Sell List if you really want it gone - your direct action overrides the safety net."],
@@ -407,6 +431,18 @@ local EC_HELP_ENTRIES = {
         id = "label-affix-rank-needed",
         q = L["Keep (affix rank needed)"],
         a = L["Project Ebonhold affix on the item that you don't yet own at this rank. Protected so you can extract it at the Anvil."],
+        panel = nil,
+    },
+    {
+        id = "label-affix-known",
+        q = L["Keep (affix known)"],
+        a = L["Project Ebonhold transferred-proc affix on the item, and you already have the affix extracted at the Anvil. The item is still protected. Turn on 'Allow selling affixes you already have' in Protection Settings if you want extras to auto-sell. Unranked variant of 'Keep (affix rank known)' for procs like Vampirism / Resurgence that don't have ranks."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "label-affix-needed",
+        q = L["Keep (affix needed)"],
+        a = L["Project Ebonhold transferred-proc affix on the item that you haven't extracted yet. Protected so you can extract it at the Anvil. Unranked variant of 'Keep (affix rank needed)' for procs like Vampirism / Resurgence that don't have ranks."],
         panel = nil,
     },
     {
@@ -611,6 +647,12 @@ local EC_HELP_ENTRIES = {
         id = "bug-process-debug",
         q = L["Process Bags missing herbs / ores / disenchant targets?"],
         a = L["If Disenchant works but Milling / Prospecting don't show your items (or vice versa), run |cffffff00/ec processdebug|r. A copyable window opens listing every Process Bags gate: which profession spells the client recognises, every bag slot's scan result, and the buildProcessSummary entry counts. Paste that into the bug report so we can pin down which layer fails on your setup (private-server spell IDs, custom tooltip markers, etc.)."],
+        panel = nil,
+    },
+    {
+        id = "bug-scan-debug",
+        q = L["Affix item silently sold? Dump the raw tooltip scan"],
+        a = L["If an affixed item sold despite protection being on (especially Project Ebonhold transferred procs like Vampirism / Resurgence), hover the item in your bag then run |cffffff00/ec scandebug|r. A copyable window opens with the raw tooltip text, parsed affix data, catalog-lookup results (was the affix recognised, was it matched to a known family), and the byte-level dump of the affix line. Paste that into the bug report so the detection layer that misfired can be identified."],
         panel = nil,
     },
     {
@@ -936,6 +978,26 @@ HelpPanel:SetScript("OnShow", function(self)
         end
         local collapsed = DB2.helpSectionsCollapsed or {}
 
+        -- Search filter. When a query is active, match entries by their
+        -- indexed q+a text; a section header shows only if it owns a match,
+        -- and matching sections are force-expanded (collapse is ignored).
+        local query = panel._helpSearch or ""
+        local searching = query ~= ""
+        local matchById, sectionHasMatch = {}, {}
+        if searching then
+            local searchText = panel._helpEntrySearch or {}
+            local entrySection = panel._helpEntrySection or {}
+            for id, text in pairs(searchText) do
+                if text:find(query, 1, true) then
+                    matchById[id] = true
+                    local sec = entrySection[id]
+                    if sec then
+                        sectionHasMatch[sec] = true
+                    end
+                end
+            end
+        end
+
         -- Layout uses TOPLEFT + TOPRIGHT anchors exclusively (corner
         -- anchors don't imply vertical-center alignment, unlike LEFT/RIGHT
         -- which would over-constrain frames whose TOP is also set and
@@ -952,6 +1014,7 @@ HelpPanel:SetScript("OnShow", function(self)
         local yCursor = 0
         local currentSection = nil
         local currentSectionCollapsed = false
+        local currentSectionShown = true
         local SECTION_GAP = 16
         local Q_GAP = 14
         local A_GAP = 4
@@ -964,22 +1027,31 @@ HelpPanel:SetScript("OnShow", function(self)
                 -- anchors span the full chrome width - Buttons don't
                 -- need SetWordWrap so the anchor pair is safe here.
                 currentSection = it.section
-                currentSectionCollapsed = collapsed[currentSection] == true
-                local glyph = currentSectionCollapsed and "[+]" or "[-]"
-                it.widget:SetText(string.format("|cffffff00%s %s|r", glyph, it.title))
-                it.widget:ClearAllPoints()
-                if prevFull then
-                    it.widget:SetPoint("TOPLEFT", prevFull, "BOTTOMLEFT", 0, -(SECTION_GAP + yCursor))
-                    it.widget:SetPoint("TOPRIGHT", prevFull, "BOTTOMRIGHT", 0, -(SECTION_GAP + yCursor))
+                -- While searching, hide sections with no matching entry and
+                -- force-expand the ones that do; otherwise honour collapse.
+                currentSectionShown = (not searching) or (sectionHasMatch[currentSection] == true)
+                if not currentSectionShown then
+                    it.widget:Hide()
                 else
-                    it.widget:SetPoint("TOPLEFT", chrome, "TOPLEFT", 0, -4)
-                    it.widget:SetPoint("TOPRIGHT", chrome, "TOPRIGHT", 0, -4)
+                    currentSectionCollapsed = (not searching) and (collapsed[currentSection] == true)
+                    local glyph = currentSectionCollapsed and "[+]" or "[-]"
+                    it.widget:SetText(string.format("|cffffff00%s %s|r", glyph, it.title))
+                    it.widget:ClearAllPoints()
+                    if prevFull then
+                        it.widget:SetPoint("TOPLEFT", prevFull, "BOTTOMLEFT", 0, -(SECTION_GAP + yCursor))
+                        it.widget:SetPoint("TOPRIGHT", prevFull, "BOTTOMRIGHT", 0, -(SECTION_GAP + yCursor))
+                    else
+                        it.widget:SetPoint("TOPLEFT", chrome, "TOPLEFT", 0, -4)
+                        it.widget:SetPoint("TOPRIGHT", chrome, "TOPRIGHT", 0, -4)
+                    end
+                    it.widget:Show()
+                    prevFull = it.widget
+                    yCursor = 0
                 end
-                it.widget:Show()
-                prevFull = it.widget
-                yCursor = 0
             else
-                if currentSectionCollapsed then
+                if not currentSectionShown or currentSectionCollapsed
+                    or (searching and it.id and not matchById[it.id])
+                then
                     it.widget:Hide()
                 else
                     it.widget:ClearAllPoints()
@@ -1011,6 +1083,19 @@ HelpPanel:SetScript("OnShow", function(self)
                         yCursor = 0
                     end
                 end
+            end
+        end
+        -- No-match message: shown only while searching with zero hits, and
+        -- becomes the bottom-most widget so the scroll area sizes to it.
+        local noResults = panel._helpNoResults
+        if noResults then
+            if searching and not next(sectionHasMatch) then
+                noResults:ClearAllPoints()
+                noResults:SetPoint("TOPLEFT", chrome, "TOPLEFT", 0, -4)
+                noResults:Show()
+                prevFull = noResults
+            else
+                noResults:Hide()
             end
         end
         if prevFull and NS.FitScrollContent then
@@ -1062,6 +1147,29 @@ HelpPanel:SetScript("OnShow", function(self)
             L["|cff888888Common issues, sell-decision gates, and tooltip label meanings. Click a section header to expand / collapse.|r"]
         )
 
+        -- Keyword search. Filters the FAQ to entries whose question or
+        -- answer contains the typed text; matching sections auto-expand and
+        -- non-matching entries hide. An empty box restores the normal
+        -- collapsible view. The query lives on the panel so refreshLayout
+        -- (which also runs on section-header clicks) can read it.
+        local searchLabel = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        searchLabel:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -10)
+        searchLabel:SetText(L["Search help:"])
+        local searchBox = CreateFrame("EditBox", "EbonClearanceHelpSearchBox", content, "InputBoxTemplate")
+        searchBox:SetAutoFocus(false)
+        searchBox:SetHeight(20)
+        searchBox:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 6, -4)
+        EC_compCache.setPanelWidth(searchBox, 60)
+        searchBox:SetScript("OnTextChanged", function(box)
+            s._helpSearch = (box:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+            refreshLayout(s)
+        end)
+        searchBox:SetScript("OnEscapePressed", function(box)
+            box:SetText("")
+            box:ClearFocus()
+        end)
+        s._helpSearchBox = searchBox
+
         -- Chrome-wrapped content area for the FAQ entries. Uses Keep
         -- List's two-anchor pattern (TOPLEFT to prev widget's BOTTOMLEFT,
         -- TOPRIGHT to extend out to the panel's standard 16px right
@@ -1073,9 +1181,13 @@ HelpPanel:SetScript("OnShow", function(self)
         -- from panel.right), matching Keep List's listUI extent.
         -- chromeOuter doesn't need its own setPanelWidth because the
         -- anchors trace back to intro, which IS registered for resize.
+        -- Y offset -52 (was -12) clears the search row inserted below the
+        -- intro. Both anchors trace to `intro` (same frame, same Y) so the
+        -- top edge stays level - no skew from referencing the short search
+        -- box.
         local chromeOuter = CreateFrame("Frame", nil, content)
-        chromeOuter:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -12)
-        chromeOuter:SetPoint("TOPRIGHT", intro, "BOTTOMRIGHT", 24, -12)
+        chromeOuter:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -52)
+        chromeOuter:SetPoint("TOPRIGHT", intro, "BOTTOMRIGHT", 24, -52)
         chromeOuter:SetHeight(400) -- temporary; refreshLayout's FitScrollContent recomputes
         applyChromeBackdrop(chromeOuter)
 
@@ -1126,6 +1238,17 @@ HelpPanel:SetScript("OnShow", function(self)
         chrome:SetPoint("TOPLEFT", chromeOuter, "TOPLEFT", 6, -6)
         chrome:SetPoint("BOTTOMRIGHT", chromeOuter, "BOTTOMRIGHT", -6, 6)
         s._helpChromeContent = chrome
+
+        -- Shown by refreshLayout when a search matches nothing.
+        local noResults = chrome:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        EC_compCache.setPanelWidth(noResults, 4)
+        noResults:SetJustifyH("LEFT")
+        if noResults.SetWordWrap then
+            noResults:SetWordWrap(true)
+        end
+        noResults:SetText(L["No help entries match your search."])
+        noResults:Hide()
+        s._helpNoResults = noResults
 
         -- Build a prebuilt renderItems list. Every widget exists from
         -- the start; visibility + anchors are set per-section by the
@@ -1204,6 +1327,14 @@ HelpPanel:SetScript("OnShow", function(self)
                 renderItems[#renderItems + 1] = { kind = "q", widget = qfs, section = currentSection, id = entry.id }
                 renderItems[#renderItems + 1] = { kind = "a", widget = afs, section = currentSection, id = entry.id }
 
+                -- Search index: lowercased question + answer text per entry,
+                -- plus the entry's owning section, so the search box can
+                -- match keywords and decide which section headers to show.
+                s._helpEntrySearch = s._helpEntrySearch or {}
+                s._helpEntrySection = s._helpEntrySection or {}
+                s._helpEntrySearch[entry.id] = ((entry.q or "") .. " " .. (entry.a or "")):lower()
+                s._helpEntrySection[entry.id] = currentSection
+
                 if entry.url then
                     -- Copyable URL button. Clicking pops up the EC_COPY_URL
                     -- StaticPopup pre-selected with the URL so the player
@@ -1216,7 +1347,7 @@ HelpPanel:SetScript("OnShow", function(self)
                         EC_COPY_URL_DATA.url = urlValue
                         StaticPopup_Show("EC_COPY_URL")
                     end)
-                    renderItems[#renderItems + 1] = { kind = "button", widget = btn, section = currentSection }
+                    renderItems[#renderItems + 1] = { kind = "button", widget = btn, section = currentSection, id = entry.id }
                 elseif entry.panel then
                     local panelKey = entry.panel
                     -- Button label is resolved at OnClick time so panel
@@ -1251,14 +1382,14 @@ HelpPanel:SetScript("OnShow", function(self)
                             InterfaceOptionsFrame_OpenToCategory(target)
                         end
                     end)
-                    renderItems[#renderItems + 1] = { kind = "button", widget = btn, section = currentSection }
+                    renderItems[#renderItems + 1] = { kind = "button", widget = btn, section = currentSection, id = entry.id }
                 end
 
                 -- Separator texture.
                 local sep = chrome:CreateTexture(nil, "ARTWORK")
                 sep:SetTexture(0.3, 0.3, 0.3, 0.6)
                 sep:SetHeight(1)
-                renderItems[#renderItems + 1] = { kind = "sep", widget = sep, section = currentSection }
+                renderItems[#renderItems + 1] = { kind = "sep", widget = sep, section = currentSection, id = entry.id }
             end
         end
         s._helpRenderItems = renderItems

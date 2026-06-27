@@ -282,6 +282,15 @@ local ANSWER_MAP = {
             DB.protectAllTomes = false
         end,
     },
+    sellRecipes = {
+        yes = function(DB)
+            DB.sellKnownRecipes = true
+            DB.sellKnownRecipeQualities = { [1] = true, [2] = true, [3] = true, [4] = true }
+        end,
+        no = function(DB)
+            DB.sellKnownRecipes = false
+        end,
+    },
     repair = {
         gold = function(DB)
             DB.repairGear = true
@@ -374,6 +383,7 @@ local PRESETS = {
             safetyNets = "all",
             affixRankFloor = "off",
             tomes = "unlearned",
+            sellRecipes = "no",
             repair = "gold",
             keepBags = "yes",
             summon = "yes",
@@ -397,6 +407,7 @@ local PRESETS = {
             safetyNets = "all",
             affixRankFloor = "off",
             tomes = "all",
+            sellRecipes = "no",
             repair = "gold",
             keepBags = "yes",
             summon = "yes",
@@ -420,6 +431,7 @@ local PRESETS = {
             safetyNets = "all",
             affixRankFloor = "off",
             tomes = "unlearned",
+            sellRecipes = "yes",
             repair = "guild",
             keepBags = "no",
             summon = "yes",
@@ -443,6 +455,7 @@ local PRESETS = {
             safetyNets = "critical",
             affixRankFloor = "belowV",
             tomes = "unlearned",
+            sellRecipes = "yes",
             repair = "guild",
             keepBags = "no",
             summon = "yes",
@@ -490,6 +503,7 @@ local function EC_ApplyQuickstart(answers, fixedCaps, presetKey)
         affixMinSellRank = DB.affixMinSellRank,
         protectUnlearnedTomes = DB.protectUnlearnedTomes,
         protectAllTomes = DB.protectAllTomes,
+        sellKnownRecipes = DB.sellKnownRecipes,
         repairGear = DB.repairGear,
         repairUseGuildBank = DB.repairUseGuildBank,
         keepBagsOpen = DB.keepBagsOpen,
@@ -691,6 +705,8 @@ local function snapshotAnswersFromDB(DB)
     else
         a.tomes = "off"
     end
+    -- Q9b sell known recipes
+    a.sellRecipes = DB.sellKnownRecipes and "yes" or "no"
     -- Q8 repair
     if not DB.repairGear then
         a.repair = "off"
@@ -1201,6 +1217,14 @@ local function buildPanel(self, content)
                 label = L["Protect ALL tomes - even ones I've already learned (useful for sharing with alts)"],
             },
             { value = "off", label = L["Don't protect tomes"] },
+        }, refresh)
+
+        lastAnchor = makeRadioGroup(content, lastAnchor, "sellRecipes", L["Q9b. Sell recipes you've already learned?"], {
+            { value = "no", label = L["No, keep my learned recipes (default)"] },
+            {
+                value = "yes",
+                label = L["Yes, auto-sell recipes this character already knows (overrides 'protect all tomes' for recipes)"],
+            },
         }, refresh)
 
         local sec4 = makeSectionHeader(content, L["Section 4: At the Vendor"], lastAnchor, -20)

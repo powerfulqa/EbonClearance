@@ -85,6 +85,20 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.UpdateAllTomeEnabled then
             self:UpdateAllTomeEnabled()
         end
+        if self.sellRecipesCB then
+            self.sellRecipesCB:SetChecked(DB.sellKnownRecipes)
+        end
+        if self.recipeQualityCBs then
+            for q = 1, 4 do
+                local qcb = self.recipeQualityCBs[q]
+                if qcb then
+                    qcb:SetChecked(DB.sellKnownRecipeQualities and DB.sellKnownRecipeQualities[q])
+                end
+            end
+        end
+        if self.UpdateRecipeQualitiesEnabled then
+            self:UpdateRecipeQualitiesEnabled()
+        end
     end, function(self, content)
         -- Auto-protect handlers used to refresh `self.listUI` directly because
         -- the list lived on the same frame. Now the list lives on the Keep List
@@ -658,6 +672,97 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
 
-        NS.FitScrollContent(content, allTomeNote)
+        -- Sell Known Recipes. Sits with the tome controls because it is the
+        -- inverse policy: when ON, profession recipes this character has
+        -- ALREADY learned auto-sell at vendors, gated per quality. Unknown
+        -- recipes are never sold. "Keep them even after you learn them"
+        -- (allTomeCB above, = protectAllTomes) wins and disables this.
+        local sellRecipesCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceSellKnownRecipesCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        sellRecipesCB:SetPoint("TOPLEFT", allTomeNote, "BOTTOMLEFT", -52, -12)
+        sellRecipesCB:SetChecked(DB.sellKnownRecipes)
+        local srText = _G[sellRecipesCB:GetName() .. "Text"]
+        if srText then
+            srText:SetText(L["Sell recipes you already know"])
+            EC_compCache.setPanelWidth(srText, 60)
+            srText:SetJustifyH("LEFT")
+        end
+        self.sellRecipesCB = sellRecipesCB
+        if srText then
+            NS.AddHelpIcon(content, srText, "LEFT", "RIGHT", 6, 0, "gate-sell-known-recipes")
+        end
+
+        -- Per-quality gate: four indented child checkboxes, one per recipe
+        -- rarity, each writing DB.sellKnownRecipeQualities[q]. Greyed out
+        -- when the parent is off.
+        local recipeQualityLabels = { L["White"], L["Green"], L["Blue"], L["Epic"] }
+        local recipeQualityCBs = {}
+        local recipeAnchor = sellRecipesCB
+        for q = 1, 4 do
+            local qcb = CreateFrame(
+                "CheckButton",
+                "EbonClearanceSellKnownRecipeQ" .. q .. "CB",
+                content,
+                "InterfaceOptionsCheckButtonTemplate"
+            )
+            if q == 1 then
+                qcb:SetPoint("TOPLEFT", recipeAnchor, "BOTTOMLEFT", 26, -6)
+            else
+                qcb:SetPoint("TOPLEFT", recipeAnchor, "BOTTOMLEFT", 0, -4)
+            end
+            qcb:SetChecked(DB.sellKnownRecipeQualities and DB.sellKnownRecipeQualities[q] or false)
+            local qText = _G[qcb:GetName() .. "Text"]
+            if qText then
+                qText:SetText(recipeQualityLabels[q])
+                qText:SetJustifyH("LEFT")
+            end
+            qcb:SetScript("OnClick", function(cb)
+                DB.sellKnownRecipeQualities = DB.sellKnownRecipeQualities or {}
+                DB.sellKnownRecipeQualities[q] = cb:GetChecked() and true or false
+                PlaySound("igMainMenuOptionCheckBoxOn")
+                if NS.RefreshSellBorders then
+                    NS.RefreshSellBorders()
+                end
+            end)
+            recipeQualityCBs[q] = qcb
+            recipeAnchor = qcb
+        end
+        self.recipeQualityCBs = recipeQualityCBs
+
+        local function UpdateRecipeQualitiesEnabled()
+            local on = DB.sellKnownRecipes == true
+            for q = 1, 4 do
+                local qcb = recipeQualityCBs[q]
+                local qText = qcb and _G[qcb:GetName() .. "Text"]
+                if on then
+                    qcb:Enable()
+                    if qText then
+                        qText:SetTextColor(1, 1, 1)
+                    end
+                else
+                    qcb:Disable()
+                    if qText then
+                        qText:SetTextColor(0.5, 0.5, 0.5)
+                    end
+                end
+            end
+        end
+        self.UpdateRecipeQualitiesEnabled = UpdateRecipeQualitiesEnabled
+        UpdateRecipeQualitiesEnabled()
+
+        sellRecipesCB:SetScript("OnClick", function(cb)
+            DB.sellKnownRecipes = cb:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            UpdateRecipeQualitiesEnabled()
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
+        end)
+
+        NS.FitScrollContent(content, recipeQualityCBs[4])
     end, true)
 end)

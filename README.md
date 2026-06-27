@@ -12,7 +12,8 @@ Sells what you don't want. Keeps what you do. Knows the difference because it re
 
 - **Per-rarity auto-sell rules** (White / Green / Blue / Purple). Caps follow your equipped iLvl, or set a fixed max. Bind-type filter per rarity.
 - **Sell, Keep, and Delete lists**, per-character and account-wide. Bulk-add from your bags by colour, switch lists by activity with saved profiles.
-- **Tooltip says what will happen** before you vendor. `/ec sellinfo` traces every decision so "why isn't this selling?" is one click away.
+- **Sell known recipes** you've already learned, opt-in and per-rarity (White / Green / Blue / Purple). Learn-state is read per-character, so each alt only sells the patterns it already knows; unlearned ones stay safe.
+- **Tooltip says what will happen** before you vendor. `/ec sellinfo` traces every decision, and Alt+Right-Click → **Sell Info** gives the same trace for one item, so "why isn't this selling?" is one click away.
 
 ## What it protects
 
@@ -44,16 +45,18 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 - **Lists.** Sell List, Account Sell List, Keep List, Delete List. One "Add item" field takes an item ID or a name (exact, or part of a name to add matching items from your bags); the Sell Lists also have by-quality bulk-add buttons. Rows show the item icon and a quality-colored name; hover a row for the item tooltip. Filter the view by name or rarity, and sort by name. The Delete List has an optional "auto-delete on pickup" toggle (off by default) that destroys listed items the moment they're looted, to cut vendor trips while farming.
 - **Profiles.** Save / load / rename / clear. Default profile is locked empty.
 - **Merchant Settings.** Per-rarity quality thresholds with `Use equipped iLvl` or fixed-max-iLvl cap, per-rarity bind-type filter, merchant target (Goblin / normal vendors / both), Fast Mode toggle, vendor sell speed, summon delay.
-- **Protection Settings.** Auto-protect equipped gear, looted upgrades, equipment-manager sets, affixed Rare/Epic items, chance-on-hit items, tomes / recipes (with optional extension to already-known items).
+- **Protection Settings.** Auto-protect equipped gear, looted upgrades, equipment-manager sets, affixed Rare/Epic items (including unranked Project Ebonhold transferred procs like Vampirism / Resurgence), chance-on-hit items, tomes / recipes (with optional extension to already-known items). Also here: **Sell recipes you already know** (opt-in, per-rarity), which overrides "keep all tomes" for learned profession recipes.
 - **Scavenger Settings.** Summon controls, chat / speech-bubble mute, auto-loot cycle threshold, auto-open containers, Fast Loot.
 - **Process Bags.** Disenchant / mill / prospect from your bags; configurable DE rarity cap, Soulbound inclusion toggle, per-character ignore list.
 - **Import / Export.** Sell List sharing strings, per-section source/target.
 - **Item Highlighting.** Toggle the bag-slot sell-border tint per category (Delete / Keep / Account Sell / Character Sell / Junk / Rule), pick each category's colour through the standard colour-picker dialog, opt into the item-level overlay (with sub-toggles for bags / character sheet & inspect / merchant + a font-size slider), and optionally show the numeric item ID on bag-item tooltips. (Per-character on/off lives on the minimap button + `/ec`, not in a panel.)
 - **Statistics.** Lifetime + session counters side-by-side, reset independently. Includes per-rarity breakdowns of sells and deletions, top-5 most-sold and most-deleted items, lifetime Process Bags counters (Disenchant / Mill / Prospect / Pick Lock), and a top-zones leaderboard by lifetime gold earned at vendor.
+- **Loot Log.** A resizable window (`/ec loot`, the Stats panel button, or a key binding) listing everything you've looted and how much, with each item's share of your total looted volume so you can eyeball what's common vs rare in a farm spot. Counts everything that lands in your bags - your own loot, the auto-loot cycle, and the Greedy Scavenger's haul. Three views: Session (this login), Character (this character's lifetime), Account (all characters). Sort by name / count / %, filter by rarity, and Alt+hover a row for EbonClearance's verdict on that item. Tallied per item, so it stays light no matter how long you farm.
 - **Updates.** "Tell me when an update is available" toggle on the main panel (on by default). EbonClearance learns the newest version from other users in your guild or group and shows one chat line with a clickable copy-link.
-- **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, Process Next.
+- **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, open/close the Loot Log, Process Next.
 - **Minimap button.** Left: options, Middle: Process Bags, Right: toggle.
-- **Alt+Right-Click any bag item** for a quick-action menu.
+- **Alt+Right-Click any bag item** for a quick-action menu (add to Sell / Keep / Delete, Allow Sell on protected items, and **Sell Info** for a per-item sell-decision trace).
+- **Help / FAQ panel** with a keyword search box - type a term to filter the FAQ to matching entries.
 
 ## Slash Commands
 
@@ -72,7 +75,8 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec clean upgrades` | Report stale `Keep (upgrade)` Keep List entries that are no longer above your equipped iLvl (v2.33.1+ auto-cleans these on every bag update; this command is now mainly for one-shot inspection) |
 | `/ec clean upgrades apply` | Manually remove stale `Keep (upgrade)` entries (with confirmation) |
 | `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report (includes a list of your loaded addons for conflict diagnosis) |
-| `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell - per-predicate chain trace (also available via Alt+Shift+Right-Click on the item) |
+| `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell - per-predicate chain trace (also via Alt+Shift+Right-Click, or Alt+Right-Click → Sell Info) |
+| `/ec loot` | Open the Loot Log window (Session / Character / Account views; also a Stats-panel button and a bindable key) |
 | `/ec rules` | Open a plain-English summary of every active rule + the order EC applies them (also the "Current Rules" button on the Main panel) |
 | `/ec minimap on\|off\|reset` | Show, hide, or re-centre the EC minimap button (use `off` if it clashes with a minimap-replacement / magnifier addon) |
 | `/ec affixdebug on\|off\|status\|dump\|clear` | Record affix-detection events for bug reports; `dump` opens a copyable window with the event log |

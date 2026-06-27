@@ -131,6 +131,30 @@ StatsPanel:SetScript("OnShow", function(self)
         refreshStartedAt()
         panel._refreshStartedAt = refreshStartedAt
 
+        -- Loot Log opener. Sits near the top (right under the view toggle)
+        -- so it's easy to find rather than buried below the stat stack.
+        -- Opens the standalone loot window (also reachable via /ec loot):
+        -- what you've looted this session and the account-wide running
+        -- total. Styled like the Main panel's Open Quickstart button.
+        local lootBtn = CreateFrame("Button", "EbonClearanceOpenLootBtn", content, "UIPanelButtonTemplate")
+        lootBtn:SetSize(140, 26)
+        lootBtn:SetPoint("TOPLEFT", startedAtNote, "BOTTOMLEFT", 0, -10)
+        lootBtn:SetText(L["Loot Log"])
+        lootBtn:SetScript("OnClick", function()
+            if NS.ToggleLootWindow then
+                NS.ToggleLootWindow()
+            end
+            PlaySound("igMainMenuOptionCheckBoxOn")
+        end)
+        local lootHint = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        lootHint:SetPoint("LEFT", lootBtn, "RIGHT", 10, 0)
+        lootHint:SetJustifyH("LEFT")
+        if lootHint.SetWordWrap then
+            lootHint:SetWordWrap(true)
+        end
+        EC_compCache.setPanelWidth(lootHint, 180)
+        lootHint:SetText(L["|cff888888What you've looted this session, or account-wide.|r"])
+
         -- Lifetime + session stats. Each panel.statsX is the contract
         -- with RefreshStats (called from EbonClearance_Events.lua's data
         -- handlers). Order matches the old MainPanel layout for visual
@@ -149,7 +173,7 @@ StatsPanel:SetScript("OnShow", function(self)
         -- v2.38.1: first stat row anchors below the started-at note now
         -- (was -44 from content TOPLEFT, which assumed the heading was
         -- the only thing above the stats).
-        local money = makeStatRow(-16, startedAtNote)
+        local money = makeStatRow(-16, lootBtn)
         panel.statsMoney = money
         local sold = makeStatRow(-6, money)
         panel.statsSold = sold
@@ -314,10 +338,10 @@ StatsPanel:SetScript("OnShow", function(self)
         end
         -- v2.37.x: size the scroll content frame to fit the bottom-most
         -- widget so the panel scrolls when the stack grows past the
-        -- Interface Options container's natural height. resetBtn is
-        -- the last widget; FitScrollContent measures its bottom edge
-        -- against the content frame's TOPLEFT. Same pattern as the
-        -- Main / Scavenger / Merchant / Item Highlighting panels.
+        -- Interface Options container's natural height. resetBtn is the
+        -- last widget; FitScrollContent measures its bottom edge against
+        -- the content frame's TOPLEFT. Same pattern as the Main /
+        -- Scavenger / Merchant / Item Highlighting panels.
         if NS.FitScrollContent then
             NS.FitScrollContent(content, resetBtn)
         end
@@ -327,3 +351,452 @@ end)
 -- v2.36.x: registered with InterfaceOptions_AddCategory from
 -- EbonClearance_Events.lua (right after the Main panel) so the sub-panel
 -- sort order (Main / Stats / Merchant / ...) is controlled at one place.
+
+-- ============================================================
+-- Session Loot window
+-- ============================================================
+-- Standalone floating window opened by the Stats panel's "Session Loot"
+-- button and by /ec loot. Read-only scroll list of items looted, count
+-- only, in two scopes: Session (NS.lootSession, in-memory, clears on
+-- /reload or Reset Session) and Account (the persisted account-wide
+-- running total). Fixed-size window, so it never snapshots EC_PANEL_WIDTH
+-- and is outside the reactive-width contract that governs the Interface
+-- Options sub-panels. Loot capture + storage live in EbonClearance_Events.lua.
+local lootWindow
+
+local LOOT_ROW_H = 18
+local LOOT_DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+-- Build a sorted array of { id, qty } for the given scope (filtered by
+-- rarityFilter when set), plus the grand total quantity across EVERY entry.
+-- The total is intentionally computed over all items, not just the filtered
+-- rows, so percentages read as "share of everything looted".
+local function lootBuildArray(scope, sortKey, sortDir, rarityFilter)
+    local src
+    if scope == "account" then
+        local AS = NS.ADB and NS.ADB.accountStats
+        src = AS and AS.lootedItemCounts
+    elseif scope == "character" then
+        src = NS.DB and NS.DB.lootedItemCounts
+    else
+        src = NS.lootSession
+    end
+    local arr, total = {}, 0
+    if src then
+        for itemID, qty in pairs(src) do
+            if qty and qty > 0 then
+                total = total + qty
+                local include = true
+                if rarityFilter ~= nil then
+                    local _, _, q = GetItemInfo(itemID)
+                    include = (q == rarityFilter)
+                end
+                if include then
+                    arr[#arr + 1] = { id = itemID, qty = qty }
+                end
+            end
+        end
+    end
+    -- Sort by the requested column / direction. sortDir: 1 = ascending,
+    -- -1 = descending. "count" and "pct" produce the IDENTICAL ordering
+    -- (percentage is just qty / total, and total is constant across rows),
+    -- so both map to the qty comparator; the two headers exist because the
+    -- player thinks of them as separate columns. Ties break on itemID for a
+    -- stable order. Name sort resolves names from GetItemInfo (uncached
+    -- items fall back to "item:<id>").
+    sortDir = sortDir or -1
+    if sortKey == "name" then
+        for _, e in ipairs(arr) do
+            e.name = (GetItemInfo(e.id)) or ("item:" .. e.id)
+        end
+        table.sort(arr, function(a, b)
+            if a.name ~= b.name then
+                if sortDir == 1 then
+                    return a.name < b.name
+                end
+                return a.name > b.name
+            end
+            return a.id < b.id
+        end)
+    else
+        table.sort(arr, function(a, b)
+            if a.qty ~= b.qty then
+                if sortDir == 1 then
+                    return a.qty < b.qty
+                end
+                return a.qty > b.qty
+            end
+            return a.id < b.id
+        end)
+    end
+    return arr, total
+end
+
+-- Pooled row factory. Rows anchor to content's TOPLEFT/TOPRIGHT so they
+-- stretch with the (fixed) content width; reused across Refresh calls.
+local function lootGetRow(win, i)
+    win.rows = win.rows or {}
+    local row = win.rows[i]
+    if row then
+        return row
+    end
+    row = CreateFrame("Frame", nil, win.content)
+    row:SetHeight(LOOT_ROW_H)
+    row:SetPoint("TOPLEFT", win.content, "TOPLEFT", 0, -(i - 1) * LOOT_ROW_H)
+    row:SetPoint("TOPRIGHT", win.content, "TOPRIGHT", 0, -(i - 1) * LOOT_ROW_H)
+    -- Alt+hover shows the item's tooltip, which EbonClearance's tooltip hook
+    -- annotates with the SAME plain-English verdict + reason you see hovering
+    -- the item in your bags ("Keep (Green, no item level)", "Won't Sell (no
+    -- value)", "Will Sell (junk)", etc.) - the humanised read, NOT the
+    -- technical /ec sellinfo step trace. We hover the live bag item when it's
+    -- still in bags (most precise) and fall back to a generic item tooltip
+    -- otherwise, noting it's no longer in bags. Plain hover does nothing, so
+    -- the list stays quiet unless the player asks.
+    row:EnableMouse(true)
+    row:SetScript("OnEnter", function(self)
+        if not IsAltKeyDown() or not self.itemID then
+            return
+        end
+        local id = self.itemID
+        local foundBag, foundSlot
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag) or 0
+            for slot = 1, slots do
+                if GetContainerItemID(bag, slot) == id then
+                    foundBag, foundSlot = bag, slot
+                    break
+                end
+            end
+            if foundBag then
+                break
+            end
+        end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if foundBag then
+            -- SetBagItem fires the tooltip hook, which appends EC's verdict
+            -- line with its reason - exactly the bag-hover annotation.
+            GameTooltip:SetBagItem(foundBag, foundSlot)
+        else
+            GameTooltip:SetHyperlink("item:" .. id)
+            GameTooltip:AddLine(L["|cff888888Not in your bags now - hover it in your bags for the live read.|r"], 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(16, 16)
+    icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+    row.icon = icon
+    -- Right-aligned amount column ("xN  P%"). Anchored to the row's right so
+    -- the count + share stay visible; the name column truncates on the left
+    -- instead of pushing the numbers off-screen.
+    local amount = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    amount:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    amount:SetJustifyH("RIGHT")
+    row.amount = amount
+    local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    label:SetPoint("RIGHT", amount, "LEFT", -6, 0)
+    label:SetJustifyH("LEFT")
+    row.label = label
+    win.rows[i] = row
+    return row
+end
+
+local function lootRefresh(win)
+    if not win then
+        return
+    end
+    local arr, total = lootBuildArray(win.scope or "session", win.sortKey, win.sortDir, win.rarityFilter)
+    for i = 1, #arr do
+        local e = arr[i]
+        local row = lootGetRow(win, i)
+        row.itemID = e.id
+        local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(e.id)
+        local hex = "ffffffff"
+        if quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality] and ITEM_QUALITY_COLORS[quality].hex then
+            hex = ITEM_QUALITY_COLORS[quality].hex:gsub("|c", "")
+        end
+        row.icon:SetTexture(texture or LOOT_DEFAULT_ICON)
+        row.label:SetText(string.format("|c%s%s|r", hex, name or ("item:" .. e.id)))
+        -- Share of the FULL looted volume (grand total), so the % reads as
+        -- "how much of everything is this drop" even with a rarity filter on.
+        local pct = (total > 0) and (e.qty / total * 100) or 0
+        row.amount:SetText(string.format("|cffffd200x%d|r  |cff888888%.1f%%|r", e.qty, pct))
+        row:Show()
+    end
+    if win.rows then
+        for i = #arr + 1, #win.rows do
+            win.rows[i]:Hide()
+        end
+    end
+    win.content:SetHeight(math.max(1, #arr * LOOT_ROW_H))
+    if win.totalLine then
+        if #arr == 0 then
+            win.totalLine:SetText(L["|cff888888Nothing looted yet.|r"])
+        else
+            win.totalLine:SetText(string.format(L["%d items, %d total"], #arr, total))
+        end
+    end
+end
+
+local function lootEnsureWindow()
+    if lootWindow then
+        return lootWindow
+    end
+    local win = CreateFrame("Frame", "EbonClearanceLootWindow", UIParent)
+    win:SetFrameStrata("FULLSCREEN_DIALOG")
+    win:SetSize(360, 440)
+    win:SetPoint("CENTER")
+    win:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    win:EnableMouse(true)
+    win:SetMovable(true)
+    win:SetResizable(true)
+    if win.SetMinResize then
+        win:SetMinResize(300, 260)
+    end
+    if win.SetMaxResize then
+        win:SetMaxResize(700, 820)
+    end
+    win:RegisterForDrag("LeftButton")
+    win:SetScript("OnDragStart", win.StartMoving)
+    win:SetScript("OnDragStop", win.StopMovingOrSizing)
+    win:Hide()
+    win.scope = "session"
+    win.sortKey = "count" -- "name" | "count" | "pct"
+    win.sortDir = -1 -- 1 ascending, -1 descending (most-looted first by default)
+    win.rarityFilter = nil -- nil = all; otherwise a quality number 0-4
+
+    local title = win:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 12, -12)
+    title:SetText("|cff66ccffEbonClearance|r: " .. L["Loot Log"])
+
+    local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", 2, 2)
+
+    -- Scope radios: Session (this login, in-memory) / Character (this
+    -- character's lifetime) / Account (all characters combined). A single
+    -- setScope helper keeps exactly one checked and re-renders.
+    local scopeRadios = {}
+    local function setScope(scope)
+        win.scope = scope
+        for k, r in pairs(scopeRadios) do
+            r:SetChecked(k == scope)
+        end
+        lootRefresh(win)
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end
+    local function makeScopeRadio(scope, labelText, anchorTo)
+        local r = CreateFrame("CheckButton", nil, win, "UIRadioButtonTemplate")
+        if anchorTo then
+            r:SetPoint("LEFT", anchorTo, "RIGHT", 14, 0)
+        else
+            r:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
+        end
+        local lbl = win:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        lbl:SetPoint("LEFT", r, "RIGHT", 4, 0)
+        lbl:SetText(labelText)
+        r:SetScript("OnClick", function()
+            setScope(scope)
+        end)
+        scopeRadios[scope] = r
+        return lbl
+    end
+    local sessLbl = makeScopeRadio("session", L["Session"], nil)
+    local charLbl = makeScopeRadio("character", L["Character"], sessLbl)
+    makeScopeRadio("account", L["Account"], charLbl)
+    scopeRadios.session:SetChecked(true)
+
+    -- Total line (under the radios).
+    local totalLine = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    totalLine:SetPoint("TOPLEFT", scopeRadios.session, "BOTTOMLEFT", 0, -8)
+    totalLine:SetJustifyH("LEFT")
+    win.totalLine = totalLine
+
+    -- Clear button. Wipes only the currently-viewed scope.
+    local clearBtn = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+    clearBtn:SetSize(90, 20)
+    clearBtn:SetPoint("TOPRIGHT", win, "TOPRIGHT", -14, -54)
+    clearBtn:SetText(L["Clear"])
+    clearBtn:SetScript("OnClick", function()
+        if NS.ClearLoot then
+            NS.ClearLoot(win.scope)
+        end
+        lootRefresh(win)
+    end)
+
+    -- Sort controls. Name / Count / % each toggle ascending <-> descending
+    -- on repeat clicks; the active column shows a direction caret. Count and
+    -- % sort identically (see lootBuildArray) but both are offered because
+    -- the player reads them as separate columns.
+    local sortLabel = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    sortLabel:SetPoint("TOPLEFT", totalLine, "BOTTOMLEFT", 0, -8)
+    sortLabel:SetText(L["Sort:"])
+
+    local sortBtns = {}
+    local function updateSortButtons()
+        local function caret(key)
+            if win.sortKey ~= key then
+                return ""
+            end
+            return win.sortDir == 1 and " |cffffd200^|r" or " |cffffd200v|r"
+        end
+        sortBtns.name:SetText(L["Name"] .. caret("name"))
+        sortBtns.count:SetText(L["Count"] .. caret("count"))
+        sortBtns.pct:SetText(L["%"] .. caret("pct"))
+    end
+    local function setSort(key)
+        if win.sortKey == key then
+            win.sortDir = -win.sortDir
+        else
+            win.sortKey = key
+            -- Names read best A-Z; amounts read best most-first.
+            win.sortDir = (key == "name") and 1 or -1
+        end
+        updateSortButtons()
+        lootRefresh(win)
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end
+    local function makeSortBtn(key, w, anchorTo)
+        local b = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+        b:SetSize(w, 18)
+        b:SetPoint("LEFT", anchorTo, "RIGHT", 6, 0)
+        b:SetScript("OnClick", function()
+            setSort(key)
+        end)
+        return b
+    end
+    sortBtns.name = makeSortBtn("name", 70, sortLabel)
+    sortBtns.count = makeSortBtn("count", 62, sortBtns.name)
+    sortBtns.pct = makeSortBtn("pct", 44, sortBtns.count)
+    updateSortButtons()
+
+    -- Rarity filter. "All rarities" plus one entry per quality; restricts
+    -- which rows show. Percentages stay relative to the FULL looted volume
+    -- (the grand total computed in lootBuildArray), so a filtered view still
+    -- reads as "share of everything looted" - the point of the percentage.
+    -- Quality names come from the client's ITEM_QUALITYn_DESC globals so they
+    -- are locale-correct without hand-written strings.
+    local rarityLabel = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    rarityLabel:SetPoint("TOPLEFT", sortLabel, "BOTTOMLEFT", 0, -14)
+    rarityLabel:SetText(L["Show:"])
+    local RARITY_OPTS = {
+        { text = L["All rarities"], q = nil },
+        { text = _G["ITEM_QUALITY0_DESC"] or "Poor", q = 0 },
+        { text = _G["ITEM_QUALITY1_DESC"] or "Common", q = 1 },
+        { text = _G["ITEM_QUALITY2_DESC"] or "Uncommon", q = 2 },
+        { text = _G["ITEM_QUALITY3_DESC"] or "Rare", q = 3 },
+        { text = _G["ITEM_QUALITY4_DESC"] or "Epic", q = 4 },
+    }
+    local rarityDD = CreateFrame("Frame", "EbonClearanceLootRarityDD", win, "UIDropDownMenuTemplate")
+    rarityDD:SetPoint("LEFT", rarityLabel, "RIGHT", -6, -2)
+    UIDropDownMenu_SetWidth(rarityDD, 100)
+    UIDropDownMenu_Initialize(rarityDD, function(_, level)
+        for _, opt in ipairs(RARITY_OPTS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = opt.text
+            info.checked = (win.rarityFilter == opt.q)
+            info.func = function()
+                win.rarityFilter = opt.q
+                UIDropDownMenu_SetText(rarityDD, opt.text)
+                lootRefresh(win)
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    UIDropDownMenu_SetText(rarityDD, L["All rarities"])
+
+    -- Scroll chrome (matches the list windows' backdrop look).
+    local scrollBg = CreateFrame("Frame", nil, win)
+    scrollBg:SetPoint("TOPLEFT", 12, -120)
+    scrollBg:SetPoint("BOTTOMRIGHT", -12, 12)
+    scrollBg:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    scrollBg:SetBackdropColor(0, 0, 0, 0.6)
+    scrollBg:SetBackdropBorderColor(0.4, 0.35, 0.25, 1)
+
+    local scroll = CreateFrame("ScrollFrame", "EbonClearanceLootScroll", scrollBg, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 6, -6)
+    scroll:SetPoint("BOTTOMRIGHT", -28, 6)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(290, 1)
+    scroll:SetScrollChild(content)
+    if NS.HookScrollbarAutoHide then
+        NS.HookScrollbarAutoHide(scroll)
+    end
+    win.content = content
+
+    -- Keep the scroll child's width in step with the (resizable) viewport so
+    -- rows fill the window and never trigger a horizontal scrollbar. Rows
+    -- anchor to content's TOPLEFT/TOPRIGHT, so they reflow automatically.
+    scroll:SetScript("OnSizeChanged", function(_, w)
+        if w and w > 0 then
+            content:SetWidth(w)
+        end
+    end)
+
+    -- Bottom-right resize grip. Drag to resize; the row list grows/shrinks
+    -- with the window. Standard Blizzard size-grabber textures.
+    local grip = CreateFrame("Button", nil, win)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", -5, 5)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:SetScript("OnMouseDown", function()
+        win:StartSizing("BOTTOMRIGHT")
+    end)
+    grip:SetScript("OnMouseUp", function()
+        win:StopMovingOrSizing()
+        lootRefresh(win)
+    end)
+
+    -- Live refresh while shown: loot accrues in the background, so a 1Hz
+    -- tick keeps the open window current without a manual reopen. Cheap
+    -- (one script call/sec, gated on visibility).
+    win:SetScript("OnUpdate", function(self, elapsed)
+        self._lootTick = (self._lootTick or 0) + elapsed
+        if self._lootTick >= 1.0 then
+            self._lootTick = 0
+            if self:IsShown() then
+                lootRefresh(self)
+            end
+        end
+    end)
+
+    if type(UISpecialFrames) == "table" then
+        table.insert(UISpecialFrames, "EbonClearanceLootWindow")
+    end
+
+    lootWindow = win
+    return win
+end
+
+local function ToggleLootWindow()
+    local win = lootEnsureWindow()
+    if win:IsShown() then
+        win:Hide()
+        return
+    end
+    lootRefresh(win)
+    win:Show()
+    if win.Raise then
+        win:Raise()
+    end
+end
+NS.ToggleLootWindow = ToggleLootWindow

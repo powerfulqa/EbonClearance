@@ -1195,6 +1195,33 @@ function EC_compCache.describeSellability(bag, slot)
         end
     end
 
+    -- Sell Known Recipes: mirror EC_IsSellable's recipePass so the trace
+    -- agrees with the merchant cycle. Only emits a step for items that
+    -- are actually profession recipes while the feature is on, so the
+    -- trace stays uncluttered for everything else. itemIsTome / tomeKind /
+    -- playerKnowsTomeSpell are all cached, so the repeated calls are cheap.
+    local recipePass = false
+    if hasSellPrice
+        and DB
+        and DB.sellKnownRecipes
+        and EC_compCache.itemIsTome
+        and EC_compCache.itemIsTome(bag, slot, itemID)
+        and EC_compCache.tomeKind
+        and EC_compCache.tomeKind(itemID) == "Recipe"
+    then
+        local known = EC_compCache.playerKnowsTomeSpell
+            and EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+        local qualOn = DB.sellKnownRecipeQualities and quality and DB.sellKnownRecipeQualities[quality]
+        if not qualOn then
+            step("knownRecipeRule", false, L["known-recipe selling is off for this quality"])
+        elseif not known then
+            step("knownRecipeRule", false, L["recipe not yet learned (kept safe)"])
+        else
+            recipePass = true
+            step("knownRecipeRule", true, L["known recipe - sells via Sell Known Recipes"])
+        end
+    end
+
     if qualityPass and EC_compCache.isQuestItem and EC_compCache.isQuestItem(itemID) then
         qualityPass = false
         step("questSafetyNet", false, L["vetoed - quest item; explicit Sell List entry would override this"])
@@ -1316,8 +1343,38 @@ function EC_compCache.describeSellability(bag, slot)
         step("chanceOnHitProtection", true, L["n/a"])
     end
 
-    local positiveSignal = isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass
-    local vetoed = equipped or blacklisted or affixProtected
+    -- Tome / recipe protection. Mirrors EC_IsSellable's tome gate: it
+    -- only fires on a Sell List or quality-rule signal (a recipe selling
+    -- purely via Sell Known Recipes is already gated on being known, so
+    -- it bypasses this veto). protectAllTomes wins; protectUnlearnedTomes
+    -- only vetoes recipes/tomes the character has not learned. Allow Sell
+    -- (Alt+Right-Click) lifts both.
+    local tomeProtected = false
+    if (qualityPass or whitelistPass)
+        and not recipePass
+        and DB
+        and (DB.protectAllTomes or DB.protectUnlearnedTomes)
+        and EC_compCache.itemIsTome
+        and EC_compCache.itemIsTome(bag, slot, itemID)
+    then
+        if ADB and ADB.allowedItems and ADB.allowedItems[itemID] then
+            step("tomeProtection", true, L["tome/recipe, but item allow-listed"])
+        elseif DB.protectAllTomes then
+            tomeProtected = true
+            step("tomeProtection", false, L["VETO - 'protect all tomes' is on"])
+        elseif DB.protectUnlearnedTomes
+            and EC_compCache.playerKnowsTomeSpell
+            and not EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+        then
+            tomeProtected = true
+            step("tomeProtection", false, L["VETO - unlearned tome/recipe (protected)"])
+        else
+            step("tomeProtection", true, L["tome/recipe already known - not protected"])
+        end
+    end
+
+    local positiveSignal = isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass
+    local vetoed = equipped or blacklisted or affixProtected or tomeProtected
     local wouldSell = positiveSignal and not vetoed and not locked
 
     local summary

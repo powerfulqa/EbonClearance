@@ -5,6 +5,41 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.46.0
+
+**Sell Known Recipes, a Loot Log, and a searchable Help panel.**
+
+- **Sell Known Recipes.** New opt-in sell rule (Protection Settings, alongside the tome controls): profession recipes this character has already learned auto-sell at vendors, gated per rarity (White / Green / Blue / Purple). Unlearned or unreadable recipes are never sold. Learn-state is read per-character from the live tooltip, so each alt only sells the patterns it already knows. When on, it overrides "keep all tomes / recipes even after you learn them" for learned recipes; non-recipe tomes and unlearned recipes stay protected. The hover tooltip verdict, `/ec sellinfo`, and the Alt+Right-Click menu all reflect the new rule.
+- **Loot Log.** A resizable window - open with `/ec loot`, the Stats panel's Loot Log button, or a new key binding - listing everything you've looted and how much. It counts every item that lands in your bags: your own loot, the auto-loot cycle, and the Greedy Scavenger's haul. (The Scavenger drops loot straight into bags without a chat line, so the count is tracked by net bag change rather than loot messages, and it skips vendor buys, bank, and mail.) Each row shows the count and that item's share of your total looted volume, so you can eyeball what's common vs rare in a farm spot. Three views: Session (this login), Character (this character's lifetime), Account (all characters). Sort by name / count / %, filter by rarity, drag the bottom-right corner to resize, and Alt+hover a row for EbonClearance's plain-English verdict on that item. Tallied per item, so storage stays small no matter how long you farm.
+- **Sell Info quick action.** Alt+Right-Click a bag item and choose **Sell Info** for the same per-item decision trace `/ec sellinfo` prints.
+- **Help panel search.** A search box at the top of the Help / FAQ panel filters entries by keyword; matching sections auto-expand, with a "no matches" note when nothing hits.
+- **Quickstart.** New question "Sell recipes you've already learned?" - Recommended and Cautious default to No, Farmer and Power to Yes.
+- **Key binding.** "Open/close Loot Log" added under Key Bindings > EbonClearance.
+
+Schema is additive and downgrade-safe: per-character `sellKnownRecipes` + `sellKnownRecipeQualities`, a per-character `lootedItemCounts` ledger, and an account-wide `accountStats.lootedItemCounts` mirror. The in-game Help / FAQ panel gains entries for Sell Known Recipes, the Loot Log, the Sell Info menu, and "why does Alt+Right-Click only show Allow Sell?".
+
+---
+
+
+### v2.45.2
+
+**Docs sync for the v2.45.0 / v2.45.1 release pair. No code changes.**
+
+The v2.45.0 transferred-proc work introduced new tooltip labels and a new diagnostic command; v2.45.1 added a 2H-vs-offhand judgment. Surfacing both to players + contributors:
+
+- **Help / FAQ** (in-game `Help / Troubleshooting` panel) gains three new entries:
+  - `Keep (affix known)` - explains the unranked variant of the ranked-known label, with a pointer to the `Allow selling affixes you already have` toggle.
+  - `Keep (affix needed)` - explains the unranked variant of the ranked-needed label.
+  - `Affix item silently sold? Dump the raw tooltip scan` - documents `/ec scandebug` and what its copyable dump contains. Mirrors the existing `/ec affixdebug` and `/ec processdebug` FAQ entries.
+- **README** Protection Settings bullet now calls out unranked PE transferred procs (Vampirism / Resurgence) explicitly so the support is visible without reading the changelog.
+- **docs/ADDON_GUIDE.md** affix-detection section documents the v2.45.0 `parseAffixFromTitle`-returns-nil fallback path through the `@affix@` marker, the `playerHasAffixFamily` widening (`next(ranks) ~= nil` -> `ranks ~= nil`), and `/ec scandebug`'s catalog-lookup diagnostics.
+- **Locale templates** (`EbonClearance_Locale_frFR.lua`, `EbonClearance_Locale_deDE.lua`) get four empty entries for the new English strings so community translators can fill them in.
+
+If you've been wondering whether the addon picks up Vampirism / Resurgence / Thunderfury procs from PE-transferred weapons - it has since v2.45.0, and the in-game Help panel now says so.
+
+---
+
+
 ### v2.45.1
 
 **Bug fix: offhand drops were labelled "Keep (possible upgrade)" when the player wields a 2H.**
@@ -24,7 +59,7 @@ If you actively alternate between 2H and 1H+offhand setups, add specific offhand
 
 ### v2.45.0
 
-**Unranked PE affix detection.** Skoll's Fang of Vampirism / Thunderfury / Viscous Hammer of Resurgence and other PE transferred-proc weapons are now recognised as PE affixes (which is what they ARE in PE's data model), not just defended through the v2.44.11 chance-on-hit safety net. Reported by Zukii; diagnosed against test weapons by Serv.
+**Unranked PE affix detection.** Skoll's Fang of Vampirism / Thunderfury / Viscous Hammer of Resurgence and other PE transferred-proc weapons are now recognised as PE affixes (which is what they ARE in PE's data model), not just defended through the v2.44.11 chance-on-hit safety net. Reported by Zukii; diagnosed against test weapons.
 
 PE's transferred-proc system applies a chance-on-hit proc to a target item as an `@affix@`-wrapped description line, but it does NOT add a rank suffix to the title (the source proc doesn't have ranks). v2.20.0's `parseAffixFromTitle` required a Roman-numeral suffix as the discriminator vs vanilla `ItemRandomSuffix.dbc` entries (`of the Bear`, `of the Owl`, etc.) - which rejected the legitimate unranked PE affixes too.
 
@@ -142,7 +177,7 @@ Workaround for the minimap-frame clash with magnifier / replacement addons.
 Reported by Safra. The EC minimap button creates a frame parented to `Minimap` at frame level 8. Some minimap-replacement / magnifier addons (Magnify-WotLK was the trigger) hook the Minimap frame in ways that clash with a child button, with reports as severe as the entire minimap turning black. No EC code paints anywhere on the minimap canvas; this is purely a third-party-hook interaction. Without a confirmed root cause we can fix from our side, ship the workaround:
 
 - **Main panel checkbox** "Show the EbonClearance minimap button" (default ON, existing players see no change).
-- **`/ec minimap on|off|reset` slash command** — `reset` re-centres the button to its default angle (220 deg) for players whose drag-handler placed the button somewhere unreachable.
+- **`/ec minimap on|off|reset` slash command** - `reset` re-centres the button to its default angle (220 deg) for players whose drag-handler placed the button somewhere unreachable.
 - **EC stays fully functional with the button hidden:** open settings via `/ec`, the LDB launcher (Bazooka, Titan Panel, ChocolateBar), or your key binding.
 
 `DB.minimapButton = true` lives at the per-character level (each character can independently show/hide). Help FAQ entry "Hide the EbonClearance minimap button" documents the workaround.

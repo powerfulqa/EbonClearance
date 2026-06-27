@@ -1604,21 +1604,34 @@ end
 local EC_lootBagSnapshot = {}
 local EC_lootSnapshotReady = false
 
+-- Frame NAMES (not refs) for the windows through which items legitimately
+-- enter bags without being "loot". Looked up via _G at call time because
+-- several are load-on-demand (GuildBankFrame, TradeFrame, AuctionFrame,
+-- TradeSkillFrame, CraftFrame are nil until first opened) - and a table of
+-- frame refs with nil holes would make ipairs stop at the first nil,
+-- silently skipping every frame after it (the v2.46.0 bug where mailbox
+-- takes were counted because GuildBankFrame was nil and short-circuited
+-- the scan of MailFrame). QuestFrame / GossipFrame cover quest-reward and
+-- gossip-vendor item grants.
+local EC_LOOT_TXN_FRAMES = {
+    "MerchantFrame",
+    "BankFrame",
+    "GuildBankFrame",
+    "MailFrame",
+    "OpenMailFrame",
+    "TradeFrame",
+    "AuctionFrame",
+    "TradeSkillFrame",
+    "CraftFrame",
+    "QuestFrame",
+    "GossipFrame",
+}
+
 -- True while a window is open through which items legitimately enter bags
 -- without being "loot" (so we shouldn't count the delta as looted).
 local function EC_LootTransactionWindowOpen()
-    local frames = {
-        MerchantFrame,
-        BankFrame,
-        GuildBankFrame,
-        MailFrame,
-        OpenMailFrame,
-        TradeFrame,
-        AuctionFrame,
-        TradeSkillFrame,
-        CraftFrame,
-    }
-    for _, f in ipairs(frames) do
+    for i = 1, #EC_LOOT_TXN_FRAMES do
+        local f = _G[EC_LOOT_TXN_FRAMES[i]]
         if f and f.IsShown and f:IsShown() then
             return true
         end

@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.46.1
+
+**Fix: the Loot Log counted items taken from the mailbox (and the auction house, trade, guild bank, and crafting).**
+
+The guard that excludes non-loot bag inflows walked a list of frame references with `ipairs`. Several of those windows (guild bank, auction house, trade, tradeskill, craft) are load-on-demand and are `nil` until first opened in a session - and `ipairs` stops at the first `nil`, so every check after it was silently skipped. With no guild bank opened, the mailbox / auction / trade checks never ran and their item grants were counted as loot. The guard now looks frames up by name so a `nil` can't short-circuit it, and also excludes quest-reward and gossip grants. Only mob / boss / container loot and the Greedy Scavenger's haul are counted now. (Merchant and bank were never affected - they sit before the `nil` hole.)
+
+If your Loot Log already shows mail or other non-loot items, use the **Clear** button on each view (Session / Character / Account) to reset to a clean baseline.
+
+---
+
+
 ### v2.46.0
 
 **Sell Known Recipes, a Loot Log, and a searchable Help panel.**

@@ -4443,6 +4443,53 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 100 (v2.46.4): vendor-refused sell-loop wedge guard.
+-- ---------------------------------------------------------------------------
+-- Reported by Broyo: a purple item the vendor refused to buy wedged
+-- the sell cycle. UseContainerItem returned silently, the slot stayed
+-- full, BuildQueue's fresh bag walk re-queued the item, FinishRun
+-- spammed "Sold X items so far, looking for more" every iteration.
+-- Workaround was to manually add the item to the Delete List.
+--
+-- Fix: a per-merchant-cycle (bag, slot) -> itemID blacklist. Marked
+-- in DoNextAction immediately after UseContainerItem; consulted by
+-- BuildQueue's sell-side path; wiped on StartRun + MERCHANT_CLOSED.
+-- The itemID equality guards against "slot moved organically" false
+-- positives (loot or drag-drop fills the same slot with a different
+-- item, which deserves a fresh attempt).
+--
+-- These tests pin the four insertion sites + the contract via static
+-- patterns. The actual wedge-vs-no-wedge behaviour can only be
+-- verified in-game against a real vendor-refused item.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    check("Test 100a: EC_vendorRefusedThisRun table + EC_refusalKey helper declared",
+        ev:find("local EC_vendorRefusedThisRun = {}") ~= nil
+            and ev:find("local function EC_refusalKey%(bag, slot%) return bag %* 100 %+ slot end") ~= nil,
+        "the blacklist + key helper MUST be file-local near the other vendor-cycle state (queue, EC_batchTotalSold). The key encoding (bag * 100 + slot) assumes WoW 3.3.5a's bag indices 0-4 and slot indices 1-N where N is well under 100 - if a future bag type extends the slot count past 99, the encoding collides. Refusing to test for this here would let a silent regression land.")
+    check("Test 100b: blacklist wiped on StartRun and MERCHANT_CLOSED",
+        ev:find("wipe%(EC_vendorRefusedThisRun%).-local merchantAllowed = EC_IsMerchantAllowed") == nil
+            -- StartRun has the wipe before the merchantAllowed call (defensive ordering)
+            and select(2, ev:gsub("wipe%(EC_vendorRefusedThisRun%)", "")) == 2,
+        "the wipe must fire on every fresh cycle (StartRun) AND every merchant close (MERCHANT_CLOSED). Two sites = cheap insurance: StartRun covers normal cycle starts, MERCHANT_CLOSED covers player-closes-merchant-mid-loop. If only one site fires, a fast reopen could carry stale refusal entries into the next visit.")
+    check("Test 100c: DoNextAction marks the slot immediately after UseContainerItem",
+        ev:find("UseContainerItem%(action%.bag, action%.slot%).-EC_vendorRefusedThisRun%[EC_refusalKey%(action%.bag, action%.slot%)%] = action%.itemID") ~= nil,
+        "the mark MUST land on the same code path as the UseContainerItem call, with no early returns or branches between them. If a future refactor moves the mark to a later point (after stat bumps, into a callback) it would skip on the queue's tail when the cycle finishes mid-batch - leaving the wedge regression open. The action.itemID guard protects against nil-itemID actions (delete-path items) sneaking into the wrong table.")
+    check("Test 100d: BuildQueue skips refused slots before EC_IsSellable runs",
+        ev:find("local refusedID = EC_vendorRefusedThisRun%[EC_refusalKey%(bag, slot%)%]") ~= nil
+            and ev:find("local skipForRefusal = refusedID and refusedID == GetContainerItemID%(bag, slot%)") ~= nil
+            and ev:find("if not skipForRefusal then\n%s*sellable, link, itemID, sellPrice, itemCount = EC_IsSellable") ~= nil,
+        "the pre-check MUST run before EC_IsSellable (which does an expensive tooltip scan + multiple API hits). The order matters: a worst-case bags-full-of-identical-refused-items scenario would otherwise pay the full sellability cost for every duplicate every cycle. The itemID equality (not just key presence) is the contract that lets a different item rolling into the slot get a fresh try.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
 -- ---------------------------------------------------------------------------
 -- Bug reported by SLG: "constantly summoning Greedy Scavenger after

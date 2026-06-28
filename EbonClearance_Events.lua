@@ -459,6 +459,15 @@ local function EnsureAccountDB()
     if type(ADB.affixDebugMaxRows) ~= "number" or ADB.affixDebugMaxRows < 100 then
         ADB.affixDebugMaxRows = 1000
     end
+    -- v2.46.x: Loot Log per-item hide set (itemID -> true). A display-only
+    -- filter so high-volume low-interest drops (e.g. cloth) can be hidden so
+    -- they stop skewing the share percentages; hidden items are excluded from
+    -- both the list AND the totals so remaining shares rebase. Account-wide
+    -- because it's a display preference, not character data. Cleared by the
+    -- Loot Log's "Unhide All" button.
+    if type(ADB.lootLogHidden) ~= "table" then
+        ADB.lootLogHidden = {}
+    end
     -- v2.38.1: account-wide stats ledger. Every per-character stat write
     -- mirrors into ADB.accountStats so the Stats panel's Account view
     -- aggregates totals across all characters. Counts forward from
@@ -4481,6 +4490,21 @@ local goldThisVendoring = 0
 local EC_batchTotalSold = 0
 local EC_batchTotalGold = 0
 
+-- v2.46.4 vendor-refusal blacklist. Reported by Broyo: an Epic item
+-- the vendor refuses to buy (server-side BoP-on-use, quest-adjacent,
+-- stale GetItemInfo cache) wedged the sell cycle. UseContainerItem
+-- returned silently, the slot stayed full, BuildQueue's fresh bag
+-- walk re-queued the item, and the loop spammed "Sold X items so
+-- far" forever. Keyed by (bag * 100 + slot) -> itemID so the entry
+-- only blocks the exact item that was refused; a different item
+-- landing in the same slot still gets a fresh try. Wiped on
+-- StartRun / MERCHANT_CLOSED so a new merchant visit retries.
+-- EC-TRAP: do not drop the itemID equality check - a key-only
+-- presence test would block organic slot-moves and freeze
+-- legitimate sells.
+local EC_vendorRefusedThisRun = {}
+local function EC_refusalKey(bag, slot) return bag * 100 + slot end
+
 local worker = CreateFrame("Frame")
 worker:Hide()
 
@@ -5097,7 +5121,19 @@ local function BuildQueue(junkOnly)
                 end
             end
             if not queuedDelete then
-                local sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
+                -- v2.46.4: cheap pre-check for the vendor-refused
+                -- guard. EC_IsSellable does a tooltip scan + multiple
+                -- API hits; skip it on slots we already know the
+                -- vendor refused this cycle. Equality on itemID is
+                -- the discriminator - empty slot or different item
+                -- in slot = nil/changed, so the check fails and the
+                -- new item gets a fair try.
+                local refusedID = EC_vendorRefusedThisRun[EC_refusalKey(bag, slot)]
+                local skipForRefusal = refusedID and refusedID == GetContainerItemID(bag, slot)
+                local sellable, link, itemID, sellPrice, itemCount
+                if not skipForRefusal then
+                    sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
+                end
                 if sellable then
                     -- v2.37.0: capture rarity at queue-build time so the
                     -- worker path can attribute the sell to a quality
@@ -5244,6 +5280,17 @@ local function DoNextAction()
         EC_manualSell.inSelfSell = true
         UseContainerItem(action.bag, action.slot)
         EC_manualSell.inSelfSell = false
+        -- v2.46.4: mark this slot as "attempted" for the vendor-refused
+        -- guard. Verification happens at the next BuildQueue (after the
+        -- 1s inter-batch gate in FinishRun) when the slot has had time
+        -- to empty for a successful sale. If the SAME itemID is still
+        -- there at re-scan time, the vendor refused and BuildQueue
+        -- skips it. Successful sales leave the slot empty / different,
+        -- so the equality check fails and the entry is implicitly
+        -- stale (cleared on the next StartRun anyway).
+        if action.itemID then
+            EC_vendorRefusedThisRun[EC_refusalKey(action.bag, action.slot)] = action.itemID
+        end
         -- v2.38.1: helpers write to DB + ADB.accountStats.
         local soldCount = action.count or 1
         EC_BumpStat("totalItemsSold", soldCount)
@@ -5368,6 +5415,10 @@ local function StartRun()
     NS.HookDeletePopupOnce()
 
     EC_compCache.vendorRunning = true
+
+    -- v2.46.4: fresh merchant cycle, fresh attempts. See declaration
+    -- of EC_vendorRefusedThisRun above for the wedge bug this guards.
+    wipe(EC_vendorRefusedThisRun)
 
     EC_RecordInventoryWorthSample()
 
@@ -7080,6 +7131,10 @@ f:SetScript("OnEvent", function(self, event, ...)
     elseif event == "MERCHANT_CLOSED" then
         EC_compCache.vendorRunning = false
         worker:Hide()
+        -- v2.46.4: merchant gone, drop any refusal marks so the next
+        -- visit retries afresh. Cheap insurance alongside the
+        -- StartRun wipe (covers player-closes-merchant-mid-loop).
+        wipe(EC_vendorRefusedThisRun)
         EC_compCache.pendingDelete = nil
         -- Reset cycle state so the stuck detection can re-summon the Scavenger
         if EC_compCache.lootCycleState == STATE.SELLING then

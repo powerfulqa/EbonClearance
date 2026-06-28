@@ -5,6 +5,31 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.46.4
+
+**Bug fix: vendor-refused items no longer wedge the sell loop.**
+
+Reported by Broyo: a purple (epic) item the vendor refused to buy spun the cycle forever. The chat line `Sold 200+ items so far, looking for more...` climbed unbounded; the workaround was to manually add the item to the Delete List. Reproduction shape - any item where `UseContainerItem` returns silently (server says no): BoP-on-use, quest-adjacent epic, stale `GetItemInfo` cache.
+
+The cycle didn't notice the no-op sale. `BuildQueue`'s fresh bag walk every iteration found the same item, re-queued it, and `FinishRun` re-emitted the chat line. No mechanism existed to mark "I tried this slot, the vendor refused, skip it" - neither `triedThisRun` nor `failedSells` nor anything similar.
+
+- **Per-merchant-cycle `(bag, slot) -> itemID` blacklist.** `EC_vendorRefusedThisRun` table file-local in `EbonClearance_Events.lua`. Wiped on `StartRun` + `MERCHANT_CLOSED` so a new visit gets a fresh try.
+- **`DoNextAction` marks the slot immediately after `UseContainerItem`.** Mark, not refusal - the verification happens later because WoW 3.3.5a's `UseContainerItem` is async (`ITEM_LOCK_CHANGED` then slot empties on `BAG_UPDATE`). The mark just records "we tried this exact itemID in this slot."
+- **`BuildQueue` skips refused slots before the expensive sellability scan.** If `EC_vendorRefusedThisRun[key] == GetContainerItemID(bag, slot)`, the slot still holds the same item we tried earlier -> vendor refused -> skip. A different item in the slot (loot, drag-drop, swap) gets a fair try because the equality check fails. The cheap dictionary lookup runs before `EC_IsSellable`'s tooltip scan + multi-API path, so the worst case (bags full of identical refused items) doesn't pay the sellability cost per duplicate per cycle.
+- **Test 100a-d** pins the four insertion sites (table declaration, wipe sites, post-`UseContainerItem` mark, pre-`EC_IsSellable` skip predicate). Pure static-pattern checks - the in-game wedge-vs-no-wedge behaviour can only be verified against a real vendor-refused item.
+
+Known limitations of this patch:
+
+- **Counter still uses queue-length, not actual sales.** `EC_batchTotalSold + #queue` in `FinishRun` over-counts by 1 per refused item per cycle. The cycle terminates correctly (refused items are dropped from the next queue), so the inflation is bounded - not unbounded as before. A clean fix needs to wait for `BAG_UPDATE` to settle before counting; doing it synchronously in `FinishRun` would undercount in-flight successful sales (worse for player trust than slight over-counting). Deferred.
+
+Two notes from the field while diagnosing:
+
+- The existing `currentID ~= action.itemID` guard at the start of `DoNextAction` only catches "slot moved between queue-build and execution." Vendor refusal doesn't move the slot - the item is still there - so that guard never fires for this bug.
+- The pre-check on `sellPrice > 0` in `EC_IsSellable` already filters most never-vendorable items. The bug only shows for items that pass the client-side pre-check but get rejected at the server.
+
+---
+
+
 ### v2.46.3
 
 **Help: every Merchant and Scavenger setting now has a `[?]`, and the bind-filter icon points to the right place.**

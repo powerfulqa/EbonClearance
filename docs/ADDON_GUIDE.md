@@ -824,6 +824,61 @@ truth, used by BOTH `BuildQueue`'s delete branch and `runAutoDeleteOnPickup`:
   clears `pendingDelete`, so gating on `pendingDelete` would wedge the cascade
   after the first item. A batch loop breaks the single-popup serialisation.
 
+### Vendor-refused items get a per-cycle blacklist (v2.46.4)
+
+WoW 3.3.5a's `UseContainerItem(bag, slot)` at a merchant is async (the slot
+empties after `ITEM_LOCK_CHANGED` -> `BAG_UPDATE`) AND the API returns no
+status code, so a successful sale and a server-side refusal are
+indistinguishable at the call site. `EC_IsSellable` pre-filters
+`sellPrice == 0`, but some items pass the client-side pre-check and still
+get rejected by the server (BoP-on-use, quest-adjacent epic, race
+condition, stale `GetItemInfo` cache).
+
+Before v2.46.4, `BuildQueue`'s fresh bag walk every cycle re-queued the
+refused item, `DoNextAction` called `UseContainerItem` again, `FinishRun`
+inflated the counter by queue length, and the cycle spun forever spamming
+`Sold X items so far, looking for more` (Broyo's bug report).
+
+The guard is a file-local `EC_vendorRefusedThisRun` table in
+`EbonClearance_Events.lua`, keyed by `(bag * 100 + slot) -> itemID`:
+
+- `DoNextAction` marks the slot immediately after `UseContainerItem`. Mark,
+  not refusal - the verification happens later when the next `BuildQueue`
+  sees whether the slot still holds the same item.
+- `BuildQueue` consults the table before `EC_IsSellable` (cheap dictionary
+  lookup before the expensive tooltip scan). If
+  `EC_vendorRefusedThisRun[key] == GetContainerItemID(bag, slot)`, the
+  slot still holds the same item we tried earlier -> vendor refused ->
+  skip. A different item in the slot (loot, drag-drop, swap) gets a fair
+  try because the equality check fails.
+- The table is wiped on `StartRun` AND `MERCHANT_CLOSED`. A new merchant
+  visit (or the same visit reopened) retries refused items afresh.
+
+EC-TRAPs that look like dead code or over-engineering:
+
+- **The itemID equality check is mandatory** - a key-only presence test
+  would block organic slot moves (loot, swap) and freeze legitimate sells.
+- **The pre-check runs BEFORE `EC_IsSellable`, not after** - reordering
+  would re-pay the tooltip scan for every refused duplicate every cycle. A
+  worst-case bags-full-of-identical-refused-items scenario depends on this
+  ordering for acceptable performance.
+- **Two wipe sites (StartRun + MERCHANT_CLOSED) is intentional belt + braces**
+  - removing the MERCHANT_CLOSED wipe would carry stale entries across a
+  close-and-reopen, and StartRun is gated behind the cycle re-entry
+  condition. Both fire on the common path; one is the fallback.
+
+Test 100a-d in `test_perf_guardrails.lua` pins these contracts via
+static-pattern checks. The wedge-vs-no-wedge behaviour can only be
+verified end-to-end against a real vendor-refused item in-game.
+
+The counter (`EC_batchTotalSold + #queue` in `FinishRun`) still uses
+queue-length, not actually-sold count. The inflation is bounded
+(at-most-one-per-refused-item-per-cycle) and the cycle terminates - the
+unbounded spin is gone. A clean counter fix would need to wait for the
+inter-batch `EC_Delay` to settle before counting; doing it synchronously
+in `FinishRun` would undercount in-flight successful sales (worse than
+slight overcounting for player trust). Tracked as future work.
+
 ### Tooltip verdict is introspected via `statusTag`, not the displayed string (v2.43.0)
 
 `EC_AnnotateTooltip` builds the verdict label into `statusLine` and used to

@@ -4490,6 +4490,57 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 101 (v2.46.6): Loot Log skips items destined for auto-delete.
+-- ---------------------------------------------------------------------------
+-- Reported by Broyo (screenshot): PvP-Resilience items left ghost rows in
+-- the Loot Log - placeholder names like "item:42221" with x1 / 0.0% share
+-- that wouldn't go away. Cause: the BAG_UPDATE debounce burst runs
+-- runAutoMarkResilience (which adds Resilience items to the Delete List)
+-- BEFORE EC_ScanLootDelta (which counts arrivals). runAutoDeleteOnPickup
+-- only destroys one item per burst (popup serialisation EC-TRAP). So
+-- between the auto-mark add and the actual destruction, the item sits in
+-- the bag and ScanLootDelta credits it as "looted." Then the next burst
+-- destroys it, and the row sticks with an unresolved name because
+-- GetItemInfo hadn't cached metadata for items the player never hovered.
+--
+-- v2.46.6 fix: in EC_ScanLootDelta, skip the EC_BumpLoot call for items
+-- on the Delete List when (enableDeletion AND autoDeleteOnPickup) is on.
+-- The autoDeleteOnPickup gate is mandatory - with it off, Delete-Listed
+-- items stay in bags and SHOULD count as looted.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    check("Test 101a: ScanLootDelta has skipDeleteListed gate keyed on enableDeletion AND autoDeleteOnPickup",
+        ev:find("local skipDeleteListed = DB and DB%.enableDeletion and DB%.autoDeleteOnPickup") ~= nil,
+        "the gate MUST check both toggles. If only enableDeletion is checked, players with autoDeleteOnPickup off would silently lose Loot Log entries for items they intentionally put on the Delete List for manual vendoring - they'd be 'destined' by intent but never actually destroyed. The autoDeleteOnPickup flag is what makes the race condition real.")
+    check("Test 101b: ScanLootDelta consults the Delete List via NS.IsInSet, not bare table access",
+        ev:find("NS%.IsInSet%(deleteList, id%)") ~= nil,
+        "the boolean-set semantics in the Delete List allow `true` or `1` per IsInSet's contract (Core line 78). A bare `deleteList[id]` access would miss the `== 1` case and also wouldn't normalise nil keys. Reuses the same helper as deleteListSlotEligible for consistency.")
+    check("Test 101c: ScanLootDelta skip gates EC_BumpLoot inside the positive-delta branch (not the snapshot rebase)",
+        (function()
+            -- Locate the function body; find the `count > prev then`
+            -- branch; confirm the skip predicate and the EC_BumpLoot
+            -- call appear in order inside it, AND EC_lootBagSnapshot =
+            -- snap appears OUTSIDE the inner skip but still after the
+            -- whole loop so the snapshot rebases unconditionally.
+            local body = ev:match("function EC_ScanLootDelta%(.-NS%.ScanLootDelta = EC_ScanLootDelta")
+            if not body then return false end
+            local i1 = body:find("if count > prev then", 1, true)
+            local i2 = body:find("if not %(deleteList and NS%.IsInSet%(deleteList, id%)%) then", i1)
+            local i3 = body:find("EC_BumpLoot%(id, count %- prev%)", i2)
+            local i4 = body:find("EC_lootBagSnapshot = snap", i3)
+            return i1 and i2 and i3 and i4 and i1 < i2 and i2 < i3 and i3 < i4
+        end)(),
+        "the skip MUST gate EC_BumpLoot inside the count>prev branch, AND EC_lootBagSnapshot = snap must still rebase after the loop (outside the skip). If the skip gated the snapshot update instead, looted-then-destroyed items would re-credit on every burst (snapshot never rolls forward). If the rebase moved inside the skip, future arrivals of unrelated items would wedge until the next non-skipped iteration. The single bump-only skip preserves the snapshot semantics.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Test 64 (v2.33.x): EC_TryResummonScavenger self-gates on DB.summonGreedy.
 -- ---------------------------------------------------------------------------
 -- Bug reported by SLG: "constantly summoning Greedy Scavenger after

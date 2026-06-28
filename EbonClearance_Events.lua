@@ -1688,10 +1688,29 @@ local function EC_ScanLootDelta()
         EC_lootSnapshotReady = true
         return
     end
+    -- v2.46.6: skip items the addon is about to destroy. Reported by Broyo:
+    -- looted PvP-Resilience items left "item:XXXXX" ghost rows in the Loot
+    -- Log because the auto-mark-resilience + auto-delete-on-pickup pair
+    -- runs earlier in the same debounce burst, but the actual delete is
+    -- one-per-cycle (popup serialisation invariant). Newly-marked items
+    -- are still in bags when ScanLootDelta runs, then disappear on the
+    -- next burst - leaving a row whose GetItemInfo hadn't yet resolved
+    -- the name. EC-TRAP: must check BOTH enableDeletion AND
+    -- autoDeleteOnPickup. With autoDeleteOnPickup off, items on the
+    -- Delete List stay in bags until the player vendors them, so they
+    -- ARE genuine loot the player handled and SHOULD count.
+    local skipDeleteListed = DB and DB.enableDeletion and DB.autoDeleteOnPickup
+    local deleteList = skipDeleteListed and DB.deleteList or nil
     for id, count in pairs(snap) do
         local prev = EC_lootBagSnapshot[id] or 0
         if count > prev then
-            EC_BumpLoot(id, count - prev)
+            -- NS.IsInSet rather than the file-local IsInSet because that
+            -- local is declared further down in the chunk (after this
+            -- function's definition point) and isn't a captured upvalue
+            -- here. Same membership semantics; one extra table lookup.
+            if not (deleteList and NS.IsInSet(deleteList, id)) then
+                EC_BumpLoot(id, count - prev)
+            end
         end
     end
     EC_lootBagSnapshot = snap

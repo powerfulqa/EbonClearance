@@ -1294,6 +1294,20 @@ Guards that keep the delta honest (do not remove):
   counted - it re-baselines instead.
 - **Skips while the cursor holds an item** (`CursorHasItem`) so a bag
   reorganise (pick up, drop back) does not credit a phantom +1.
+- **Skips items destined for auto-delete** (v2.46.6). When
+  `DB.enableDeletion` AND `DB.autoDeleteOnPickup` are both on, an item on
+  the Delete List is never bumped into `lootedItemCounts`. Without this,
+  the auto-mark-Resilience scan (which runs earlier in the same burst and
+  adds items to the Delete List) would leave ghost rows: the item sits in
+  bags between the auto-mark add and the actual destroy on the next
+  burst, gets credited as looted, then disappears - row sticks with an
+  unresolved `item:XXXXX` name because `GetItemInfo` hadn't cached
+  metadata for items the player never tooltip-hovered (Broyo's bug).
+  EC-TRAP: the gate MUST check both flags - with `autoDeleteOnPickup`
+  off, Delete-Listed items stay in bags for manual vendoring and ARE
+  genuine loot. The skip uses `NS.IsInSet` (not the file-local `IsInSet`,
+  which is declared below `EC_ScanLootDelta` in the chunk and is not a
+  captured upvalue at the function's definition point).
 
 Storage is per-itemID aggregate counts (never an event log), in three
 places: in-memory `EC_lootSession` (Session view), per-character

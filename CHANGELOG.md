@@ -5,6 +5,22 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.46.6
+
+**Bug fix: Loot Log no longer leaves ghost rows for items the addon destroys.**
+
+Reported by Broyo (screenshot): looted PvP-Resilience items left `item:XXXXX` rows in the Loot Log that wouldn't go away. The rows had `x1` counts and `0.0%` shares - the visible artefacts of items the addon destroyed before they were ever displayed properly.
+
+Why it happened: the BAG_UPDATE debounce flush runs the auto-mark-Resilience scan (which adds qualifying items to the Delete List), then the auto-delete-on-pickup scan (which destroys ONE Delete-List item per burst due to popup serialisation), and finally the Loot Log's bag-delta scan. New PvP items sat in bags between the auto-mark add and the actual delete on the next burst, so the Loot Log credited them as "looted" - then they vanished, but the row stuck around. To compound it, `GetItemInfo` often hadn't cached metadata for items the player never tooltip-hovered, so the row's name rendered as the raw `item:XXXXX` placeholder.
+
+- **`EC_ScanLootDelta` now skips Delete-Listed items when both `enableDeletion` and `autoDeleteOnPickup` are on.** Items the addon is about to destroy never get a Loot Log row created. If you have `autoDeleteOnPickup` off, items on the Delete List still count - you put them there for manual vendoring, they're real loot you'll handle.
+- The v2.46.5 right-click Hide is still there for cleaning up any leftover ghost rows from before this fix, or for hiding rows you just don't want to see for other reasons.
+
+Test 101a-c pins the contract: gate keyed on both flags, uses `NS.IsInSet` (boolean-set semantics), gate is inside the positive-delta branch with the snapshot rebase still running unconditionally after the loop.
+
+---
+
+
 ### v2.46.5
 
 **Loot Log: gold value per item, sort by gold, and hide-an-entry.**

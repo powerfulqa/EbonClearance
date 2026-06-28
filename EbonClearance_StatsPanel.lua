@@ -367,10 +367,19 @@ local lootWindow
 local LOOT_ROW_H = 18
 local LOOT_DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
--- Build a sorted array of { id, qty } for the given scope (filtered by
--- rarityFilter when set), plus the grand total quantity across EVERY entry.
--- The total is intentionally computed over all items, not just the filtered
--- rows, so percentages read as "share of everything looted".
+-- Forward-declared so the row factory's right-click handler (defined before
+-- the body below) can call it as an upvalue. Assigned with `function
+-- lootRefresh(win)` further down, NOT `local function`, so it stays the same
+-- upvalue everything here captures.
+local lootRefresh
+
+-- Build a sorted array of { id, qty, value, name, quality, texture } for the
+-- given scope (filtered by rarityFilter when set), plus the grand totals of
+-- quantity AND vendor value across EVERY entry (so shares read as "of
+-- everything looted", even with a rarity filter on). value = per-unit vendor
+-- sell price (GetItemInfo) x quantity; it's 0 for items with no sell price,
+-- which is itself useful - it flags the worthless drops worth deleting.
+-- One GetItemInfo per item (cached) feeds both the sort and the render.
 local function lootBuildArray(scope, sortKey, sortDir, rarityFilter)
     local src
     if scope == "account" then
@@ -381,34 +390,49 @@ local function lootBuildArray(scope, sortKey, sortDir, rarityFilter)
     else
         src = NS.lootSession
     end
-    local arr, total = {}, 0
+    -- Hidden items (right-clicked to hide) are dropped BEFORE the totals so
+    -- the remaining rows' count/gold shares rebase as if the hidden ones were
+    -- never looted. This differs from the rarity filter, which hides rows but
+    -- keeps them in the totals.
+    local hidden = (NS.ADB and NS.ADB.lootLogHidden) or {}
+    local arr, total, totalValue = {}, 0, 0
     if src then
         for itemID, qty in pairs(src) do
-            if qty and qty > 0 then
+            if qty and qty > 0 and not hidden[itemID] then
+                local name, _, q, _, _, _, _, _, _, texture, sellPrice = GetItemInfo(itemID)
+                local value = (sellPrice or 0) * qty
                 total = total + qty
-                local include = true
-                if rarityFilter ~= nil then
-                    local _, _, q = GetItemInfo(itemID)
-                    include = (q == rarityFilter)
-                end
-                if include then
-                    arr[#arr + 1] = { id = itemID, qty = qty }
+                totalValue = totalValue + value
+                if rarityFilter == nil or q == rarityFilter then
+                    arr[#arr + 1] = {
+                        id = itemID,
+                        qty = qty,
+                        value = value,
+                        name = name or ("item:" .. itemID),
+                        quality = q,
+                        texture = texture,
+                    }
                 end
             end
         end
     end
-    -- Sort by the requested column / direction. sortDir: 1 = ascending,
-    -- -1 = descending. "count" and "pct" produce the IDENTICAL ordering
-    -- (percentage is just qty / total, and total is constant across rows),
-    -- so both map to the qty comparator; the two headers exist because the
-    -- player thinks of them as separate columns. Ties break on itemID for a
-    -- stable order. Name sort resolves names from GetItemInfo (uncached
-    -- items fall back to "item:<id>").
+    -- sortDir: 1 = ascending, -1 = descending. Ties break on itemID for a
+    -- stable order. "count" sorts by quantity, "gold" by vendor value (these
+    -- diverge when prices differ - the whole point of the gold column), and
+    -- "name" alphabetically.
     sortDir = sortDir or -1
-    if sortKey == "name" then
-        for _, e in ipairs(arr) do
-            e.name = (GetItemInfo(e.id)) or ("item:" .. e.id)
+    local function byField(field)
+        return function(a, b)
+            if a[field] ~= b[field] then
+                if sortDir == 1 then
+                    return a[field] < b[field]
+                end
+                return a[field] > b[field]
+            end
+            return a.id < b.id
         end
+    end
+    if sortKey == "name" then
         table.sort(arr, function(a, b)
             if a.name ~= b.name then
                 if sortDir == 1 then
@@ -418,18 +442,12 @@ local function lootBuildArray(scope, sortKey, sortDir, rarityFilter)
             end
             return a.id < b.id
         end)
+    elseif sortKey == "gold" then
+        table.sort(arr, byField("value"))
     else
-        table.sort(arr, function(a, b)
-            if a.qty ~= b.qty then
-                if sortDir == 1 then
-                    return a.qty < b.qty
-                end
-                return a.qty > b.qty
-            end
-            return a.id < b.id
-        end)
+        table.sort(arr, byField("qty"))
     end
-    return arr, total
+    return arr, total, totalValue
 end
 
 -- Pooled row factory. Rows anchor to content's TOPLEFT/TOPRIGHT so they
@@ -480,10 +498,29 @@ local function lootGetRow(win, i)
             GameTooltip:SetHyperlink("item:" .. id)
             GameTooltip:AddLine(L["|cff888888Not in your bags now - hover it in your bags for the live read.|r"], 1, 1, 1, true)
         end
+        GameTooltip:AddLine(L["|cff808080Right-click to hide from the Loot Log.|r"], 1, 1, 1, true)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function()
         GameTooltip:Hide()
+    end)
+    -- Right-click hides this item from the Loot Log. Hidden items drop out
+    -- of the list AND the totals, so every other row's count/gold share
+    -- rebases. Restore them all with the window's "Unhide All" button.
+    row:SetScript("OnMouseUp", function(self, button)
+        if button ~= "RightButton" or not self.itemID then
+            return
+        end
+        if NS.ADB then
+            NS.ADB.lootLogHidden = NS.ADB.lootLogHidden or {}
+            NS.ADB.lootLogHidden[self.itemID] = true
+        end
+        lootRefresh(win)
+        if NS.PrintNicef then
+            local n = (GetItemInfo(self.itemID)) or ("item:" .. self.itemID)
+            NS.PrintNicef(L["Hid %s from the Loot Log. Use Unhide All to bring it back."], n)
+        end
+        PlaySound("igMainMenuOptionCheckBoxOn")
     end)
     local icon = row:CreateTexture(nil, "ARTWORK")
     icon:SetSize(16, 16)
@@ -505,26 +542,28 @@ local function lootGetRow(win, i)
     return row
 end
 
-local function lootRefresh(win)
+function lootRefresh(win)
     if not win then
         return
     end
-    local arr, total = lootBuildArray(win.scope or "session", win.sortKey, win.sortDir, win.rarityFilter)
+    local arr, total, totalValue = lootBuildArray(win.scope or "session", win.sortKey, win.sortDir, win.rarityFilter)
     for i = 1, #arr do
         local e = arr[i]
         local row = lootGetRow(win, i)
         row.itemID = e.id
-        local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(e.id)
         local hex = "ffffffff"
-        if quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality] and ITEM_QUALITY_COLORS[quality].hex then
-            hex = ITEM_QUALITY_COLORS[quality].hex:gsub("|c", "")
+        if e.quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[e.quality] and ITEM_QUALITY_COLORS[e.quality].hex then
+            hex = ITEM_QUALITY_COLORS[e.quality].hex:gsub("|c", "")
         end
-        row.icon:SetTexture(texture or LOOT_DEFAULT_ICON)
-        row.label:SetText(string.format("|c%s%s|r", hex, name or ("item:" .. e.id)))
-        -- Share of the FULL looted volume (grand total), so the % reads as
-        -- "how much of everything is this drop" even with a rarity filter on.
-        local pct = (total > 0) and (e.qty / total * 100) or 0
-        row.amount:SetText(string.format("|cffffd200x%d|r  |cff888888%.1f%%|r", e.qty, pct))
+        row.icon:SetTexture(e.texture or LOOT_DEFAULT_ICON)
+        row.label:SetText(string.format("|c%s%s|r", hex, e.name))
+        -- Amount column: count, vendor value, and that value's share of the
+        -- FULL looted gold (grand total), so the % reads as "how much of my
+        -- income is this drop" even with a rarity filter on. A worthless
+        -- drop shows a grey dash + 0%, which is the cue to filter/delete it.
+        local goldPct = (totalValue > 0) and (e.value / totalValue * 100) or 0
+        local coin = (e.value > 0 and GetCoinTextureString) and GetCoinTextureString(e.value) or "|cff707070-|r"
+        row.amount:SetText(string.format("|cff808080x%d|r  %s  |cff888888%.1f%%|r", e.qty, coin, goldPct))
         row:Show()
     end
     if win.rows then
@@ -533,11 +572,30 @@ local function lootRefresh(win)
         end
     end
     win.content:SetHeight(math.max(1, #arr * LOOT_ROW_H))
+    -- Reflect the hidden-item count on the Unhide All button, and grey it out
+    -- when nothing is hidden.
+    if win.unhideBtn then
+        local nHidden = 0
+        local h = NS.ADB and NS.ADB.lootLogHidden
+        if h then
+            for _ in pairs(h) do
+                nHidden = nHidden + 1
+            end
+        end
+        if nHidden > 0 then
+            win.unhideBtn:SetText(string.format(L["Unhide All (%d)"], nHidden))
+            win.unhideBtn:Enable()
+        else
+            win.unhideBtn:SetText(L["Unhide All"])
+            win.unhideBtn:Disable()
+        end
+    end
     if win.totalLine then
         if #arr == 0 then
             win.totalLine:SetText(L["|cff888888Nothing looted yet.|r"])
         else
-            win.totalLine:SetText(string.format(L["%d items, %d total"], #arr, total))
+            local coinTotal = (totalValue > 0 and GetCoinTextureString) and GetCoinTextureString(totalValue) or "0"
+            win.totalLine:SetText(string.format(L["%d items  |  %d looted  |  %s"], #arr, total, coinTotal))
         end
     end
 end
@@ -572,8 +630,8 @@ local function lootEnsureWindow()
     win:SetScript("OnDragStop", win.StopMovingOrSizing)
     win:Hide()
     win.scope = "session"
-    win.sortKey = "count" -- "name" | "count" | "pct"
-    win.sortDir = -1 -- 1 ascending, -1 descending (most-looted first by default)
+    win.sortKey = "gold" -- "name" | "count" | "gold"
+    win.sortDir = -1 -- 1 ascending, -1 descending (highest-earning first by default)
     win.rarityFilter = nil -- nil = all; otherwise a quality number 0-4
 
     local title = win:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -634,10 +692,10 @@ local function lootEnsureWindow()
         lootRefresh(win)
     end)
 
-    -- Sort controls. Name / Count / % each toggle ascending <-> descending
-    -- on repeat clicks; the active column shows a direction caret. Count and
-    -- % sort identically (see lootBuildArray) but both are offered because
-    -- the player reads them as separate columns.
+    -- Sort controls. Name / Count / Gold each toggle ascending <-> descending
+    -- on repeat clicks; the active column shows a direction caret. Count sorts
+    -- by quantity looted, Gold by vendor value (qty x sell price) - these
+    -- diverge when prices differ, which is the whole point of the gold view.
     local sortLabel = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     sortLabel:SetPoint("TOPLEFT", totalLine, "BOTTOMLEFT", 0, -8)
     sortLabel:SetText(L["Sort:"])
@@ -652,7 +710,7 @@ local function lootEnsureWindow()
         end
         sortBtns.name:SetText(L["Name"] .. caret("name"))
         sortBtns.count:SetText(L["Count"] .. caret("count"))
-        sortBtns.pct:SetText(L["%"] .. caret("pct"))
+        sortBtns.gold:SetText(L["Gold"] .. caret("gold"))
     end
     local function setSort(key)
         if win.sortKey == key then
@@ -675,9 +733,9 @@ local function lootEnsureWindow()
         end)
         return b
     end
-    sortBtns.name = makeSortBtn("name", 70, sortLabel)
-    sortBtns.count = makeSortBtn("count", 62, sortBtns.name)
-    sortBtns.pct = makeSortBtn("pct", 44, sortBtns.count)
+    sortBtns.name = makeSortBtn("name", 64, sortLabel)
+    sortBtns.count = makeSortBtn("count", 60, sortBtns.name)
+    sortBtns.gold = makeSortBtn("gold", 56, sortBtns.count)
     updateSortButtons()
 
     -- Rarity filter. "All rarities" plus one entry per quality; restricts
@@ -714,6 +772,26 @@ local function lootEnsureWindow()
         end
     end)
     UIDropDownMenu_SetText(rarityDD, L["All rarities"])
+
+    -- Unhide All button, on the rarity row. Right-clicking a row hides that
+    -- item (it drops from the list and the totals); this restores every
+    -- hidden item. Label carries the hidden count; disabled when none hidden.
+    -- The hidden set is account-wide (ADB.lootLogHidden), so it applies to all
+    -- three scope views.
+    local unhideBtn = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+    unhideBtn:SetSize(110, 20)
+    unhideBtn:SetPoint("LEFT", rarityDD, "RIGHT", 8, 2)
+    unhideBtn:SetText(L["Unhide All"])
+    unhideBtn:SetScript("OnClick", function()
+        if NS.ADB and NS.ADB.lootLogHidden then
+            for k in pairs(NS.ADB.lootLogHidden) do
+                NS.ADB.lootLogHidden[k] = nil
+            end
+        end
+        lootRefresh(win)
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    win.unhideBtn = unhideBtn
 
     -- Scroll chrome (matches the list windows' backdrop look).
     local scrollBg = CreateFrame("Frame", nil, win)

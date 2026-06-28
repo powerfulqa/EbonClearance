@@ -1304,6 +1304,21 @@ writes all three; `EC_ClearLoot(scope)` wipes one in place. The window
 a fixed/ resizable floating frame, so it is outside the reactive-width
 contract that governs Interface Options sub-panels.
 
+Two display-layer features sit on top of the stored counts (v2.46.x), both
+in `lootBuildArray` / `lootRefresh`, neither adding a stored value:
+
+- **Gold value + share.** Each row shows `qty * sell price` (the 11th
+  `GetItemInfo` return) and that value's share of the total looted gold.
+  Value is derived at render time, not stored, so a price the client hasn't
+  cached yet just reads as 0 until it warms up. The "Gold" sort orders by
+  this value (distinct from the "Count" sort by quantity).
+- **Per-item hide.** Right-clicking a row adds its itemID to the account-wide
+  `ADB.lootLogHidden` set; hidden items are skipped in `lootBuildArray`
+  BEFORE the totals accumulate, so the remaining rows' count/gold shares
+  rebase (this differs from the rarity filter, which hides rows but keeps
+  them in the totals). The "Unhide All" button wipes the set. Seeded by
+  `EnsureAccountDB` as `{}`.
+
 ### PE affix detection uses three sources, not one (v2.23.0+)
 
 The affix-protection system (`protectAffixedRareItems`) and the v2.23.0

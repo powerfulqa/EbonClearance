@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.46.5
+
+**Loot Log: gold value per item, sort by gold, and hide-an-entry.**
+
+- **Gold value + share.** Each row now shows the count, the stack's vendor value (quantity x sell price), and that value's share of your total looted gold - so you can see which drops actually earn and which are dead weight worth filtering or deleting. A worthless drop reads as a grey dash and 0%. The total line now also shows total looted value. (Value is vendor sell price; items you'd auction for more are underestimated.)
+- **Sort by Gold.** The third sort column is now Gold (was a second Count). Count sorts by quantity, Gold by value - they diverge when a high-volume drop is low-value, which is the whole point. The window opens Gold-sorted, highest earners first.
+- **Hide entries.** Right-click a row to hide that item: it drops out of the list AND the totals, so every other row's count/gold share rebases (handy when a high-volume filler like cloth is skewing the numbers). The Unhide All button shows the hidden count and restores them; it greys out when nothing is hidden. The hidden set is account-wide and persists across the Session / Character / Account views and across /reload.
+
+---
+
+
 ### v2.46.4
 
 **Bug fix: vendor-refused items no longer wedge the sell loop.**

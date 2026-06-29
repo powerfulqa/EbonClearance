@@ -5,6 +5,18 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.47.0
+
+New option: auto-clear affixed items you can't sell. For players who've collected the affixes they want and keep getting soulbound affix drops that have no vendor value and just clutter the bag. Off by default. Suggested by Broyo.
+
+- **Auto-mark unsellable affixes for deletion (opt-in, default off).** A new toggle on the Delete List panel. When on, a **soulbound** affixed Rare/Epic item with **no vendor value** that EbonClearance would otherwise try to sell is added to your Delete List automatically (one chat line per item), then deleted at a vendor or instantly with auto-delete-on-pickup. Two kinds qualify: **exact-rank duplicates** of an affix you already have, and **any affix below your "Sell affixes below rank" setting**. These are exactly the items that otherwise get flagged "Will Sell" but stick in your bags forever, because the merchant refuses them (no sell price).
+- **Never touches what you're keeping.** A rank you haven't extracted yet still shows "Keep" and is never marked, so you don't lose ranks you're still collecting. Items with a vendor price are left for the sell path (you keep the gold). Keep List, equipped gear, quest items, tomes/recipes, and profession tools are never marked.
+- **Works on its own.** Just turn it on (with affix protection + "Allow items to be deleted"); it does NOT require the "Allow selling affixes you already have" option. The Help entry spells out the "below your rank floor" interaction so it doesn't catch you out.
+- **Keep bind-on-equip dupes for the auction house (opt-in, default off).** A sub-option of "Allow selling affixes you already have" in Item Protection. With it on, EbonClearance only **vendors the soulbound** affix dupes (a vendor is their only exit) and **keeps the bind-on-equip** ones so you can auction them yourself. Off keeps today's behavior (sell every owned dupe regardless of bind type). The tooltip and `/ec sellinfo` both reflect the split, so a kept BoE dupe never shows "Will Sell". Suggested by Broyo, who wants soulbound dupes gone but BoE dupes saved for the auction house.
+- **Internal:** a shared `affixDisposable` helper now backs the delete gate, the new scan, and mirrors `EC_IsSellable`'s affix release (Allow Sell / owned dupe / below-floor), so sell and delete can't diverge. The delete-path dupe check was also upgraded from description-only to the full 3-layer `playerOwnsAffix`. The bind-type split (`keepBoeAffixDupes`) is applied to both of `EC_IsSellable`'s dupe-release sites plus the tooltip and the `/ec sellinfo` trace, kept in lockstep. New scan runs from the existing BAG_UPDATE debounce; Tests 102 + 103 lock it.
+
+Additive account-wide schema fields, downgrade-safe. Safe overwrite from v2.46.x.
+
 ### v2.46.6
 
 **Bug fix: Loot Log no longer leaves ghost rows for items the addon destroys.**

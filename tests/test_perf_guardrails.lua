@@ -3438,7 +3438,12 @@ do
         -- not just demote qualityPass. The Sell List override pattern
         -- (from chance-on-hit v2.20.1) is intentionally NOT used; tomes
         -- require Allow Sell even with explicit list entries.
-        local tomeBlockStart = eventsSrc:find("EC_compCache%.itemIsTome%(")
+        -- Anchor on the tome-veto GATE specifically (not the first
+        -- itemIsTome call, which is the recipePass block); otherwise
+        -- unrelated code inserted between recipePass and the isJunk
+        -- recheck can push the tome block's `return false` out of the
+        -- capture window.
+        local tomeBlockStart = eventsSrc:find("DB%.protectAllTomes or DB%.protectUnlearnedTomes")
         if tomeBlockStart then
             -- Capture the next ~600 chars (covers the if/end block).
             local tomeBlock = eventsSrc:sub(tomeBlockStart, tomeBlockStart + 600)
@@ -3629,21 +3634,29 @@ do
     if eventsFile then
         local eventsSrc = eventsFile:read("*a") or ""
         eventsFile:close()
-        -- v2.42.0: the affix gate is in deleteListSlotEligible. Locate
-        -- it by the function signature and grab the surrounding ~1500 chars.
-        local blockStart = eventsSrc:find("function EC_compCache%.deleteListSlotEligible%(")
-        if blockStart then
-            local block = eventsSrc:sub(blockStart, blockStart + 2500)
+        -- v2.47.0: the affix release decision moved into the shared
+        -- EC_compCache.affixDisposable helper (used by deleteListSlotEligible
+        -- AND the auto-mark scan; mirrors EC_IsSellable's affix block).
+        local dispStart = eventsSrc:find("function EC_compCache%.affixDisposable%(affix%)")
+        if dispStart then
+            local block = eventsSrc:sub(dispStart, dispStart + 1200)
             check(
-                "BuildQueue delete-path affix gate references ADB.allowedAffixes",
+                "affix release gate (affixDisposable) honours Allow Sell",
                 block:find("ADB%.allowedAffixes") ~= nil,
-                "manual Allow Sell on an affix description must release the delete-list gate; without this the user has no way to delete a no-vendor-value affixed item they have explicitly allowed"
+                "manual Allow Sell on an affix description must release the gate; without this the user has no way to dispose of a no-vendor-value affixed item they have explicitly allowed"
             )
             check(
-                "BuildQueue delete-path affix gate uses `manualAllow or` shape",
-                block:find("manualAllow") ~= nil
-                    and block:find("not %(manualAllow or") ~= nil,
-                "the delete-path gate must mirror the sell-path's `not (manualAllow or autoDupe)` shape so either bypass releases the protection"
+                "affixDisposable releases on owned dupe AND below-floor rank",
+                block:find("EC_compCache%.playerOwnsAffix%(affix%)") ~= nil
+                    and block:find("DB%.affixMinSellRank") ~= nil,
+                "the release decision must cover owned exact-rank dupes AND ranks below the affixMinSellRank floor (so the auto-mark scan clears unsellable below-floor affixes too)"
+            )
+            local delStart = eventsSrc:find("function EC_compCache%.deleteListSlotEligible%(")
+            local delBlock = delStart and eventsSrc:sub(delStart, delStart + 1200) or ""
+            check(
+                "deleteListSlotEligible routes its affix gate through affixDisposable",
+                delBlock:find("EC_compCache%.affixDisposable%(affix%)") ~= nil,
+                "the delete gate must call the shared helper so it agrees with the scan + EC_IsSellable instead of re-inlining the release logic"
             )
         end
     end
@@ -4021,9 +4034,9 @@ do
     check("Test 92b: EC_IsSellable adds rankBelow to the affix veto",
         ev:find("if not %(manualAllow or autoDupe or rankBelow%) then") ~= nil,
         "the sell-path veto must accept rankBelow as a third release condition alongside manualAllow and autoDupe; without this the slider has no effect on the auto-rule sweep")
-    check("Test 92c: worker delete path mirrors the rankBelow veto",
-        ev:find("if not %(manualAllow or isDupe or rankBelow%) then") ~= nil,
-        "the delete-path (deleteListSlotEligible) must accept rankBelow too. If sell and delete diverge on the same item the player sees the tooltip flip mid-session")
+    check("Test 92c: delete path honours the rankBelow floor (via shared affixDisposable)",
+        ev:find("affix%.rank < DB%.affixMinSellRank") ~= nil,
+        "the delete-path (deleteListSlotEligible) gets the rank floor through the shared affixDisposable helper (v2.47.0), so sell and delete can't diverge on the same item. If sell and delete diverge the player sees the tooltip flip mid-session")
     check("Test 92d: canDisenchant adds rankBelow to the Process Bags affix-guard",
         proc:find("affixGuarded = not %(manualAllow or autoDupe or rankBelow%)") ~= nil,
         "Process Bags must also honour the rank floor so DE / Mill / Prospect see the same eligibility set the vendor cycle sees")
@@ -6342,6 +6355,178 @@ do
             s:find("function EC_compCache%.executeBagSlotDelete%(") ~= nil and execCount >= 3,
             "DoNextAction and runAutoDeleteOnPickup must both call the shared executeBagSlotDelete (defn + 2 call sites)")
     end
+end
+
+-- ---------------------------------------------------------------------------
+-- v2.47.0 Test 102: auto-mark unsellable affix dupes (Broyo ask).
+-- ---------------------------------------------------------------------------
+-- DB.autoMarkAffixDupes opts the player into a BAG_UPDATE-driven sweep that
+-- adds affixed items they ALREADY own (3-layer dupe check) that are soulbound
+-- AND have no vendor value to DB.deleteList. Sellable dupes are left for the
+-- existing sell path. The delete-path dupe check (deleteListSlotEligible) must
+-- use the SAME 3-layer ownership helper EC_IsSellable uses, or an item gets
+-- marked but then vetoed at delete time (marked-but-never-deleted).
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local prot = fileSrc("EbonClearance_Protection.lua")
+    local kdp = fileSrc("EbonClearance_KeepDeletePanels.lua")
+
+    check(
+        "Test 102a: DB.autoMarkAffixDupes seeded in EnsureDB with default false",
+        ev:find("DB%.autoMarkAffixDupes%s*=%s*false") ~= nil,
+        "must default OFF - it leads to deletion of affixed items; an unsolicited default could destroy gear the player wanted."
+    )
+
+    check(
+        "Test 102b: playerOwnsAffix 3-layer helper exists in Protection",
+        prot:find("function EC_compCache%.playerOwnsAffix%(affix%)") ~= nil
+            and prot:find("playerHasAffixDescription") ~= nil
+            and prot:find("playerHasAffixRank") ~= nil
+            and prot:find("playerHasAffixFamily") ~= nil,
+        "the shared ownership check must combine all three layers (description, family+rank, family-only) so it recognises exactly the dupes EC_IsSellable releases for selling."
+    )
+
+    -- Bound each body to the next function def so the find()s can't bleed
+    -- into a neighbouring helper.
+    local delStart = ev:find("function EC_compCache%.deleteListSlotEligible%(")
+    local delEnd = ev:find("function EC_compCache%.executeBagSlotDelete", delStart or 1)
+    local delBody = (delStart and delEnd) and ev:sub(delStart, delEnd) or ""
+    check(
+        "Test 102c: deleteListSlotEligible's affix gate uses the shared affixDisposable helper",
+        delBody:find("EC_compCache%.affixDisposable%(affix%)") ~= nil,
+        "the delete-path affix gate must use the shared affixDisposable release check so it agrees with the mark scan and EC_IsSellable - otherwise a released item (dupe / below-floor) is marked but vetoed at delete time (marked-but-never-deleted)."
+    )
+
+    -- affixDisposable is the single release decision: Allow-Sell, OR owned dupe
+    -- with a dupe-disposal toggle on, OR rank below the floor. The mark scan and
+    -- the delete gate both lean on it.
+    local dispStart = ev:find("function EC_compCache%.affixDisposable%(affix%)")
+    local dispEnd = ev:find("function EC_compCache%.deleteListSlotEligible", dispStart or 1)
+    local dispBody = (dispStart and dispEnd) and ev:sub(dispStart, dispEnd) or ""
+    check(
+        "Test 102c2: affixDisposable covers Allow-Sell + owned dupe + below-floor",
+        dispStart ~= nil
+            and dispBody:find("allowedAffixes") ~= nil
+            and dispBody:find("DB%.affixAllowExactDupes or DB%.autoMarkAffixDupes") ~= nil
+            and dispBody:find("EC_compCache%.playerOwnsAffix%(affix%)") ~= nil
+            and dispBody:find("DB%.affixMinSellRank") ~= nil,
+        "the release decision must include the rank floor (affixMinSellRank) as well as owned dupes, so the auto-mark scan also clears unsellable below-floor affixes (Broyo's stuck Relentless Crits III), and must honour autoMarkAffixDupes so the delete feature works without the sell toggle."
+    )
+
+    local markStart = ev:find("function EC_compCache%.runAutoMarkAffixDupes%(%)")
+    local markEnd = ev:find("local function BuildQueue", markStart or 1)
+    local markBody = (markStart and markEnd) and ev:sub(markStart, markEnd) or ""
+    check(
+        "Test 102d: runAutoMarkAffixDupes exists and gates correctly",
+        markStart ~= nil
+            and markBody:find("EC_IsAddonEnabledForChar") ~= nil
+            and markBody:find("DB%.enableDeletion and DB%.autoMarkAffixDupes") ~= nil
+            and markBody:find("DB%.protectAffixedRareItems") ~= nil,
+        "the sweep must short-circuit when master-disabled, when deletion or the feature toggle is off, AND when affix protection is off (it only matters for items protection is keeping, and the delete-path affix gate that re-verifies ownership only runs when protection is on). It does NOT require the 'sell exact-rank dupes' toggle - deleteListSlotEligible releases owned dupes when autoMarkAffixDupes is on (see 102c)."
+    )
+
+    check(
+        "Test 102e: scan requires disposable affix + soulbound + no vendor value, skips protected",
+        markBody:find("EC_compCache%.affixDisposable%(affix%)") ~= nil
+            and markBody:find('EC_compCache%.getBindType%(bag, slot%) == "bop"') ~= nil
+            and markBody:find("sellPrice") ~= nil
+            and markBody:find("IsEquippedItem") ~= nil
+            and markBody:find("isQuestItem") ~= nil
+            and markBody:find("itemIsTome") ~= nil
+            and markBody:find("baselineProtectedIDs") ~= nil,
+        "only soulbound (bop), no-vendor-value affixes EC would otherwise sell (affixDisposable: dupe or below-floor) are marked, and Keep-listed / equipped / quest / tome / profession-tool items are always skipped."
+    )
+
+    -- Count >= 2: the definition line plus at least one call site. The
+    -- debounce wiring adds the call next to runAutoMarkResilience.
+    local _, callCount = ev:gsub("EC_compCache%.runAutoMarkAffixDupes%(%)", "")
+    check(
+        "Test 102f: runAutoMarkAffixDupes is called (from the BAG_UPDATE debounce)",
+        callCount >= 2,
+        "must run from the coalesced 120ms debounce (alongside runAutoDeleteOnPickup / runAutoMarkResilience), not the raw BAG_UPDATE branch."
+    )
+
+    check(
+        "Test 102g: KeepDeletePanels surfaces the affix-dupe checkbox",
+        kdp:find("EbonClearanceAutoMarkAffixDupesCB") ~= nil and kdp:find("DB%.autoMarkAffixDupes") ~= nil,
+        "the toggle lives on the Delete List panel next to the resilience auto-mark; same enabled-state rule (greyed when 'Allow items to be deleted' is off)."
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- v2.47.0 Test 103: bind-type split for "Allow selling affixes you already have"
+-- (Broyo ask, iter 3).
+-- ---------------------------------------------------------------------------
+-- DB.keepBoeAffixDupes restricts the owned-dupe sell release to SOULBOUND items
+-- so bind-on-equip dupes are kept for the auction house. The gate
+-- (`<dupe> and DB.keepBoeAffixDupes and getBindType ~= "bop"` -> drop the
+-- release) must be applied to BOTH of EC_IsSellable's dupe-release sites
+-- (the positive-signal autoDupePass AND the affix-veto-release autoDupe - a BoE
+-- dupe that also matches a quality rule would otherwise slip through the veto),
+-- plus the tooltip and the /ec sellinfo trace so they tell the same story.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local tip = fileSrc("EbonClearance_Tooltip.lua")
+    local pp = fileSrc("EbonClearance_ProtectionPanel.lua")
+    local bd = fileSrc("EbonClearance_BagDisplay.lua")
+
+    check(
+        "Test 103a: DB.keepBoeAffixDupes seeded in EnsureDB with default false",
+        ev:find("DB%.keepBoeAffixDupes%s*=%s*false") ~= nil,
+        "must default OFF so existing users keep today's behaviour (sell all owned dupes regardless of bind); turning it on is the opt-in that keeps BoE dupes for the auction house."
+    )
+
+    -- The bind gate must drop the release for non-soulbound items. Count the
+    -- occurrences of the gate in EC_IsSellable: it appears at BOTH the
+    -- autoDupePass site and the veto autoDupe site.
+    local _, gateCount = ev:gsub('DB%.keepBoeAffixDupes and EC_compCache%.getBindType%(bag, slot%) ~= "bop"', "")
+    check(
+        "Test 103b: EC_IsSellable gates BOTH dupe-release sites on bind type",
+        gateCount >= 2
+            and ev:find("autoDupePass = false") ~= nil
+            and ev:find("autoDupe = false") ~= nil,
+        "the keepBoeAffixDupes bind gate must clear BOTH autoDupePass (positive signal) AND the veto autoDupe; gating only one lets a BoE dupe that also matches a quality rule slip through the veto and sell."
+    )
+
+    check(
+        "Test 103c: tooltip mirrors the bind-type gate",
+        tip:find('DB%.keepBoeAffixDupes') ~= nil
+            and tip:find("getBindTypeFromTooltip") ~= nil
+            and tip:find("autoDupe = false") ~= nil,
+        "the tooltip must clear its autoDupe for a kept BoE dupe (via getBindTypeFromTooltip) so it never shows 'Will Sell' for an item the merchant cycle keeps."
+    )
+
+    check(
+        "Test 103d: /ec sellinfo trace mirrors the bind-type gate",
+        bd:find('DB%.keepBoeAffixDupes') ~= nil
+            and bd:find('EC_compCache%.getBindType%(bag, slot%) ~= "bop"') ~= nil,
+        "the trace must reflect the kept-BoE-dupe outcome so /ec sellinfo agrees with the merchant cycle and the tooltip (Broyo debugs with sellinfo)."
+    )
+
+    check(
+        "Test 103e: Protection panel surfaces the keep-BoE-dupes child checkbox",
+        pp:find("EbonClearanceKeepBoeAffixDupesCB") ~= nil
+            and pp:find("DB%.keepBoeAffixDupes = cb:GetChecked") ~= nil,
+        "the sub-toggle lives under 'Allow selling affixes you already have', writing DB.keepBoeAffixDupes; without the UI the player can't enable it."
+    )
 end
 
 -- ---------------------------------------------------------------------------

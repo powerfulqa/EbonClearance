@@ -517,6 +517,18 @@ local function EC_AnnotateTooltip(tooltip)
                 -- (matches what the user requested when shipping the
                 -- family + rank fallback).
                 local autoDupe = DB.affixAllowExactDupes and (playerKnows or playerKnowsRank or playerKnowsFamily)
+                -- v2.47.0: bind-type split mirror. When "keep BoE dupes" is on,
+                -- a BoE owned dupe is NOT released (kept for the auction house),
+                -- so the tooltip must not say "Will Sell" for it. Reads the bind
+                -- line off the live tooltip (no bag/slot here). Keep in lockstep
+                -- with EC_IsSellable's autoDupe / autoDupePass gate.
+                if autoDupe
+                    and DB.keepBoeAffixDupes
+                    and EC_compCache.getBindTypeFromTooltip
+                    and EC_compCache.getBindTypeFromTooltip(tooltip, id) ~= "bop"
+                then
+                    autoDupe = false
+                end
                 -- v2.44.0: rank-floor opt-out. Mirrors the sell-path
                 -- so the tooltip reflects the true outcome when an
                 -- affixed item is below the player's chosen rank

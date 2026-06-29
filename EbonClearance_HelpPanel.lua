@@ -326,9 +326,21 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
+        id = "gate-delete-unsellable-dupes",
+        q = L["Auto-mark unsellable affixes for deletion"],
+        a = L["On the Delete List panel (off by default). When on (with affix protection), EbonClearance puts soulbound affixed items it would otherwise sell, but that have NO vendor value, onto your Delete List automatically (one chat line each). Two kinds qualify: exact-rank duplicates of an affix you already have, AND any affix below your 'Sell affixes below rank' setting. These are the items that would otherwise be flagged 'Will Sell' yet stick in your bags forever, because the merchant refuses them (no sell price). Heads-up: if you use the rank floor, low-rank affixed drops you can't sell WILL be deleted, not kept - that's the point, but it can surprise you. It never touches a rank you're still collecting (those still show 'Keep'), items that have a vendor price (left for the sell path so you keep the gold), or Keep List / equipped / quest / tome / profession-tool items. They delete at a vendor, or instantly with auto-delete-on-pickup."],
+        panel = "EbonClearanceOptionsDeletion",
+    },
+    {
         id = "gate-affix-rank-floor",
         q = L["Sell affixes below rank N"],
         a = L["A standalone sell rule for affixed Rare/Epic gear. Set a minimum rank; any affixed item at a lower rank sells automatically - regardless of whether the quality rule for its rarity is enabled, regardless of whether it's on a Sell List. Items at or above the floor stay protected. Useful when low-rank affixes (I, II) saturate your bags and you have no use for them, but you still want the protection to hold for the high-rank drops you might extract. 0 = off (no threshold). Keep List entries still override (your manual choices win)."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "gate-keep-boe-dupes",
+        q = L["Keep bind-on-equip ones (auction them yourself)"],
+        a = L["A sub-option of 'Allow selling affixes you already have' (off by default). With it on, EbonClearance only vendors the affix dupes that are soulbound (a vendor is their only exit anyway) and keeps the bind-on-equip ones, so you can auction those yourself. Turn it off to sell every dupe regardless of bind type. 'You already have it' means the exact rank that dropped, so a rank you haven't extracted is always kept."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {

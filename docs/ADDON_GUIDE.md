@@ -824,6 +824,69 @@ truth, used by BOTH `BuildQueue`'s delete branch and `runAutoDeleteOnPickup`:
   clears `pendingDelete`, so gating on `pendingDelete` would wedge the cascade
   after the first item. A batch loop breaks the single-popup serialisation.
 
+### Auto-mark unsellable affixes + `affixDisposable` / `playerOwnsAffix` (v2.47.0)
+
+`DB.autoMarkAffixDupes` (account-wide, default off) opts into
+`EC_compCache.runAutoMarkAffixDupes()` - a BAG_UPDATE-debounce scan (sibling of
+`runAutoMarkResilience`) that adds **soulbound** (`getBindType == "bop"`),
+**no-vendor-value** (`sellPrice` nil/<=0) affixed Rare/Epic items that EC would
+otherwise SELL to the Delete List, one per cycle + a chat line. "Would sell" =
+`EC_compCache.affixDisposable(affix)` is true. It requires master Enable +
+`enableDeletion` + `protectAffixedRareItems`. It does NOT require the "sell
+exact-rank dupes" toggle (`affixAllowExactDupes`) - see `affixDisposable` below.
+
+**`EC_compCache.affixDisposable(affix)`** (Events.lua) is the single
+affix-RELEASE decision, shared by the auto-mark scan, `deleteListSlotEligible`,
+and mirroring `EC_IsSellable`'s affix block. It returns true when ANY of: the
+player Allow-Sell'd the affix (`ADB.allowedAffixes`); it's an owned exact-rank
+dupe AND a dupe-disposal toggle is on (`affixAllowExactDupes` for selling OR
+`autoMarkAffixDupes` for deleting); or its rank is below the `affixMinSellRank`
+floor. Two iterations from Broyo's testing baked into this:
+1. **Decoupled from `affixAllowExactDupes`** - it was coupled in the first cut,
+   making the delete feature silently inert for anyone who hadn't enabled a
+   *sell* option. Now `autoMarkAffixDupes` is its own release lever.
+2. **Below-floor covered** - the scan first only marked exact dupes, but a rank
+   *below* the player's floor that they don't own (Broyo's Relentless Crits III,
+   sellPrice 0) was flagged "WILL SELL" by the rank floor yet refused by the
+   merchant and never deleted. Marking everything `affixDisposable` releases
+   fixes that. The Help entry calls out the below-floor interaction.
+
+**`EC_compCache.playerOwnsAffix(affix)`** (`EbonClearance_Protection.lua`) is
+the 3-layer "owns this EXACT rank?" check (description, else family+rank, else
+family-only), **mirroring `EC_IsSellable`'s `autoDupePass`**; `affixDisposable`
+uses it for the dupe branch. Exact-rank is deliberate: PE players collect
+individual ranks (one dump showed Iron Will I-V all extracted but Stalwart V
+only), so a Stalwart IV drop for a Stalwart-V-only player is correctly NOT a
+dupe and is kept. Do NOT broaden the *dupe* match to "outranked" - it would
+destroy ranks still being collected (below-floor handles the "I'm done with low
+ranks" case explicitly instead). **EC-TRAP:** keep `playerOwnsAffix` /
+`affixDisposable` in lockstep with `EC_IsSellable`'s affix block. Locked by
+Test 102 (`tests/test_perf_guardrails.lua`).
+
+**Bind-type split: `DB.keepBoeAffixDupes` (v2.47.0).** When on, "Allow selling
+affixes you already have" only releases **soulbound** owned dupes; bind-on-equip
+owned dupes stay protected (kept for the auction house). Asked for by Broyo:
+soulbound dupes have no exit but the vendor, BoE dupes he wants to auction. The
+gate is `<dupe> and DB.keepBoeAffixDupes and getBindType(bag,slot) ~= "bop"
+-> drop the release`. It is applied in **four** places that must stay in
+lockstep (**EC-TRAP**): `EC_IsSellable`'s positive-signal `autoDupePass` AND its
+affix-veto-release `autoDupe` (both - a BoE dupe that also matches a quality
+rule would otherwise slip through the un-gated veto and sell), the tooltip's
+`autoDupe` (via `getBindTypeFromTooltip`), and the `/ec sellinfo` trace
+(`EbonClearance_BagDisplay.lua`, both the `alreadyHaveAffixRule` step and the
+`affixProtection` step). Process Bags is intentionally NOT gated (the split is
+vendor-vs-auction, not disenchant). An earlier "out-ranked Unique" attempt
+(auto-selling a Unique affix you own at a higher rank, e.g. Temporal Flux IV
+when you have V) was built then reverted: the concept wasn't intuitive and the
+maintainer chose exact-rank ownership + bind type instead. So "you own it" means
+the exact rank that dropped, NOT a higher rank. Locked by Test 103.
+
+The Delete List is itemID-granular but affixes are per-instance; marking the
+itemID is safe because `deleteListSlotEligible` re-applies the affix gate per
+instance (a future instance of that itemID with an affix the player does NOT
+own is still protected). The only corner case is a non-affixed instance of a
+marked itemID, which for PE affixed gear effectively never drops.
+
 ### Vendor-refused items get a per-cycle blacklist (v2.46.4)
 
 WoW 3.3.5a's `UseContainerItem(bag, slot)` at a merchant is async (the slot

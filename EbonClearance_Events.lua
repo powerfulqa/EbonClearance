@@ -871,6 +871,25 @@ local function EnsureDB()
     if type(DB.affixMinSellRank) ~= "number" or DB.affixMinSellRank < 0 then
         DB.affixMinSellRank = 0
     end
+    -- v2.47.0: auto-mark unsellable affix dupes for deletion. When on (paired
+    -- with "sell exact-rank dupes" + deletion enabled), affixed items whose
+    -- affix the player already owns that are soulbound AND have no vendor value
+    -- are added to the Delete List (one chat line each). Sellable dupes are
+    -- left for the sell path. Default OFF (opt-in, leads to deletion). Asked
+    -- for by Broyo: with all affixes collected, soulbound dupes can't be sold
+    -- or traded and just clutter bags while farming.
+    if type(DB.autoMarkAffixDupes) ~= "boolean" then
+        DB.autoMarkAffixDupes = false
+    end
+    -- v2.47.0: bind-type split for "Allow selling affixes you already have".
+    -- When on, only SOULBOUND owned dupes are released to the sell path; BoE
+    -- owned dupes stay protected so the player can auction them. Default OFF
+    -- (preserves the existing behaviour of selling all owned dupes regardless of
+    -- bind). Account-wide like the other affix toggles. Asked for by Broyo: he
+    -- wants soulbound dupes vendored but BoE dupes kept for the auction house.
+    if type(DB.keepBoeAffixDupes) ~= "boolean" then
+        DB.keepBoeAffixDupes = false
+    end
     -- v2.20.0: Chance-on-hit protection. PE lets players EXTRACT proc
     -- spells from weapons (the green `Chance on hit:` tooltip line)
     -- and apply them to other items, so an item with a Chance-on-hit
@@ -2742,6 +2761,12 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- destructive path.
     if EC_compCache.runAutoMarkResilience then
         EC_compCache.runAutoMarkResilience()
+    end
+    -- v2.47.0: auto-mark unsellable affix dupes (soulbound, owned affix, no
+    -- vendor value) for deletion. Same debounce + master-gate discipline as
+    -- the resilience auto-mark above.
+    if EC_compCache.runAutoMarkAffixDupes then
+        EC_compCache.runAutoMarkAffixDupes()
     end
     -- Loot tracker bag-delta scan. Runs last in the flush: auto-delete-on-
     -- pickup confirms its delete asynchronously (via the delete popup on a
@@ -4706,6 +4731,15 @@ local function EC_IsSellable(bag, slot, junkOnly)
             and EC_compCache.playerHasAffixFamily
             and EC_compCache.playerHasAffixFamily(affixForRank.name)
         autoDupePass = (descKnown or rankKnown or familyKnown) and true or false
+        -- v2.47.0: bind-type split. When "keep BoE dupes" is on, only SOULBOUND
+        -- owned dupes sell; BoE / unknown-bind owned dupes are kept so the
+        -- player can auction them. Uses the same getBindType the bind-filter
+        -- rules use. EC-TRAP: the veto-release autoDupe below applies the same
+        -- gate - keep them in lockstep, or a BoE dupe that also matches a
+        -- quality rule would slip through the veto and sell.
+        if autoDupePass and DB.keepBoeAffixDupes and EC_compCache.getBindType(bag, slot) ~= "bop" then
+            autoDupePass = false
+        end
     end
     -- Sell Known Recipes: standalone auto-sell signal for profession
     -- recipes the character has already learned. Gated per-quality.
@@ -4808,6 +4842,14 @@ local function EC_IsSellable(bag, slot, junkOnly)
                 and EC_compCache.playerHasAffixFamily(affix.name)
                 or false
             local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown or familyKnown)
+            -- v2.47.0: bind-type split, same gate as autoDupePass above. When
+            -- "keep BoE dupes" is on, the dupe release only holds for SOULBOUND
+            -- items; a BoE owned dupe stays vetoed (kept for the auction house)
+            -- even if it matches a quality rule. EC-TRAP: keep in lockstep with
+            -- the autoDupePass gate above and the tooltip / sellinfo mirrors.
+            if autoDupe and DB.keepBoeAffixDupes and EC_compCache.getBindType(bag, slot) ~= "bop" then
+                autoDupe = false
+            end
             -- v2.44.0: rank-floor opt-out. When the player sets a
             -- minimum sell rank, affixes BELOW that rank fall through
             -- to normal sell rules - the protection only holds for
@@ -4882,6 +4924,37 @@ local function EC_IsSellable(bag, slot, junkOnly)
 end
 NS.IsSellable = EC_IsSellable
 
+-- v2.47.0: does affix protection RELEASE this affix - i.e., is EC willing to
+-- get rid of it rather than keep it? True when ANY of:
+--   * the player Allow-Sell'd this exact affix (ADB.allowedAffixes), OR
+--   * it's an owned exact-rank dupe AND a dupe-disposal toggle is on
+--     (affixAllowExactDupes for selling, or autoMarkAffixDupes for deleting), OR
+--   * its rank is below the "Sell affixes below rank" floor (affixMinSellRank).
+-- This is the release side of EC_IsSellable's affix-protection block, shared by
+-- deleteListSlotEligible (the per-instance delete gate) and runAutoMarkAffixDupes
+-- (which marks the released-but-UNSELLABLE ones for deletion). Keep in lockstep
+-- with EC_IsSellable's affix block.
+function EC_compCache.affixDisposable(affix)
+    local DB = NS.DB
+    if not (affix and DB) then
+        return false
+    end
+    local affixKey = affix.description
+        and EC_compCache.normaliseAffixDesc
+        and EC_compCache.normaliseAffixDesc(affix.description)
+    local ADB = NS.ADB
+    if affixKey and ADB and ADB.allowedAffixes and ADB.allowedAffixes[affixKey] then
+        return true
+    end
+    if (DB.affixAllowExactDupes or DB.autoMarkAffixDupes) and EC_compCache.playerOwnsAffix(affix) then
+        return true
+    end
+    if DB.affixMinSellRank and DB.affixMinSellRank > 0 and affix.rank and affix.rank < DB.affixMinSellRank then
+        return true
+    end
+    return false
+end
+
 -- v2.42.0: shared Delete-List eligibility predicate. Returns (itemID, count,
 -- quality) when the bag slot holds a Delete-List item eligible for destruction
 -- (on the list, not locked, and not affix-protected), else nil. Used by both
@@ -4906,23 +4979,11 @@ function EC_compCache.deleteListSlotEligible(bag, slot)
     if DB.protectAffixedRareItems and quality and quality >= 3 then
         local affix = EC_compCache.bagSlotAffixData(bag, slot)
         if affix then
-            local affixKey = affix.description
-                and EC_compCache.normaliseAffixDesc
-                and EC_compCache.normaliseAffixDesc(affix.description)
-            local ADB = NS.ADB
-            local manualAllow = affixKey and ADB and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
-            local isDupe = DB.affixAllowExactDupes
-                and EC_compCache.playerHasAffixDescription(affix.description)
-            -- v2.44.0: mirror the sell-path's rank-floor opt-out so the
-            -- Delete List path doesn't keep low-rank affixes the user
-            -- has explicitly chosen to discard. Same threshold, same
-            -- precedence (any of manualAllow / isDupe / rankBelow
-            -- releases the protection).
-            local rankBelow = DB.affixMinSellRank
-                and DB.affixMinSellRank > 0
-                and affix.rank
-                and affix.rank < DB.affixMinSellRank
-            if not (manualAllow or isDupe or rankBelow) then
+            -- v2.47.0: the release decision (Allow Sell / owned dupe with a
+            -- dupe-disposal toggle on / rank below the floor) is the shared
+            -- affixDisposable helper, so this gate, the auto-mark-dupes scan,
+            -- and EC_IsSellable all agree on what's protected vs disposable.
+            if not EC_compCache.affixDisposable(affix) then
                 return nil -- affix-protected
             end
         end
@@ -5090,6 +5151,94 @@ function EC_compCache.runAutoMarkResilience()
                             -- (any bag event re-fires the debounce)
                             -- picks up the next one.
                             return
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- v2.47.0: auto-mark UNSELLABLE affixes for deletion. When the toggle is on,
+-- scans bags for affixed Rare/Epic items that EC would otherwise sell -
+-- anything affixDisposable releases: a dupe you own, or a rank below your "Sell
+-- affixes below rank" floor - that are soulbound AND have no vendor value, and
+-- adds them to the Delete List (one chat line per add). These are exactly the
+-- items that would otherwise get flagged "will sell" yet stick in the bag
+-- forever because the merchant refuses them (no vendor price). Affixes EC keeps
+-- (a rank still being collected) are never touched. Items with a vendor price
+-- are left to the sell path - the player keeps the gold. Destruction is handled
+-- by the vendor cycle or auto-delete-on-pickup, never here. Gated like the
+-- other destructive scans (master Enable + enableDeletion) AND requires affix
+-- protection on (protectAffixedRareItems): the feature is only meaningful for
+-- the affixed items protection is otherwise KEEPING, and the Delete-List affix
+-- gate (deleteListSlotEligible, which re-checks affixDisposable per instance)
+-- only runs when protection is on. It does NOT require the "sell exact-rank
+-- dupes" toggle. Asked for by Broyo.
+function EC_compCache.runAutoMarkAffixDupes()
+    local DB = NS.DB
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    if not (DB and DB.enableDeletion and DB.autoMarkAffixDupes) then
+        return
+    end
+    if not DB.protectAffixedRareItems then
+        return
+    end
+    if EC_compCache.vendorRunning then
+        return
+    end
+    local deleteList = DB.deleteList
+    if not deleteList then
+        return
+    end
+    local keepList = DB.blacklist
+    local accountKeep = NS.ADB and NS.ADB.whitelist
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local id = GetContainerItemID(bag, slot)
+            if id and not deleteList[id] then
+                local protectedByKeep = (keepList and keepList[id])
+                    or (accountKeep and accountKeep[id])
+                -- Respect every other protection: Keep List, equipped, quest
+                -- items, tomes/recipes, and baseline profession tools are
+                -- never auto-marked.
+                if not protectedByKeep
+                    and not IsEquippedItem(id)
+                    and not (EC_compCache.isQuestItem and EC_compCache.isQuestItem(id))
+                    and not (EC_compCache.itemIsTome and EC_compCache.itemIsTome(bag, slot, id))
+                    and not (EC_compCache.baselineProtectedIDs and EC_compCache.baselineProtectedIDs[id])
+                then
+                    local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
+                    if quality and quality >= 3 then
+                        local affix = EC_compCache.bagSlotAffixData(bag, slot)
+                        -- Mark any affix EC would otherwise SELL (a dupe you
+                        -- own, or a rank below your "Sell affixes below rank"
+                        -- floor - the shared affixDisposable check) that is
+                        -- soulbound (can't auction/trade) AND has no vendor
+                        -- value (can't be sold). Those are the ones that would
+                        -- otherwise be flagged "will sell" yet stick in the bag
+                        -- forever because the merchant refuses them. Affixes EC
+                        -- keeps (still being collected) are left alone.
+                        if affix and EC_compCache.affixDisposable(affix) then
+                            local soulbound = EC_compCache.getBindType(bag, slot) == "bop"
+                            local noValue = not (sellPrice and sellPrice > 0)
+                            if soulbound and noValue then
+                                deleteList[id] = true
+                                if DB.announceAutoDelete ~= false then
+                                    local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
+                                    PrintNicef(
+                                        L["|cffff4444Marked for delete|r %s - affix you can't sell (no vendor value)."],
+                                        link
+                                    )
+                                end
+                                -- One add per BAG_UPDATE fire (mirrors the
+                                -- resilience auto-mark); the next bag event
+                                -- re-fires the debounce for the next item.
+                                return
+                            end
                         end
                     end
                 end

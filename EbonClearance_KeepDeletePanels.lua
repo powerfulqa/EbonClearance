@@ -130,6 +130,40 @@ DeletePanel:SetScript("OnShow", function(self)
             resilienceText:SetJustifyH("LEFT")
         end
 
+        -- v2.47.0: affix-dupe auto-mark sub-toggle. Adds affixed Rare/Epic
+        -- items whose affix you ALREADY own that are soulbound AND have no
+        -- vendor value to this Delete List on the next BAG_UPDATE; the vendor
+        -- cycle / auto-delete-on-pickup then destroys them. Sellable dupes are
+        -- deliberately left for the sell path. Same enabled-state rule as the
+        -- toggles above (greyed when "Allow items to be deleted" is off). The
+        -- scan also needs affix protection + "Allow selling affixes you already
+        -- have" on (Protection settings) - the note below says so. Asked for by
+        -- Broyo (all affixes collected; soulbound dupes can't be sold/traded).
+        local affixDupeCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceAutoMarkAffixDupesCB",
+            self,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        affixDupeCB:SetPoint("TOPLEFT", resilienceCB, "BOTTOMLEFT", 0, -2)
+        affixDupeCB:SetChecked(DB.autoMarkAffixDupes)
+        local affixDupeText = _G[affixDupeCB:GetName() .. "Text"]
+        if affixDupeText then
+            affixDupeText:SetText(L["Auto-mark unsellable affixes for deletion"])
+            affixDupeText:SetWidth(420)
+            affixDupeText:SetJustifyH("LEFT")
+        end
+        local affixDupeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        affixDupeNote:SetPoint("TOPLEFT", affixDupeCB, "BOTTOMLEFT", 26, -2)
+        affixDupeNote:SetWidth(400)
+        affixDupeNote:SetJustifyH("LEFT")
+        if affixDupeNote.SetWordWrap then
+            affixDupeNote:SetWordWrap(true)
+        end
+        affixDupeNote:SetText(
+            L["|cff888888Soulbound affixed items with no vendor value that EC would otherwise sell (a dupe you own, or a rank below your 'Sell affixes below rank' setting). Needs affix protection on in Protection settings.|r"]
+        )
+
         -- v2.44.4: announce-in-chat toggle. Gates the two "EC just
         -- deleted / marked X" lines that the auto-delete-on-pickup
         -- sweep and the Resilience auto-mark sweep print. Default ON
@@ -143,7 +177,7 @@ DeletePanel:SetScript("OnShow", function(self)
             self,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        announceCB:SetPoint("TOPLEFT", resilienceCB, "BOTTOMLEFT", 0, -2)
+        announceCB:SetPoint("TOPLEFT", affixDupeNote, "BOTTOMLEFT", -26, -8)
         announceCB:SetChecked(DB.announceAutoDelete ~= false)
         local announceText = _G[announceCB:GetName() .. "Text"]
         if announceText then
@@ -160,6 +194,7 @@ DeletePanel:SetScript("OnShow", function(self)
             if DB.enableDeletion then
                 autoCB:Enable()
                 resilienceCB:Enable()
+                affixDupeCB:Enable()
                 announceCB:Enable()
                 if autoText then
                     autoText:SetTextColor(1, 1, 1)
@@ -167,18 +202,25 @@ DeletePanel:SetScript("OnShow", function(self)
                 if resilienceText then
                     resilienceText:SetTextColor(1, 1, 1)
                 end
+                if affixDupeText then
+                    affixDupeText:SetTextColor(1, 1, 1)
+                end
                 if announceText then
                     announceText:SetTextColor(1, 1, 1)
                 end
             else
                 autoCB:Disable()
                 resilienceCB:Disable()
+                affixDupeCB:Disable()
                 announceCB:Disable()
                 if autoText then
                     autoText:SetTextColor(0.5, 0.5, 0.5)
                 end
                 if resilienceText then
                     resilienceText:SetTextColor(0.5, 0.5, 0.5)
+                end
+                if affixDupeText then
+                    affixDupeText:SetTextColor(0.5, 0.5, 0.5)
                 end
                 if announceText then
                     announceText:SetTextColor(0.5, 0.5, 0.5)
@@ -219,6 +261,21 @@ DeletePanel:SetScript("OnShow", function(self)
             DB.autoMarkResilience = resilienceCB:GetChecked() and true or false
             PlaySound(DB.autoMarkResilience and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
             if DB.autoMarkResilience and EC_compCache.bagUpdateFrame then
+                EC_compCache.bagUpdatePending = true
+                EC_compCache.bagUpdateAccum = 0
+                EC_compCache.bagUpdateFrame:Show()
+            end
+        end)
+
+        -- v2.47.0: affix-dupe auto-mark OnClick. Like the resilience toggle,
+        -- no confirmation popup - it only adds to the Delete List (reversible);
+        -- the actual deletion still flows through enableDeletion + the vendor
+        -- visit or auto-delete-on-pickup. Kicks one debounce scan so items
+        -- already in bags get marked the moment the toggle goes on.
+        affixDupeCB:SetScript("OnClick", function()
+            DB.autoMarkAffixDupes = affixDupeCB:GetChecked() and true or false
+            PlaySound(DB.autoMarkAffixDupes and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+            if DB.autoMarkAffixDupes and EC_compCache.bagUpdateFrame then
                 EC_compCache.bagUpdatePending = true
                 EC_compCache.bagUpdateAccum = 0
                 EC_compCache.bagUpdateFrame:Show()

@@ -1185,7 +1185,17 @@ function EC_compCache.describeSellability(bag, slot)
             and EC_compCache.playerHasAffixRank
             and EC_compCache.playerHasAffixRank(affixDataForTrace.name, affixDataForTrace.rank)
         autoDupePass = (descKnown or rankKnown) and true or false
-        if autoDupePass then
+        -- v2.47.0: bind-type split mirror (EC_IsSellable's autoDupePass gate).
+        -- When "keep BoE dupes" is on, a BoE owned dupe is kept for the auction
+        -- house, so it's not a positive sell signal here.
+        if autoDupePass
+            and DB.keepBoeAffixDupes
+            and EC_compCache.getBindType
+            and EC_compCache.getBindType(bag, slot) ~= "bop"
+        then
+            autoDupePass = false
+            step("alreadyHaveAffixRule", false, L["kept - bind-on-equip dupe (auction it yourself)"])
+        elseif autoDupePass then
             step(
                 "alreadyHaveAffixRule",
                 true,
@@ -1279,6 +1289,16 @@ function EC_compCache.describeSellability(bag, slot)
                 and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
                 or false
             local autoDupe = DB.affixAllowExactDupes and (descKnown or rankKnown)
+            -- v2.47.0: bind-type split mirror. A BoE owned dupe is kept for the
+            -- auction house when "keep BoE dupes" is on; match the sell-path
+            -- veto so /ec sellinfo agrees with the merchant cycle.
+            local keptAsBoeDupe = autoDupe
+                and DB.keepBoeAffixDupes
+                and EC_compCache.getBindType
+                and EC_compCache.getBindType(bag, slot) ~= "bop"
+            if keptAsBoeDupe then
+                autoDupe = false
+            end
             -- v2.44.0: rank-floor opt-out. Match the sell-path veto
             -- so /ec sellinfo reflects the same verdict the merchant
             -- cycle would produce.
@@ -1288,6 +1308,9 @@ function EC_compCache.describeSellability(bag, slot)
                 and affix.rank < DB.affixMinSellRank
             if manualAllow then
                 step("affixProtection", true, L["affix present, manually allow-listed via Alt+Right-Click"])
+            elseif keptAsBoeDupe and not rankBelow then
+                affixProtected = true
+                step("affixProtection", false, L["VETO - bind-on-equip dupe kept for the auction house"])
             elseif autoDupe then
                 local how = descKnown
                     and L["you already have this affix"]

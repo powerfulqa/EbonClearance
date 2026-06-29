@@ -1170,6 +1170,43 @@ function EC_compCache.playerHasAffixDescription(desc)
     return false
 end
 
+-- v2.47.0: shared "does the player already own this affix?" check, used by the
+-- Delete-List affix gate (deleteListSlotEligible) and the auto-mark-dupes scan
+-- (runAutoMarkAffixDupes) so they recognise EXACTLY the dupes EC_IsSellable
+-- releases for selling - otherwise an item could be marked for deletion yet
+-- vetoed at delete time (marked-but-never-deleted). This mirrors
+-- EC_IsSellable's autoDupePass three-layer logic: description match, else
+-- family + rank, else family-only for unranked PE affixes. EC-TRAP: keep this
+-- in lockstep with EC_IsSellable's autoDupePass (EbonClearance_Events.lua) - if
+-- one changes its match layers, change both. `affix` is a bagSlotAffixData
+-- table { name, rank, description } (or nil).
+function EC_compCache.playerOwnsAffix(affix)
+    if not affix then
+        return false
+    end
+    if affix.description
+        and EC_compCache.playerHasAffixDescription
+        and EC_compCache.playerHasAffixDescription(affix.description)
+    then
+        return true
+    end
+    if affix.name
+        and affix.rank
+        and EC_compCache.playerHasAffixRank
+        and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
+    then
+        return true
+    end
+    if (not affix.rank)
+        and affix.name
+        and EC_compCache.playerHasAffixFamily
+        and EC_compCache.playerHasAffixFamily(affix.name)
+    then
+        return true
+    end
+    return false
+end
+
 -- ---------------------------------------------------------------------------
 -- v2.20.0: PE Chance-on-hit detection
 -- ---------------------------------------------------------------------------

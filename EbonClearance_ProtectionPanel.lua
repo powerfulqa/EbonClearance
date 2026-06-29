@@ -70,6 +70,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.dupeAffixCB then
             self.dupeAffixCB:SetChecked(DB.affixAllowExactDupes)
         end
+        if self.keepBoeCB then
+            self.keepBoeCB:SetChecked(DB.keepBoeAffixDupes)
+        end
         if self.UpdateDupeAffixEnabled then
             self:UpdateDupeAffixEnabled()
         end
@@ -432,6 +435,44 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         refreshRankSliderNote(DB.affixMinSellRank or 0)
 
+        -- v2.47.0 sub-toggle of "Allow selling affixes you already have":
+        -- keep bind-on-equip owned dupes for the auction house, sell only the
+        -- soulbound ones. When on, EC_IsSellable's dupe release is restricted
+        -- to soulbound items. Default off (preserves the existing behaviour of
+        -- selling all owned dupes regardless of bind). Asked for by Broyo: he
+        -- wants soulbound dupes vendored but BoE dupes kept to auction.
+        local keepBoeCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceKeepBoeAffixDupesCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        -- Sits in the child column (rankSliderNote is already at the child
+        -- indent), below the rank-slider note - grouped with the affix-sell
+        -- controls it relates to.
+        keepBoeCB:SetPoint("TOPLEFT", rankSliderNote, "BOTTOMLEFT", 0, -8)
+        keepBoeCB:SetChecked(DB.keepBoeAffixDupes)
+        local kbText = _G[keepBoeCB:GetName() .. "Text"]
+        if kbText then
+            kbText:SetText(L["Keep bind-on-equip ones (auction them yourself)"])
+            EC_compCache.setPanelWidth(kbText, 86)
+            kbText:SetJustifyH("LEFT")
+        end
+        keepBoeCB:SetScript("OnClick", function(cb)
+            DB.keepBoeAffixDupes = cb:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            -- Flipping this changes EC_IsSellable's verdict for every BoE
+            -- affixed dupe; repaint the tints. Same rule as the dupeAffixCB /
+            -- rankSlider OnClick handlers above.
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
+        end)
+        self.keepBoeCB = keepBoeCB
+        if kbText then
+            NS.AddHelpIcon(content, kbText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-dupes")
+        end
+
         -- Greys-out the child CB when the parent toggle is off OR when PE
         -- isn't detected, and swaps in a status line for that case.
         -- Called on init, on the parent CB's OnClick, and on every
@@ -467,6 +508,25 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 if refreshRankSliderNote then
                     refreshRankSliderNote(DB.affixMinSellRank or 0)
                 end
+                -- v2.47.0: the "keep BoE dupes" sub-option only does anything
+                -- when the dupe toggle above is on; enable it only then.
+                if keepBoeCB then
+                    if DB.affixAllowExactDupes then
+                        if keepBoeCB.Enable then
+                            keepBoeCB:Enable()
+                        end
+                        if kbText then
+                            kbText:SetTextColor(1, 1, 1)
+                        end
+                    else
+                        if keepBoeCB.Disable then
+                            keepBoeCB:Disable()
+                        end
+                        if kbText then
+                            kbText:SetTextColor(0.5, 0.5, 0.5)
+                        end
+                    end
+                end
             else
                 dupeAffixCB:Disable()
                 if rankSlider and rankSlider.Disable then
@@ -486,6 +546,13 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 -- the parent toggle is off (the slider has no effect).
                 if rankSliderNote then
                     rankSliderNote:SetText("")
+                end
+                -- v2.47.0: grey the "keep BoE dupes" sub-option too.
+                if keepBoeCB and keepBoeCB.Disable then
+                    keepBoeCB:Disable()
+                end
+                if kbText then
+                    kbText:SetTextColor(0.5, 0.5, 0.5)
                 end
             end
         end
@@ -532,7 +599,11 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- v2.44.0: re-anchored from rankSlider to rankSliderNote so the
         -- procCB shifts down when the explainer note is visible (and
         -- back up when the slider is Off and the note collapses).
-        procCB:SetPoint("TOPLEFT", rankSliderNote, "BOTTOMLEFT", -26, -10)
+        -- v2.47.0: re-anchored to keepBoeCB (the new "keep BoE dupes"
+        -- sub-toggle now sits between rankSliderNote and procCB). keepBoeCB is
+        -- at the child column (+26), so -26 returns procCB to the parent
+        -- toggle column.
+        procCB:SetPoint("TOPLEFT", keepBoeCB, "BOTTOMLEFT", -26, -10)
         procCB:SetChecked(DB.protectChanceOnHitItems)
         local pcText = _G[procCB:GetName() .. "Text"]
         if pcText then

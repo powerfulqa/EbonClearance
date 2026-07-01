@@ -1883,7 +1883,16 @@ local function EC_TryAutolearnFromLearnedSpell(spellID, family, source)
             item = candidate.itemName,
             learnedAt = GetTime(),
         }
-        PrintNicef(
+        -- EC-TRAP: this function is defined at file-scope line 1836,
+        -- BEFORE the file-local `PrintNicef` at line 2258. Using the
+        -- file-local here resolves at closure-creation time to nil (no
+        -- upvalue exists yet) and errors at call time with "attempt to
+        -- call global 'PrintNicef' (a nil value)". Reported by Serv on
+        -- the /ec autolearnsim smoke test. Route through NS.PrintNicef
+        -- which is exposed at line 2266 - by call time NS.PrintNicef is
+        -- populated regardless of source-line ordering. Same reason the
+        -- correlation-error branch below uses NS.PrintNicef too.
+        NS.PrintNicef(
             L["|cff66ccff[EbonClearance]|r Learned proc pairing: |cffb6ffb6%s|r extracts to |cffb6ffb6%s|r. Sell known chance-on-hit procs now covers this item."],
             candidate.itemName,
             family

@@ -1784,6 +1784,55 @@ local function EC_PruneChanceProcRemovals()
 end
 NS.PruneChanceProcRemovals = EC_PruneChanceProcRemovals
 
+-- v2.49.1: extraction catalog snapshot. Holds { [spellID] = true } for
+-- every learned record at the last LEARNED_SPELL_IN_TAB event boundary.
+-- Refreshed post-diff so the next event compares against the just-
+-- processed state (a single Anvil session that extracts several affixes
+-- fires N events, each isolating one newly-learned spellID).
+local EC_extractionCatalogSnapshot = {}
+NS.extractionCatalogSnapshot = EC_extractionCatalogSnapshot
+
+local function EC_RefreshExtractionCatalogSnapshot()
+    wipe(EC_extractionCatalogSnapshot)
+    local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+    if type(catalog) ~= "table" then
+        return
+    end
+    for _, rec in pairs(catalog) do
+        if type(rec) == "table" and rec.id and rec.learned then
+            EC_extractionCatalogSnapshot[rec.id] = true
+        end
+    end
+end
+NS.RefreshExtractionCatalogSnapshot = EC_RefreshExtractionCatalogSnapshot
+
+-- Returns (spellID, record) if exactly one record flipped learned=false
+-- -> learned=true since the snapshot. Returns nil, nil for zero (event
+-- was unrelated) or multiple (batch update; can't isolate).
+local function EC_FindNewlyLearnedSpell()
+    local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+    if type(catalog) ~= "table" then
+        return nil, nil
+    end
+    local foundID, foundRec, count = nil, nil, 0
+    for _, rec in pairs(catalog) do
+        if type(rec) == "table" and rec.id then
+            if rec.learned and not EC_extractionCatalogSnapshot[rec.id] then
+                foundID, foundRec = rec.id, rec
+                count = count + 1
+                if count > 1 then
+                    return nil, nil
+                end
+            end
+        end
+    end
+    if count == 1 then
+        return foundID, foundRec
+    end
+    return nil, nil
+end
+NS.FindNewlyLearnedSpell = EC_FindNewlyLearnedSpell
+
 -- Diff current bags against the last snapshot and record positive deltas as
 -- looted. Called from the BAG_UPDATE debounce flush. The first call after
 -- login / reload only baselines (existing bag contents are not "loot").

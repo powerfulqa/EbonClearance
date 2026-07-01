@@ -6920,6 +6920,13 @@ do
             and ev:find("EC_compCache%.procLineByItemID and EC_compCache%.procLineByItemID%[id%]") ~= nil
             and ev:find("removedAt = GetTime%(%),") ~= nil,
         "v2.49.1: chanceProcLine populates EC_compCache.procLineByItemID (itemID -> procLine string) every time it computes a proc text; the cache is the ONLY way to recover the proc text after the item is gone from bags. EC_ScanLootDelta walks the previous bag snapshot for items whose count dropped, looks up the cached procLine, and pushes an entry into EC_recentChanceProcRemovals. Also prunes the buffer at the start of every scan pass.")
+    check("Test 111d: EC_extractionCatalogSnapshot + diff helper isolate newly-learned spellID",
+        ev:find("local EC_extractionCatalogSnapshot = {}") ~= nil
+            and ev:find("local function EC_RefreshExtractionCatalogSnapshot%(%)") ~= nil
+            and ev:find("local function EC_FindNewlyLearnedSpell%(%)") ~= nil
+            and ev:find("_G%.ExtractionService and _G%.ExtractionService%.learnedAffixes") ~= nil
+            and ev:find("if rec%.learned and not EC_extractionCatalogSnapshot%[rec%.id%] then") ~= nil,
+        "v2.49.1: EC_extractionCatalogSnapshot holds { [spellID] = true } for every learned record at the last event boundary. EC_RefreshExtractionCatalogSnapshot rebuilds from the live _G.ExtractionService.learnedAffixes catalog. EC_FindNewlyLearnedSpell walks the current catalog, returns the single spellID that flipped false->true since the snapshot (or nil if zero-or-multiple). Snapshot MUST refresh AFTER a successful diff so the next event compares against the just-processed state.")
     check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
         prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil
             and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,

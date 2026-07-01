@@ -1277,6 +1277,18 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     if EC_compCache.chanceOnHitCache[itemID] ~= nil then
         return EC_compCache.chanceOnHitCache[itemID]
     end
+    -- v2.49.1 fix (Serv report, Plans: Frost Tiger Blade): recipes and
+    -- tomes describe the crafted item's stats in their own tooltip, so
+    -- a "Chance on hit:" line from the resulting weapon leaks into the
+    -- recipe's tooltip. The recipe itself is never a chance-on-hit
+    -- weapon (recipes aren't equippable). Short-circuit the tooltip
+    -- scan when the item is a tome so recipes don't get caught by the
+    -- chance-on-hit veto in EC_IsSellable, which was silently killing
+    -- recipePass.
+    if EC_compCache.itemIsTome and EC_compCache.itemIsTome(bag, slot, itemID) then
+        EC_compCache.chanceOnHitCache[itemID] = false
+        return false
+    end
     if not bag or not slot then
         return false
     end
@@ -1544,6 +1556,18 @@ end
 function EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)
     if itemID and EC_compCache.chanceOnHitCache[itemID] ~= nil then
         return EC_compCache.chanceOnHitCache[itemID]
+    end
+    -- v2.49.1 fix (Serv report, Plans: Frost Tiger Blade): same rationale
+    -- as itemHasChanceOnHit above - recipes contain the crafted item's
+    -- proc line in their own tooltip. Short-circuit to false so the
+    -- tooltip annotation and the sell decision agree with each other and
+    -- with the "recipes aren't equippable" invariant.
+    if itemID
+        and EC_compCache.liveTooltipIsTome
+        and EC_compCache.liveTooltipIsTome(tooltip, itemID)
+    then
+        EC_compCache.chanceOnHitCache[itemID] = false
+        return false
     end
     if not tooltip or not tooltip.NumLines or not tooltip.GetName then
         return false

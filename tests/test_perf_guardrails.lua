@@ -6912,6 +6912,10 @@ do
             and ev:find("now %- entry%.removedAt > EC_CHANCE_PROC_WINDOW_SECONDS") ~= nil
             and ev:find("NS%.recentChanceProcRemovals = EC_recentChanceProcRemovals") ~= nil,
         "v2.49.1: chance-on-hit item removals get logged into a session-local ring buffer during EC_ScanLootDelta. Buffer window is 5 seconds - typical LEARNED_SPELL_IN_TAB fires within 1-2s of the anvil click so 5s is comfortably wide. Buffer is exposed via NS.recentChanceProcRemovals so the /ec autolearnsim command can inject synthetic entries.")
+    check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
+        prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil
+            and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,
+        "v2.49.1 fix (Serv report, Plans: Frost Tiger Blade): a recipe's tooltip embeds the crafted item's stats, including any 'Chance on hit:' line from the resulting weapon. Without a tome-gate on both variants of itemHasChanceOnHit, the recipe gets classified as chance-on-hit and the protection block in EC_IsSellable clears recipePass, silently killing 'Sell Known Recipes' on any recipe whose crafted item has a chance-on-hit proc. Both the bag-slot variant (itemHasChanceOnHit) and the live-tooltip variant (liveTooltipHasChanceOnHit) MUST early-return false when the item is a tome, since recipes/tomes aren't equippable and can't themselves BE chance-on-hit weapons.")
     check("Test 110k: affixRankPass / autoDupePass / knownProcPass respect junkOnly at a disallowed merchant",
         ev:find("local affixRankPass = not junkOnly") ~= nil
             and ev:find("if not junkOnly and hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil

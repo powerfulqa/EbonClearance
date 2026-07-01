@@ -6748,6 +6748,12 @@ do
         mp:find('run = "captureproc"') ~= nil
             and mp:find("|cffffff00/ec captureproc|r") ~= nil,
         "every diagnostic slash command MUST have a row in the Main panel SLASH_ROWS table (that's the in-game slash-command list players see). Without this row, /ec captureproc is invisible unless the player already knows the exact command name - defeating the discoverability rationale that put every other diagnostic (/ec bugreport, /ec scandebug, /ec affixdebug, /ec processdebug) in the same list.")
+    check("Test 107f: /ec bugreport surfaces v2.49.0/v2.49.1 chance-on-hit state",
+        br:find("Sell Known Chance%-on%-Hit Procs %(experimental%)") ~= nil
+            and br:find("ADB%.chanceProcConfirmedItems") ~= nil
+            and br:find("Autolearned chance%-on%-hit pairings:") ~= nil
+            and br:find("Ambiguous autolearn events:") ~= nil,
+        "v2.49.1: /ec bugreport MUST surface the v2.49.0 experimental sell-known-chance-on-hit toggle AND the v2.49.1 autolearn counts (ADB.chanceProcConfirmedItems, ADB.chanceProcAmbiguous). Reports on 'my Blackblade auto-sold' or 'my chance-on-hit toggle does nothing' need both the toggle state AND the autolearn state to be diagnosable from a single copy-paste. Ambiguous-count > 0 also points the reporter at /ec autolearnpeek so they can share the ambiguous events too.")
     check("Test 107e: v2.49.1 SLASH_ROWS supports `prefill` field for argument-requiring commands",
         mp:find('prefill = "/ec profile "') ~= nil
             and mp:find('prefill = "/ec minimap "') ~= nil

@@ -116,6 +116,7 @@ local function EC_BuildBugReport()
     add("Protect Chance-on-Hit Items: " .. tostring(DB.protectChanceOnHitItems))
     add("Protect Unlearned Tomes: " .. tostring(DB.protectUnlearnedTomes))
     add("Protect All Tomes: " .. tostring(DB.protectAllTomes))
+    add("Sell Known Chance-on-Hit Procs (experimental): " .. tostring(DB.sellChanceOnHitKnown))
     add("Sell Known Recipes: " .. tostring(DB.sellKnownRecipes))
     if DB.sellKnownRecipes then
         local rq = DB.sellKnownRecipeQualities or {}
@@ -364,6 +365,20 @@ local function EC_BuildBugReport()
     add("Chance-on-hit allow list (per-itemID): " .. tostring(allowedItemCount))
     add("Random-affix allow list (per-description): " .. tostring(allowedAffixCount))
     add("Known affix descriptions in session set: " .. tostring(knownAffixCount))
+    -- v2.49.1: autolearn state. Confirmed count = itemIDs where a real
+    -- LEARNED_SPELL_IN_TAB event correlated to exactly one bag removal;
+    -- ambiguous count = events where the correlation couldn't isolate a
+    -- single candidate (reviewed via /ec autolearnpeek).
+    local autolearnCount = 0
+    if ADB and ADB.chanceProcConfirmedItems then
+        for _ in pairs(ADB.chanceProcConfirmedItems) do
+            autolearnCount = autolearnCount + 1
+        end
+    end
+    local ambiguousCount = (ADB and ADB.chanceProcAmbiguous and #ADB.chanceProcAmbiguous) or 0
+    add("Autolearned chance-on-hit pairings: " .. tostring(autolearnCount))
+    add("Ambiguous autolearn events: " .. tostring(ambiguousCount)
+        .. (ambiguousCount > 0 and " (review with /ec autolearnpeek)" or ""))
     add("Allow selling affixes you already have: " .. (DB.affixAllowExactDupes and "yes" or "no"))
     add("Sell affixes below rank: " ..
         ((DB.affixMinSellRank and DB.affixMinSellRank > 0) and tostring(DB.affixMinSellRank) or "off"))

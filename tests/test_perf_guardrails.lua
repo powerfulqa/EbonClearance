@@ -6571,6 +6571,89 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 105 (v2.47.2): Delete List / Delete Settings panel split.
+-- ---------------------------------------------------------------------------
+-- Asked for by the user: the Delete List panel had accumulated 5 checkboxes
+-- + description + hint + multi-line affix note above the actual list,
+-- pushing the list below the fold on smaller Interface Options window sizes.
+-- v2.47.2 mirrors the v2.15.0 Keep-List refactor: settings extract into a
+-- sibling sub-panel (EbonClearanceOptionsDeletionSettings), list panel
+-- keeps just header + description + hint + list + a grey pointer to the
+-- settings panel. Each setting also picked up an explanatory grey note
+-- underneath it (mirroring the existing affix-dupe note pattern).
+--
+-- Contracts pinned:
+-- - New panel frame EbonClearanceOptionsDeletionSettings exists in
+--   EbonClearance_KeepDeletePanels.lua.
+-- - Events.lua registers it via InterfaceOptions_AddCategory immediately
+--   after the Delete List entry so it appears adjacent in the tree.
+-- - All five settings widgets (delCB, autoCB, resilienceCB, affixDupeCB,
+--   announceCB) live in the new panel's OnShow, NOT in the old Delete
+--   List panel's OnShow. This is verified by finding the new panel's
+--   OnShow BEFORE the widget-creation sites in the file source.
+-- - Each of the four newly-noted settings has a grey explanatory note
+--   underneath its checkbox (delNote, autoNote, resilienceNote,
+--   announceNote); the pre-existing affixDupeNote is preserved.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local kdp = fileSrc("EbonClearance_KeepDeletePanels.lua")
+    check("Test 105a: DeletionSettingsPanel frame declared with parent 'EbonClearance'",
+        kdp:find('CreateFrame%(%s*"Frame",%s*"EbonClearanceOptionsDeletionSettings"') ~= nil
+            and kdp:find('DeletionSettingsPanel%.name = "Delete Settings"') ~= nil
+            and kdp:find('DeletionSettingsPanel%.parent = "EbonClearance"') ~= nil,
+        "the new sub-panel MUST be a Frame named 'EbonClearanceOptionsDeletionSettings' with name='Delete Settings' and parent='EbonClearance'. Without those three, the panel either isn't discoverable by name (breaking Help-panel jump targets), doesn't appear in the Interface Options tree, or attaches to the wrong parent.")
+    check("Test 105b: Events.lua registers DeletionSettingsPanel immediately after Delete List",
+        ev:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsDeletion"%]%).-InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsDeletionSettings"%]%)') ~= nil,
+        "the AddCategory call for Delete Settings MUST come AFTER Delete List so the two sit adjacent in the Interface Options tree. Without adjacency the player has to hunt around the tree to find the settings for the list they're looking at.")
+    check("Test 105c: settings widgets live in the DeletionSettingsPanel OnShow, not the Delete List OnShow",
+        (function()
+            local newPanelStart = kdp:find('DeletionSettingsPanel:SetScript%("OnShow"', 1, false)
+            if not newPanelStart then return false end
+            local widgetSites = {
+                'EbonClearanceEnableDeleteCB',
+                'EbonClearanceAutoDeleteCB',
+                'EbonClearanceAutoMarkResilienceCB',
+                'EbonClearanceAutoMarkAffixDupesCB',
+                'EbonClearanceAnnounceAutoDeleteCB',
+            }
+            for _, name in ipairs(widgetSites) do
+                local at = kdp:find(name, 1, true)
+                if not at or at < newPanelStart then
+                    return false
+                end
+            end
+            return true
+        end)(),
+        "all five checkbox widgets MUST be created inside the DeletionSettingsPanel's OnShow (which starts strictly AFTER the DeletePanel OnShow). If any of them is still created in the Delete List OnShow, the split is incomplete: the list panel would still be busy AND opening only Delete Settings would leave the widget uninitialised.")
+    check("Test 105d: each of the five settings has a grey explanatory note underneath",
+        kdp:find("delNote:SetText%(") ~= nil
+            and kdp:find("autoNote:SetText%(") ~= nil
+            and kdp:find("resilienceNote:SetText%(") ~= nil
+            and kdp:find("affixDupeNote:SetText%(") ~= nil
+            and kdp:find("announceNote:SetText%(") ~= nil,
+        "the user asked for explanatory notes on each delete setting (mirroring the affix-dupe note pattern). All five settings MUST have a font-string note with |cff888888...|r grey wrapping so the player understands what the setting actually does without needing to hunt through the Help FAQ.")
+    check("Test 105e: explanatory notes register via setPanelWidth for reactive layout",
+        kdp:find("EC_compCache%.setPanelWidth%(delNote, 42%)") ~= nil
+            and kdp:find("EC_compCache%.setPanelWidth%(autoNote, 42%)") ~= nil
+            and kdp:find("EC_compCache%.setPanelWidth%(resilienceNote, 42%)") ~= nil
+            and kdp:find("EC_compCache%.setPanelWidth%(affixDupeNote, 42%)") ~= nil
+            and kdp:find("EC_compCache%.setPanelWidth%(announceNote, 42%)") ~= nil
+            and kdp:find("(delNote:SetWidth%(400%)") == nil
+            and kdp:find("autoNote:SetWidth%(400%)") == nil
+            and kdp:find("resilienceNote:SetWidth%(400%)") == nil
+            and kdp:find("affixDupeNote:SetWidth%(400%)") == nil
+            and kdp:find("announceNote:SetWidth%(400%)") == nil,
+        "v2.47.2 needs reactive width on wrapping notes: a bare SetWidth(<literal>) freezes the note at build-time width and clips past the panel's right edge on Interface Options resize. The reactive-panel-layout invariant (test_layout_reactivity.lua) requires wrapping widgets to go through EC_compCache.setPanelWidth so the widthRegistry updates them on every OnSizeChanged fire. Padding = 42 = 26 (indent from checkbox anchor) + 16 (right margin). If a note reverts to :SetWidth(<literal>), the reactive-layout test won't catch it (that test only flags EC_PANEL_WIDTH-derived expressions) - this test is the specific pin.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

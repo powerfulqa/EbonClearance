@@ -5,6 +5,28 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.47.2
+
+**Delete List split into two panels + every setting has an explanatory note.**
+
+The Delete List panel had accumulated five checkboxes plus multi-line notes above the actual list, so on smaller Interface Options window sizes the list itself got pushed below the fold. This mirrors the problem the Keep List had before v2.15.0 (which the code comment at line 316 of `EbonClearance_KeepDeletePanels.lua` describes verbatim: "3 checkboxes + 3 multi-line notes stacked above the actual list - dominated it visually").
+
+- **Delete List panel** is now just the list: header, one-line description, add-item hint, list. Matches the Sell List / Keep List / Account Sell List rhythm.
+- **New Delete Settings sub-panel** (sits directly under Delete List in the Interface Options tree) holds the five toggles: Allow items to be deleted, Auto-delete on pickup, Auto-mark PvP gear (Resilience), Auto-mark unsellable affixes, Announce auto-deletions in chat. Same DB fields, same widget names - no schema change, no migration.
+- **Each setting picked up a grey explanatory note underneath it** so the player understands what it does at a glance instead of hunting through the Help FAQ:
+  - `Allow items to be deleted` -> "Master switch. Off = nothing on the Delete List is destroyed, even if the sub-toggles below are on."
+  - `Auto-delete these items the moment they enter your bags` -> "Delete-List items are destroyed the instant they hit your bags. Skips the merchant round-trip; irreversible. Turning this on shows a confirm popup and clears any items already in bags right away."
+  - `Auto-mark PvP gear (Resilience)` -> "PvP gear with 'Resilience' and no vendor value gets added to the Delete List automatically. Still needs 'Allow items to be deleted' above (plus a vendor visit or auto-delete-on-pickup) to actually be destroyed."
+  - `Auto-mark unsellable affixes` -> existing note preserved.
+  - `Announce auto-deletions in chat` -> "One chat line per auto-delete or auto-mark event. Off is fine if the chat is too noisy while farming; your Delete List still tracks every destroyed item."
+- **Delete List panel gets a grey pointer** to the Delete Settings panel (mirroring the Keep List's pointer to Protection Settings from v2.15.0).
+- **Help / FAQ entries** for the four settings (auto-delete on pickup, auto-mark unsellable affixes, auto-mark PvP gear, announce in chat) now open the new Delete Settings panel; the two entries that talk about the list itself (Delete List path, Will Delete label) still open the list panel.
+
+No behaviour change - all toggles work exactly as before, at the exact same paths in `DB.*`. Test 105a-e pins the panel split, widget relocation, per-setting note presence, and reactive-width layout on each note (the notes go through `EC_compCache.setPanelWidth` so they reflow when the Interface Options window is resized, rather than clipping past the right edge at build-time width).
+
+---
+
+
 ### v2.47.1
 
 **Per-quality bind-type filter for Sell Known Recipes.**

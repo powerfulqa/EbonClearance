@@ -64,8 +64,8 @@ local EC_HELP_ENTRIES = {
     {
         id = "auto-delete-on-pickup",
         q = L["What does auto-delete on pickup do?"],
-        a = L["Off by default. When you turn it on (Delete List panel, under 'Allow items to be deleted'), items on your Delete List are destroyed the moment they enter your bags, instead of waiting for a vendor - handy for cutting vendor trips while farming. It uses the same protections as deleting at a vendor: affixed Rare/Epic drops are still shielded, but quest items, tomes, and tools are not (the Delete List is your explicit choice). Each deletion prints one chat line. It is instant and cannot be undone, so enabling asks you to confirm first."],
-        panel = "EbonClearanceOptionsDeletion",
+        a = L["Off by default. When you turn it on (Delete Settings panel, under 'Allow items to be deleted'), items on your Delete List are destroyed the moment they enter your bags, instead of waiting for a vendor - handy for cutting vendor trips while farming. It uses the same protections as deleting at a vendor: affixed Rare/Epic drops are still shielded, but quest items, tomes, and tools are not (the Delete List is your explicit choice). Each deletion prints one chat line. It is instant and cannot be undone, so enabling asks you to confirm first."],
+        panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
         id = "see-item-decision",
@@ -328,8 +328,8 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-delete-unsellable-dupes",
         q = L["Auto-mark unsellable affixes for deletion"],
-        a = L["On the Delete List panel (off by default). When on (with affix protection), EbonClearance puts soulbound affixed items it would otherwise sell, but that have NO vendor value, onto your Delete List automatically (one chat line each). Two kinds qualify: exact-rank duplicates of an affix you already have, AND any affix below your 'Sell affixes below rank' setting. These are the items that would otherwise be flagged 'Will Sell' yet stick in your bags forever, because the merchant refuses them (no sell price). Heads-up: if you use the rank floor, low-rank affixed drops you can't sell WILL be deleted, not kept - that's the point, but it can surprise you. It never touches a rank you're still collecting (those still show 'Keep'), items that have a vendor price (left for the sell path so you keep the gold), or Keep List / equipped / quest / tome / profession-tool items. They delete at a vendor, or instantly with auto-delete-on-pickup."],
-        panel = "EbonClearanceOptionsDeletion",
+        a = L["On the Delete Settings panel (off by default). When on (with affix protection), EbonClearance puts soulbound affixed items it would otherwise sell, but that have NO vendor value, onto your Delete List automatically (one chat line each). Two kinds qualify: exact-rank duplicates of an affix you already have, AND any affix below your 'Sell affixes below rank' setting. These are the items that would otherwise be flagged 'Will Sell' yet stick in your bags forever, because the merchant refuses them (no sell price). Heads-up: if you use the rank floor, low-rank affixed drops you can't sell WILL be deleted, not kept - that's the point, but it can surprise you. It never touches a rank you're still collecting (those still show 'Keep'), items that have a vendor price (left for the sell path so you keep the gold), or Keep List / equipped / quest / tome / profession-tool items. They delete at a vendor, or instantly with auto-delete-on-pickup."],
+        panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
         id = "gate-affix-rank-floor",
@@ -389,13 +389,13 @@ local EC_HELP_ENTRIES = {
         id = "gate-auto-mark-resilience",
         q = L["Auto-mark PvP gear for deletion"],
         a = L["Some PvP gear with Resilience can't be vendored (no sell price), so unwanted pieces just sit in your bags. Turn this on and EbonClearance scans your bags for items with a Resilience tooltip line AND no vendor price, and adds them to the Delete List automatically. Resilience items that DO have a vendor price are left alone - they'll sell through your normal rules instead, so you keep the gold. From there, the existing deletion pipeline handles the marked items: the next vendor visit destroys them (if 'Enable Deletion' is on), or they go instantly if you also have 'Auto-delete on pickup' on. The toggle requires deletion to be enabled. Items already on the Keep List are skipped so you can still keep a specific piece if needed."],
-        panel = "EbonClearanceOptionsDeletion",
+        panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
         id = "gate-announce-auto-delete",
         q = L["Announce auto-deletions in chat"],
         a = L["When EbonClearance auto-deletes a Delete-List item the moment it hits your bags, or auto-marks a piece of unsellable Resilience gear for deletion, it normally prints one chat line per event so you can see what just happened. Turn this off if you find the chat noise unwelcome. The toggle silences only those two lines; the manual vendor-cycle summary, the session stats, and the lifetime totals are unaffected, and your Delete List itself still tracks every destroyed item."],
-        panel = "EbonClearanceOptionsDeletion",
+        panel = "EbonClearanceOptionsDeletionSettings",
     },
 
     -- ===================================================================

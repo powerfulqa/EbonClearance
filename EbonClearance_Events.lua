@@ -5931,6 +5931,7 @@ InterfaceOptions_AddCategory(_G["EbonClearanceOptionsWhitelist"]) -- Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsAccountWhitelist"]) -- Account Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsBlacklist"]) -- Keep List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsDeletion"]) -- Delete List
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsDeletionSettings"]) -- Delete Settings
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProcessBags"]) -- Process Bags
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProfiles"]) -- Profiles
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsImportExport"]) -- Import/Export

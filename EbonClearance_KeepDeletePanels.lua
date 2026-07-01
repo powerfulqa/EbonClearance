@@ -40,7 +40,13 @@ DeletePanel:SetScript("OnShow", function(self)
             self.listUI:Refresh()
         end
     end, function(self)
-        local heading = NS.MakeHeader(self, L["Deletion Settings"], -16)
+        -- v2.47.2: settings extracted to the sibling Delete Settings panel
+        -- (see below). This panel now matches the Sell List / Keep List /
+        -- Account Sell List rhythm: header + description + hint + list.
+        -- Mirrors the v2.15.0 Keep List refactor's rationale: five
+        -- checkboxes plus explanatory notes had pushed the actual list
+        -- well below the fold on smaller Interface Options window sizes.
+        local heading = NS.MakeHeader(self, L["Delete List"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
         local delDesc = NS.MakeLabel(
             self,
@@ -60,11 +66,60 @@ DeletePanel:SetScript("OnShow", function(self)
             L["Add items by shift-clicking them, dragging them in, or typing the item ID below."]
         )
 
+        -- Grey pointer to the sibling Delete Settings panel. Mirrors the
+        -- Keep List -> Protection Settings pointer added in v2.15.0.
+        local settingsPtr = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        settingsPtr:SetPoint("TOPLEFT", delHint, "BOTTOMLEFT", 0, -6)
+        EC_compCache.setPanelWidth(settingsPtr, 16)
+        settingsPtr:SetJustifyH("LEFT")
+        settingsPtr:SetJustifyV("TOP")
+        if settingsPtr.SetWordWrap then
+            settingsPtr:SetWordWrap(true)
+        end
+        settingsPtr:SetText(
+            L["|cffaaaaaaAuto-delete, PvP Resilience marking, unsellable-affix marking, and chat announcements live on the |r|cffffb84dDelete Settings|r|cffaaaaaa panel.|r"]
+        )
+
+        self.listUI = NS.CreateListUI(self, L["Delete List"], "deleteList", 16, -130)
+        -- v2.11.0: anchor BOTTOMRIGHT so the list stretches with the panel
+        -- on Interface Options frame resize - mirrors the Whitelist /
+        -- Blacklist / Account-Whitelist setups.
+        self.listUI:ClearAllPoints()
+        self.listUI:SetPoint("TOPLEFT", settingsPtr, "BOTTOMLEFT", 0, -12)
+        self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
+        self.listUI:Refresh()
+    end)
+end)
+
+-- v2.47.2: Delete Settings sub-panel. Extracted from the Delete List panel
+-- so the list gets its full vertical space back (mirrors the v2.15.0 Keep
+-- List -> Protection Settings extraction). All DB field names unchanged,
+-- so slash commands / BugReport dumps / tooltip annotations continue to
+-- work. Widget names unchanged so tests that read the source still resolve.
+local DeletionSettingsPanel = CreateFrame(
+    "Frame",
+    "EbonClearanceOptionsDeletionSettings",
+    InterfaceOptionsFramePanelContainer
+)
+DeletionSettingsPanel.name = "Delete Settings"
+DeletionSettingsPanel.parent = "EbonClearance"
+
+DeletionSettingsPanel:SetScript("OnShow", function(self)
+    local DB = NS.DB
+    EC_compCache.initPanel(self, function(self)
+        -- Settings are DB-backed; nothing to refresh on re-show. Following
+        -- the panel-refresh contract (empty refresh callback is fine).
+    end, function(self)
+        local heading = NS.MakeHeader(self, L["Delete Settings"], -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
+
         local autoCB, refreshAutoCBEnabled
 
+        -- Master switch. Off = nothing on the Delete List is destroyed,
+        -- regardless of the sub-toggles.
         local delCB =
             CreateFrame("CheckButton", "EbonClearanceEnableDeleteCB", self, "InterfaceOptionsCheckButtonTemplate")
-        delCB:SetPoint("TOPLEFT", delHint, "BOTTOMLEFT", 0, -6)
+        delCB:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", 0, -28)
         delCB:SetChecked(DB.enableDeletion)
         local dt = _G[delCB:GetName() .. "Text"]
         if dt then
@@ -72,6 +127,25 @@ DeletePanel:SetScript("OnShow", function(self)
             dt:SetWidth(420)
             dt:SetJustifyH("LEFT")
         end
+        local delNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        delNote:SetPoint("TOPLEFT", delCB, "BOTTOMLEFT", 26, -2)
+        -- v2.47.2: reactive width. A bare SetWidth(<literal>) here freezes
+        -- the note at build-time width and clips past the panel's right
+        -- edge on Interface Options resize. Padding = 26 (indent from the
+        -- checkbox anchor) + 16 (right margin). EC-TRAP per
+        -- docs/ADDON_GUIDE.md's reactive-panel-layout invariant: any
+        -- widget that snapshots panel width MUST go through setPanelWidth
+        -- (test_layout_reactivity.lua enforces this for EC_PANEL_WIDTH-
+        -- derived expressions but not for bare literals - see Test 105e
+        -- in test_perf_guardrails.lua for the specific pin).
+        EC_compCache.setPanelWidth(delNote, 42)
+        delNote:SetJustifyH("LEFT")
+        if delNote.SetWordWrap then
+            delNote:SetWordWrap(true)
+        end
+        delNote:SetText(
+            L["|cff888888Master switch. Off = nothing on the Delete List is destroyed, even if the sub-toggles below are on.|r"]
+        )
         delCB:SetScript("OnClick", function()
             DB.enableDeletion = delCB:GetChecked() and true or false
             PlaySound("igMainMenuOptionCheckBoxOn")
@@ -86,9 +160,9 @@ DeletePanel:SetScript("OnShow", function(self)
                 end
             end
             -- Toggling deletion changes EC_IsSellable / BuildQueue's
-            -- delete-list verdict for every Delete List slot. Repaint
-            -- so the slot tints track immediately without requiring a
-            -- bag close/reopen. Same rule as the list-mutation refresh
+            -- delete-list verdict for every Delete List slot. Repaint so
+            -- the slot tints track immediately without requiring a bag
+            -- close/reopen. Same rule as the list-mutation refresh
             -- invariant (Test 26 in test_perf_guardrails.lua).
             if NS.RefreshSellBorders then
                 NS.RefreshSellBorders()
@@ -98,13 +172,12 @@ DeletePanel:SetScript("OnShow", function(self)
             end
         end)
 
-        -- v2.42.0: auto-delete-on-pickup sub-toggle, dependent on "Allow items
-        -- to be deleted". Greyed + disabled when deletion is off. Enabling
-        -- requires an explicit confirm (irreversible) and kicks one debounce
-        -- scan so items already in bags get cleaned.
+        -- v2.42.0: auto-delete-on-pickup sub-toggle. Greyed when deletion is
+        -- off. Enabling requires an explicit confirm (irreversible) and
+        -- kicks one debounce scan so items already in bags get cleaned.
         autoCB =
             CreateFrame("CheckButton", "EbonClearanceAutoDeleteCB", self, "InterfaceOptionsCheckButtonTemplate")
-        autoCB:SetPoint("TOPLEFT", delCB, "BOTTOMLEFT", 0, -2)
+        autoCB:SetPoint("TOPLEFT", delNote, "BOTTOMLEFT", -26, -8)
         autoCB:SetChecked(DB.autoDeleteOnPickup)
         local autoText = _G[autoCB:GetName() .. "Text"]
         if autoText then
@@ -112,16 +185,29 @@ DeletePanel:SetScript("OnShow", function(self)
             autoText:SetWidth(420)
             autoText:SetJustifyH("LEFT")
         end
-        -- v2.44.0: Resilience auto-mark sub-toggle. Adds PvP gear with
-        -- the "Resilience" tooltip line to this Delete List on the
-        -- next BAG_UPDATE - the existing vendor / auto-delete-on-
-        -- pickup pipelines then destroy it. Same enabled-state rule
-        -- as autoCB: greyed when "Allow items to be deleted" is off.
-        -- Asked for by Murlocked: PvP gear on PE has sellPrice = 0
-        -- and clutters bags after farming.
-        local resilienceCB =
-            CreateFrame("CheckButton", "EbonClearanceAutoMarkResilienceCB", self, "InterfaceOptionsCheckButtonTemplate")
-        resilienceCB:SetPoint("TOPLEFT", autoCB, "BOTTOMLEFT", 0, -2)
+        local autoNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        autoNote:SetPoint("TOPLEFT", autoCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(autoNote, 42)
+        autoNote:SetJustifyH("LEFT")
+        if autoNote.SetWordWrap then
+            autoNote:SetWordWrap(true)
+        end
+        autoNote:SetText(
+            L["|cff888888Delete-List items are destroyed the instant they hit your bags. Skips the merchant round-trip; irreversible. Turning this on shows a confirm popup and clears any items already in bags right away.|r"]
+        )
+
+        -- v2.44.0: Resilience auto-mark sub-toggle. Adds PvP gear with the
+        -- "Resilience" tooltip line to the Delete List on the next BAG_UPDATE.
+        -- The existing vendor / auto-delete-on-pickup pipelines then destroy
+        -- it. Same enabled-state rule as autoCB. Asked for by Murlocked:
+        -- PvP gear on PE has sellPrice = 0 and clutters bags after farming.
+        local resilienceCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceAutoMarkResilienceCB",
+            self,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        resilienceCB:SetPoint("TOPLEFT", autoNote, "BOTTOMLEFT", -26, -8)
         resilienceCB:SetChecked(DB.autoMarkResilience)
         local resilienceText = _G[resilienceCB:GetName() .. "Text"]
         if resilienceText then
@@ -129,23 +215,29 @@ DeletePanel:SetScript("OnShow", function(self)
             resilienceText:SetWidth(420)
             resilienceText:SetJustifyH("LEFT")
         end
+        local resilienceNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        resilienceNote:SetPoint("TOPLEFT", resilienceCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(resilienceNote, 42)
+        resilienceNote:SetJustifyH("LEFT")
+        if resilienceNote.SetWordWrap then
+            resilienceNote:SetWordWrap(true)
+        end
+        resilienceNote:SetText(
+            L["|cff888888PvP gear with 'Resilience' and no vendor value gets added to the Delete List automatically. Still needs 'Allow items to be deleted' above (plus a vendor visit or auto-delete-on-pickup) to actually be destroyed.|r"]
+        )
 
         -- v2.47.0: affix-dupe auto-mark sub-toggle. Adds affixed Rare/Epic
         -- items whose affix you ALREADY own that are soulbound AND have no
-        -- vendor value to this Delete List on the next BAG_UPDATE; the vendor
-        -- cycle / auto-delete-on-pickup then destroys them. Sellable dupes are
-        -- deliberately left for the sell path. Same enabled-state rule as the
-        -- toggles above (greyed when "Allow items to be deleted" is off). The
-        -- scan also needs affix protection + "Allow selling affixes you already
-        -- have" on (Protection settings) - the note below says so. Asked for by
-        -- Broyo (all affixes collected; soulbound dupes can't be sold/traded).
+        -- vendor value. Sellable dupes are deliberately left for the sell
+        -- path. Also needs affix protection + "Allow selling affixes you
+        -- already have" on. Asked for by Broyo.
         local affixDupeCB = CreateFrame(
             "CheckButton",
             "EbonClearanceAutoMarkAffixDupesCB",
             self,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        affixDupeCB:SetPoint("TOPLEFT", resilienceCB, "BOTTOMLEFT", 0, -2)
+        affixDupeCB:SetPoint("TOPLEFT", resilienceNote, "BOTTOMLEFT", -26, -8)
         affixDupeCB:SetChecked(DB.autoMarkAffixDupes)
         local affixDupeText = _G[affixDupeCB:GetName() .. "Text"]
         if affixDupeText then
@@ -155,7 +247,7 @@ DeletePanel:SetScript("OnShow", function(self)
         end
         local affixDupeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         affixDupeNote:SetPoint("TOPLEFT", affixDupeCB, "BOTTOMLEFT", 26, -2)
-        affixDupeNote:SetWidth(400)
+        EC_compCache.setPanelWidth(affixDupeNote, 42)
         affixDupeNote:SetJustifyH("LEFT")
         if affixDupeNote.SetWordWrap then
             affixDupeNote:SetWordWrap(true)
@@ -164,13 +256,10 @@ DeletePanel:SetScript("OnShow", function(self)
             L["|cff888888Soulbound affixed items with no vendor value that EC would otherwise sell (a dupe you own, or a rank below your 'Sell affixes below rank' setting). Needs affix protection on in Protection settings.|r"]
         )
 
-        -- v2.44.4: announce-in-chat toggle. Gates the two "EC just
-        -- deleted / marked X" lines that the auto-delete-on-pickup
-        -- sweep and the Resilience auto-mark sweep print. Default ON
-        -- (destructive actions should be visible); turn off if the
-        -- chat noise is unwelcome. Greys with the parent enableDeletion
-        -- gate - same enabled-state rule as the two sub-toggles above.
-        -- Asked for by ayres.
+        -- v2.44.4: announce-in-chat toggle. Gates the "EC just deleted /
+        -- marked X" lines. Default ON (destructive actions should be
+        -- visible); turn off if the chat noise is unwelcome. Asked for
+        -- by ayres.
         local announceCB = CreateFrame(
             "CheckButton",
             "EbonClearanceAnnounceAutoDeleteCB",
@@ -185,6 +274,16 @@ DeletePanel:SetScript("OnShow", function(self)
             announceText:SetWidth(420)
             announceText:SetJustifyH("LEFT")
         end
+        local announceNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        announceNote:SetPoint("TOPLEFT", announceCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(announceNote, 42)
+        announceNote:SetJustifyH("LEFT")
+        if announceNote.SetWordWrap then
+            announceNote:SetWordWrap(true)
+        end
+        announceNote:SetText(
+            L["|cff888888One chat line per auto-delete or auto-mark event. Off is fine if the chat is too noisy while farming; your Delete List still tracks every destroyed item.|r"]
+        )
         announceCB:SetScript("OnClick", function()
             DB.announceAutoDelete = announceCB:GetChecked() and true or false
             PlaySound(DB.announceAutoDelete and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
@@ -228,6 +327,7 @@ DeletePanel:SetScript("OnShow", function(self)
             end
         end
         refreshAutoCBEnabled()
+
         autoCB:SetScript("OnClick", function()
             if autoCB:GetChecked() then
                 autoCB:SetChecked(false) -- stay off until confirmed
@@ -250,13 +350,9 @@ DeletePanel:SetScript("OnShow", function(self)
             end
         end)
 
-        -- v2.44.0: Resilience auto-mark OnClick. No confirmation
-        -- popup - this only adds items to the Delete List (a
-        -- reversible, non-destructive action). The actual deletion
-        -- still flows through enableDeletion + the user's vendor
-        -- visit or autoDeleteOnPickup, both of which are gated.
-        -- Kicks one debounce scan so items already in bags get
-        -- marked the moment the toggle goes on.
+        -- v2.44.0: Resilience auto-mark OnClick. No confirmation popup - it
+        -- only adds items to the Delete List (reversible). Kicks a debounce
+        -- scan so items already in bags get marked immediately.
         resilienceCB:SetScript("OnClick", function()
             DB.autoMarkResilience = resilienceCB:GetChecked() and true or false
             PlaySound(DB.autoMarkResilience and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
@@ -267,11 +363,8 @@ DeletePanel:SetScript("OnShow", function(self)
             end
         end)
 
-        -- v2.47.0: affix-dupe auto-mark OnClick. Like the resilience toggle,
-        -- no confirmation popup - it only adds to the Delete List (reversible);
-        -- the actual deletion still flows through enableDeletion + the vendor
-        -- visit or auto-delete-on-pickup. Kicks one debounce scan so items
-        -- already in bags get marked the moment the toggle goes on.
+        -- v2.47.0: affix-dupe auto-mark OnClick. Same shape as the resilience
+        -- toggle: reversible, no confirm popup, kicks a debounce scan.
         affixDupeCB:SetScript("OnClick", function()
             DB.autoMarkAffixDupes = affixDupeCB:GetChecked() and true or false
             PlaySound(DB.autoMarkAffixDupes and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
@@ -281,24 +374,6 @@ DeletePanel:SetScript("OnShow", function(self)
                 EC_compCache.bagUpdateFrame:Show()
             end
         end)
-
-        self.listUI = NS.CreateListUI(self, L["Delete List"], "deleteList", 16, -130)
-        -- v2.11.0: anchor BOTTOMRIGHT so the list stretches with the panel
-        -- on Interface Options frame resize - mirrors the Whitelist /
-        -- Blacklist / Account-Whitelist setups. Without this the list box
-        -- stays at its build-time width and the search row + add-matching
-        -- row buttons drift outside the panel boundary on shrink.
-        self.listUI:ClearAllPoints()
-        -- v2.42.0: anchor below the auto-delete sub-toggle (not a fixed
-        -- y-offset) so the list always clears the checkboxes even as the
-        -- description / hint text wraps. Mirrors the Keep List panel's
-        -- anchor-to-hint approach.
-        -- v2.44.0: re-anchored below the new resilience auto-mark toggle.
-        -- v2.44.4: re-anchored below the announce-in-chat toggle so the
-        -- list still clears every checkbox in the header strip.
-        self.listUI:SetPoint("TOPLEFT", announceCB, "BOTTOMLEFT", 0, -12)
-        self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)
-        self.listUI:Refresh()
     end)
 end)
 

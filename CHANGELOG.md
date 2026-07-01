@@ -5,6 +5,28 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.48.0
+
+**Help panel style refresh, inspired by BarWarden's cleaner section-header collapse, blue question text, and blue flash-pulse deep-link.**
+
+The Help panel was rewritten to adopt the visual patterns from the sibling BarWarden addon's Help tab, whose interaction feel felt cleaner. Content is unchanged (same 110 FAQ entries, same 7 sections, same panel-jump buttons on 83 entries, same copy-URL rows), the SavedVariables schema is unchanged (`DB.helpSectionsCollapsed`), and the deep-link API is unchanged (`NS.OpenHelpEntry(id)` + `NS.AddHelpIcon` still work exactly as before) - only the renderer + flash implementation change. Existing translations, `[?]` icon call sites, and player collapse-state settings all carry forward untouched.
+
+- **Gold section headers** with `|cffffd870+ Section|r` (collapsed) / `|cffffd870- Section|r` (expanded) instead of the pre-v2.48.0 yellow `|cffffff00[+] Section|r` / `[-]` pattern. Hovering a section header flips its text from gold to white; moving off restores gold.
+- **Light-blue question text** (`|cff4db8ff`) replaces the pre-v2.48.0 yellow. Answer text stays at the default `GameFontHighlightSmall` color.
+- **Blue flash-pulse on deep-link.** Clicking a `[?]` icon anywhere in the settings panels still opens the Help panel and scrolls to the matching entry, but the highlight is now a soft blue Texture pulse behind the entry (using `UIFrameFlash`) instead of the pre-v2.48.0 inline-color text swap. Works regardless of what color the question text uses; doesn't disturb the layout during the pulse.
+- **Two-pass deferred scroll** (0.15s + 0.6s) lands multi-section deep-links reliably. The pre-v2.48.0 single 0.7s pass could land short when several sections were already expanded and the outer scroll range hadn't settled yet.
+- **Viewport-width text reflow.** The wrapped answer text now retracks the live scroll-frame width on every Interface Options resize instead of freezing at a build-time snapshot. Fixes clipping past the chrome's right edge when the Interface Options window is resized by UI-mod packs.
+- **Simpler layout algorithm.** The renderer walks its item list once, accumulating a `y` cursor, with each entry anchored directly to the chrome (no `prevFull` chaining). A hidden entry no longer strands the ones below it. Net file line count is ~1200 (down from 1473).
+
+Retained from the pre-v2.48.0 implementation: search box + client-side filter, per-entry `Open <Panel>` panel-jump buttons, copy-URL rows on the Reporting Bugs section, chrome backdrop (UI-Tooltip-Border edge at edgeSize=12, matching Sell List / Keep List / Delete List / Process Bags / Profiles), and full `L[]` localization on every player-facing string.
+
+Test 83a rewritten to match the new flash pattern (UIFrameFlash on a BACKGROUND Texture instead of inline-color text swap). Test 106a-e added to pin the ported visuals (gold section headers, blue question text, per-entry flash Texture, two-pass scroll timing, viewport-width reflow).
+
+Credit to BarWarden for the pattern.
+
+---
+
+
 ### v2.47.2
 
 **Delete List split into two panels + every setting has an explanatory note.**

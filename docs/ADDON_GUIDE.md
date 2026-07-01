@@ -942,6 +942,54 @@ inter-batch `EC_Delay` to settle before counting; doing it synchronously
 in `FinishRun` would undercount in-flight successful sales (worse than
 slight overcounting for player trust). Tracked as future work.
 
+### Help panel visual style is ported from the sibling BarWarden addon (v2.48.0)
+
+The Help panel renderer + deep-link flash were rewritten in v2.48.0 to match
+the visual style of the sibling BarWarden addon
+([Options_Help.lua](C:\Users\chris\Wow Addons\barwarden\Options_Help.lua)).
+Content, data shape, and public API are unchanged - only the presentation.
+Do not "modernise" the color codes or glyphs without checking BarWarden first;
+the goal is that the two addons feel like siblings, not that either looks
+maximally current.
+
+The specific patterns are pinned by Test 106a-e (test_perf_guardrails.lua):
+
+- **Section headers** are gold `|cffffd870+ Section Name|r` when collapsed
+  and `|cffffd870- Section Name|r` when expanded. Hover flips gold ->
+  white via a vertex-color override on the FontString; OnLeave restores
+  gold RGB (1, 0.845, 0.44). Do NOT change to `[+]` / `[-]` bracket
+  glyphs, yellow `|cffffff00`, or any other color.
+- **Question text** is light blue `|cff4db8ff`. Answer text keeps the
+  default `GameFontHighlightSmall` color (no inline code). If a future
+  refactor tries to make the question yellow again (matching the
+  in-tooltip `[EC]` yellow), Test 106b catches it - the sibling addon
+  parity is intentional.
+- **Deep-link flash** is a `BACKGROUND`-layer Texture per entry, tinted
+  blue (0.30, 0.56, 1.0, alpha 0.25), driven by `UIFrameFlash(flash,
+  0.25, 0.45, 1.4, false, 0, 0.35)`. Do NOT revert to the pre-v2.48.0
+  inline-color text swap - it broke when the question color changed
+  (the gsub was string-literal-bound) and disturbed the layout for the
+  duration of the pulse.
+- **Two-pass deferred scroll** at 0.15s + 0.6s. Timings account for EC's
+  `FitScrollContent` tick chain (0.1s + 0.5s); BarWarden's raw
+  0.05s + 0.20s is too fast because EC's chrome + outer scroll wrap
+  layers add settling latency. Both passes gated by
+  `HelpPanel._scrollGeneration` so a superseding `[?]` click cancels
+  stale passes cleanly.
+- **Viewport-width reflow.** `refreshLayout` reads `chrome:GetWidth()`
+  each pass and calls `entry.apply(textW)` on every visible entry to
+  re-set the q/a FontString widths + recompute the frame height.
+  Adopts BarWarden's dynamic reflow pattern instead of the pre-v2.48.0
+  `setPanelWidth` registration on the FontStrings (which still works
+  but is more machinery than needed inside the chrome).
+
+EC-specific bits preserved (do NOT drop these when porting further BarWarden
+touches): the chrome backdrop (`applyChromeBackdrop` + UI-Tooltip-Border
+edgeSize=12; Test 75), the search box + client-side filter (v2.46.0), the
+per-entry `Open <Panel>` panel-jump buttons + copy-URL rows on the Reporting
+Bugs section, and `L[]` localization on every player-facing string. BarWarden
+has none of these; the port is style-only.
+
 ### Tooltip verdict is introspected via `statusTag`, not the displayed string (v2.43.0)
 
 `EC_AnnotateTooltip` builds the verdict label into `statusLine` and used to

@@ -748,48 +748,41 @@ HelpPanel.parent = "EbonClearance"
 -- via NS.AddHelpIcon (EbonClearance_PanelWidgets.lua); the icon's
 -- OnClick calls this function with the entry's stable id.
 --
--- Behaviour:
+-- Behaviour (v2.48.0 BarWarden-style port):
 --   1. Find the section that owns this entry (walk EC_HELP_ENTRIES) and
 --      set DB.helpSectionsCollapsed[ownerSection] = false so the section
 --      auto-expands when the panel renders.
 --   2. Call InterfaceOptionsFrame_OpenToCategory(HelpPanel) twice (the
---      standard 3.3.5a workaround for the open-to-sub-panel bug where
---      the first call sometimes lands on the parent category). This
---      fires OnShow synchronously and refreshLayout positions widgets.
+--      standard 3.3.5a workaround; first call sometimes lands on the
+--      parent category). This fires OnShow synchronously and
+--      refreshLayout positions widgets.
 --   3. Increment HelpPanel._scrollGeneration and capture it in a closure.
---      Every delayed task (scroll, flash) checks its captured generation
---      against the current one and no-ops if a subsequent OpenHelpEntry
---      has superseded it.
---   4. Schedule the scroll + flash via NS.Delay(0.7s). By then both
---      FitScrollContent ticks (0.1s + 0.5s) have settled the outer scroll
---      content's height so GetVerticalScrollRange is correct. The scroll
---      math uses `currentScroll + (scrollTop - widgetTop)` so it produces
---      the right absolute scroll value regardless of where the panel
---      currently sits. The flash swaps the q FontString's inline yellow
---      |cffffff00 for bright cyan |cff00ffff for ~0.6s, then restores.
---
--- refreshLayout is intentionally NOT involved in the deep-link side
--- effects - it just positions widgets and fits the scroll content. All
--- scroll/flash state lives here in the closure, gated by the generation
--- counter.
+--      Every deferred pass checks its captured generation and no-ops if
+--      a subsequent OpenHelpEntry has superseded it.
+--   4. Two-pass deferred scroll (BarWarden pattern from Options_Help.lua
+--      lines 559-564, timings adjusted for EC's FitScrollContent tick
+--      chain): first pass at 0.15s runs after the 0.1s FitScrollContent
+--      tick; second pass at 0.6s runs after the 0.5s tick has settled
+--      the outer scroll range fully. Both passes call the entry frame's
+--      Flash() method (UIFrameFlash on the BACKGROUND flash Texture)
+--      so the pulse works regardless of the question text color.
 --
 -- If entryId is nil or no matching entry exists, the panel still opens
 -- (no scroll / flash). Safe failure mode for typos and stale ids.
--- Locate the q FontString for a given entry id. renderItems carries the
--- id directly on each q/a entry (assigned at build time), so this is
--- now a single linear walk - no more counting indices through two
--- parallel lists. Returns nil if the panel hasn't been built yet OR
--- the id is unknown.
+--
+-- Returns the ENTRY FRAME (not the q FontString), so callers can invoke
+-- widget.Flash() directly. The frame carries q + a + optional button as
+-- children, plus a BACKGROUND flash Texture used by UIFrameFlash.
 local function findEntryWidget(entryId)
     if not entryId then
         return nil
     end
-    local items = HelpPanel._helpRenderItems
+    local items = HelpPanel._helpItems
     if not items then
         return nil
     end
     for _, item in ipairs(items) do
-        if item.kind == "q" and item.id == entryId then
+        if item.kind == "entry" and item.id == entryId then
             return item.widget
         end
     end
@@ -818,12 +811,9 @@ function NS.OpenHelpEntry(entryId)
         end
     end
 
-    -- Open the panel (double-call for the 3.3.5a workaround). This fires
-    -- OnShow on HelpPanel, which runs refreshLayout - positions widgets,
-    -- fits the chrome + outer scroll content. refreshLayout no longer
-    -- handles deep-link scrolling; that all lives here so a single click
-    -- produces a single deterministic scroll regardless of how many
-    -- OnShow events the double-call triggers.
+    -- 3.3.5a workaround: two identical calls (first sometimes lands on
+    -- the parent category). EC-TRAP: do NOT dedupe. Fires OnShow +
+    -- refreshLayout synchronously.
     InterfaceOptionsFrame_OpenToCategory(target)
     InterfaceOptionsFrame_OpenToCategory(target)
 
@@ -831,26 +821,16 @@ function NS.OpenHelpEntry(entryId)
         return
     end
 
-    -- Generation counter: a subsequent OpenHelpEntry call supersedes
-    -- any in-flight scroll from earlier clicks. Each delayed task
-    -- checks its captured generation against the current one and
-    -- no-ops if it has been superseded. Prevents rapid-click whiplash
-    -- (old click's scroll firing AFTER new click's scroll) and stale
-    -- scrolls when the user spam-clicks [?] icons.
+    -- Generation counter: a subsequent OpenHelpEntry supersedes any
+    -- in-flight scroll/flash from this call. Prevents rapid-click
+    -- whiplash on spam [?] icons.
     HelpPanel._scrollGeneration = (HelpPanel._scrollGeneration or 0) + 1
     local gen = HelpPanel._scrollGeneration
 
-    -- Deferred scroll. The first pass at +0.7s runs after refreshLayout
-    -- (immediately on OnShow) and both FitScrollContent ticks (0.1s +
-    -- 0.5s) have settled the outer scroll content's range. The second
-    -- pass at +1.3s is a confirmation: when MULTIPLE sections are now
-    -- expanded (each prior [?] click added one), the target entry's
-    -- absolute Y position depends on how much content sits above it, and
-    -- that fully settles only after FitScrollContent has re-measured
-    -- with all expansions visible. Both passes are gated by the
-    -- generation counter so a superseding click instantly cancels both.
-    -- doScroll itself is idempotent - if positions are already settled,
-    -- the second pass is a no-op repeat of the same SetVerticalScroll.
+    -- Scroll math: current + (scrollTop - widgetTop). Works from any
+    -- starting scroll because widget:GetTop() already reflects the
+    -- current scroll. Also fires the entry's Flash() so the blue pulse
+    -- draws the eye to the target after the scroll lands.
     local function doScroll()
         if HelpPanel._scrollGeneration ~= gen then
             return
@@ -871,15 +851,6 @@ function NS.OpenHelpEntry(entryId)
         if not widgetTop or not scrollTop then
             return
         end
-        -- widget:GetTop() reflects the widget's CURRENT screen position,
-        -- which already accounts for the scroll frame's current vertical
-        -- scroll. So the target offset is:
-        --   newScroll = currentScroll + (scrollTop - widgetTop)
-        -- A naive `scrollTop - widgetTop` works only when currentScroll
-        -- is 0, and breaks on the second-pass scroll (after the first
-        -- pass already moved the scroll) - the widget is now AT scrollTop
-        -- so the difference is 0 and SetVerticalScroll(0) sends the
-        -- panel back to the top.
         local currentScroll = scrollFrame.GetVerticalScroll and scrollFrame:GetVerticalScroll() or 0
         local offset = currentScroll + (scrollTop - widgetTop)
         if offset < 0 then
@@ -890,60 +861,19 @@ function NS.OpenHelpEntry(entryId)
             offset = range
         end
         scrollFrame:SetVerticalScroll(offset)
+        if widget.Flash then
+            widget.Flash()
+        end
     end
 
-    -- Single scroll pass at +0.7s. The id-based widget lookup
-    -- (findEntryWidget matches item.id directly, no counting through
-    -- two parallel lists) gives a stable widget reference that
-    -- survives multiple refreshLayouts. By +0.7s, refreshLayout has
-    -- run (OnShow fires synchronously from OpenToCategory) and both
-    -- FitScrollContent ticks (0.1s, 0.5s) have settled the outer
-    -- scroll content's height + range. A previous attempt at a
-    -- second +1.3s confirmation pass caused visible whiplash when
-    -- something between the passes reset the scroll and the second
-    -- pass bailed (widget hidden) - one pass at +0.7s is the
-    -- sweet spot for both responsiveness and correctness.
-    NS.Delay(0.7, doScroll)
-
-    -- Flash: visually highlight the target entry's question text so the
-    -- player's eye lands on it after the scroll. The q FontString's text
-    -- is wrapped in inline |cffffff00...|r color codes, which override
-    -- SetTextColor's vertex color - so the previous SetTextColor flash
-    -- had no visible effect. Swap the inline yellow color for a brighter
-    -- cyan tag for ~0.6s, then restore the original text. Pulses the
-    -- entire q line visibly without disturbing the layout.
-    NS.Delay(0.7, function()
-        if HelpPanel._scrollGeneration ~= gen then
-            return
-        end
-        local widget = findEntryWidget(entryId)
-        if not widget or not widget.SetText or not widget.GetText then
-            return
-        end
-        local originalText = widget:GetText()
-        if not originalText then
-            return
-        end
-        -- Replace the inline yellow tag with bright cyan; if the entry's
-        -- q text uses a different color escape than |cffffff00, the
-        -- replacement is a no-op and the flash is silently skipped
-        -- rather than rendering with a mangled color.
-        local flashText, replacements = originalText:gsub("|cffffff00", "|cff00ffff")
-        if replacements == 0 then
-            return
-        end
-        widget:SetText(flashText)
-        NS.Delay(0.6, function()
-            -- Restore even if a newer click has come in - we don't want
-            -- the cyan text lingering. But only restore if the widget
-            -- still holds OUR flash text; otherwise a newer flash on
-            -- the same widget would have set its own text and our
-            -- restore would clobber it.
-            if widget.GetText and widget:GetText() == flashText and widget.SetText then
-                widget:SetText(originalText)
-            end
-        end)
-    end)
+    -- Two-pass scroll. First pass at 0.15s runs after the 0.1s
+    -- FitScrollContent tick has set an initial outer scroll range.
+    -- Second pass at 0.6s runs after the 0.5s tick has settled the
+    -- range fully (needed when MULTIPLE sections are expanded and the
+    -- target Y depends on all of them settling). Both gated by the
+    -- generation counter.
+    NS.Delay(0.15, doScroll)
+    NS.Delay(0.6, doScroll)
 end
 
 -- StaticPopup for copyable URLs (3.3.5a has no clickable browser links
@@ -1033,13 +963,23 @@ HelpPanel:SetScript("OnShow", function(self)
     end
 
     -- ---------------------------------------------------------------
-    -- refreshLayout: re-applies anchors + visibility based on the
-    -- current collapse state. Walks the prebuilt renderItems list once.
-    -- Called after section-header clicks (toggle) and during initial
-    -- build (initial layout).
+    -- refreshLayout (v2.48.0): BarWarden-style y-accumulator walk.
     -- ---------------------------------------------------------------
+    -- Single-pass layout over panel._helpItems. Each item is either:
+    --   { kind = "section", widget = headerButton, section, title }
+    --   { kind = "entry",   widget = entryFrame,   section, id, apply }
+    -- Where entryFrame carries q + a + optional button + BACKGROUND
+    -- flash Texture as children. entry.apply(textW) re-sets the q/a
+    -- widths and recomputes the frame height at the current viewport
+    -- width; called every refreshLayout so the answer text reflows on
+    -- Interface Options frame resize (BarWarden Options_Help.lua:436).
+    --
+    -- Section headers anchor to chrome directly with cumulative y (no
+    -- prevFull chaining), so a hidden entry never strands the ones
+    -- below it. Search filter: sections with a matching entry force-
+    -- expand; non-matching entries hide; non-matching sections hide.
     local function refreshLayout(panel)
-        local items = panel._helpRenderItems
+        local items = panel._helpItems
         local chrome = panel._helpChromeContent
         if not items or not chrome then
             return
@@ -1050,9 +990,7 @@ HelpPanel:SetScript("OnShow", function(self)
         end
         local collapsed = DB2.helpSectionsCollapsed or {}
 
-        -- Search filter. When a query is active, match entries by their
-        -- indexed q+a text; a section header shows only if it owns a match,
-        -- and matching sections are force-expanded (collapse is ignored).
+        -- Search filter (unchanged from v2.46.0 behaviour).
         local query = panel._helpSearch or ""
         local searching = query ~= ""
         local matchById, sectionHasMatch = {}, {}
@@ -1070,126 +1008,85 @@ HelpPanel:SetScript("OnShow", function(self)
             end
         end
 
-        -- Layout uses TOPLEFT + TOPRIGHT anchors exclusively (corner
-        -- anchors don't imply vertical-center alignment, unlike LEFT/RIGHT
-        -- which would over-constrain frames whose TOP is also set and
-        -- silently stretch them to satisfy all three constraints).
-        --
-        -- prevFull tracks the most recent FULL-WIDTH widget (section,
-        -- q, a, sep). Buttons are fixed-width + right-aligned and do NOT
-        -- become prevFull - if a button could become prevFull, the next
-        -- full-width row's TOPLEFT would land at the button's left edge
-        -- (the right-third of the panel). yCursor accumulates the vertical
-        -- distance from prevFull's bottom through any intervening button
-        -- so the next full-width row anchors to the correct Y.
-        local prevFull = nil
-        local yCursor = 0
+        -- Viewport-width reflow: read the live chrome width so wrapped
+        -- text tracks the actual viewport instead of a fixed guess.
+        -- BarWarden Options_Help.lua:459.
+        local w = chrome:GetWidth()
+        if not w or w < 100 then
+            w = 500
+        end
+        local textW = w - 8 -- entries sit at x=4 with 4px right margin
+
+        local y = -4
         local currentSection = nil
-        local currentSectionCollapsed = false
         local currentSectionShown = true
-        local SECTION_GAP = 16
-        local Q_GAP = 14
-        local A_GAP = 4
-        local BUTTON_GAP = 6
-        local BUTTON_HEIGHT = 22
-        local SEP_GAP = 8
-        for _, it in ipairs(items) do
-            if it.kind == "section" then
-                -- Section header (Button frame). TOPLEFT + TOPRIGHT
-                -- anchors span the full chrome width - Buttons don't
-                -- need SetWordWrap so the anchor pair is safe here.
-                currentSection = it.section
-                -- While searching, hide sections with no matching entry and
-                -- force-expand the ones that do; otherwise honour collapse.
+        local currentSectionCollapsed = false
+        local HEADER_H = 22
+        local HEADER_GAP = 6
+        local ENTRY_GAP = 10
+
+        for _, item in ipairs(items) do
+            if item.kind == "section" then
+                currentSection = item.section
                 currentSectionShown = (not searching) or (sectionHasMatch[currentSection] == true)
                 if not currentSectionShown then
-                    it.widget:Hide()
+                    item.widget:Hide()
                 else
                     currentSectionCollapsed = (not searching) and (collapsed[currentSection] == true)
-                    local glyph = currentSectionCollapsed and "[+]" or "[-]"
-                    it.widget:SetText(string.format("|cffffff00%s %s|r", glyph, it.title))
-                    it.widget:ClearAllPoints()
-                    if prevFull then
-                        it.widget:SetPoint("TOPLEFT", prevFull, "BOTTOMLEFT", 0, -(SECTION_GAP + yCursor))
-                        it.widget:SetPoint("TOPRIGHT", prevFull, "BOTTOMRIGHT", 0, -(SECTION_GAP + yCursor))
-                    else
-                        it.widget:SetPoint("TOPLEFT", chrome, "TOPLEFT", 0, -4)
-                        it.widget:SetPoint("TOPRIGHT", chrome, "TOPRIGHT", 0, -4)
-                    end
-                    it.widget:Show()
-                    prevFull = it.widget
-                    yCursor = 0
+                    -- Gold section header. |cffffd870 matches BarWarden's
+                    -- Options_Help.lua:390. Instant Show/Hide on click.
+                    item.widget:SetText(string.format(
+                        "|cffffd870%s %s|r",
+                        currentSectionCollapsed and "+" or "-",
+                        item.title
+                    ))
+                    item.widget:SetWidth(w - 8)
+                    item.widget:ClearAllPoints()
+                    item.widget:SetPoint("TOPLEFT", chrome, "TOPLEFT", 4, y)
+                    item.widget:Show()
+                    y = y - HEADER_H - HEADER_GAP
                 end
             else
-                if not currentSectionShown or currentSectionCollapsed
-                    or (searching and it.id and not matchById[it.id])
-                then
-                    it.widget:Hide()
+                local hideForSearch = searching and item.id and not matchById[item.id]
+                if not currentSectionShown or currentSectionCollapsed or hideForSearch then
+                    item.widget:Hide()
                 else
-                    it.widget:ClearAllPoints()
-                    if it.kind == "button" then
-                        it.widget:SetPoint("TOPRIGHT", prevFull, "BOTTOMRIGHT", 0, -(BUTTON_GAP + yCursor))
-                        it.widget:Show()
-                        yCursor = yCursor + BUTTON_GAP + BUTTON_HEIGHT
-                    elseif it.kind == "sep" then
-                        -- Separator Texture. Textures use anchors for
-                        -- their visible bounds (no wrap concept), so
-                        -- TOPLEFT + TOPRIGHT spans the full chrome.
-                        it.widget:SetPoint("TOPLEFT", prevFull, "BOTTOMLEFT", 0, -(SEP_GAP + yCursor))
-                        it.widget:SetPoint("TOPRIGHT", prevFull, "BOTTOMRIGHT", 0, -(SEP_GAP + yCursor))
-                        it.widget:Show()
-                        prevFull = it.widget
-                        yCursor = 0
-                    else
-                        -- FontString (q or a). TOPLEFT only - width is
-                        -- driven by SetWidth (from setPanelWidth in the
-                        -- build callback), which is what engages the
-                        -- word-wrap codepath in WoW 3.3.5a FontStrings.
-                        -- Adding TOPRIGHT here would set the visual
-                        -- frame bounds but NOT engage wrap, producing
-                        -- single-line "..." truncation.
-                        local gap = (it.kind == "q") and Q_GAP or A_GAP
-                        it.widget:SetPoint("TOPLEFT", prevFull, "BOTTOMLEFT", 0, -(gap + yCursor))
-                        it.widget:Show()
-                        prevFull = it.widget
-                        yCursor = 0
-                    end
+                    item.apply(textW)
+                    item.widget:ClearAllPoints()
+                    item.widget:SetPoint("TOPLEFT", chrome, "TOPLEFT", 16, y)
+                    item.widget:Show()
+                    y = y - item.widget:GetHeight() - ENTRY_GAP
                 end
             end
         end
-        -- No-match message: shown only while searching with zero hits, and
-        -- becomes the bottom-most widget so the scroll area sizes to it.
+
+        -- No-match state: shown only when searching with zero hits.
         local noResults = panel._helpNoResults
         if noResults then
             if searching and not next(sectionHasMatch) then
                 noResults:ClearAllPoints()
-                noResults:SetPoint("TOPLEFT", chrome, "TOPLEFT", 0, -4)
+                noResults:SetPoint("TOPLEFT", chrome, "TOPLEFT", 4, y)
                 noResults:Show()
-                prevFull = noResults
+                y = y - (noResults:GetStringHeight() or 20) - 4
             else
                 noResults:Hide()
             end
         end
-        if prevFull and NS.FitScrollContent then
-            -- Two-stage fit: (1) size chromeOuter to fit the last rendered
-            -- widget, then (2) size the OUTER scroll content (chromeOuter's
-            -- parent, returned by initPanel's wrapScroll) to fit chromeOuter.
-            -- Without step (2), the outer scroll content stays at the
-            -- SetHeight(1) it gets in EC_WrapPanelInScrollFrame, so
-            -- GetVerticalScrollRange returns 0 and SetVerticalScroll can't
-            -- actually move the scroll - which silently broke deep-link
-            -- scroll-to-entry from settings panels' [?] icons.
-            local chromeOuter = chrome:GetParent()
-            local scrollContent = chromeOuter and chromeOuter:GetParent()
-            NS.FitScrollContent(chromeOuter, prevFull)
-            if scrollContent then
+
+        -- Direct height set: y-accumulator already knows the total extent,
+        -- no FitScrollContent tick needed for chrome/chromeOuter. Outer
+        -- scrollContent still needs FitScrollContent so the panel's own
+        -- scroll frame reports the correct GetVerticalScrollRange.
+        local totalH = math.max(1, -y + 8)
+        chrome:SetHeight(totalH)
+        local chromeOuter = chrome:GetParent()
+        if chromeOuter then
+            chromeOuter:SetHeight(totalH + 12)
+            local scrollContent = chromeOuter:GetParent()
+            if scrollContent and NS.FitScrollContent then
                 NS.FitScrollContent(scrollContent, chromeOuter)
             end
         end
-        -- Deep-link scroll-to-entry + flash all live in NS.OpenHelpEntry
-        -- now, gated by a generation counter so rapid [?] clicks supersede
-        -- cleanly. refreshLayout is intentionally responsible only for
-        -- positioning + sizing, not for consuming any pending-scroll state.
     end
 
     EC_compCache.initPanel(self, function()
@@ -1322,31 +1219,37 @@ HelpPanel:SetScript("OnShow", function(self)
         noResults:Hide()
         s._helpNoResults = noResults
 
-        -- Build a prebuilt renderItems list. Every widget exists from
-        -- the start; visibility + anchors are set per-section by the
-        -- refreshLayout pass below (and on every collapse toggle).
-        local renderItems = {}
+        -- v2.48.0 BarWarden-style item build. Two item kinds:
+        --   * section: standalone Button widget with gold text +
+        --     +/- glyph, hover flips gold -> white -> gold, OnClick
+        --     toggles DB.helpSectionsCollapsed[section].
+        --   * entry:   Frame carrying q + a + optional button + a
+        --     BACKGROUND flash Texture. entry.apply(textW) reflows
+        --     the wrapped text and recomputes the frame height at
+        --     the current viewport width.
+        local items = {}
         local currentSection = nil
         for _, entry in ipairs(EC_HELP_ENTRIES) do
             if entry.section then
                 local hdr = CreateFrame("Button", nil, chrome)
                 hdr:SetHeight(22)
                 hdr:RegisterForClicks("LeftButtonUp")
-                local fs = hdr:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+                local fs = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 fs:SetPoint("LEFT", hdr, "LEFT", 0, 0)
                 fs:SetPoint("RIGHT", hdr, "RIGHT", 0, 0)
                 fs:SetJustifyH("LEFT")
                 hdr:SetFontString(fs)
                 hdr:SetText("")
-                hdr.SetTextProxy = function(self2, txt)
-                    fs:SetText(txt)
-                end
-                -- Hover highlight via vertex tint on the FontString.
+                -- Hover: gold -> white -> gold. Vertex tint on the
+                -- FontString overrides the inline |cffffd870 color
+                -- only for the duration of the hover; refreshLayout
+                -- re-sets the full inline-colored text on the next
+                -- collapse toggle. |cffffd870 = RGB (1, 0.845, 0.44).
                 hdr:SetScript("OnEnter", function()
-                    fs:SetTextColor(1, 1, 0.6)
+                    fs:SetTextColor(1, 1, 1)
                 end)
                 hdr:SetScript("OnLeave", function()
-                    fs:SetTextColor(1, 1, 1)
+                    fs:SetTextColor(1, 0.845, 0.44)
                 end)
                 local sectionKey = entry.section
                 hdr:SetScript("OnClick", function()
@@ -1360,7 +1263,7 @@ HelpPanel:SetScript("OnShow", function(self)
                     refreshLayout(s)
                     PlaySound("igMainMenuOptionCheckBoxOn")
                 end)
-                renderItems[#renderItems + 1] = {
+                items[#items + 1] = {
                     kind = "section",
                     widget = hdr,
                     section = sectionKey,
@@ -1368,85 +1271,84 @@ HelpPanel:SetScript("OnShow", function(self)
                 }
                 currentSection = sectionKey
             else
-                -- Content entry: q FontString, a FontString, optional
-                -- button, separator. WoW 3.3.5a FontStrings need an
-                -- explicit SetWidth() call to engage word-wrap mode;
-                -- anchor-derived width alone keeps the FontString in
-                -- single-line mode and produces "..." truncation when
-                -- the text overflows. setPanelWidth handles both: it
-                -- calls SetWidth (enabling wrap) AND registers the
-                -- widget for reactive resize. Value 4 matches the
-                -- chrome inner width: chromeOuter uses two anchors that
-                -- span panel - 32 (matching Keep List's listUI extent),
-                -- inner chrome is inset 6px each side so chrome.width
-                -- = panel - 44 = EC_PANEL_WIDTH - 4.
-                local qfs = chrome:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-                EC_compCache.setPanelWidth(qfs, 4)
+                -- Entry frame. Owns a BACKGROUND flash Texture (blue
+                -- 0.30/0.56/1.0 alpha 0.25, initial alpha 0) so
+                -- UIFrameFlash gives the deep-link pulse without
+                -- touching the question text (BarWarden pattern from
+                -- Options_Help.lua:410).
+                local e = CreateFrame("Frame", nil, chrome)
+                e:SetWidth(500) -- placeholder; apply() re-sets on every refreshLayout
+
+                local flash = e:CreateTexture(nil, "BACKGROUND")
+                flash:SetAllPoints()
+                flash:SetTexture(0.30, 0.56, 1.0, 0.25)
+                flash:SetAlpha(0)
+                e.flash = flash
+                e.Flash = function()
+                    if UIFrameFlash then
+                        UIFrameFlash(flash, 0.25, 0.45, 1.4, false, 0, 0.35)
+                    end
+                end
+
+                -- Question in light blue |cff4db8ff (BarWarden's
+                -- Options_Help.lua:420). Anchored to entry frame's
+                -- TOPLEFT; width re-applied in apply().
+                local qfs = e:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                qfs:SetPoint("TOPLEFT", e, "TOPLEFT", 0, 0)
                 qfs:SetJustifyH("LEFT")
                 if qfs.SetWordWrap then
                     qfs:SetWordWrap(true)
                 end
-                qfs:SetText(string.format("|cffffff00%s|r", entry.q))
+                qfs:SetText(string.format("|cff4db8ff%s|r", entry.q or ""))
 
-                local afs = chrome:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-                EC_compCache.setPanelWidth(afs, 4)
+                -- Answer below question. 3px gap matches BarWarden.
+                local afs = e:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                afs:SetPoint("TOPLEFT", qfs, "BOTTOMLEFT", 0, -3)
                 afs:SetJustifyH("LEFT")
                 if afs.SetWordWrap then
                     afs:SetWordWrap(true)
                 end
-                afs:SetText(entry.a)
+                afs:SetText(entry.a or "")
 
-                renderItems[#renderItems + 1] = { kind = "q", widget = qfs, section = currentSection, id = entry.id }
-                renderItems[#renderItems + 1] = { kind = "a", widget = afs, section = currentSection, id = entry.id }
-
-                -- Search index: lowercased question + answer text per entry,
-                -- plus the entry's owning section, so the search box can
-                -- match keywords and decide which section headers to show.
+                -- Search index (unchanged from v2.46.0).
                 s._helpEntrySearch = s._helpEntrySearch or {}
                 s._helpEntrySection = s._helpEntrySection or {}
                 s._helpEntrySearch[entry.id] = ((entry.q or "") .. " " .. (entry.a or "")):lower()
                 s._helpEntrySection[entry.id] = currentSection
 
+                -- Optional per-entry button: URL (copy popup) or panel
+                -- (open Interface Options sub-panel). Anchored INSIDE
+                -- the entry frame at BOTTOMRIGHT of the answer so the
+                -- entry stays atomic in the y-walk. apply() folds the
+                -- button height into the entry's total height.
+                local btn = nil
                 if entry.url then
-                    -- Copyable URL button. Clicking pops up the EC_COPY_URL
-                    -- StaticPopup pre-selected with the URL so the player
-                    -- can Ctrl+C and paste into their browser.
                     local urlValue = entry.url
-                    local btn = CreateFrame("Button", nil, chrome, "UIPanelButtonTemplate")
+                    btn = CreateFrame("Button", nil, e, "UIPanelButtonTemplate")
                     btn:SetSize(180, 22)
                     btn:SetText(entry.urlLabel or L["Copy Discord URL"])
                     btn:SetScript("OnClick", function()
                         EC_COPY_URL_DATA.url = urlValue
                         StaticPopup_Show("EC_COPY_URL")
                     end)
-                    renderItems[#renderItems + 1] = { kind = "button", widget = btn, section = currentSection, id = entry.id }
                 elseif entry.panel then
                     local panelKey = entry.panel
-                    -- Button label is resolved at OnClick time so panel
-                    -- renames don't require updating the help table.
-                    local btn = CreateFrame("Button", nil, chrome, "UIPanelButtonTemplate")
+                    btn = CreateFrame("Button", nil, e, "UIPanelButtonTemplate")
                     btn:SetSize(180, 22)
                     btn:SetText(L["Open Settings"])
-                    btn:SetScript("OnEnter", function()
-                        local target = _G[panelKey]
-                        if target and target.name then
-                            btn:SetText(L["Open "] .. target.name)
-                        end
-                    end)
-                    btn:SetScript("OnLeave", function()
-                        local target = _G[panelKey]
-                        if target and target.name then
-                            btn:SetText(L["Open "] .. target.name)
-                        end
-                    end)
-                    -- Resolve the label immediately on build so it
-                    -- isn't generic until the first hover.
-                    do
+                    -- Resolve target panel name late so renames don't
+                    -- require updating the help table. Refresh on
+                    -- hover in case the panel was created after the
+                    -- Help panel built.
+                    local function refreshLabel()
                         local target = _G[panelKey]
                         if target and target.name then
                             btn:SetText(L["Open "] .. target.name)
                         end
                     end
+                    refreshLabel()
+                    btn:SetScript("OnEnter", refreshLabel)
+                    btn:SetScript("OnLeave", refreshLabel)
                     btn:SetScript("OnClick", function()
                         local target = _G[panelKey]
                         if target and InterfaceOptionsFrame_OpenToCategory then
@@ -1454,17 +1356,47 @@ HelpPanel:SetScript("OnShow", function(self)
                             InterfaceOptionsFrame_OpenToCategory(target)
                         end
                     end)
-                    renderItems[#renderItems + 1] = { kind = "button", widget = btn, section = currentSection, id = entry.id }
+                end
+                if btn then
+                    btn:SetPoint("TOPRIGHT", afs, "BOTTOMRIGHT", 0, -6)
                 end
 
-                -- Separator texture.
-                local sep = chrome:CreateTexture(nil, "ARTWORK")
-                sep:SetTexture(0.3, 0.3, 0.3, 0.6)
-                sep:SetHeight(1)
-                renderItems[#renderItems + 1] = { kind = "sep", widget = sep, section = currentSection, id = entry.id }
+                -- apply(textW): re-set q/a widths and recompute the
+                -- entry's total height. Called by refreshLayout every
+                -- pass so the wrapped text tracks the live viewport
+                -- width. GetStringHeight fallback (or 12) mirrors
+                -- BarWarden Options_Help.lua:440.
+                e.apply = function(tw)
+                    e:SetWidth(tw)
+                    qfs:SetWidth(tw)
+                    afs:SetWidth(tw)
+                    local qh = qfs:GetStringHeight() or 12
+                    local ah = afs:GetStringHeight() or 12
+                    local bh = btn and 28 or 0 -- 22 button + 6 gap
+                    e:SetHeight(qh + 3 + ah + bh)
+                end
+
+                items[#items + 1] = {
+                    kind = "entry",
+                    widget = e,
+                    section = currentSection,
+                    id = entry.id,
+                    apply = e.apply,
+                }
             end
         end
-        s._helpRenderItems = renderItems
+        s._helpItems = items
+
+        -- Reflow on scroll-frame OnSizeChanged: wrapped answer text
+        -- retracks the live viewport width instead of clipping past
+        -- the right edge (BarWarden pattern from Options_Help.lua:492).
+        local scrollName = (s:GetName() or "EbonClearanceOptionsHelp") .. "Scroll"
+        local hostScroll = _G[scrollName]
+        if hostScroll and hostScroll.HookScript then
+            hostScroll:HookScript("OnSizeChanged", function()
+                refreshLayout(s)
+            end)
+        end
 
         refreshLayout(s)
     end, true)

@@ -5303,10 +5303,10 @@ do
         check(
             "Test 83a: OpenHelpEntry schedules SetVerticalScroll + flash with generation guard",
             src:find("SetVerticalScroll") ~= nil
-                and src:find('|cff00ffff') ~= nil
+                and src:find("widget%.Flash") ~= nil
                 and src:find("NS%.Delay") ~= nil
                 and src:find("HelpPanel%._scrollGeneration ~= gen") ~= nil,
-            "OpenHelpEntry must schedule a delayed scroll (SetVerticalScroll on the outer scroll frame) and a visible flash (swap inline |cffffff00 for |cff00ffff on the q FontString, then restore), both gated by a generation check so a superseded click's tasks no-op."
+            "OpenHelpEntry must schedule a delayed scroll (SetVerticalScroll on the outer scroll frame) and a visible flash (v2.48.0: entry-frame Flash() method that fires UIFrameFlash on the BACKGROUND flash Texture; supersedes the pre-v2.48.0 |cff00ffff text swap), both gated by a generation check so a superseded click's tasks no-op."
         )
     end
 end
@@ -6651,6 +6651,52 @@ do
             and kdp:find("affixDupeNote:SetWidth%(400%)") == nil
             and kdp:find("announceNote:SetWidth%(400%)") == nil,
         "v2.47.2 needs reactive width on wrapping notes: a bare SetWidth(<literal>) freezes the note at build-time width and clips past the panel's right edge on Interface Options resize. The reactive-panel-layout invariant (test_layout_reactivity.lua) requires wrapping widgets to go through EC_compCache.setPanelWidth so the widthRegistry updates them on every OnSizeChanged fire. Padding = 42 = 26 (indent from checkbox anchor) + 16 (right margin). If a note reverts to :SetWidth(<literal>), the reactive-layout test won't catch it (that test only flags EC_PANEL_WIDTH-derived expressions) - this test is the specific pin.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 106 (v2.48.0): BarWarden-style Help-panel visual port.
+-- ---------------------------------------------------------------------------
+-- The Help panel was rewritten to adopt BarWarden's cleaner visual patterns:
+-- gold section headers (`|cffffd870+ Section|r` / `|cffffd870- Section|r`,
+-- hover flips to white), light-blue question text (`|cff4db8ff`), per-entry
+-- BACKGROUND flash Texture (blue 0.30/0.56/1.0 alpha 0.25) used by
+-- UIFrameFlash on deep-link, and viewport-width text reflow via a
+-- y-accumulator refreshLayout that reads chrome:GetWidth() each pass.
+-- NS.OpenHelpEntry now schedules a two-pass deferred scroll (0.15s + 0.6s)
+-- gated by the existing _scrollGeneration counter.
+--
+-- Data (EC_HELP_ENTRIES) + deep-link API (NS.OpenHelpEntry) + chrome
+-- backdrop (applyChromeBackdrop) + search box + panel-jump buttons + L[]
+-- localization all preserved unchanged - only the renderer + flash change.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local hp = fileSrc("EbonClearance_HelpPanel.lua")
+    check("Test 106a: section headers use gold `|cffffd870+ / - Section` pattern",
+        hp:find('|cffffd870%%s %%s|r') ~= nil
+            and hp:find('currentSectionCollapsed and "%+" or "%-"') ~= nil,
+        "BarWarden's section-header pattern is |cffffd870+ Name|r when collapsed and |cffffd870- Name|r when expanded. The gold color code + +/- glyph MUST both be present. If a future refactor reverts to yellow |cffffff00 with [+] / [-] square-bracket glyphs, this test catches it.")
+    check("Test 106b: entry question text uses light-blue |cff4db8ff",
+        hp:find('qfs:SetText%(string%.format%("|cff4db8ff%%s|r"') ~= nil,
+        "BarWarden's question color is |cff4db8ff (light blue). Pre-v2.48.0 EC used |cffffff00 (yellow); the color change is a visible style port and must not silently revert. Answer text stays at the default GameFontHighlightSmall color (no inline code).")
+    check("Test 106c: per-entry frame carries a BACKGROUND flash Texture wired to UIFrameFlash",
+        hp:find('flash = e:CreateTexture%(nil, "BACKGROUND"%)') ~= nil
+            and hp:find('flash:SetTexture%(0%.30, 0%.56, 1%.0, 0%.25%)') ~= nil
+            and hp:find("UIFrameFlash%(flash, 0%.25, 0%.45, 1%.4") ~= nil,
+        "each entry frame MUST create a BACKGROUND-layer Texture with the specific BarWarden RGBA (0.30/0.56/1.0 alpha 0.25) and expose a Flash() method that fires UIFrameFlash with the BarWarden timing tuple (0.25 fade-in, 0.45 fade-out, 1.4 duration). This is the deep-link visual highlight; supersedes the pre-v2.48.0 inline-color text swap.")
+    check("Test 106d: NS.OpenHelpEntry schedules two NS.Delay passes at 0.15s + 0.6s",
+        hp:find("NS%.Delay%(0%.15, doScroll%)") ~= nil
+            and hp:find("NS%.Delay%(0%.6, doScroll%)") ~= nil,
+        "the two-pass deferred scroll (BarWarden Options_Help.lua:559-564) MUST use both passes so multi-section deep-links land correctly after the outer FitScrollContent tick chain (0.1s + 0.5s) has settled the scroll range. Single-pass would land short on second and later deep-links; both gated by _scrollGeneration so a superseding click cancels stale passes.")
+    check("Test 106e: refreshLayout reads chrome:GetWidth() each pass for viewport reflow",
+        hp:find("local w = chrome:GetWidth%(%)") ~= nil
+            and hp:find("item%.apply%(textW%)") ~= nil,
+        "the y-accumulator layout must reflow wrapped text to the LIVE viewport width each pass (BarWarden Options_Help.lua:459) - freezing the width at build time (e.g. bare SetWidth(400)) would clip past the chrome's right edge when Interface Options is resized. Each entry frame's apply(textW) is the reflow hook.")
 end
 
 -- ---------------------------------------------------------------------------

@@ -830,6 +830,15 @@ local function BuildMainPanel(panel, content)
                 .. L["Diagnostic: dump chance-on-hit items + engrave-affix spells + PE catalog (for future auto-sell)"],
         },
         {
+            label = "|cffffff00/ec autolearnsim <itemID> <spellID>|r  "
+                .. L["Simulate an autolearn event for a bag item + PE spell (diagnostic)"],
+        },
+        {
+            run = "autolearnpeek",
+            label = "|cffffff00/ec autolearnpeek|r  "
+                .. L["Dump the chance-on-hit autolearn state (author + autolearn + ambiguous)"],
+        },
+        {
             run = "affixdebug status",
             label = "|cffffff00/ec affixdebug status|r  " .. L["Show recording state + row count"],
         },

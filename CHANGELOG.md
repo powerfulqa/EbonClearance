@@ -5,6 +5,31 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.49.1
+
+**Autolearn: chance-on-hit proc pairings from your extractions.**
+
+The v2.49.0 experimental toggle `Sell known chance-on-hit procs` ships with an in-code map of 8 confirmed weapon-to-spell pairings. v2.49.1 grows that map automatically: whenever you extract a chance-on-hit proc at the PE Anvil, the addon spots the `LEARNED_SPELL_IN_TAB` event, correlates it with the weapon that just left your bags (5-second window), and writes the itemID -> spellID pairing into your account's `ADB.chanceProcConfirmedItems`. Every future drop of the same weapon then auto-sells when the toggle is on (subject to the usual sell rules).
+
+- **Correlation window: 5 seconds.** `LEARNED_SPELL_IN_TAB` fires within 1-2 seconds of an Anvil click; the buffer holds chance-on-hit bag removals for 5 seconds so the correlation succeeds even under moderate lag.
+- **Sanity gates.** SpellIDs outside the PE weapon-proc range `[700000, 800000)` are ignored; catalog records without `weaponOnly = true` are ignored; itemIDs in `EC_CHANCE_PROC_NEVER_EXTRACTABLE` are never autolearned even if a bag removal happens to overlap.
+- **Ambiguous events.** If zero OR two+ chance-on-hit items disappeared in the window, the addon writes the event details to `ADB.chanceProcAmbiguous` silently. Review with `/ec autolearnpeek`. No auto-promotion.
+- **Chat toast per autolearn.** `|cff66ccff[EbonClearance]|r Learned proc pairing: <ItemName> extracts to <SpellName>. Sell known chance-on-hit procs now covers this item.` Localised.
+- **New slash command: `/ec autolearnsim <itemID> <spellID>`.** Diagnostic harness. Pre-populates the ring buffer with a synthetic entry (item must be in bags for the proc-line read) and fires the correlation code as if `LEARNED_SPELL_IN_TAB` had just delivered the given spellID. Lets contributors walk the correlation without needing an unlearned proc to test with.
+- **New slash command: `/ec autolearnpeek`.** Read-only copyable dump of author-vetted + autolearned + ambiguous state. Uses the same copy-frame helper as `/ec captureproc` (v2.49.1 exposed `NS.ShowCopyFrame` so out-of-file callers can render dumps).
+- **playerHasExtractedProc priority order** now: `NEVER_EXTRACTABLE` (hard set) -> `EC_CHANCE_PROC_CONFIRMED_ITEMS` (in-code, author-vetted) -> `ADB.chanceProcConfirmedItems` (autolearn) -> keyword-map inference -> catalog check on the resolved spellID.
+- **Additive schema.** `ADB.chanceProcConfirmedItems` and `ADB.chanceProcAmbiguous` initialised as empty tables by `EnsureAccountDB` with nil-defaults. Downgrade-safe.
+
+**Bug fixes bundled:**
+
+- **Recipes with a crafted-item chance-on-hit proc silently refused to sell** despite `Sell Known Recipes` being on. Reported against `Plans: Frost Tiger Blade` (id=3868) and similar. The recipe's tooltip embeds the crafted item's stats, including any `Chance on hit:` line, and `itemHasChanceOnHit`'s tooltip scan classified the recipe as a chance-on-hit weapon - the veto in `EC_IsSellable` then cleared `recipePass`. Fix: both `itemHasChanceOnHit` (bag-slot variant) and `liveTooltipHasChanceOnHit` (live-tooltip variant) now short-circuit `false` when the item is a tome/recipe, since recipes aren't equippable and can't themselves BE chance-on-hit weapons. Test 112a pins both gates.
+- **`itemIsTome` cache-poisoning on early item lookup.** Reported against `Pattern: Big Voodoo Robe` (id=8386) and `Schematic: Large Seaforium Charge` (id=4417) - both known-and-in-bags but neither selling via `Sell Known Recipes`. Root cause: `itemIsTome`'s fast path called `GetItemInfo`, and if the item metadata hadn't arrived from the server yet, `itype` was nil, the slow tooltip scan came up empty (tooltip also unpopulated), and `result=false` got cached into `EC_compCache.tomeCache`. Once cached, no subsequent call retried. Fix: refuse to cache the result when `GetItemInfo` returns a nil name; retry on the next call once metadata arrives. Trace mirror in `describeSellability` also now emits a `Known recipe` step for every gate outcome (instead of only when both `itemIsTome` and `tomeKind` passed), so the failing check is always visible in `/ec sellinfo`.
+
+Tests 111a-h + 112a pin the new invariants.
+
+---
+
+
 ### v2.49.0
 
 **Auto-release chance-on-hit weapons whose proc you've extracted at the Anvil (experimental).**

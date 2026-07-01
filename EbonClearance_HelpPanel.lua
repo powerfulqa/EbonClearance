@@ -374,6 +374,18 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
+        id = "autolearn-what-is-it",
+        section = "Chance-on-hit procs",
+        q = L["How does the addon learn which weapon procs I've extracted?"],
+        a = L["When you extract a chance-on-hit weapon proc at the Anvil, the addon spots the extraction (the spell arrives in your spellbook, the weapon leaves your bags) and pairs the itemID with the PE spellID. That pairing is saved to your account. Any future drop of the same weapon then auto-sells if you have the |cffb6ffb6Sell known chance-on-hit procs (experimental)|r toggle on (subject to the usual sell rules). The pairing grows the addon's coverage automatically without you having to file a request."],
+    },
+    {
+        id = "autolearn-command-help",
+        section = "Chance-on-hit procs",
+        q = L["What do /ec autolearnsim and /ec autolearnpeek do?"],
+        a = L["|cffffff00/ec autolearnsim <itemID> <spellID>|r simulates an autolearn event for testing - useful when you want to verify the feature works but don't have any un-extracted procs left. The item must be in your bags. |cffffff00/ec autolearnpeek|r opens a copyable window with the current state: author-vetted pairings (ship-with-the-addon), autolearned pairings (from your own extractions), and any ambiguous events where the addon couldn't be sure which item was extracted."],
+    },
+    {
         id = "gate-tome-recipe",
         q = L["Tome / recipe protection"],
         a = L["Plans, Schematics, Patterns, Recipes, class tomes, and mount scrolls are protected from auto-sell so you don't accidentally vendor a learnable spell. Alt+Right-Click 'Allow Sell' to override. 'Protect all tomes / recipes' decides whether already-learned items are also protected (useful for saving spares for the auction house or alts)."],

@@ -83,6 +83,8 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec processdebug` | Diagnostic: open a copyable window listing every Process Bags gate (recognised profession spells, per-slot scan results) for bug reports |
 | `/ec scandebug <bag> <slot>` | Diagnostic: dump the hidden scan-tooltip lines for a bag slot (for "this item silently sells despite having an affix or proc" reports) |
 | `/ec captureproc` | Diagnostic: dump every bag item's chance-on-hit line + every extracted-affix spell tooltip + the full PE learnedAffixes catalog, for building the runtime chance-on-hit-proc translation table |
+| `/ec autolearnsim <itemID> <spellID>` | Diagnostic: simulate an autolearn event (needs item in bags). |
+| `/ec autolearnpeek` | Dump the chance-on-hit autolearn state (author + autolearn + ambiguous). |
 | `/ec perf` | Show EbonClearance's memory, CPU, cache and list sizes |
 | `/ec commtest` | Diagnostic: check that addon messages are delivered on this server and preview the update nudge (works solo) |
 | `/ec guildtest` | Diagnostic: preview the Stats - Guild panel with simulated members (works solo) |

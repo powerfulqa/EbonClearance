@@ -1616,6 +1616,39 @@ item, prints the `HasRandomProperty(link)` gate result and the
 result of `findLearnedAffixForItem(link)` (a port of PE's own
 algorithm from `extraction.lua`).
 
+### Chance-on-hit lookup priority (v2.49.0 / v2.49.1)
+
+`EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)` in
+`EbonClearance_Protection.lua` bridges "item on the ground" to
+"player has extracted this proc." The lookup walks a fixed priority
+so that a hard "cannot extract" verdict from the PE Anvil always
+wins, and unambiguous ground-truth pairings always beat guesses:
+
+1. **`EC_CHANCE_PROC_NEVER_EXTRACTABLE`** (in-code hard set). Anvil
+   UI truth: PE refuses these itemIDs, so the function short-circuits
+   `false` before any other layer runs. Currently 7 itemIDs
+   (Frostguard, Dwarven Hand Cannon, Felstriker, etc.).
+2. **`EC_CHANCE_PROC_CONFIRMED_ITEMS`** (in-code, author-vetted).
+   `itemID -> {spellID, family}` overrides from direct
+   `/ec captureproc` observation. Wins over the keyword map.
+   Currently 8 pairings (Bow of Searing Arrows, Nightfall, etc.).
+3. **`ADB.chanceProcConfirmedItems`** (autolearn tier, v2.49.1).
+4. **`chanceProcSpellID`** (keyword-map inference, best-effort).
+
+As of v2.49.1, `playerHasExtractedProc` consults `ADB.chanceProcConfirmedItems`
+between the in-code `EC_CHANCE_PROC_CONFIRMED_ITEMS` map and the keyword-map
+fallback. This is the autolearn tier - itemID -> spellID pairings written
+by `EC_TryAutolearnFromLearnedSpell` when a `LEARNED_SPELL_IN_TAB` event
+correlates cleanly to a single chance-on-hit bag removal within a
+5-second window. The two-tier confirmed map (author + autolearn) keeps
+author-vetted pairings intact if a player's ADB is wiped or corrupted.
+
+**EC-TRAP:** The `NEVER_EXTRACTABLE` hard set gates ahead of everything,
+including autolearn writes. Never trust a correlation on an itemID in
+that set - the Anvil UI's "cannot extract" verdict is ground truth, and
+a coincidental bag-removal + spell-learn overlap must not promote a
+NEVER_EXTRACTABLE item.
+
 ### Index of magic numbers
 
 | Value | Location | Meaning |

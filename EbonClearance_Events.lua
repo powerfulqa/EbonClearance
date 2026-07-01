@@ -6625,12 +6625,15 @@ function NS.ShowAutolearnPeek()
             end
         end
     end
-    -- Reuse the existing copy-window infrastructure. NS.ShowCopyDialog is
-    -- the shared entry point used by ShowCaptureProcDump / ShowAffixDebugDump.
-    -- If not exposed as a shared helper, fall back to printing to chat.
+    -- Reuse EC_ShowCopyFrame from EbonClearance_BugReport.lua, exposed as
+    -- NS.ShowCopyFrame in v2.49.1 so out-of-file callers can render a
+    -- copyable state dump instead of flooding chat. Same helper backs
+    -- /ec captureproc, /ec affixdebug dump, /ec processdebug, etc.
+    -- Signature: (titleText, bodyText, chatHint). Fall back to a chat
+    -- dump only if BugReport.lua didn't load (defensive).
     local body = table.concat(lines, "\n")
-    if NS.ShowCopyDialog then
-        NS.ShowCopyDialog("EbonClearance /ec autolearnpeek", body)
+    if NS.ShowCopyFrame then
+        NS.ShowCopyFrame("EbonClearance /ec autolearnpeek", body)
     else
         PrintNice(body)
     end

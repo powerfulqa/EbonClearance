@@ -1396,3 +1396,8 @@ NS.ShowProcessDebugDump = EC_ShowProcessDebugDump
 NS.ShowScanDebugDump = EC_ShowScanDebugDump
 NS.ShowCaptureProcDump = EC_ShowCaptureProcDump
 NS.ShowRuleSummary = EC_ShowRuleSummary
+-- v2.49.1: expose the generic copy-window helper so callers outside
+-- EbonClearance_BugReport.lua (e.g. NS.ShowAutolearnPeek in Events.lua)
+-- can render their own state dumps into a copyable frame instead of
+-- flooding the chat window. Signature: (titleText, bodyText, chatHint).
+NS.ShowCopyFrame = EC_ShowCopyFrame

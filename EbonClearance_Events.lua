@@ -1833,6 +1833,77 @@ local function EC_FindNewlyLearnedSpell()
 end
 NS.FindNewlyLearnedSpell = EC_FindNewlyLearnedSpell
 
+-- v2.49.1: chance-on-hit proc autolearn core.
+-- Called from the LEARNED_SPELL_IN_TAB dispatch after the catalog diff
+-- has isolated a single newly-learned spellID. Also called by /ec
+-- autolearnsim which pre-populates the ring buffer manually. The
+-- `source` argument is "event" for the production path or "sim" for
+-- the diagnostic path; only "event" refreshes the catalog snapshot.
+--
+-- Sanity gates (any fail -> silent skip):
+--   1. spellID outside [700000, 800000) (not a PE weapon proc).
+--   2. Family name required (comes from catalog record.name).
+--   3. Candidate list empty after filtering NEVER_EXTRACTABLE items.
+--
+-- Correlation outcomes:
+--   * Exactly 1 candidate -> write ADB.chanceProcConfirmedItems[itemID],
+--     emit chat toast.
+--   * Zero OR two-plus candidates -> write ADB.chanceProcAmbiguous
+--     entry, no chat output.
+local function EC_TryAutolearnFromLearnedSpell(spellID, family, source)
+    if not spellID or type(spellID) ~= "number" then
+        return
+    end
+    -- Sanity gate #1: PE weapon-proc range only. Non-weapon affixes
+    -- (Iron Will 900xxx, rank-V stats 102xxx) come through the same
+    -- LEARNED_SPELL_IN_TAB event but aren't chance-on-hit correlations.
+    if spellID < 700000 or spellID >= 800000 then
+        return
+    end
+    if not family or family == "" then
+        family = "Unknown"
+    end
+    EnsureAccountDB()
+    EC_PruneChanceProcRemovals()
+    -- Filter NEVER_EXTRACTABLE candidates out defensively. If the hard
+    -- set says PE can't extract this weapon's proc, the correlation
+    -- MUST NOT trust an accidental bag-removal + spell-learn overlap.
+    local candidates = {}
+    for _, entry in ipairs(EC_recentChanceProcRemovals) do
+        local neverSet = NS.chanceProcNeverExtractable
+        if not (neverSet and neverSet[entry.itemID]) then
+            candidates[#candidates + 1] = entry
+        end
+    end
+    if #candidates == 1 then
+        local candidate = candidates[1]
+        ADB.chanceProcConfirmedItems[candidate.itemID] = {
+            spellID = spellID,
+            family = family,
+            item = candidate.itemName,
+            learnedAt = GetTime(),
+        }
+        local L = NS.L or setmetatable({}, { __index = function(_, k) return k end })
+        PrintNicef(
+            L["|cff66ccff[EbonClearance]|r Learned proc pairing: |cffb6ffb6%s|r extracts to |cffb6ffb6%s|r. Sell known chance-on-hit procs now covers this item."],
+            candidate.itemName,
+            family
+        )
+    else
+        ADB.chanceProcAmbiguous[#ADB.chanceProcAmbiguous + 1] = {
+            spellID = spellID,
+            family = family,
+            timestamp = GetTime(),
+            source = source or "event",
+            candidates = candidates,
+        }
+    end
+    if source == "event" then
+        EC_RefreshExtractionCatalogSnapshot()
+    end
+end
+NS.TryAutolearnFromLearnedSpell = EC_TryAutolearnFromLearnedSpell
+
 -- Diff current bags against the last snapshot and record positive deltas as
 -- looted. Called from the BAG_UPDATE debounce flush. The first call after
 -- login / reload only baselines (existing bag contents are not "loot").

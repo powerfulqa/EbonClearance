@@ -183,6 +183,8 @@ NS.RegisterLocale("deDE", {
     ["Windows & reports"] = "",
     ["Diagnostics"] = "",
     ["Language"] = "",
+    -- v2.49.1: chance-on-hit proc autolearn toast.
+    ["|cff66ccff[EbonClearance]|r Learned proc pairing: |cffb6ffb6%s|r extracts to |cffb6ffb6%s|r. Sell known chance-on-hit procs now covers this item."] = "",
     ["Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots."] = "",
     ["|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Account Sell List|r|cffaaaaaa (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"] = "",
     ["Profile name:"] = "",

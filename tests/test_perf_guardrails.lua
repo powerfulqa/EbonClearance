@@ -6927,6 +6927,14 @@ do
             and ev:find("_G%.ExtractionService and _G%.ExtractionService%.learnedAffixes") ~= nil
             and ev:find("if rec%.learned and not EC_extractionCatalogSnapshot%[rec%.id%] then") ~= nil,
         "v2.49.1: EC_extractionCatalogSnapshot holds { [spellID] = true } for every learned record at the last event boundary. EC_RefreshExtractionCatalogSnapshot rebuilds from the live _G.ExtractionService.learnedAffixes catalog. EC_FindNewlyLearnedSpell walks the current catalog, returns the single spellID that flipped false->true since the snapshot (or nil if zero-or-multiple). Snapshot MUST refresh AFTER a successful diff so the next event compares against the just-processed state.")
+    check("Test 111e: EC_TryAutolearnFromLearnedSpell writes + emits + gates correctly",
+        ev:find("local function EC_TryAutolearnFromLearnedSpell%(spellID, family, source%)") ~= nil
+            and ev:find("if spellID < 700000 or spellID >= 800000 then") ~= nil
+            and ev:find('L%["|cff66ccff%[EbonClearance%]|r Learned proc pairing:') ~= nil
+            and ev:find("ADB%.chanceProcConfirmedItems%[candidate%.itemID%] = {") ~= nil
+            and ev:find("ADB%.chanceProcAmbiguous%[#ADB%.chanceProcAmbiguous %+ 1%] = {") ~= nil
+            and ev:find("NS%.chanceProcNeverExtractable") ~= nil,
+        "v2.49.1: correlation handler MUST (1) short-circuit spellIDs outside [700000, 800000) (PE weapon-proc range), (2) filter the ring buffer to remove candidates in NEVER_EXTRACTABLE (defensive: if the hard set says PE can't extract, we don't trust a correlation), (3) write to ADB.chanceProcConfirmedItems on exactly-one-candidate + emit the chat toast, (4) write to ADB.chanceProcAmbiguous on zero-or-multiple and stay silent. Function name and signature MUST be exactly EC_TryAutolearnFromLearnedSpell(spellID, family, source) - the /ec autolearnsim command and the LEARNED_SPELL_IN_TAB dispatch both call this same entry point.")
     check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
         prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil
             and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,

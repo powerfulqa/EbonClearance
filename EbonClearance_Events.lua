@@ -4715,7 +4715,17 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- rank < floor is eligible to sell on the strength of the floor
     -- alone, no other rule required.
     local affixForRank = (quality and quality >= 3) and EC_compCache.bagSlotAffixData(bag, slot) or nil
-    local affixRankPass = DB.affixMinSellRank
+    -- v2.48.1 hasSellPrice gate: affixRankPass and autoDupePass are
+    -- SELL signals; without a sell price the vendor refuses the item
+    -- and the sell attempt no-ops. Pre-v2.48.1 both fired regardless,
+    -- so a soulbound affixed item with no vendor value (e.g. Sentinel's
+    -- Blade of Iron Will II - reported by Serv) got flagged WILL SELL
+    -- in the tooltip and trace even though the vendor refuses. When
+    -- the player wants unsellable affix dupes gone, the v2.47.0
+    -- autoMarkAffixDupes toggle routes them to the Delete List path
+    -- instead - a different flow that separately checks sellPrice = 0.
+    local affixRankPass = hasSellPrice
+        and DB.affixMinSellRank
         and DB.affixMinSellRank > 0
         and affixForRank
         and affixForRank.rank
@@ -4727,8 +4737,9 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- new semantics so the two toggles behave symmetrically: each is
     -- a positive sell signal in EC_IsSellable AND a veto release in
     -- the affix-protection block downstream.
+    -- v2.48.1 hasSellPrice gate: see the note above affixRankPass.
     local autoDupePass = false
-    if DB.affixAllowExactDupes and affixForRank then
+    if hasSellPrice and DB.affixAllowExactDupes and affixForRank then
         local descKnown = affixForRank.description
             and EC_compCache.playerHasAffixDescription
             and EC_compCache.playerHasAffixDescription(affixForRank.description)
@@ -4899,14 +4910,30 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- lists a chance-on-hit itemID on Sell List, they typically have
     -- already extracted the proc spell and want to dump the now-
     -- worthless base. Explicit user intent overrides the safety net;
-    -- only the auto-rule sweep (qualityPass) is gated.
-    if qualityPass and DB.protectChanceOnHitItems and EC_compCache.itemHasChanceOnHit(bag, slot, itemID) then
+    -- only the auto-rule sweeps are gated.
+    -- v2.48.2 widening: pre-v2.48.2 the gate only fired on qualityPass,
+    -- which pre-dated the affixRankPass / autoDupePass / recipePass
+    -- positive sell signals. An item like Neretzek (chance-on-hit +
+    -- rank-2 Iron Will II affix + affixAllowExactDupes on) would
+    -- silently sell because affixRankPass and autoDupePass carried it
+    -- past the recheck below while the tooltip still displayed "Keep
+    -- (chance-on-hit proc)". Reported by Serv. All four auto-rule
+    -- pass signals are cleared when the protection applies so the
+    -- recheck below correctly rejects the item; whitelistPass
+    -- (explicit Sell List entry) stays exempt per v2.20.1's rule.
+    if (qualityPass or affixRankPass or autoDupePass or recipePass)
+        and DB.protectChanceOnHitItems
+        and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+    then
         -- v2.26.0: chance-on-hit allow list. Items the user has
         -- marked via Alt+Right-Click -> "Allow Sell" fall through to
         -- the normal sell / DE rules. Unmarked items stay protected.
         -- Account-wide because extraction state is account-wide.
         if not (ADB.allowedItems and ADB.allowedItems[itemID]) then
             qualityPass = false
+            affixRankPass = false
+            autoDupePass = false
+            recipePass = false
         end
     end
     -- Tome protection. HARD veto regardless of list membership - mirrors
@@ -5251,6 +5278,32 @@ function EC_compCache.runAutoMarkAffixDupes()
                         -- forever because the merchant refuses them. Affixes EC
                         -- keeps (still being collected) are left alone.
                         if affix and EC_compCache.affixDisposable(affix) then
+                            -- v2.48.1 refinement: don't auto-mark items where
+                            -- the release reason is rankBelow-ONLY AND the
+                            -- player doesn't own this affix at this rank.
+                            -- The floor policy is "sell low-rank if I can";
+                            -- for unsellable items the sell path is inert,
+                            -- and keeping the item for extraction is more
+                            -- valuable than deleting it with no gold gained.
+                            -- Only fires when rank<floor is the SOLE reason
+                            -- affixDisposable returned true (manualAllow /
+                            -- owned-dupe releases still auto-mark).
+                            local affixKey = affix.description
+                                and EC_compCache.normaliseAffixDesc
+                                and EC_compCache.normaliseAffixDesc(affix.description)
+                            local ADB2 = NS.ADB
+                            local manualAllow = affixKey and ADB2 and ADB2.allowedAffixes and ADB2.allowedAffixes[affixKey]
+                            local playerOwns = EC_compCache.playerOwnsAffix
+                                and EC_compCache.playerOwnsAffix(affix)
+                            local rankBelowOnly = (not manualAllow)
+                                and (not playerOwns)
+                                and DB.affixMinSellRank
+                                and DB.affixMinSellRank > 0
+                                and affix.rank
+                                and affix.rank < DB.affixMinSellRank
+                            if rankBelowOnly then
+                                -- Skip; item stays for extraction.
+                            else
                             local soulbound = EC_compCache.getBindType(bag, slot) == "bop"
                             local noValue = not (sellPrice and sellPrice > 0)
                             if soulbound and noValue then
@@ -5267,6 +5320,7 @@ function EC_compCache.runAutoMarkAffixDupes()
                                 -- re-fires the debounce for the next item.
                                 return
                             end
+                            end -- else (rankBelowOnly branch)
                         end
                     end
                 end
@@ -6605,6 +6659,21 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             NS.ShowScanDebugDump(bag, slot)
         else
             PrintNice("|cffff4444Scan debug helper unavailable.|r")
+        end
+        return
+    end
+
+    if cmd == "captureproc" then
+        -- v2.48.1: chance-on-hit proc capture diagnostic. Opens a
+        -- copyable window with every bag item's chance-on-hit line,
+        -- every spellbook 'engrave this affix' spell tooltip, and the
+        -- full _G.ExtractionService.learnedAffixes catalog schema.
+        -- Data-gathering for the future runtime translation table that
+        -- pairs item-side proc lines with extracted-affix spell names.
+        if NS.ShowCaptureProcDump then
+            NS.ShowCaptureProcDump()
+        else
+            PrintNice("|cffff4444Capture-proc helper unavailable.|r")
         end
         return
     end

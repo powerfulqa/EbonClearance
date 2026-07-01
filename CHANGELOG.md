@@ -5,6 +5,67 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.48.1
+
+**Chance-on-hit proc groundwork: `/ec captureproc` diagnostic, a protection-gate bug fix reported by Serv, and a `/ec sellinfo` readability pass.**
+
+Three related changes bundled here.
+
+**1. `/ec captureproc` diagnostic for building the future auto-sell translation table.**
+
+Sets up data-gathering for a future feature: automatic release of chance-on-hit weapon procs (Frailty from Stalvan's Reaper, Vampirism from Neretzek, etc.) once you've extracted the proc at the Anvil - the ranked-affix equivalent of v2.45.0's affix auto-sell, but for weapon procs. PE's item-side tooltip text and spell-side text don't share phrasing, so v2.45.0's `normaliseAffixDesc` bridge can't match them. A hand-curated translation table is needed, and this diagnostic collects the raw data.
+
+- **`/ec captureproc`** opens a copyable window with three data sections: every bag item with a chance-on-hit line (item ID + name + verbatim proc text), every 'Allows you to engrave this affix' spell in your spellbook (spell ID + tooltip), and the full `_G.ExtractionService.learnedAffixes` catalog with all fields on all records.
+- **Help / FAQ** gains a "Help build the chance-on-hit auto-sell table" entry.
+- **README** slash-command table adds the new command row.
+- No player-facing behaviour change. Pure data-gathering diagnostic. Test 107a-c pins the surface.
+
+Once enough proc-to-spell pairings are collected, the runtime auto-sell gate ships in v2.49.0.
+
+**2. Bug fix: two related "positive sell signal fires when it shouldn't" bugs.**
+
+Both reported by Serv, both affecting weapon items with affixes.
+
+**(2a) Chance-on-hit protection was bypassed when the sell decision came from an affix or recipe rule instead of the per-quality rule.**
+
+Reported by Serv against Neretzek, The Blood Drinker of Iron Will II - a 2H axe with both an Iron Will II affix (rank 2) AND a Vampirism-family chance-on-hit proc. With `affixMinSellRank = 4` (the user's rank floor) and `affixAllowExactDupes = ON`, the sell decision came from `affixRankPass` (rank 2 below floor) and `autoDupePass` (player already has Iron Will II). The chance-on-hit protection gate only checked `qualityPass`, so it was skipped entirely - the item flagged WILL SELL even though the bag tooltip correctly displayed "Keep (chance-on-hit proc)". `/ec sellinfo` reported `chanceOnHitProtection - n/a` instead of the actual protection.
+
+Root cause: the gate condition was written in v2.20.1 (before `affixRankPass` / `autoDupePass` / `recipePass` existed as positive sell signals). It only narrowed `qualityPass` when the protection fired.
+
+- **Gate condition widened.** Now fires on any of `qualityPass`, `affixRankPass`, `autoDupePass`, `recipePass`. Explicit-intent paths (`whitelistPass` = item on Sell List, `isJunk` = grey trash) stay exempt per v2.20.1's original rule.
+- **Clears all four auto-rule pass signals** when protection applies, so the recheck at the end of `EC_IsSellable` correctly rejects the item.
+- **`/ec sellinfo` trace mirror** in `EbonClearance_BagDisplay.lua` gets the same widening; the trace now agrees with the merchant cycle.
+- Test 109a-c pins the three contracts.
+
+The bug only manifested on items with BOTH a chance-on-hit proc AND some other affix-driven sell signal. Items with only a chance-on-hit proc (no affix) were unaffected. Subtle case; if you noticed anything selling that shouldn't have on affixed weapons, this was probably why.
+
+**(2b) `affixRankPass` and `autoDupePass` fired for items with no vendor value.**
+
+Reported by Serv against Sentinel's Blade of Iron Will II - a soulbound Rare dagger with Iron Will II (rank 2). With `affixMinSellRank = 4` and `affixAllowExactDupes = ON`, both `affixRankPass` and `autoDupePass` fired positive. But the item has `sellPrice = 0` (BoP with no vendor value) - the vendor won't accept it. Tooltip showed "Will Sell (you have this affix)" and `/ec sellinfo` said WILL SELL, but the merchant refused, and the item just sat.
+
+Root cause: both pass signals were computed from affix data alone, without checking `hasSellPrice`. The v2.20.1-era gates never picked up the hasSellPrice check that the v2.5.0-era `qualityPass` has.
+
+- **Both pass signals now gate on `hasSellPrice`** at the top of `EC_IsSellable`. An item with no vendor value can't fire either signal.
+- **Trace mirror.** The trace still surfaces "you own this affix" as a NEGATIVE step when the affix is owned but `hasSellPrice` is false, with a helpful pointer to the `autoMarkAffixDupes` toggle: `"you own this affix, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"`.
+- **Tooltip mirror.** `EC_AnnotateTooltip`'s affix-release block gates the "Will Sell (you have this affix)" / "Will Sell (low-rank affix)" relabels on a `canSell` (positive sellPrice) check. Unsellable items keep their earlier "Keep" label instead of the misleading Will Sell.
+- Test 109d-g pins all four gates + the tooltip guard. Test 92e updated to match the new tooltip gate shape.
+
+For dispose-of-unsellable-affix-dupes use cases, the intended flow is the v2.47.0 `Auto-mark unsellable affixes for deletion` toggle - a separate BAG_UPDATE-driven scan that routes soulbound, no-vendor-value affix dupes to the Delete List. Off by default; turn it on if you want Sentinel's-Blade-like items auto-trashed.
+
+**3. `/ec sellinfo` readability pass.**
+
+The trace had accumulated technical jargon in step names (`chanceOnHitProtection`, `alreadyHaveAffixRule`) and messages (`VETO - chance-on-hit proc detected (downgrades qualityRule veto)`, `n/a (no positive sell signal - affix gate only fires for items the sell rules would otherwise touch; delete-list path is checked separately)`). Rewrites throughout:
+
+- **Step labels** now display as plain English: `Item`, `Vendor accepts it`, `Delete List`, `Grey junk`, `Sell List`, `Quality rule`, `Affix rank floor`, `Affix you already own`, `Known recipe`, `Quest item safety`, `Profession tool safety`, `Currently worn`, `Keep List`, `Affix protection`, `Chance-on-hit protection`, `Tome / recipe protection`. Internal identifiers unchanged; only rendered output changes via a `STEP_LABELS` lookup in `printSellabilityTrace`.
+- **Message rewrites**: `VETO -` prefix consistently becomes `Kept -`. `you have this exact affix (description match)` -> `you already have this exact affix`. Multi-clause `n/a` explanations trimmed to a single line. Allow-Sell references say `"you Allow-Sold this one"` instead of `"manually allow-listed via Alt+Right-Click"`.
+- Presentation-only. No decision-logic change; the trace output for the same item shows the same verdict, just in language a new player can parse.
+- New English keys get empty templates in `_frFR.lua` / `_deDE.lua`.
+
+No schema change. Existing toggles drive the gates as before.
+
+---
+
+
 ### v2.48.0
 
 **Help panel style refresh, inspired by BarWarden's cleaner section-header collapse, blue question text, and blue flash-pulse deep-link.**

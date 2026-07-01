@@ -556,8 +556,14 @@ local EC_HELP_ENTRIES = {
     {
         id = "label-wont-sell-no-value",
         q = L["Won't Sell (no value)"],
-        a = L["Item is on the Sell List but it has no vendor price. EbonClearance can't sell items vendors won't buy. Try the Delete List if you want it gone."],
+        a = L["Item is on the Sell List but it has no vendor price. EbonClearance can't sell items vendors won't buy. Try the Delete List if you want it gone. Also appears on soulbound affixed items where the affix rules would normally release the item (a dupe you own, or below your rank floor) but the vendor won't buy the base item - to auto-clean these, turn on 'Auto-mark unsellable affixes for deletion' in Delete Settings."],
         panel = "EbonClearanceOptionsDeletion",
+    },
+    {
+        id = "label-will-delete-unsellable-affix",
+        q = L["Will Delete (unsellable affix)"],
+        a = L["Soulbound affixed Rare/Epic item where EC would normally sell the affix (a dupe you own, or a rank below your 'Sell affixes below rank' setting) but the item has no vendor value. Because 'Auto-mark unsellable affixes for deletion' is on, this item will be added to your Delete List on the next bag scan and destroyed at a vendor (or instantly with auto-delete-on-pickup on)."],
+        panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
         id = "label-override-no-rule",
@@ -725,6 +731,12 @@ local EC_HELP_ENTRIES = {
         id = "bug-scan-debug",
         q = L["Affix item silently sold? Dump the raw tooltip scan"],
         a = L["If an affixed item sold despite protection being on (especially Project Ebonhold transferred procs like Vampirism / Resurgence), hover the item in your bag then run |cffffff00/ec scandebug|r. A copyable window opens with the raw tooltip text, parsed affix data, catalog-lookup results (was the affix recognised, was it matched to a known family), and the byte-level dump of the affix line. Paste that into the bug report so the detection layer that misfired can be identified."],
+        panel = nil,
+    },
+    {
+        id = "bug-capture-proc",
+        q = L["Help build the chance-on-hit auto-sell table"],
+        a = L["EbonClearance auto-releases affixed items you've already extracted at the Anvil (v2.45.0). Chance-on-hit weapon procs (Frailty from Stalvan's Reaper, etc.) don't have that auto-release yet because the item-side tooltip text and the extracted spell's tooltip text don't share phrasing, so the affix bridge doesn't work. Run |cffffff00/ec captureproc|r to dump: every bag item with a chance-on-hit line (item ID + exact proc text), every 'Allows you to engrave this affix' spell in your spellbook (spell ID + tooltip), and the full _G.ExtractionService.learnedAffixes catalog. Send the output back if you've extracted any weapon procs - each pairing you provide grows the runtime translation table."],
         panel = nil,
     },
     {

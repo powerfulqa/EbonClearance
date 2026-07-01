@@ -548,7 +548,17 @@ local function EC_AnnotateTooltip(tooltip)
                 -- means rankBelow released the protection AND neither
                 -- manualAllow nor autoDupe did.
                 local rankBelowOnly = rankBelow and not manualAllow and not autoDupe
-                if manualAllow or autoDupe or rankBelow then
+                -- v2.48.1 hasSellPrice gate mirror: if the item has no
+                -- vendor value, the sell path can't actually fire (see
+                -- EC_IsSellable's affixRankPass / autoDupePass gates).
+                -- Don't relabel to "Will Sell" for unsellable items -
+                -- the vendor would refuse and the label would lie.
+                -- The v2.47.0 autoMarkAffixDupes toggle covers the
+                -- deletion flow for owned unsellable-affix dupes as a
+                -- separate code path. Reported by Serv against
+                -- Sentinel's Blade of Iron Will II.
+                local canSell = itemSellPrice and itemSellPrice > 0
+                if canSell and (manualAllow or autoDupe or rankBelow) then
                     -- Destination-list label wins. destinationLabel walks
                     -- the explicit-list precedence chain (Keep / Delete /
                     -- Account Sell / Character Sell) and returns the
@@ -626,6 +636,41 @@ local function EC_AnnotateTooltip(tooltip)
                             .. L["Will Sell (you have this affix)"]
                             .. "|r"
                         statusTag = "willsell"
+                    end
+                elseif (manualAllow or autoDupe or (rankBelow and (playerKnows or playerKnowsRank or playerKnowsFamily))) and not canSell then
+                    -- v2.48.1: affix would be released (player wants it
+                    -- gone) AND item has no vendor value - the sell
+                    -- path can't fire. Two outcomes:
+                    -- (1) If Auto-mark unsellable affixes for deletion is
+                    --     ON (and deletion is enabled), runAutoMarkAffixDupes
+                    --     will add this item to the Delete List on the next
+                    --     BAG_UPDATE. Label as WILL DELETE so the tooltip
+                    --     matches the actual outcome.
+                    -- (2) Otherwise the item sits with no automatic action.
+                    --     Show WON'T SELL (no value) instead of the
+                    --     misleading Keep (affix rank known) - the player
+                    --     explicitly said "sell this affix" via rank floor
+                    --     or dupe-allow, so "keep" reads wrong.
+                    --
+                    -- v2.48.1 refinement (Serv): rankBelow release ALONE
+                    -- doesn't route to "unsellable disposal" when the
+                    -- player doesn't own the affix at this rank. The floor
+                    -- policy is "sell low-rank if I can" - for unsellable
+                    -- items the sell path is inert, and keeping the item
+                    -- for extraction is more valuable than deleting it
+                    -- with no gold gained. Ownership is required for the
+                    -- rankBelow branch (autoDupe already requires it;
+                    -- manualAllow is explicit user intent, stays exempt).
+                    if DB.autoMarkAffixDupes and DB.enableDeletion and DB.protectAffixedRareItems then
+                        statusLine = "|cff66ccff[EC]|r |cffff8040"
+                            .. L["Will Delete (unsellable affix)"]
+                            .. "|r"
+                        statusTag = "willdelete"
+                    else
+                        statusLine = "|cff66ccff[EC]|r |cffffb84d"
+                            .. L["Won't Sell (no value)"]
+                            .. "|r"
+                        statusTag = "wontsell"
                     end
                 elseif playerKnows or playerKnowsRank or playerKnowsFamily then
                     -- The player has this exact (family, rank) - either

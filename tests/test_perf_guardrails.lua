@@ -4040,9 +4040,9 @@ do
     check("Test 92d: canDisenchant adds rankBelow to the Process Bags affix-guard",
         proc:find("affixGuarded = not %(manualAllow or autoDupe or rankBelow%)") ~= nil,
         "Process Bags must also honour the rank floor so DE / Mill / Prospect see the same eligibility set the vendor cycle sees")
-    check("Test 92e: tooltip annotation accepts rankBelow",
-        tt:find("if manualAllow or autoDupe or rankBelow then") ~= nil,
-        "EC_AnnotateTooltip must reflect the same verdict the vendor produces; otherwise an item shows 'Keep (affix protected)' on the tooltip then sells at the merchant")
+    check("Test 92e: tooltip annotation accepts rankBelow (gated on hasSellPrice)",
+        tt:find("if canSell and %(manualAllow or autoDupe or rankBelow%) then") ~= nil,
+        "EC_AnnotateTooltip must reflect the same verdict the vendor produces; otherwise an item shows 'Keep (affix protected)' on the tooltip then sells at the merchant. v2.48.1 gates the relabel on canSell (positive sellPrice) so the tooltip stops lying about unsellable items - see Test 109g.")
     check("Test 92f: sellinfo trace step for rankBelow",
         bd:find("elseif rankBelow then") ~= nil
             and bd:find("rank %%s below your floor of %%d") ~= nil,
@@ -6697,6 +6697,107 @@ do
         hp:find("local w = chrome:GetWidth%(%)") ~= nil
             and hp:find("item%.apply%(textW%)") ~= nil,
         "the y-accumulator layout must reflow wrapped text to the LIVE viewport width each pass (BarWarden Options_Help.lua:459) - freezing the width at build time (e.g. bare SetWidth(400)) would clip past the chrome's right edge when Interface Options is resized. Each entry frame's apply(textW) is the reflow hook.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 107 (v2.48.1): /ec captureproc chance-on-hit capture diagnostic.
+-- ---------------------------------------------------------------------------
+-- Data-gathering command to build the item-side <-> spell-side translation
+-- table needed for future chance-on-hit proc auto-sell. Item-side text
+-- ("Chance on hit: Lowers all attributes of target by 2 for 1 min.") and
+-- spell-side text ("Your spells and abilities have a chance to reduce all
+-- attributes of the target.") don't share phrasing, so v2.45.0's affix
+-- text-match bridge doesn't work. /ec captureproc surfaces every bag
+-- item's chance-on-hit line + every 'engrave this affix' spell tooltip +
+-- the full _G.ExtractionService.learnedAffixes catalog schema so a
+-- maintainer can build the map by hand.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local br = fileSrc("EbonClearance_BugReport.lua")
+    check("Test 107a: EC_BuildCaptureProcDump + EC_ShowCaptureProcDump defined + NS.ShowCaptureProcDump exposed",
+        br:find("local function EC_BuildCaptureProcDump%(%)") ~= nil
+            and br:find("local function EC_ShowCaptureProcDump%(%)") ~= nil
+            and br:find("NS%.ShowCaptureProcDump = EC_ShowCaptureProcDump") ~= nil,
+        "the diagnostic must exist as both a Build*Dump text producer and a Show*Dump copyable-window wrapper (matching /ec scandebug / /ec processdebug shape), and MUST publish NS.ShowCaptureProcDump so the slash-command router in Events.lua can call it.")
+    check("Test 107b: /ec captureproc slash command routes to NS.ShowCaptureProcDump",
+        ev:find('if cmd == "captureproc" then') ~= nil
+            and ev:find("NS%.ShowCaptureProcDump%(%)") ~= nil,
+        "the slash router must handle 'captureproc' and dispatch to NS.ShowCaptureProcDump. Without this the /ec help entry (bug-capture-proc) points at a command that no-ops.")
+    check("Test 107c: dump surfaces the three data sources (bag items, spellbook spells, PE catalog)",
+        br:find("Bag items with chance%-on%-hit lines") ~= nil
+            and br:find("engrave this affix") ~= nil
+            and br:find("_G%.ExtractionService%.learnedAffixes") ~= nil,
+        "the dump MUST include all three data sections for a maintainer to pair proc lines with spells: (1) bag-item chance-on-hit lines, (2) spellbook 'engrave this affix' spell tooltips, (3) the full PE learnedAffixes catalog with unknown fields exposed. Missing any of the three defeats the diagnostic's purpose.")
+    local mp = fileSrc("EbonClearance_MainPanel.lua")
+    check("Test 107d: /ec captureproc appears in the Main panel SLASH_ROWS list",
+        mp:find('run = "captureproc"') ~= nil
+            and mp:find("|cffffff00/ec captureproc|r") ~= nil,
+        "every diagnostic slash command MUST have a row in the Main panel SLASH_ROWS table (that's the in-game slash-command list players see). Without this row, /ec captureproc is invisible unless the player already knows the exact command name - defeating the discoverability rationale that put every other diagnostic (/ec bugreport, /ec scandebug, /ec affixdebug, /ec processdebug) in the same list.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 109 (v2.48.2): chance-on-hit protection gate widened for all
+-- auto-rule pass signals (not just qualityPass).
+-- ---------------------------------------------------------------------------
+-- Reported by Serv against Neretzek (Iron Will II axe + Vampirism-family
+-- chance-on-hit proc). With affixMinSellRank=4 and affixAllowExactDupes on,
+-- affixRankPass and autoDupePass both fired positive, but the chance-on-hit
+-- gate only checked qualityPass - so the protection was bypassed and the
+-- item was flagged WILL SELL even though the tooltip correctly labelled it
+-- "Keep (chance-on-hit proc)".
+--
+-- Fix: chance-on-hit gate now fires on (qualityPass OR affixRankPass OR
+-- autoDupePass OR recipePass) and clears all four when protection applies.
+-- whitelistPass stays exempt per v2.20.1's rule (explicit user intent).
+-- The BagDisplay.lua trace mirror gets the same widening so /ec sellinfo
+-- agrees with the merchant cycle.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local bd = fileSrc("EbonClearance_BagDisplay.lua")
+    check("Test 109a: EC_IsSellable chance-on-hit gate fires on all four auto-rule pass signals",
+        ev:find("if %(qualityPass or affixRankPass or autoDupePass or recipePass%)%s+and DB%.protectChanceOnHitItems%s+and EC_compCache%.itemHasChanceOnHit") ~= nil,
+        "the gate MUST include affixRankPass, autoDupePass, recipePass alongside qualityPass. Without them, a rank-below-floor affix or an owned-dupe affix or a known recipe on a chance-on-hit-proc item bypasses the protection - Neretzek regression.")
+    check("Test 109b: EC_IsSellable chance-on-hit block clears all four auto-rule pass signals when firing",
+        ev:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
+        "the block MUST clear all four pass signals (not just qualityPass) so the recheck at the end of EC_IsSellable correctly rejects the item. Clearing only qualityPass leaves the other three signals set - the recheck ORs across all of them and returns true.")
+    check("Test 109c: BagDisplay trace mirror widened + clears the same four signals",
+        bd:find("%(qualityPass or affixRankPass or autoDupePass or recipePass%)%s+and DB%s+and DB%.protectChanceOnHitItems") ~= nil
+            and bd:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
+        "the /ec sellinfo trace MUST agree with EC_IsSellable's verdict. If the trace still only gates on qualityPass, the trace lies about the actual outcome (was reporting 'chanceOnHitProtection - n/a' for items that SHOULD have shown as protected).")
+    -- v2.48.1 companion bug (also reported by Serv against Sentinel's Blade
+    -- of Iron Will II): affixRankPass and autoDupePass fired for items with
+    -- sellPrice = 0. Vendor refuses, item wedges, tooltip lies. Gate both on
+    -- hasSellPrice; mirror in the trace and tooltip.
+    local tt = fileSrc("EbonClearance_Tooltip.lua")
+    check("Test 109d: EC_IsSellable affixRankPass gates on hasSellPrice",
+        ev:find("local affixRankPass = hasSellPrice\n%s+and DB%.affixMinSellRank") ~= nil,
+        "affixRankPass is a SELL signal - firing it for a sellPrice=0 item makes EC lie about the outcome (vendor will refuse). The hasSellPrice prefix ensures the sell path only fires for items the vendor will accept. The v2.47.0 autoMarkAffixDupes toggle covers the deletion flow for owned unsellable-affix dupes as a separate code path (runAutoMarkAffixDupes in BAG_UPDATE).")
+    check("Test 109e: EC_IsSellable autoDupePass gates on hasSellPrice",
+        ev:find("if hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil,
+        "same shape as affixRankPass: autoDupePass is a SELL signal so it must not fire for items the vendor won't buy. Keep in lockstep with the affixRankPass gate on the line above.")
+    check("Test 109f: BagDisplay trace mirrors both hasSellPrice gates",
+        bd:find("local affixRankPass = hasSellPrice\n%s+and DB and DB%.affixMinSellRank") ~= nil
+            and bd:find("if hasSellPrice and DB and DB%.affixAllowExactDupes and affixDataForTrace then") == nil
+            and bd:find("autoDupePass = hasSellPrice and ownsAffix") ~= nil,
+        "the trace MUST mirror EC_IsSellable's gates. autoDupePass in the trace uses a slightly different shape (compute ownsAffix regardless, then gate the pass on hasSellPrice) so the trace can still show 'you own this affix but item has no vendor value' as a NEGATIVE step - helpful diagnostic for the player.")
+    check("Test 109g: Tooltip gates the affix-release Will Sell relabel on hasSellPrice",
+        tt:find("local canSell = itemSellPrice and itemSellPrice > 0") ~= nil
+            and tt:find("if canSell and %(manualAllow or autoDupe or rankBelow%) then") ~= nil,
+        "the tooltip's affix-release block MUST gate on canSell (a positive-sellPrice check) before firing 'Will Sell (you have this affix)' or 'Will Sell (low-rank affix)' relabels. Without this, an unsellable item like Sentinel's Blade of Iron Will II shows 'Will Sell' in the tooltip but the vendor refuses - the pre-v2.48.1 bug reported by Serv.")
 end
 
 -- ---------------------------------------------------------------------------

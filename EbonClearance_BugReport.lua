@@ -1167,8 +1167,232 @@ local function EC_ShowScanDebugDump(bag, slot)
     )
 end
 
+-- v2.48.1: chance-on-hit proc capture diagnostic. Data-gathering command
+-- to build the item-side <-> spell-side translation table needed for
+-- automatic chance-on-hit proc auto-sell (the ranked-affix equivalent
+-- for weapon proc items like Stalvan's Reaper -> Frailty). The runtime
+-- gate needs a lookup table: given a chance-on-hit line on a bag item,
+-- what extracted-affix spell name should EC check for in the spellbook?
+--
+-- PE's item-side text ("Chance on hit: Lowers all attributes of target
+-- by 2 for 1 min.") and spell-side text ("Your spells and abilities
+-- have a chance to reduce all attributes of the target.") don't share
+-- phrasing, so v2.45.0's normaliseAffixDesc bridge doesn't work. Either
+-- a hand-curated map or a PE-catalog-supplied bridge is needed. This
+-- dump surfaces every field on _G.ExtractionService.learnedAffixes
+-- records so we can see what identity info PE actually exposes, plus
+-- the raw item-side proc lines and spell-side tooltip lines so a
+-- maintainer can pair them by hand.
+--
+-- Output sections:
+--   * Bag items with chance-on-hit lines (item ID + name + verbatim line)
+--   * Spellbook: every 'engrave this affix' spell (name + spellID + full tooltip)
+--   * _G.ExtractionService.learnedAffixes catalog dump (all fields on
+--     every record, so unknown fields become visible)
+--   * Pairing instructions
+local function EC_BuildCaptureProcDump()
+    local lines = {}
+    local function add(s)
+        lines[#lines + 1] = s
+    end
+    add("=== EbonClearance /ec captureproc ===")
+    add("Version: " .. (NS.GetVersion and NS.GetVersion() or "unknown"))
+    add(string.format("Date: %s", date and date("%Y-%m-%d %H:%M") or "?"))
+    local charName = UnitName and UnitName("player") or "?"
+    local realmName = GetRealmName and GetRealmName() or "?"
+    add(string.format("Character: %s - %s", charName, realmName))
+    add("Goal: pair chance-on-hit proc lines with extracted-affix spell names")
+    add("      to build the runtime translation table.")
+    add("")
+
+    -- ------------------------------------------------------------------
+    -- Section 1: bag items with chance-on-hit lines
+    -- ------------------------------------------------------------------
+    add("--- Bag items with chance-on-hit lines ---")
+    local foundBag = 0
+    if EC_compCache.scanBagItem and EC_compCache.lineLooksLikeChanceProc then
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots and GetContainerNumSlots(bag) or 0
+            for slot = 1, slots do
+                local itemID = GetContainerItemID and GetContainerItemID(bag, slot)
+                if itemID then
+                    local link = GetContainerItemLink and GetContainerItemLink(bag, slot)
+                    local baseName = GetItemInfo and GetItemInfo(itemID) or "?"
+                    EC_compCache.scanBagItem(bag, slot)
+                    local procLine = nil
+                    for i = 1, 30 do
+                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. i]
+                        if not fs then
+                            break
+                        end
+                        local txt = fs:GetText()
+                        if txt and EC_compCache.lineLooksLikeChanceProc(txt) then
+                            procLine = txt
+                            break
+                        end
+                    end
+                    if procLine then
+                        foundBag = foundBag + 1
+                        add(string.format("Bag %d Slot %d: itemID=%d, name=%q", bag, slot, itemID, baseName))
+                        add("  link: " .. tostring(link))
+                        add(string.format("  procLine: %q", procLine))
+                        add("")
+                    end
+                end
+            end
+        end
+    end
+    if foundBag == 0 then
+        add("(No chance-on-hit items in your bags right now. Loot one or drag one in first.)")
+        add("")
+    end
+
+    -- ------------------------------------------------------------------
+    -- Section 2: spellbook 'engrave this affix' spells
+    -- ------------------------------------------------------------------
+    add("--- Spellbook: 'Allows you to engrave this affix' spells ---")
+    local engraveSpells = {}
+    if GetNumSpellTabs and GetSpellTabInfo and GetSpellLink then
+        local st = _G["EbonClearanceScanTooltip"]
+        if st and st.ClearLines and st.SetHyperlink then
+            for tab = 1, GetNumSpellTabs() do
+                local _, _, offset, numSpells = GetSpellTabInfo(tab)
+                if offset and numSpells then
+                    for i = offset + 1, offset + numSpells do
+                        local link = GetSpellLink(i, BOOKTYPE_SPELL)
+                        local spellId = link and tonumber(link:match("spell:(%d+)"))
+                        if spellId then
+                            local spellName = GetSpellInfo and GetSpellInfo(spellId) or "?"
+                            st:ClearLines()
+                            st:SetHyperlink(link)
+                            -- Detect: does the tooltip contain
+                            -- "engrave this affix"? If so, capture the
+                            -- full tooltip so we can compare wording
+                            -- against the item-side proc line.
+                            local isEngrave = false
+                            local fullTooltip = {}
+                            for j = 1, 30 do
+                                local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                                if not fs then
+                                    break
+                                end
+                                local txt = fs:GetText()
+                                if txt then
+                                    fullTooltip[#fullTooltip + 1] = txt
+                                    if txt:find("engrave this affix", 1, true) then
+                                        isEngrave = true
+                                    end
+                                end
+                            end
+                            if isEngrave then
+                                engraveSpells[#engraveSpells + 1] = {
+                                    id = spellId,
+                                    name = spellName,
+                                    tooltip = table.concat(fullTooltip, " / "),
+                                }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if #engraveSpells == 0 then
+        add("(No 'engrave this affix' spells in your spellbook. Extract an affix at the Anvil first.)")
+        add("")
+    else
+        for _, s in ipairs(engraveSpells) do
+            add(string.format("Spell: %q (spellID=%d)", s.name, s.id))
+            add("  tooltip: " .. s.tooltip)
+            add("")
+        end
+    end
+
+    -- ------------------------------------------------------------------
+    -- Section 3: PE's _G.ExtractionService.learnedAffixes catalog dump
+    -- ------------------------------------------------------------------
+    add("--- _G.ExtractionService.learnedAffixes catalog ---")
+    local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+    if type(catalog) ~= "table" then
+        add("(No _G.ExtractionService.learnedAffixes catalog exposed. Is PE loaded?)")
+        add("")
+    else
+        local total, learned = 0, 0
+        for _, rec in pairs(catalog) do
+            total = total + 1
+            if type(rec) == "table" and rec.learned then
+                learned = learned + 1
+            end
+        end
+        add(string.format("Total records: %d (learned: %d)", total, learned))
+        add("")
+        -- Every field on the first 3 records shows the schema. Sort
+        -- field names so the dump is stable across runs.
+        add("Schema (first 3 records, all fields, sorted):")
+        local shown = 0
+        for _, rec in pairs(catalog) do
+            if shown >= 3 then
+                break
+            end
+            if type(rec) == "table" then
+                shown = shown + 1
+                add(string.format("  Record #%d:", shown))
+                local fieldLines = {}
+                for k, v in pairs(rec) do
+                    local vs = type(v) == "table" and "<table>" or tostring(v)
+                    fieldLines[#fieldLines + 1] = "    " .. tostring(k) .. " = " .. vs
+                end
+                table.sort(fieldLines)
+                for _, fl in ipairs(fieldLines) do
+                    add(fl)
+                end
+                add("")
+            end
+        end
+        add("Learned-only records (every field on every learned record):")
+        for _, rec in pairs(catalog) do
+            if type(rec) == "table" and rec.learned then
+                add(string.format("  id=%s, name=%s:", tostring(rec.id), tostring(rec.name)))
+                local fieldLines = {}
+                for k, v in pairs(rec) do
+                    local vs = type(v) == "table" and "<table>" or tostring(v)
+                    fieldLines[#fieldLines + 1] = "    " .. tostring(k) .. " = " .. vs
+                end
+                table.sort(fieldLines)
+                for _, fl in ipairs(fieldLines) do
+                    add(fl)
+                end
+                add("")
+            end
+        end
+    end
+
+    -- ------------------------------------------------------------------
+    -- Section 4: manual pairing instructions
+    -- ------------------------------------------------------------------
+    add("--- Manual pairing ---")
+    add("For each bag item with a procLine above, identify the extracted-affix spell")
+    add("whose tooltip describes the same effect. Send back as e.g.:")
+    add('  { itemID = 934, itemName = "Stalvan\'s Reaper",')
+    add('    procLine = "Chance on hit: Lowers all attributes of target by 2 for 1 min.",')
+    add('    spellID = 12345, spellName = "Frailty" }')
+    add("")
+    add("The maintainer's translation table will keep growing as more procs are extracted.")
+
+    return table.concat(lines, "\n")
+end
+
+local function EC_ShowCaptureProcDump()
+    EC_ShowCopyFrame(
+        L["EbonClearance Chance-on-Hit Capture"],
+        EC_BuildCaptureProcDump(),
+        L["Capture-proc dump generated. Copy the text from the window."]
+    )
+end
+
 NS.ShowBugReport = EC_ShowBugReport
 NS.ShowAffixDebugDump = EC_ShowAffixDebugDump
 NS.ShowProcessDebugDump = EC_ShowProcessDebugDump
 NS.ShowScanDebugDump = EC_ShowScanDebugDump
+NS.ShowCaptureProcDump = EC_ShowCaptureProcDump
 NS.ShowRuleSummary = EC_ShowRuleSummary

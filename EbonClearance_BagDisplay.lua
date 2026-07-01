@@ -1151,7 +1151,12 @@ function EC_compCache.describeSellability(bag, slot)
     -- EC_IsSellable's positive-signal check). Mirror them here so
     -- /ec sellinfo agrees with the merchant cycle's verdict.
     local affixDataForTrace = (quality and quality >= 3) and EC_compCache.bagSlotAffixData(bag, slot) or nil
-    local affixRankPass = DB and DB.affixMinSellRank
+    -- v2.48.1 hasSellPrice gate mirror: see EC_IsSellable's matching note.
+    -- An unsellable item can't fire the sell path even if the affix
+    -- rules would otherwise release it; the v2.47.0 autoMarkAffixDupes
+    -- toggle is the deletion path for that case.
+    local affixRankPass = hasSellPrice
+        and DB and DB.affixMinSellRank
         and DB.affixMinSellRank > 0
         and affixDataForTrace
         and affixDataForTrace.rank
@@ -1165,11 +1170,41 @@ function EC_compCache.describeSellability(bag, slot)
         ))
     elseif DB and DB.affixMinSellRank and DB.affixMinSellRank > 0 then
         if affixDataForTrace and affixDataForTrace.rank then
-            step("affixRankRule", false, string.format(
-                "rank %d - kept (your setting only sells ranks below %d)",
-                affixDataForTrace.rank,
-                DB.affixMinSellRank
-            ))
+            if not hasSellPrice then
+                -- v2.48.1 refinement: distinguish "unsellable + owned dupe
+                -- (auto-mark eligible)" from "unsellable + needed affix
+                -- (kept for extraction)". Player owns the affix? Point at
+                -- the toggle. Doesn't own it? Explicitly say we're
+                -- keeping it for extraction.
+                local ownsForRank = affixDataForTrace.description
+                    and EC_compCache.playerHasAffixDescription
+                    and EC_compCache.playerHasAffixDescription(affixDataForTrace.description)
+                if not ownsForRank
+                    and affixDataForTrace.name
+                    and EC_compCache.playerHasAffixRank
+                then
+                    ownsForRank = EC_compCache.playerHasAffixRank(affixDataForTrace.name, affixDataForTrace.rank)
+                end
+                if ownsForRank then
+                    step("affixRankRule", false, string.format(
+                        L["rank %d below floor of %d, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"],
+                        affixDataForTrace.rank,
+                        DB.affixMinSellRank
+                    ))
+                else
+                    step("affixRankRule", false, string.format(
+                        L["rank %d below floor of %d, but item has no vendor value AND you don't own this rank yet - kept for extraction"],
+                        affixDataForTrace.rank,
+                        DB.affixMinSellRank
+                    ))
+                end
+            else
+                step("affixRankRule", false, string.format(
+                    "rank %d - kept (your setting only sells ranks below %d)",
+                    affixDataForTrace.rank,
+                    DB.affixMinSellRank
+                ))
+            end
         else
             step("affixRankRule", false, L["n/a (item has no random affix)"])
         end
@@ -1184,7 +1219,12 @@ function EC_compCache.describeSellability(bag, slot)
             and affixDataForTrace.rank
             and EC_compCache.playerHasAffixRank
             and EC_compCache.playerHasAffixRank(affixDataForTrace.name, affixDataForTrace.rank)
-        autoDupePass = (descKnown or rankKnown) and true or false
+        local ownsAffix = (descKnown or rankKnown) and true or false
+        -- v2.48.1 hasSellPrice gate mirror: EC_IsSellable's autoDupePass
+        -- won't fire without a sell price, so the trace must not report
+        -- it as a positive sell signal either. Emit a distinct message
+        -- so the player sees WHY the affix-owned item isn't selling.
+        autoDupePass = hasSellPrice and ownsAffix
         -- v2.47.0: bind-type split mirror (EC_IsSellable's autoDupePass gate).
         -- When "keep BoE dupes" is on, a BoE owned dupe is kept for the auction
         -- house, so it's not a positive sell signal here.
@@ -1199,8 +1239,14 @@ function EC_compCache.describeSellability(bag, slot)
             step(
                 "alreadyHaveAffixRule",
                 true,
-                descKnown and "you have this exact affix (description match)"
-                    or "you have this affix family at this rank"
+                descKnown and L["you already have this exact affix"]
+                    or L["you already have this affix at this rank"]
+            )
+        elseif ownsAffix and not hasSellPrice then
+            step(
+                "alreadyHaveAffixRule",
+                false,
+                L["you own this affix, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"]
             )
         end
     end
@@ -1234,7 +1280,7 @@ function EC_compCache.describeSellability(bag, slot)
 
     if qualityPass and EC_compCache.isQuestItem and EC_compCache.isQuestItem(itemID) then
         qualityPass = false
-        step("questSafetyNet", false, L["vetoed - quest item; explicit Sell List entry would override this"])
+        step("questSafetyNet", false, L["Kept - quest item (add to Sell List to override)"])
     end
 
     if
@@ -1247,20 +1293,20 @@ function EC_compCache.describeSellability(bag, slot)
         step(
             "professionToolSafetyNet",
             false,
-            L["vetoed - baseline-protected profession tool; explicit Sell List entry or Allow Sell override would bypass this"]
+            L["Kept - profession tool (add to Sell List or Allow Sell to override)"]
         )
     end
 
     local equipped = IsEquippedItem(itemID)
     if equipped then
-        step("equippedVeto", false, L["VETO - item is currently equipped"])
+        step("equippedVeto", false, L["Kept - you're wearing this"])
     else
         step("equippedVeto", true, L["not currently equipped"])
     end
 
     local blacklisted = DB and IsInSet(DB.blacklist, itemID) or false
     if blacklisted then
-        step("keepListVeto", false, L["VETO - on Keep List"])
+        step("keepListVeto", false, L["Kept - on Keep List"])
     else
         step("keepListVeto", true, L["not on Keep List"])
     end
@@ -1307,24 +1353,24 @@ function EC_compCache.describeSellability(bag, slot)
                 and affix.rank
                 and affix.rank < DB.affixMinSellRank
             if manualAllow then
-                step("affixProtection", true, L["affix present, manually allow-listed via Alt+Right-Click"])
+                step("affixProtection", true, L["has an affix, you Allow-Sold this one"])
             elseif keptAsBoeDupe and not rankBelow then
                 affixProtected = true
-                step("affixProtection", false, L["VETO - bind-on-equip dupe kept for the auction house"])
+                step("affixProtection", false, L["Kept - bind-on-equip dupe (auction house)"])
             elseif autoDupe then
                 local how = descKnown
                     and L["you already have this affix"]
-                    or L["you already have this affix family at this rank"]
-                step("affixProtection", true, "affix present, selling allowed (" .. how .. ")")
+                    or L["you already have this affix at this rank"]
+                step("affixProtection", true, L["has an affix, but "] .. how)
             elseif rankBelow then
                 step("affixProtection", true, string.format(
-                    "affix present, selling allowed (rank %s below your floor of %d)",
+                    L["has an affix, rank %s below your floor of %d"],
                     tostring(affix.rank or "?"),
                     DB.affixMinSellRank
                 ))
             else
                 affixProtected = true
-                step("affixProtection", false, L["VETO - Rare/Epic random affix detected"])
+                step("affixProtection", false, L["Kept - Rare/Epic affix protection"])
             end
         else
             step("affixProtection", true, L["no random affix on this item"])
@@ -1343,24 +1389,32 @@ function EC_compCache.describeSellability(bag, slot)
         elseif not quality or quality < 3 then
             step("affixProtection", true, L["n/a (quality below Rare)"])
         else
-            step("affixProtection", true, L["n/a (no positive sell signal - affix gate only fires for items the sell rules would otherwise touch; delete-list path is checked separately)"])
+            step("affixProtection", true, L["n/a (no sell rule wants this item)"])
         end
     end
 
+    -- v2.48.2 widening: mirror the EC_IsSellable widening so /ec sellinfo
+    -- agrees with the merchant cycle. Pre-v2.48.2 the trace only fired
+    -- the gate on qualityPass and reported "n/a" for items that were
+    -- being sold via affixRankPass / autoDupePass / recipePass instead -
+    -- a lie about the actual verdict when the item had a proc.
     local procProtected = false
     if
-        qualityPass
+        (qualityPass or affixRankPass or autoDupePass or recipePass)
         and DB
         and DB.protectChanceOnHitItems
         and EC_compCache.itemHasChanceOnHit
         and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     then
         if ADB and ADB.allowedItems and ADB.allowedItems[itemID] then
-            step("chanceOnHitProtection", true, L["chance-on-hit proc, but item allow-listed"])
+            step("chanceOnHitProtection", true, L["chance-on-hit proc, but you Allow-Sold this one"])
         else
             procProtected = true
             qualityPass = false
-            step("chanceOnHitProtection", false, L["VETO - chance-on-hit proc detected (downgrades qualityRule veto)"])
+            affixRankPass = false
+            autoDupePass = false
+            recipePass = false
+            step("chanceOnHitProtection", false, L["Kept - has a chance-on-hit proc"])
         end
     else
         step("chanceOnHitProtection", true, L["n/a"])
@@ -1381,16 +1435,16 @@ function EC_compCache.describeSellability(bag, slot)
         and EC_compCache.itemIsTome(bag, slot, itemID)
     then
         if ADB and ADB.allowedItems and ADB.allowedItems[itemID] then
-            step("tomeProtection", true, L["tome/recipe, but item allow-listed"])
+            step("tomeProtection", true, L["tome/recipe, but you Allow-Sold this one"])
         elseif DB.protectAllTomes then
             tomeProtected = true
-            step("tomeProtection", false, L["VETO - 'protect all tomes' is on"])
+            step("tomeProtection", false, L["Kept - 'protect all tomes' is on"])
         elseif DB.protectUnlearnedTomes
             and EC_compCache.playerKnowsTomeSpell
             and not EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
         then
             tomeProtected = true
-            step("tomeProtection", false, L["VETO - unlearned tome/recipe (protected)"])
+            step("tomeProtection", false, L["Kept - unlearned tome/recipe"])
         else
             step("tomeProtection", true, L["tome/recipe already known - not protected"])
         end
@@ -1421,6 +1475,32 @@ function EC_compCache.describeSellability(bag, slot)
     return { steps = steps, wouldSell = wouldSell, willDelete = willDelete, summary = summary }
 end
 
+-- v2.48.2: player-friendly labels for the internal step-name
+-- identifiers. describeSellability's step() calls use terse internal
+-- names for code readability + test greppability; the printer swaps
+-- them for these labels so /ec sellinfo reads as English rather than
+-- as camelCase code. Falls back to the raw name if a step is missing
+-- from this table (e.g. "count", "locked", "slot", "item" - internal
+-- diagnostics that don't need renaming).
+local EC_STEP_LABELS = {
+    item                    = L["Item"],
+    hasSellPrice            = L["Vendor accepts it"],
+    deleteListVerdict       = L["Delete List"],
+    greyAutoSell            = L["Grey junk"],
+    onSellList              = L["Sell List"],
+    qualityRule             = L["Quality rule"],
+    affixRankRule           = L["Affix rank floor"],
+    alreadyHaveAffixRule    = L["Affix you already own"],
+    knownRecipeRule         = L["Known recipe"],
+    questSafetyNet          = L["Quest item safety"],
+    professionToolSafetyNet = L["Profession tool safety"],
+    equippedVeto            = L["Currently worn"],
+    keepListVeto            = L["Keep List"],
+    affixProtection         = L["Affix protection"],
+    chanceOnHitProtection   = L["Chance-on-hit protection"],
+    tomeProtection          = L["Tome / recipe protection"],
+}
+
 function EC_compCache.printSellabilityTrace(bag, slot)
     if not (bag and slot) then
         for b = 0, 4 do
@@ -1445,7 +1525,8 @@ function EC_compCache.printSellabilityTrace(bag, slot)
     NS.PrintNicef(L["|cffffff00=== Sellability trace: bag %d slot %d ===|r"], bag, slot)
     for _, s in ipairs(r.steps) do
         local marker = s.passed and "|cff00ff00+|r" or "|cffff4444-|r"
-        NS.PrintNicef("  %s %s - %s", marker, s.name, s.detail)
+        local label = EC_STEP_LABELS[s.name] or s.name
+        NS.PrintNicef("  %s %s - %s", marker, label, s.detail)
     end
     NS.PrintNicef(L["Result: %s"], r.summary)
 end

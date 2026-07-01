@@ -816,6 +816,11 @@ local function BuildMainPanel(panel, content)
                 .. L["Diagnostic: dump the scan tooltip lines for a bag slot"],
         },
         {
+            run = "captureproc",
+            label = "|cffffff00/ec captureproc|r  "
+                .. L["Diagnostic: dump chance-on-hit items + engrave-affix spells + PE catalog (for future auto-sell)"],
+        },
+        {
             run = "affixdebug status",
             label = "|cffffff00/ec affixdebug status|r  " .. L["Show recording state + row count"],
         },

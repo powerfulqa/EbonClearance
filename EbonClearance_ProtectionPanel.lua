@@ -99,6 +99,15 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 end
             end
         end
+        if self.recipeBindDDs and self._RecipeBindFilterText then
+            for q = 1, 4 do
+                local dd = self.recipeBindDDs[q]
+                if dd then
+                    local v = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
+                    UIDropDownMenu_SetText(dd, self._RecipeBindFilterText(v))
+                end
+            end
+        end
         if self.UpdateRecipeQualitiesEnabled then
             self:UpdateRecipeQualitiesEnabled()
         end
@@ -769,9 +778,30 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
 
         -- Per-quality gate: four indented child checkboxes, one per recipe
         -- rarity, each writing DB.sellKnownRecipeQualities[q]. Greyed out
-        -- when the parent is off.
+        -- when the parent is off. v2.47.1 adds a Bind dropdown to the right
+        -- of each row mirroring the per-rarity bind-type filter on the
+        -- quality rules.
         local recipeQualityLabels = { L["White"], L["Green"], L["Blue"], L["Epic"] }
         local recipeQualityCBs = {}
+        local recipeBindDDs = {}
+        -- Local duplicate of EC_BIND_FILTER_OPTIONS from MerchantPanel: same
+        -- semantic surface, two scopes. If a third panel needs these in
+        -- v2.48+, hoist to NS.BindFilterOptions; for v2.47.1 the duplicate
+        -- keeps the diff narrow.
+        local RECIPE_BIND_FILTER_OPTIONS = {
+            { text = L["Any bind type"], value = "any" },
+            { text = L["BoE only"], value = "boe" },
+            { text = L["BoP only"], value = "bop" },
+        }
+        local function RecipeBindFilterText(value)
+            for _, entry in ipairs(RECIPE_BIND_FILTER_OPTIONS) do
+                if entry.value == value then
+                    return entry.text
+                end
+            end
+            return RECIPE_BIND_FILTER_OPTIONS[1].text
+        end
+        self._RecipeBindFilterText = RecipeBindFilterText
         local recipeAnchor = sellRecipesCB
         for q = 1, 4 do
             local qcb = CreateFrame(
@@ -800,24 +830,66 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 end
             end)
             recipeQualityCBs[q] = qcb
+
+            -- Bind-type dropdown to the right of this rarity row.
+            local bindDD = CreateFrame(
+                "Frame",
+                "EbonClearanceSellKnownRecipeQ" .. q .. "BindDD",
+                content,
+                "UIDropDownMenuTemplate"
+            )
+            bindDD:SetPoint("LEFT", qcb, "RIGHT", 56, 0)
+            local function BindFilterInit(_frame, _level)
+                for _, entry in ipairs(RECIPE_BIND_FILTER_OPTIONS) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = entry.text
+                    info.value = entry.value
+                    local cur = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
+                    info.checked = (cur == entry.value)
+                    info.func = function()
+                        DB.sellKnownRecipeBindFilter = DB.sellKnownRecipeBindFilter or {}
+                        DB.sellKnownRecipeBindFilter[q] = entry.value
+                        UIDropDownMenu_SetText(bindDD, entry.text)
+                        PlaySound("igMainMenuOptionCheckBoxOn")
+                        if NS.RefreshSellBorders then
+                            NS.RefreshSellBorders()
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, _level)
+                end
+            end
+            UIDropDownMenu_SetWidth(bindDD, 110)
+            local curBind = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
+            UIDropDownMenu_SetText(bindDD, RecipeBindFilterText(curBind))
+            UIDropDownMenu_Initialize(bindDD, BindFilterInit)
+            recipeBindDDs[q] = bindDD
+
             recipeAnchor = qcb
         end
         self.recipeQualityCBs = recipeQualityCBs
+        self.recipeBindDDs = recipeBindDDs
 
         local function UpdateRecipeQualitiesEnabled()
             local on = DB.sellKnownRecipes == true
             for q = 1, 4 do
                 local qcb = recipeQualityCBs[q]
                 local qText = qcb and _G[qcb:GetName() .. "Text"]
+                local dd = recipeBindDDs[q]
                 if on then
                     qcb:Enable()
                     if qText then
                         qText:SetTextColor(1, 1, 1)
                     end
+                    if dd and UIDropDownMenu_EnableDropDown then
+                        UIDropDownMenu_EnableDropDown(dd)
+                    end
                 else
                     qcb:Disable()
                     if qText then
                         qText:SetTextColor(0.5, 0.5, 0.5)
+                    end
+                    if dd and UIDropDownMenu_DisableDropDown then
+                        UIDropDownMenu_DisableDropDown(dd)
                     end
                 end
             end

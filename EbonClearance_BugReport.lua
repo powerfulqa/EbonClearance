@@ -126,6 +126,14 @@ local function EC_BuildBugReport()
             tostring(rq[3] == true),
             tostring(rq[4] == true)
         ))
+        local rb = DB.sellKnownRecipeBindFilter or {}
+        add(string.format(
+            "  Recipe bind filter (W/G/B/E): %s/%s/%s/%s",
+            tostring(rb[1] or "any"),
+            tostring(rb[2] or "any"),
+            tostring(rb[3] or "any"),
+            tostring(rb[4] or "any")
+        ))
     end
     -- v2.30.x: the per-character allowlist feature was decommissioned;
     -- DB.enableOnlyListedChars is force-disabled in EnsureDB and the
@@ -688,11 +696,15 @@ local function EC_BuildRuleSummary()
             local enabled = r and r.enabled
             local mode
             if r and r.useEquippedILvl then
-                mode = "equipped iLvl"
+                -- Spell out the consequence: this mode only sells items below
+                -- your currently-worn gear, so higher-iLvl drops are kept. A
+                -- player expecting "sell all of this rarity" hits this and
+                -- thinks nothing sells (see the rank/quality FAQ).
+                mode = "equipped iLvl - keeps upgrades"
             elseif r and r.maxILvl and r.maxILvl > 0 then
                 mode = "max iLvl " .. tostring(r.maxILvl)
             else
-                mode = "no cap"
+                mode = "no cap - sells all"
             end
             local bind = (r and r.bindType) or "any"
             add(string.format(

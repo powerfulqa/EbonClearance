@@ -364,7 +364,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-sell-known-recipes",
         q = L["Sell recipes you already know"],
-        a = L["Off by default. When you turn it on (in the panel below, with the tome controls), profession recipes this character has ALREADY learned are auto-sold at vendors, gated per rarity (White / Green / Blue / Epic). Recipes you have not learned yet are never sold. Learn-state is checked per character, so each alt only sells the recipes it knows. If 'Protect all tomes / recipes' is on, it wins and nothing recipe-like sells."],
+        a = L["Off by default. When you turn it on (in the panel below, with the tome controls), profession recipes this character has ALREADY learned are auto-sold at vendors, gated per rarity (White / Green / Blue / Epic). Each rarity also has a bind-type dropdown (Any / BoE only / BoP only), so you can sell known Green BoE patterns but keep all BoP ones for alts, etc. Recipes you have not learned yet are never sold. Learn-state is checked per character, so each alt only sells the recipes it knows. If 'Protect all tomes / recipes' is on, it wins and nothing recipe-like sells."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {

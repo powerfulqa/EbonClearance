@@ -945,6 +945,21 @@ local function EnsureDB()
             end
         end
     end
+    -- v2.47.1: per-quality bind-type filter for Sell Known Recipes.
+    -- Mirrors the quality-rule bindFilter shape from v2.10.0 so the
+    -- "BoE only" / "BoP only" semantics are consistent across the
+    -- two sell-rule surfaces. Default "any" everywhere keeps the
+    -- v2.46.0 behaviour for existing users (additive migration).
+    if type(DB.sellKnownRecipeBindFilter) ~= "table" then
+        DB.sellKnownRecipeBindFilter = { [1] = "any", [2] = "any", [3] = "any", [4] = "any" }
+    else
+        for q = 1, 4 do
+            local v = DB.sellKnownRecipeBindFilter[q]
+            if v ~= "any" and v ~= "boe" and v ~= "bop" then
+                DB.sellKnownRecipeBindFilter[q] = "any"
+            end
+        end
+    end
     -- v2.22.0: Process Bags panel. Lets the player batch-cast their
     -- profession spells (Disenchant / Mill / Prospect) on eligible
     -- bag items via a secure-button macro. Soulbound DE is opt-in
@@ -4770,6 +4785,19 @@ local function EC_IsSellable(bag, slot, junkOnly)
         and EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
     then
         recipePass = true
+        -- v2.47.1: per-quality bind-type filter. Recipes with no bind line
+        -- read as "any" from getBindType (consistent with the quality-rule
+        -- semantics from v2.10.0) so a "BoE only" filter doesn't sweep up
+        -- unbound profession trade goods masquerading as recipes.
+        local recipeBindFilter = DB.sellKnownRecipeBindFilter
+            and DB.sellKnownRecipeBindFilter[quality]
+            or "any"
+        if recipeBindFilter ~= "any" then
+            local bindType = EC_compCache.getBindType(bag, slot)
+            if recipeBindFilter ~= bindType then
+                recipePass = false
+            end
+        end
     end
     if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass) then
         return false

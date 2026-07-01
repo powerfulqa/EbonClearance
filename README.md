@@ -12,7 +12,7 @@ Sells what you don't want. Keeps what you do. Knows the difference because it re
 
 - **Per-rarity auto-sell rules** (White / Green / Blue / Purple). Caps follow your equipped iLvl, or set a fixed max. Bind-type filter per rarity.
 - **Sell, Keep, and Delete lists**, per-character and account-wide. Bulk-add from your bags by colour, switch lists by activity with saved profiles.
-- **Sell known recipes** you've already learned, opt-in and per-rarity (White / Green / Blue / Purple). Learn-state is read per-character, so each alt only sells the patterns it already knows; unlearned ones stay safe.
+- **Sell known recipes** you've already learned, opt-in and per-rarity (White / Green / Blue / Purple). Per-rarity bind-type filter too (Any / BoE only / BoP only) so you can sell BoE patterns alts won't use while keeping the BoP ones. Learn-state is read per-character, so each alt only sells the patterns it already knows; unlearned ones stay safe.
 - **Tooltip says what will happen** before you vendor. `/ec sellinfo` traces every decision, and Alt+Right-Click → **Sell Info** gives the same trace for one item, so "why isn't this selling?" is one click away.
 
 ## What it protects

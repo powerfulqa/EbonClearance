@@ -6530,6 +6530,47 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 104 (v2.47.1): per-quality bind-type filter for Sell Known Recipes.
+-- ---------------------------------------------------------------------------
+-- Asked for by the user: Sell Known Recipes had a per-quality on/off but
+-- no bind-type filter, so a "sell all known Greens" rule swept up BoP
+-- crafted patterns the player wanted to keep for alts. The per-rarity
+-- quality rules already had the v2.10.0 bindFilter shape ("any" / "boe"
+-- / "bop"); v2.47.1 mirrors that on the Sell Known Recipes rule.
+--
+-- Three contracts pinned:
+-- - EnsureDB seeds DB.sellKnownRecipeBindFilter with "any" per quality
+--   (additive migration: existing v2.46.0+ users see no behaviour change).
+-- - recipePass predicate consults DB.sellKnownRecipeBindFilter via
+--   EC_compCache.getBindType (same helper as the quality-rule path).
+-- - ProtectionPanel surfaces a Bind dropdown per recipe-quality row,
+--   wired to write DB.sellKnownRecipeBindFilter[q].
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local pp = fileSrc("EbonClearance_ProtectionPanel.lua")
+    check("Test 104a: EnsureDB seeds sellKnownRecipeBindFilter with 'any' per quality (additive migration)",
+        ev:find('DB%.sellKnownRecipeBindFilter = { %[1%] = "any", %[2%] = "any", %[3%] = "any", %[4%] = "any" }') ~= nil
+            and ev:find('if v ~= "any" and v ~= "boe" and v ~= "bop" then') ~= nil,
+        "EnsureDB MUST seed the table with 'any' so existing users get no behaviour change. The value-validation step coerces hand-edited bogus values back to 'any' (downgrade-safe, same shape as v2.10.0's quality-rule bindFilter).")
+    check("Test 104b: recipePass predicate gates on DB.sellKnownRecipeBindFilter via getBindType, after recipePass = true",
+        ev:find("recipePass = true\n.-local recipeBindFilter = DB%.sellKnownRecipeBindFilter") ~= nil
+            and ev:find('if recipeBindFilter ~= "any" then\n%s*local bindType = EC_compCache%.getBindType%(bag, slot%)\n%s*if recipeBindFilter ~= bindType then\n%s*recipePass = false') ~= nil,
+        "the gate MUST run AFTER the recipePass = true assignment so it CAN disqualify the slot. If the filter check ran before the assignment, the gate would be inert. The bind-type lookup MUST go through EC_compCache.getBindType (the same helper the quality rules use) so 'no bind line at all' reads as 'any' consistently across both sell-rule surfaces, and a 'BoE only' filter doesn't sweep up reagents masquerading as recipes.")
+    check("Test 104c: ProtectionPanel surfaces a Bind dropdown per recipe-quality row",
+        pp:find('"EbonClearanceSellKnownRecipeQ" %.%. q %.%. "BindDD"') ~= nil
+            and pp:find("DB%.sellKnownRecipeBindFilter = DB%.sellKnownRecipeBindFilter or {}") ~= nil
+            and pp:find("DB%.sellKnownRecipeBindFilter%[q%] = entry%.value") ~= nil,
+        "the dropdown widget MUST exist per quality (frame name pattern locked) AND MUST write DB.sellKnownRecipeBindFilter[q] on click; without both, the toggle is invisible to the player or doesn't persist.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

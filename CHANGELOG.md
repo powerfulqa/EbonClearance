@@ -5,6 +5,26 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.47.1
+
+**Per-quality bind-type filter for Sell Known Recipes.**
+
+The Sell Known Recipes rule (v2.46.0) had per-rarity on/off but no bind-type gate, so a "sell known Greens" setting could sweep up BoP crafted patterns the player wanted to keep for alts. v2.47.1 mirrors the v2.10.0 per-rarity bindFilter shape from the quality rules onto Sell Known Recipes.
+
+- **Bind dropdown next to each recipe rarity row** in Protection Settings: Any bind type / BoE only / BoP only. Independent per rarity, so you can sell known Green BoE patterns but keep all BoP ones, etc.
+- **Default "any" everywhere.** Existing users see no behaviour change.
+- Items with no bind line at all read as "any" from `getBindType` (same semantics as the quality-rule path), so reagents masquerading as recipes aren't swept up by a "BoE only" setting.
+- `/ec bugreport` now includes the per-quality bind filter alongside the existing per-quality on/off dump.
+
+Schema is additive and downgrade-safe: `DB.sellKnownRecipeBindFilter` per-character, seeded with `"any"` per quality, value-validated against the three allowed strings. Test 104a-c pins the contracts (EnsureDB seed, predicate gate position, panel dropdown wiring).
+
+Also in this patch:
+
+- **`/ec bugreport` rule summary spells out the sell-mode consequence.** `equipped iLvl` now reads as `equipped iLvl - keeps upgrades`; `no cap` reads as `no cap - sells all`. Players reporting "nothing sells" often turn out to have `useEquippedILvl` on without realising higher-iLvl drops are protected by design; making the mode label self-describing catches that at first glance in the dump.
+
+---
+
+
 ### v2.47.0
 
 New option: auto-clear affixed items you can't sell. For players who've collected the affixes they want and keep getting soulbound affix drops that have no vendor value and just clutter the bag. Off by default. Suggested by Broyo.

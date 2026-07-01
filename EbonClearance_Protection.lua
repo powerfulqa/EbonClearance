@@ -1297,6 +1297,215 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     return result
 end
 
+-- v2.49.0: chance-on-hit proc -> PE spell ID lookup for the auto-release
+-- feature. The bridge from item-side procLine text to spell-side spellID
+-- (PE affix in the 700xxx range) is hand-curated because PE's item-side
+-- and spell-side tooltips don't share phrasing (e.g. Stalvan's Reaper's
+-- "Chance on hit: Lowers all attributes of target by 2 for 1 min." vs
+-- Frailty's "Your spells and abilities have a chance to reduce all
+-- attributes of the target"). v2.45.0's normaliseAffixDesc can't match
+-- these, so we key on distinctive substrings from the item-side line.
+--
+-- Order matters (first-match wins): specific keywords first, generic
+-- element catch-alls last. Ranged element procs (Fire Blast, Frost Arrow,
+-- Keeper's Sting, Affliction) go before the melee generic Nature / Fire
+-- keywords so they don't get swallowed. All keywords must appear in the
+-- item's procLine (case-insensitive substring); multi-keyword rows
+-- disambiguate procs that would otherwise collide on a single word.
+--
+-- Coverage is item-specific: only items whose proc PE has ported to its
+-- 700xxx family can be matched. Vanilla WoW procs that don't have a PE
+-- extraction target (Felstriker, Silence, Silent Fang etc.) stay under
+-- the blanket DB.protectChanceOnHitItems protection. When PE adds more
+-- procs, the autolearn (ADB.chanceProcMap, populated by the on-the-fly
+-- diff at LEARNED_SPELL_IN_TAB) picks them up without a code change.
+-- v2.49.0 (Serv report): confirmed itemIDs whose PE Anvil UI does NOT
+-- offer extraction. These are vanilla WoW procs that PE has not ported
+-- to its 700xxx affix family - the Anvil either hides the item or
+-- rejects the click. A false-positive keyword match on any of these
+-- would auto-release a weapon whose proc PE can't actually extract,
+-- so playerHasExtractedProc short-circuits to "not known" the moment
+-- it sees an itemID in this set. Cheap first check, ahead of the
+-- keyword-map walk.
+-- EC-TRAP: do NOT prune this list when trimming the keyword map. The
+-- keyword map is best-effort item-to-spell inference; this set is
+-- observed Anvil UI truth. They serve different purposes.
+local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
+    [12797] = "Frostguard",                 -- Chilled
+    [2099]  = "Dwarven Hand Cannon",        -- Flaming Cannonball
+    [12590] = "Felstriker",
+    [12794] = "Masterwork Stormhammer",
+    [21856] = "Neretzek, The Blood Drinker",
+    [13953] = "Silent Fang",
+    [1263]  = "Brain Hacker",
+}
+NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
+
+-- EC-TRAP: v2.49.0 shipped this seed map with 16 rows. Six of them
+-- (the "ranged + <element>" and bare "<element> damage" catch-alls)
+-- over-matched: Serv reported Dwarven Hand Cannon's "Flaming Cannonball"
+-- ranged Fire damage proc getting flagged as Fire Blast (700121) even
+-- though the PE Anvil UI treated it as still-extractable. Same shape
+-- would recur for any bare-element item once ANY <element> proc was
+-- learned. Rows dropped: (ranged + Fire) Fire Blast, (ranged + Frost)
+-- Frost Arrow, (ranged + Nature) Keeper's Sting, (ranged + Shadow)
+-- Affliction, (Nature damage) Wilds, (Fire damage) Incineration. Do
+-- NOT restore them wholesale - the autolearn (v2.49.1 LEARNED_SPELL_IN_TAB
+-- bag-diff) will register exact procLine strings in ADB.chanceProcMap
+-- so element-family matches don't need a fragile keyword row. If you
+-- add a new row, prefer a UNIQUE phrase from the item-side text; the
+-- generic-element pattern is a false-positive minefield.
+local EC_CHANCE_PROC_KEYWORDS = {
+    -- Specific procs (identity-fingerprint keywords)
+    { keywords = { "jumping to additional" },     spellID = 700104, family = "Thunderfury" },
+    { keywords = { "spirit of Shahram" },         spellID = 700109, family = "Shahram" },
+    { keywords = { "Heals wielder" },             spellID = 700114, family = "Julie's Blessing" },
+    -- Melee-identifier procs (unique keyword phrase per proc)
+    { keywords = { "all attributes" },            spellID = 700092, family = "Frailty" },
+    { keywords = { "reduces", "armor" },          spellID = 700081, family = "Rending" },
+    { keywords = { "transfers", "health" },       spellID = 700095, family = "Vampirism" },
+    { keywords = { "steal life" },                spellID = 700095, family = "Vampirism" },
+    { keywords = { "damage taken", "15%" },       spellID = 700103, family = "Vulnerability" },
+    { keywords = { "stuns target" },              spellID = 700078, family = "Concussion" },
+    { keywords = { "wounds the target" },         spellID = 700090, family = "Execution" },
+}
+
+-- v2.49.0: look up a bag item's chance-on-hit proc's spell ID.
+-- Returns (spellID, family) if the item's procLine matches a keyword row
+-- OR the ADB autolearn map has an exact procLine entry. Returns nil,nil
+-- otherwise. Gates on the item being a weapon (equipLoc check) since
+-- PE's transferred-proc system is weapons-only.
+function EC_compCache.chanceProcSpellID(bag, slot, itemID, procLine)
+    if not itemID or not procLine then
+        return nil, nil
+    end
+    -- Weapon-only gate. PE Anvil extracts procs from weapons; trinkets /
+    -- jewelry chance-on-hit items stay under blanket protection.
+    local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
+    local isWeapon = equipLoc == "INVTYPE_WEAPON"
+        or equipLoc == "INVTYPE_WEAPONMAINHAND"
+        or equipLoc == "INVTYPE_WEAPONOFFHAND"
+        or equipLoc == "INVTYPE_2HWEAPON"
+        or equipLoc == "INVTYPE_RANGED"
+        or equipLoc == "INVTYPE_RANGEDRIGHT"
+        or equipLoc == "INVTYPE_THROWN"
+    if not isWeapon then
+        return nil, nil
+    end
+    -- Autolearn map first: exact procLine match is authoritative when set.
+    local ADB = NS.ADB
+    if ADB and ADB.chanceProcMap and ADB.chanceProcMap[procLine] then
+        return ADB.chanceProcMap[procLine], "autolearn"
+    end
+    -- Seed map: case-insensitive keyword substring match, first match wins.
+    local lower = procLine:lower()
+    for _, entry in ipairs(EC_CHANCE_PROC_KEYWORDS) do
+        local allMatch = true
+        for _, kw in ipairs(entry.keywords) do
+            if not lower:find(kw:lower(), 1, true) then
+                allMatch = false
+                break
+            end
+        end
+        if allMatch then
+            return entry.spellID, entry.family
+        end
+    end
+    return nil, nil
+end
+
+-- v2.49.0 (Serv report): itemIDs whose PE spell ID has been directly
+-- confirmed via /ec captureproc. Wins over the keyword map (unambiguous)
+-- AND lets us cover items whose procLine phrasing doesn't uniquely
+-- match a keyword row (e.g. bare-element procs that were dropped from
+-- EC_CHANCE_PROC_KEYWORDS to avoid over-matching). Each entry is
+-- one-shot ground truth: the user verified at the Anvil that this
+-- specific weapon's proc extracts to this specific PE affix.
+--
+-- Add rows here as the /ec captureproc data trickles in. The v2.49.1
+-- autolearn will populate ADB.chanceProcMap dynamically from bag-diff
+-- + LEARNED_SPELL_IN_TAB observation; this table is the stable seed
+-- for items whose spellID we know before that ships.
+local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
+    -- Confirmed via Serv's /ec captureproc dump (2026-07-01): each
+    -- item's procLine cross-referenced against the PE spellbook
+    -- 'Allows you to engrave this affix' tooltips.
+    [811]   = { spellID = 700088, family = "Wilds",         item = "Axe of the Deep Woods" },
+    [2825]  = { spellID = 700121, family = "Fire Blast",    item = "Bow of Searing Arrows" },
+    [12592] = { spellID = 700109, family = "Shahram",       item = "Blackblade of Shahram" },
+    [12796] = { spellID = 700078, family = "Concussion",    item = "Hammer of the Titans" },
+    [12798] = { spellID = 700081, family = "Rending",       item = "Annihilator" },
+    [14555] = { spellID = 700087, family = "Incineration",  item = "Alcor's Sunrazor" },
+    [19100] = { spellID = 700088, family = "Wilds",         item = "Electrified Dagger" },
+    [19169] = { spellID = 700103, family = "Vulnerability", item = "Nightfall" },
+    -- Arcanite Champion 12790 ("Heal self for 270-450 and increases
+    -- Strength by 120 for 30 sec") deferred: no clean PE catalog match
+    -- (Resurgence 700097 is a low-HP trigger, not an on-hit heal+STR
+    -- proc). Alt+Right-Click Allow Sell handles this item until the
+    -- v2.49.1 autolearn observes the extraction.
+}
+NS.chanceProcConfirmedItems = EC_CHANCE_PROC_CONFIRMED_ITEMS
+
+-- v2.49.0: has the player extracted the proc that fires on this item?
+-- Combines chanceProcSpellID + the PE catalog learned-check. Returns
+-- (true, spellID, family) if the player has it; (false, spellID_or_nil,
+-- family_or_nil) otherwise.
+--
+-- Priority order:
+--   1. EC_CHANCE_PROC_NEVER_EXTRACTABLE: return false immediately
+--      (Anvil UI truth: PE cannot extract this weapon's proc, period).
+--   2. EC_CHANCE_PROC_CONFIRMED_ITEMS: use the mapped spellID directly
+--      (unambiguous ground truth, bypasses keyword-map guesses).
+--   3. chanceProcSpellID: keyword-map inference (best-effort).
+function EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
+    if itemID and EC_CHANCE_PROC_NEVER_EXTRACTABLE[itemID] then
+        return false, nil, nil
+    end
+    local spellID, family
+    if itemID and EC_CHANCE_PROC_CONFIRMED_ITEMS[itemID] then
+        local rec = EC_CHANCE_PROC_CONFIRMED_ITEMS[itemID]
+        spellID, family = rec.spellID, rec.family
+    else
+        spellID, family = EC_compCache.chanceProcSpellID(bag, slot, itemID, procLine)
+    end
+    if not spellID then
+        return false, nil, nil
+    end
+    local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+    if type(catalog) ~= "table" then
+        return false, spellID, family
+    end
+    for _, rec in pairs(catalog) do
+        if type(rec) == "table" and rec.id == spellID and rec.learned then
+            return true, spellID, family
+        end
+    end
+    return false, spellID, family
+end
+
+-- v2.49.0: scan a bag slot's tooltip for the exact chance-on-hit line.
+-- itemHasChanceOnHit returns bool; this returns the LINE TEXT itself so
+-- the autolearn + seed-map lookup can key on it. Reads from the hidden
+-- EC_scanTooltip after scanBagItem primes it. Returns nil if the slot
+-- has no chance-on-hit line.
+function EC_compCache.chanceProcLine(bag, slot, itemID)
+    if not itemID then
+        return nil
+    end
+    EC_compCache.scanBagItem(bag, slot)
+    for i = 1, 30 do
+        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        if not line then
+            break
+        end
+        local txt = line:GetText()
+        if txt and EC_compCache.lineLooksLikeChanceProc(txt) then
+            return txt
+        end
+    end
+    return nil
+end
+
 -- v2.44.0: Resilience-stat detection. Mirrors itemHasChanceOnHit's
 -- pattern. PvP gear on most 3.3.5a servers has a "Resilience" /
 -- "Resilience Rating" stat line and sellPrice = 0, so it can't be
@@ -1360,6 +1569,33 @@ function EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)
         EC_compCache.chanceOnHitCache[itemID] = result
     end
     return result
+end
+
+-- v2.49.0: return the ACTUAL chance-on-hit line text from a live tooltip,
+-- not just a bool. Used by EC_AnnotateTooltip's chance-on-hit branch to
+-- feed playerHasExtractedProc + chanceProcSpellID (v2.49.0 auto-release
+-- feature). Same scan shape as liveTooltipHasChanceOnHit; no cache
+-- because the text varies per drop (proc numbers) while the has-proc
+-- boolean is stable per itemID.
+function EC_compCache.liveTooltipChanceProcLine(tooltip)
+    if not tooltip or not tooltip.NumLines or not tooltip.GetName then
+        return nil
+    end
+    local tname = tooltip:GetName()
+    if not tname then
+        return nil
+    end
+    local n = tooltip:NumLines() or 0
+    for i = 2, n do
+        local fs = _G[tname .. "TextLeft" .. i]
+        if fs and fs.GetText then
+            local txt = fs:GetText()
+            if txt and EC_compCache.lineLooksLikeChanceProc(txt) then
+                return txt
+            end
+        end
+    end
+    return nil
 end
 
 -- Tome detection. A "tome" here means a spell-teaching item: profession

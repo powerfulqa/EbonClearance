@@ -79,6 +79,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.procCB then
             self.procCB:SetChecked(DB.protectChanceOnHitItems)
         end
+        if self.sellKnownProcCB then
+            self.sellKnownProcCB:SetChecked(DB.sellChanceOnHitKnown)
+        end
+        if self.UpdateSellKnownProcEnabled then
+            self.UpdateSellKnownProcEnabled()
+        end
         if self.unlearnedTomeCB then
             self.unlearnedTomeCB:SetChecked(DB.protectUnlearnedTomes)
         end
@@ -641,7 +647,62 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             if NS.RefreshSellBorders then
                 NS.RefreshSellBorders()
             end
+            if self.UpdateSellKnownProcEnabled then
+                self.UpdateSellKnownProcEnabled()
+            end
         end)
+
+        -- v2.49.0 child toggle (experimental): auto-release chance-on-hit
+        -- items whose proc is in the player's extracted-spell catalog.
+        -- Mirrors the affix side's dupeAffixCB. Coverage is item-specific
+        -- (seed map + autolearn); items whose proc PE hasn't ported to
+        -- the 700xxx family stay protected regardless. Labelled
+        -- "(experimental)" because seed-map keywords are hand-curated
+        -- and may need iteration.
+        local sellKnownProcCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceSellChanceOnHitKnownCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        sellKnownProcCB:SetPoint("TOPLEFT", procCB, "BOTTOMLEFT", 26, -4)
+        sellKnownProcCB:SetChecked(DB.sellChanceOnHitKnown)
+        local skpText = _G[sellKnownProcCB:GetName() .. "Text"]
+        if skpText then
+            skpText:SetText(L["Sell known chance-on-hit procs (experimental)"])
+            EC_compCache.setPanelWidth(skpText, 86)
+            skpText:SetJustifyH("LEFT")
+        end
+        sellKnownProcCB:SetScript("OnClick", function(cb)
+            DB.sellChanceOnHitKnown = cb:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
+        end)
+        self.sellKnownProcCB = sellKnownProcCB
+        if skpText then
+            NS.AddHelpIcon(content, skpText, "LEFT", "RIGHT", 6, 0, "gate-sell-known-chance-on-hit")
+        end
+
+        -- Grey the child when the parent is off (same pattern as the
+        -- affix-dupe child toggle above).
+        local function UpdateSellKnownProcEnabled()
+            local on = DB.protectChanceOnHitItems == true
+            if on then
+                sellKnownProcCB:Enable()
+                if skpText then
+                    skpText:SetTextColor(1, 1, 1)
+                end
+            else
+                sellKnownProcCB:Disable()
+                if skpText then
+                    skpText:SetTextColor(0.5, 0.5, 0.5)
+                end
+            end
+        end
+        self.UpdateSellKnownProcEnabled = UpdateSellKnownProcEnabled
+        UpdateSellKnownProcEnabled()
 
         -- Tome protection. Parent + child checkbox pair mirroring the
         -- affix-dupe shape above:
@@ -661,7 +722,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             content,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        unlearnedTomeCB:SetPoint("TOPLEFT", procCB, "BOTTOMLEFT", 0, -10)
+        -- v2.49.0: anchor to sellKnownProcCB (new child of procCB) instead
+        -- of procCB directly, so this section shifts down to accommodate
+        -- the new sub-toggle. -26 returns to the parent column (offsetting
+        -- sellKnownProcCB's +26 child indent); -10 keeps the same vertical
+        -- gap the pre-v2.49.0 layout had against procCB.
+        unlearnedTomeCB:SetPoint("TOPLEFT", sellKnownProcCB, "BOTTOMLEFT", -26, -10)
         unlearnedTomeCB:SetChecked(DB.protectUnlearnedTomes)
         local utText = _G[unlearnedTomeCB:GetName() .. "Text"]
         if utText then

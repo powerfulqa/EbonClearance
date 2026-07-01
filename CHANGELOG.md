@@ -5,6 +5,47 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.49.0
+
+**Auto-release chance-on-hit weapons whose proc you've extracted at the Anvil (experimental).**
+
+Mirrors the affix side's v2.23.0 `Allow selling affixes you already have` gate. When you've extracted a weapon's chance-on-hit proc at the Anvil, that item's protection can now be released so the normal sell rules take over. The bridge from item-side proc text to spell-side spell ID is a hand-curated map - this is experimental, and coverage is item-specific.
+
+- **New toggle: `Sell known chance-on-hit procs (experimental)`** in Protection Settings, indented under `Keep items with chance-on-hit procs`. Off by default. When on, chance-on-hit weapons whose proc PE has ported to its 700xxx affix family AND the player has extracted, fall through the protection.
+- **Hand-curated keyword map (`EC_CHANCE_PROC_KEYWORDS`)** in `EbonClearance_Protection.lua` maps distinctive procLine substrings to PE spell IDs. Ships with 10 unique-phrase rows: Thunderfury, Shahram, Julie's Blessing, Frailty, Rending, Vampirism (two phrasings), Vulnerability, Concussion, Execution. The six generic "ranged + `<element>` damage" / bare "`<element>` damage" catch-alls were dropped after Serv reported Dwarven Hand Cannon's "Flaming Cannonball" ranged Fire proc getting flagged as Fire Blast even though the PE Anvil UI still offered extraction. Element-family matches will come back via the v2.49.1 autolearn (`ADB.chanceProcMap`) keyed on the EXACT procLine string, not a generic keyword.
+- **`EC_CHANCE_PROC_NEVER_EXTRACTABLE` set** (7 itemIDs) short-circuits `playerHasExtractedProc` to "not known" BEFORE the keyword map is consulted. Confirmed by Serv against the PE Anvil UI: Frostguard 12797, Dwarven Hand Cannon 2099, Felstriker 12590, Masterwork Stormhammer 12794, Neretzek 21856, Silent Fang 13953, Brain Hacker 1263. These weapons carry vanilla WoW procs with no PE 700xxx equivalent, so the Anvil hides or rejects extraction. Hard-coding the itemIDs makes the safety mechanism resilient to future keyword-map additions and autolearn misfires.
+- **`EC_CHANCE_PROC_CONFIRMED_ITEMS` table** (8 itemID -> spellID overrides) supplies unambiguous ground-truth mappings for weapons whose PE spellID has been directly observed via `/ec captureproc`. Wins over the keyword map. Ships with: Axe of the Deep Woods 811 -> Wilds 700088, Bow of Searing Arrows 2825 -> Fire Blast 700121, Blackblade of Shahram 12592 -> Shahram 700109, Hammer of the Titans 12796 -> Concussion 700078, Annihilator 12798 -> Rending 700081, Alcor's Sunrazor 14555 -> Incineration 700087, Electrified Dagger 19100 -> Wilds 700088, Nightfall 19169 -> Vulnerability 700103. Arcanite Champion 12790 was deferred: no clean PE catalog match for its "on-hit heal + strength" proc. The v2.49.1 autolearn will grow the account-wide `ADB.chanceProcMap` dynamically alongside this stable seed layer.
+- **Weapon-only gate.** `playerHasExtractedProc` checks equipLoc against WEAPON / 2HWEAPON / WEAPONMAINHAND / WEAPONOFFHAND / RANGED / RANGEDRIGHT / THROWN. Trinket / jewelry chance-on-hit items (Hand of Justice, Dragonspine Trophy, etc.) stay under blanket `DB.protectChanceOnHitItems` protection - PE's transferred-proc system is weapons-only.
+- **New tooltip labels.** `Keep (chance-on-hit proc known)` when the proc is extracted but the toggle is off, OR when the toggle is on but the item has no vendor value (soulbound sellPrice=0, e.g. Electrified Dagger - reported by Serv - vendor refuses regardless of the toggle). `Will Sell (chance-on-hit proc known)` when the proc is extracted AND the toggle is on AND the item has a sell price. The pre-v2.49.0 `Keep (chance-on-hit proc)` label still fires for items whose proc isn't extracted (or isn't in the seed map).
+- **`knownProcPass` is a POSITIVE sell signal.** Serv reported (Nightfall test) that the toggle needed to actively sell items whose proc has been extracted, not just release the chance-on-hit veto when other rules wanted the item. `knownProcPass` now sits alongside `qualityPass` / `affixRankPass` / `autoDupePass` / `recipePass` in the positive-signal gate, mirroring the affix side's `DB.affixAllowExactDupes` semantics from v2.44.0. This means the "Sell known chance-on-hit procs" toggle sells the item on the strength of proc-known alone, no Epic quality rule / affix rule / whitelist entry required. The chance-on-hit protection block re-uses the same `knownProcPass` flag as its veto release, so the tooltip and the actual sell decision stay in lockstep.
+- **`/ec sellinfo` trace mirror** shows the release reason with the matched family name (e.g. `chance-on-hit proc known (Frailty), 'Sell known chance-on-hit procs' is on`).
+- **Schema additions (all account-wide):** `ADB.chanceProcMap` (empty; reserved for v2.49.1 autolearn) + `ADB.chanceProcAmbiguous` (empty; reserved for v2.49.1 disambiguation queue). Downgrade-safe.
+
+**Coverage caveats (why it's marked experimental):**
+
+- The seed map is hand-curated. Items whose proc PE has NOT ported to its 700xxx family (Felstriker, Silent Fang, Frostguard's Chilled, Arcanite Champion's Strength of the Champion, Brain Hacker) stay under blanket protection - the map can only match procs PE actually exposes as extractable affixes.
+- New PE procs added after v2.49.0 need a new keyword row until v2.49.1's on-the-fly autolearn ships. In the meantime, use Alt+Right-Click Allow Sell on specific items.
+- If a keyword misfires (an item auto-sells that shouldn't), add it to your Keep List via Alt+Right-Click - the Keep List veto still wins over the chance-on-hit release.
+
+**Test 110a-g** pins the seven contracts: DB default, ADB init, seed map presence, playerHasExtractedProc gate, EC_IsSellable release, tooltip labels, panel checkbox. `/ec captureproc` (v2.48.1) still surfaces every bag chance-on-hit line + every extracted spell + the full PE catalog so the map can keep growing from real player data.
+
+**Polish bundled: Slash Commands section is grouped by heading.**
+
+The Main panel's Slash Commands list was one long flat run of ~26 rows. Now grouped under six thin gold dividers - `Basics` / `Profiles` / `Lists cleanup` / `Windows & reports` / `Diagnostics` / `Language` - so the reader can jump to the section they want without scanning the whole list. Divider colour matches the ListWidget separator so the visual family stays consistent. Locale files pick up 5 new heading keys.
+
+**Bug fix bundled: Merchant Mode "goblin" was bypassed by affix rank / dupe / known-proc sell signals.**
+
+Serv reported that with `Merchant Mode = goblin` (sell only at the Greedy Scavenger), a Windrunner Legguards at a NORMAL merchant sold anyway because `affixRankPass` (rank 2 below the floor of 4) and `autoDupePass` (dupe of a known affix) bypassed the `junkOnly` gate that `qualityPass`, `whitelistPass`, and `recipePass` all honour. At a disallowed merchant only grey junk should sell; the three affix-based signals plus v2.49.0's new `knownProcPass` now all gate on `not junkOnly` so the mode restriction actually holds. Test 110k pins the invariant.
+
+**Bug fix bundled: Loot Log counted unequipped gear as loot.**
+
+Reported by Serv against Bladetwister of Julie's Blessing, which showed in the Loot Log at 100% share after being unequipped from the offhand slot. Root cause: `EC_ScanLootDelta` was watching only bag-item counts, so an item moving from an equipment slot into a bag looked like a positive bag delta. Fixed by snapshotting equipped item IDs across `INVSLOT` 1-19 each scan, diffing against the previous snapshot, and subtracting per-itemID decreases from the raw bag delta before crediting anything as loot. Auto-clear / auto-sell paths still fire off the raw bag scan; only the Loot Log crediting math is changed. Test 110h pins the guard.
+
+Follow-up v2.49.1 will add the on-the-fly autolearn: bag-diff snapshot + `LEARNED_SPELL_IN_TAB` handler that populates `ADB.chanceProcMap` as the player extracts new procs. The infrastructure (ADB fields, tooltip / trace hooks, seed map) is all in place; the timing-sensitive part (bag correlation window) is what still needs in-game validation.
+
+---
+
+
 ### v2.48.1
 
 **Chance-on-hit proc groundwork: `/ec captureproc` diagnostic, a protection-gate bug fix reported by Serv, and a `/ec sellinfo` readability pass.**

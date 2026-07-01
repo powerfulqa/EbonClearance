@@ -762,7 +762,12 @@ local function BuildMainPanel(panel, content)
         langStatus = string.format(L["Current language: %s (fallback: enUS)."], activeLocale)
     end
 
+    -- v2.49.0: heading rows (heading = "..." field) group commands under
+    -- a thin gold divider + section label so the list scans as
+    -- Basics / Profiles / Cleanup / Windows / Diagnostics / Language
+    -- rather than one long undifferentiated run.
     local SLASH_ROWS = {
+        { heading = L["Basics"] },
         { label = "|cffffff00/ec|r  " .. L["Open settings |cffaaaaaa(you are here)|r"] },
         {
             run = "status",
@@ -776,11 +781,13 @@ local function BuildMainPanel(panel, content)
             run = "disable",
             label = "|cffffff00/ec disable|r  " .. L["Turn EbonClearance off"],
         },
+        { heading = L["Profiles"] },
         { run = "profile list", label = "|cffffff00/ec profile list|r  " .. L["Show your saved profiles"] },
         {
             label = "|cffffff00/ec profile [save|load|delete] <name>|r  "
                 .. L["Manage profiles by name |cffaaaaaa(or use the Profiles panel)|r"],
         },
+        { heading = L["Lists cleanup"] },
         {
             run = "clean",
             label = "|cffffff00/ec clean|r  " .. L["Find items on more than one list |cffaaaaaa(add 'apply' to fix)|r"],
@@ -790,6 +797,7 @@ local function BuildMainPanel(panel, content)
             label = "|cffffff00/ec clean upgrades|r  "
                 .. L["Find old 'Upgrade'-tagged Keep List items |cffaaaaaa(add 'apply' to remove)|r"],
         },
+        { heading = L["Windows & reports"] },
         {
             run = "loot",
             label = "|cffffff00/ec loot|r  " .. L["Open the Loot Log window"],
@@ -811,6 +819,7 @@ local function BuildMainPanel(panel, content)
             run = "bugreport",
             label = "|cffffff00/ec bugreport|r  " .. L["Generate a report to share when something's wrong"],
         },
+        { heading = L["Diagnostics"] },
         {
             label = "|cffffff00/ec scandebug <bag> <slot>|r  "
                 .. L["Diagnostic: dump the scan tooltip lines for a bag slot"],
@@ -849,6 +858,7 @@ local function BuildMainPanel(panel, content)
             label = "|cffffff00/ec processdebug clear|r  " .. L["Wipe Process Bags cache (force fresh tooltip scans)"],
         },
         { run = "perf", label = "|cffffff00/ec perf|r  " .. L["Show EC's memory, CPU, cache and list sizes"] },
+        { heading = L["Language"] },
         { label = "|cff66ccff" .. langStatus .. "|r" },
         {
             run = "locale deDE",
@@ -874,47 +884,77 @@ local function BuildMainPanel(panel, content)
     local LABEL_COL_X = 54 -- button width (48) + 6 px gap; labels start at this x
     local PANEL_RIGHT_PAD = 16 -- same right margin the original cmdText used
     local prevAnchor = cmdHeader
+    -- v2.49.0: track prev anchor's x-offset in content so we can flip
+    -- heading rows (which span the full width from x=0) and command
+    -- rows (which sit indented at LABEL_COL_X) without either staircasing
+    -- or unindenting after a heading. cmdHeader lives at x=0; any command
+    -- label or heading label lives at x=LABEL_COL_X.
+    local prevX = 0
     for i, row in ipairs(SLASH_ROWS) do
-        local gap = (i == 1) and -8 or -10
-        -- First row indents LABEL_COL_X to clear the button column;
-        -- subsequent rows inherit the X position from the previous label
-        -- (no further offset, otherwise they'd staircase to the right).
-        local xOffset = (i == 1) and LABEL_COL_X or 0
+        if row.heading then
+            -- Section divider: thin gold line spanning the full content
+            -- width + a gold GameFontNormal label indented into the label
+            -- column so it aligns with the command rows beneath it.
+            local topGap = (prevAnchor == cmdHeader) and -8 or -16
+            local divider = content:CreateTexture(nil, "ARTWORK")
+            -- EC-TRAP: SetTexture(r,g,b,a) draws a solid colour on 3.3.5a.
+            -- Do NOT "fix" this to SetColorTexture (does not exist here).
+            -- Matches the ListWidget divider colour so the visual family
+            -- stays consistent across panels.
+            divider:SetTexture(0.4, 0.35, 0.25, 0.8)
+            divider:SetHeight(1)
+            divider:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", -prevX, topGap)
+            EC_compCache.setPanelWidth(divider, PANEL_RIGHT_PAD)
 
-        local fs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        fs:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", xOffset, gap)
-        fs:SetJustifyH("LEFT")
-        if fs.SetWordWrap then
-            fs:SetWordWrap(true)
+            local head = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+            head:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", LABEL_COL_X, -6)
+            head:SetText("|cffffd870" .. row.heading .. "|r")
+
+            prevAnchor = head
+            prevX = LABEL_COL_X
+        else
+            local gap = (i == 1) and -8 or -10
+            -- xOffset re-establishes the LABEL_COL_X indent whenever
+            -- prevAnchor sits at x=0 (i.e. cmdHeader before the first
+            -- row); anything else already lives in the label column.
+            local xOffset = LABEL_COL_X - prevX
+
+            local fs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+            fs:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", xOffset, gap)
+            fs:SetJustifyH("LEFT")
+            if fs.SetWordWrap then
+                fs:SetWordWrap(true)
+            end
+            -- Width = panel width - (left inset for label column) - (right pad).
+            -- setPanelWidth subtracts the given xOffset from EC_PANEL_WIDTH and
+            -- re-applies on resize, so the wrapped height tracks panel scale.
+            EC_compCache.setPanelWidth(fs, LABEL_COL_X + PANEL_RIGHT_PAD)
+            fs:SetText(row.label)
+
+            if row.run then
+                local btn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+                btn:SetSize(48, 20)
+                -- LEFT-to-LEFT vertically-centres the button against the
+                -- label's centre line, so single-line labels (the common
+                -- case) read as perfectly aligned. The button still sits in
+                -- the column to the left of the label via -LABEL_COL_X.
+                -- For a wrapped multi-line label, the button centres on the
+                -- whole wrapped block, which is acceptable visual drift.
+                btn:SetPoint("LEFT", fs, "LEFT", -LABEL_COL_X, 0)
+                btn:SetText(L["Run"])
+                local runCmd = row.run
+                btn:SetScript("OnClick", function()
+                    local handler = SlashCmdList and SlashCmdList["EBONCLEARANCE"]
+                    if handler then
+                        handler(runCmd)
+                    end
+                    PlaySound("igMainMenuOptionCheckBoxOn")
+                end)
+            end
+
+            prevAnchor = fs
+            prevX = LABEL_COL_X
         end
-        -- Width = panel width - (left inset for label column) - (right pad).
-        -- setPanelWidth subtracts the given xOffset from EC_PANEL_WIDTH and
-        -- re-applies on resize, so the wrapped height tracks panel scale.
-        EC_compCache.setPanelWidth(fs, LABEL_COL_X + PANEL_RIGHT_PAD)
-        fs:SetText(row.label)
-
-        if row.run then
-            local btn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-            btn:SetSize(48, 20)
-            -- LEFT-to-LEFT vertically-centres the button against the
-            -- label's centre line, so single-line labels (the common
-            -- case) read as perfectly aligned. The button still sits in
-            -- the column to the left of the label via -LABEL_COL_X.
-            -- For a wrapped multi-line label, the button centres on the
-            -- whole wrapped block, which is acceptable visual drift.
-            btn:SetPoint("LEFT", fs, "LEFT", -LABEL_COL_X, 0)
-            btn:SetText(L["Run"])
-            local runCmd = row.run
-            btn:SetScript("OnClick", function()
-                local handler = SlashCmdList and SlashCmdList["EBONCLEARANCE"]
-                if handler then
-                    handler(runCmd)
-                end
-                PlaySound("igMainMenuOptionCheckBoxOn")
-            end)
-        end
-
-        prevAnchor = fs
     end
 
     -- v2.12.0: size the scroll content to fit the bottom-most widget so

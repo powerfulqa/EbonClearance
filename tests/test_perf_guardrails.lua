@@ -4542,15 +4542,19 @@ do
             -- call appear in order inside it, AND EC_lootBagSnapshot =
             -- snap appears OUTSIDE the inner skip but still after the
             -- whole loop so the snapshot rebases unconditionally.
+            -- v2.49.0: EC_BumpLoot now takes netDelta (bag delta minus
+            -- unequipped subtraction) instead of count - prev directly.
             local body = ev:match("function EC_ScanLootDelta%(.-NS%.ScanLootDelta = EC_ScanLootDelta")
             if not body then return false end
             local i1 = body:find("if count > prev then", 1, true)
             local i2 = body:find("if not %(deleteList and NS%.IsInSet%(deleteList, id%)%) then", i1)
-            local i3 = body:find("EC_BumpLoot%(id, count %- prev%)", i2)
-            local i4 = body:find("EC_lootBagSnapshot = snap", i3)
+                or body:find("if netDelta > 0 and not %(deleteList and NS%.IsInSet%(deleteList, id%)%) then", i1)
+            local i3 = body:find("EC_BumpLoot%(id, count %- prev%)", i2 or 1)
+                or body:find("EC_BumpLoot%(id, netDelta%)", i2 or 1)
+            local i4 = body:find("EC_lootBagSnapshot = snap", i3 or 1)
             return i1 and i2 and i3 and i4 and i1 < i2 and i2 < i3 and i3 < i4
         end)(),
-        "the skip MUST gate EC_BumpLoot inside the count>prev branch, AND EC_lootBagSnapshot = snap must still rebase after the loop (outside the skip). If the skip gated the snapshot update instead, looted-then-destroyed items would re-credit on every burst (snapshot never rolls forward). If the rebase moved inside the skip, future arrivals of unrelated items would wedge until the next non-skipped iteration. The single bump-only skip preserves the snapshot semantics.")
+        "the skip MUST gate EC_BumpLoot inside the count>prev branch, AND EC_lootBagSnapshot = snap must still rebase after the loop (outside the skip). If the skip gated the snapshot update instead, looted-then-destroyed items would re-credit on every burst (snapshot never rolls forward). If the rebase moved inside the skip, future arrivals of unrelated items would wedge until the next non-skipped iteration. v2.49.0 added the unequip guard - subtract unequipped[id] from the bag delta - which changed the innermost bump call to EC_BumpLoot(id, netDelta) but preserved the shape.")
 end
 
 -- ---------------------------------------------------------------------------
@@ -6783,12 +6787,12 @@ do
     -- sellPrice = 0. Vendor refuses, item wedges, tooltip lies. Gate both on
     -- hasSellPrice; mirror in the trace and tooltip.
     local tt = fileSrc("EbonClearance_Tooltip.lua")
-    check("Test 109d: EC_IsSellable affixRankPass gates on hasSellPrice",
-        ev:find("local affixRankPass = hasSellPrice\n%s+and DB%.affixMinSellRank") ~= nil,
-        "affixRankPass is a SELL signal - firing it for a sellPrice=0 item makes EC lie about the outcome (vendor will refuse). The hasSellPrice prefix ensures the sell path only fires for items the vendor will accept. The v2.47.0 autoMarkAffixDupes toggle covers the deletion flow for owned unsellable-affix dupes as a separate code path (runAutoMarkAffixDupes in BAG_UPDATE).")
-    check("Test 109e: EC_IsSellable autoDupePass gates on hasSellPrice",
-        ev:find("if hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil,
-        "same shape as affixRankPass: autoDupePass is a SELL signal so it must not fire for items the vendor won't buy. Keep in lockstep with the affixRankPass gate on the line above.")
+    check("Test 109d: EC_IsSellable affixRankPass gates on hasSellPrice AND junkOnly",
+        ev:find("local affixRankPass = not junkOnly\n%s+and hasSellPrice\n%s+and DB%.affixMinSellRank") ~= nil,
+        "affixRankPass is a SELL signal - firing it for a sellPrice=0 item makes EC lie about the outcome (vendor will refuse). The hasSellPrice prefix ensures the sell path only fires for items the vendor will accept. The v2.47.0 autoMarkAffixDupes toggle covers the deletion flow for owned unsellable-affix dupes as a separate code path (runAutoMarkAffixDupes in BAG_UPDATE). v2.49.0 adds the not-junkOnly gate too (Serv report, Windrunner Legguards at a normal merchant in goblin mode).")
+    check("Test 109e: EC_IsSellable autoDupePass gates on hasSellPrice AND junkOnly",
+        ev:find("if not junkOnly and hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil,
+        "same shape as affixRankPass: autoDupePass is a SELL signal so it must not fire for items the vendor won't buy AND must respect merchant-mode restrictions. Keep in lockstep with the affixRankPass gate on the line above.")
     check("Test 109f: BagDisplay trace mirrors both hasSellPrice gates",
         bd:find("local affixRankPass = hasSellPrice\n%s+and DB and DB%.affixMinSellRank") ~= nil
             and bd:find("if hasSellPrice and DB and DB%.affixAllowExactDupes and affixDataForTrace then") == nil
@@ -6799,6 +6803,117 @@ do
             and tt:find("if canSell and %(manualAllow or autoDupe or rankBelow%) then") ~= nil,
         "the tooltip's affix-release block MUST gate on canSell (a positive-sellPrice check) before firing 'Will Sell (you have this affix)' or 'Will Sell (low-rank affix)' relabels. Without this, an unsellable item like Sentinel's Blade of Iron Will II shows 'Will Sell' in the tooltip but the vendor refuses - the pre-v2.48.1 bug reported by Serv.")
 end
+
+-- ---------------------------------------------------------------------------
+-- Test 110 (v2.49.0): chance-on-hit auto-release when the proc is extracted.
+-- ---------------------------------------------------------------------------
+-- Mirrors the affix side's v2.23.0 affixAllowExactDupes gate: when the
+-- player has extracted a weapon's chance-on-hit proc AND the experimental
+-- toggle DB.sellChanceOnHitKnown is on, the chance-on-hit protection
+-- releases the item to the normal sell rules.
+--
+-- Bridge from item-side procLine to spell-side spellID is a hand-curated
+-- keyword map (EC_CHANCE_PROC_KEYWORDS in Protection.lua) plus an ADB
+-- autolearn map (populated by future v2.49.1 on-the-fly diff at
+-- LEARNED_SPELL_IN_TAB - out of scope for v2.49.0's ship).
+--
+-- Contracts pinned:
+-- - DB.sellChanceOnHitKnown seeded false in EnsureDB (opt-in, experimental)
+-- - ADB.chanceProcMap + ADB.chanceProcAmbiguous seeded as tables
+-- - EC_CHANCE_PROC_KEYWORDS declared as a file-local seed map in
+--   Protection.lua with the 16 confirmed keyword rows
+-- - playerHasExtractedProc gates on equipLoc (weapons only) + catalog
+--   lookup via _G.ExtractionService.learnedAffixes
+-- - EC_IsSellable's chance-on-hit block checks knownProcRelease
+-- - Tooltip surfaces distinct 'Keep (chance-on-hit proc known)' /
+--   'Will Sell (chance-on-hit proc known)' labels
+-- - ProtectionPanel surfaces the sub-toggle with the "experimental"
+--   suffix in its label
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then return "" end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local prot = fileSrc("EbonClearance_Protection.lua")
+    local tt = fileSrc("EbonClearance_Tooltip.lua")
+    local pp = fileSrc("EbonClearance_ProtectionPanel.lua")
+    check("Test 110a: EnsureDB seeds DB.sellChanceOnHitKnown = false (opt-in experimental)",
+        ev:find("DB%.sellChanceOnHitKnown = false") ~= nil,
+        "v2.49.0's experimental toggle MUST default OFF so existing users see no behaviour change on upgrade. Coverage is item-specific (seed map + autolearn); flipping it on turns players into experimental testers of the coverage, so explicit opt-in is required.")
+    check("Test 110b: EnsureAccountDB seeds chanceProcMap + chanceProcAmbiguous as tables",
+        ev:find("ADB%.chanceProcMap = {}") ~= nil
+            and ev:find("ADB%.chanceProcAmbiguous = {}") ~= nil,
+        "the account-wide autolearn map + ambiguity queue MUST be initialised even in v2.49.0 (before autolearn ships) so future v2.49.1 code can populate them without needing another migration.")
+    check("Test 110c: EC_CHANCE_PROC_KEYWORDS declared as file-local seed map with the 10 unique-phrase rows",
+        prot:find("local EC_CHANCE_PROC_KEYWORDS = {") ~= nil
+            and prot:find('family = "Frailty"') ~= nil
+            and prot:find('family = "Vampirism"') ~= nil
+            and prot:find('family = "Thunderfury"') ~= nil
+            and prot:find('family = "Julie\'s Blessing"') ~= nil
+            and prot:find('family = "Rending"') ~= nil,
+        "the hand-curated keyword map MUST include at least Frailty, Vampirism, Thunderfury, Julie's Blessing, and Rending - the unique-phrase pairings that survived the v2.49.0 tightening pass. Serv reported (Dwarven Hand Cannon) that the six generic 'ranged + <element>' and bare '<element> damage' rows over-matched, so they were dropped in favour of the v2.49.1 autolearn map (ADB.chanceProcMap) which keys on the EXACT procLine string. File-local scope avoids polluting globals; future contributors adding rows MUST prefer a unique phrase from the item-side text over a generic element keyword.")
+    check("Test 110d: playerHasExtractedProc gates on weapon equipLoc + catalog lookup",
+        prot:find("function EC_compCache%.playerHasExtractedProc") ~= nil
+            and prot:find('equipLoc == "INVTYPE_WEAPON"') ~= nil
+            and prot:find('equipLoc == "INVTYPE_2HWEAPON"') ~= nil
+            and prot:find("_G%.ExtractionService and _G%.ExtractionService%.learnedAffixes") ~= nil,
+        "the release gate MUST check equipLoc (only weapons pass PE's extraction system) + walk the _G.ExtractionService.learnedAffixes catalog for the mapped spellID with learned=true. Trinkets / jewelry chance-on-hit items stay under blanket protection.")
+    check("Test 110e: EC_IsSellable computes knownProcPass as a positive sell signal",
+        ev:find("local knownProcPass = false") ~= nil
+            and ev:find("DB%.sellChanceOnHitKnown") ~= nil
+            and ev:find("EC_compCache%.playerHasExtractedProc%(bag, slot, itemID, procLine%)") ~= nil
+            and ev:find("or knownProcPass%) then") ~= nil
+            and ev:find("if not %(ADB%.allowedItems and ADB%.allowedItems%[itemID%]%) and not knownProcPass then") ~= nil,
+        "EC_IsSellable's chance-on-hit toggle is a POSITIVE sell signal (v2.49.0 Serv report on Nightfall). knownProcPass MUST: be added to both the initial and exit positive-signal gates (isJunk / qualityPass / whitelistPass / affixRankPass / autoDupePass / recipePass / knownProcPass), and re-used as the release trigger inside the chance-on-hit protection block (mirrors the affix side's DB.affixAllowExactDupes semantics from v2.44.0). Without this, the toggle only released a veto and Nightfall (proc extracted, Epic rule off) would never sell.")
+    check("Test 110f: Tooltip surfaces Keep + Will Sell (chance-on-hit proc known) labels",
+        tt:find('L%["Keep %(chance%-on%-hit proc known%)"%]') ~= nil
+            and tt:find('L%["Will Sell %(chance%-on%-hit proc known%)"%]') ~= nil
+            and tt:find("if procKnown and DB%.sellChanceOnHitKnown and hasSellPriceHere then") ~= nil
+            and tt:find("local hasSellPriceHere = itemSellPrice and itemSellPrice > 0") ~= nil,
+        "the tooltip MUST distinguish 'known + toggle on' (Will Sell) from 'known + toggle off' (Keep known) so the player sees the current outcome without opening /ec sellinfo. Falls back to the pre-v2.49.0 'Keep (chance-on-hit proc)' when the proc isn't extracted (or PE hasn't ported it). v2.49.0 (Serv report, Nightfall): knownProcPass is a POSITIVE sell signal in EC_IsSellable (not a veto release), so 'Will Sell' fires the moment (procKnown AND toggle on), matching EC_IsSellable's positive-signal path. v2.49.0 (Serv report, Electrified Dagger): 'Will Sell' ALSO requires itemSellPrice > 0. Soulbound weapons with sellPrice=0 CANNOT be sold - EC_IsSellable's knownProcPass path gates on hasSellPrice for the same reason. Without this gate the tooltip advertises 'Will Sell' while the vendor refuses.")
+    check("Test 110g: ProtectionPanel surfaces the experimental checkbox",
+        pp:find("EbonClearanceSellChanceOnHitKnownCB") ~= nil
+            and pp:find("DB%.sellChanceOnHitKnown = cb:GetChecked") ~= nil
+            and pp:find('L%["Sell known chance%-on%-hit procs %(experimental%)"%]') ~= nil,
+        "the checkbox MUST exist with frame name locked (tests grep for it), the OnClick MUST write DB.sellChanceOnHitKnown, and the label MUST include the '(experimental)' suffix so the player knows coverage is item-specific and may need iteration.")
+    check("Test 110i: EC_CHANCE_PROC_NEVER_EXTRACTABLE gates playerHasExtractedProc ahead of the keyword map",
+        prot:find("local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {") ~= nil
+            and prot:find("%[12797%] = \"Frostguard\"") ~= nil
+            and prot:find("%[2099%]  = \"Dwarven Hand Cannon\"") ~= nil
+            and prot:find("%[21856%] = \"Neretzek, The Blood Drinker\"") ~= nil
+            and prot:find("if itemID and EC_CHANCE_PROC_NEVER_EXTRACTABLE%[itemID%] then") ~= nil,
+        "Serv reported these seven itemIDs whose PE Anvil UI does NOT offer extraction (Frostguard 12797, Dwarven Hand Cannon 2099, Felstriker 12590, Masterwork Stormhammer 12794, Neretzek 21856, Silent Fang 13953, Brain Hacker 1263). Their vanilla WoW procs have no PE 700xxx equivalent. playerHasExtractedProc MUST short-circuit on this set BEFORE the keyword-map walk, otherwise a false-positive keyword row (or an autolearn misfire in v2.49.1) would auto-release a weapon whose proc PE can't actually extract.")
+    check("Test 110j: EC_CHANCE_PROC_CONFIRMED_ITEMS supplies unambiguous itemID -> spellID overrides",
+        prot:find("local EC_CHANCE_PROC_CONFIRMED_ITEMS = {") ~= nil
+            and prot:find("%[19169%] = { spellID = 700103") ~= nil
+            and prot:find("%[811%]   = { spellID = 700088") ~= nil
+            and prot:find("%[12592%] = { spellID = 700109") ~= nil
+            and prot:find("%[14555%] = { spellID = 700087") ~= nil
+            and prot:find("%[2825%]  = { spellID = 700121") ~= nil
+            and prot:find("if itemID and EC_CHANCE_PROC_CONFIRMED_ITEMS%[itemID%] then") ~= nil,
+        "the confirmed-items table wins over the keyword map for weapons whose PE spellID has been observed directly via /ec captureproc. Ships with 8 itemID -> spellID mappings verified via Serv's captureproc dump: Axe of the Deep Woods 811 -> Wilds, Bow of Searing Arrows 2825 -> Fire Blast, Blackblade of Shahram 12592 -> Shahram, Hammer of the Titans 12796 -> Concussion, Annihilator 12798 -> Rending, Alcor's Sunrazor 14555 -> Incineration, Electrified Dagger 19100 -> Wilds, Nightfall 19169 -> Vulnerability. The v2.49.1 autolearn will grow ADB.chanceProcMap dynamically alongside this stable seed layer.")
+    check("Test 110k: affixRankPass / autoDupePass / knownProcPass respect junkOnly at a disallowed merchant",
+        ev:find("local affixRankPass = not junkOnly") ~= nil
+            and ev:find("if not junkOnly and hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil
+            and ev:find("if not junkOnly\n%s+and hasSellPrice\n%s+and DB%.sellChanceOnHitKnown") ~= nil,
+        "Serv reported (Windrunner Legguards at a normal merchant with Merchant Mode = goblin): three positive sell signals - affixRankPass, autoDupePass, knownProcPass - bypassed the junkOnly gate that qualityPass, whitelistPass, and recipePass all honour. Result: at a disallowed merchant, items with rank-below-floor affixes or known-dupe affixes (or v2.49.0's known chance-on-hit procs) sold anyway. Every positive signal that fires on non-grey items MUST honour junkOnly so the merchant-mode restriction actually holds. isJunk (grey items) stays exempt - grey is always sold at any merchant per the ADDON_GUIDE 'Grey items are always sold' invariant.")
+    check("Test 110h: EC_ScanLootDelta unequip guard subtracts equipped snapshot decreases",
+        ev:find("local function EC_BuildEquippedSnapshot%(%)") ~= nil
+            and ev:find("EC_lootEquippedSnapshot = EC_BuildEquippedSnapshot%(%)") ~= nil
+            and ev:find("local unequipped = {}") ~= nil
+            and ev:find("if nowEq < prevEq then") ~= nil
+            and ev:find("local unequipDelta = unequipped%[id%] or 0") ~= nil
+            and ev:find("local netDelta = delta %- unequipDelta") ~= nil,
+        "reported by Serv: unequipping a worn item counts it as loot because the item moves from an equipment slot to a bag slot. Fix: snapshot equipped items (INVSLOT 1-19) each scan, diff vs previous, subtract per-itemID decreases from the positive bag delta. Snapshot MUST re-baseline on the transaction-window skip path AND after the loop; without either, a transaction close would treat prior equipped state as unequipped noise.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Result.
+-- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
 -- Result.

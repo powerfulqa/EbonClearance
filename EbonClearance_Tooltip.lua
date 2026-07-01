@@ -785,8 +785,53 @@ local function EC_AnnotateTooltip(tooltip)
                 statusTag = "override"
             end
         else
-            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (chance-on-hit proc)"] .. "|r"
-            statusTag = "keep"
+            -- v2.49.0: check whether the player has extracted the proc's
+            -- PE spell. If yes AND the experimental toggle is on, the
+            -- item WILL sell on the next auto-rule sweep - reflect that
+            -- in the label. If yes but toggle off, show "known" to
+            -- signal the player COULD auto-sell it by flipping the
+            -- toggle. If no, keep the pre-v2.49.0 blanket "Keep" label.
+            --
+            -- v2.49.0 fix (Serv report, Nightfall): knownProcPass is a
+            -- POSITIVE sell signal, not just a veto release. When the
+            -- proc is extracted AND the toggle is on, the tooltip should
+            -- show "Will Sell (chance-on-hit proc known)" - matching
+            -- EC_IsSellable's knownProcPass positive-signal path so the
+            -- tooltip and the actual sell decision don't diverge. The
+            -- earlier "pendingWillSell required" gate was Interpretation-A
+            -- (release only); this gate is Interpretation-B (positive
+            -- signal), matching the user's original request and the
+            -- affix side's DB.affixAllowExactDupes semantics.
+            --
+            -- v2.49.0 fix (Serv report, Electrified Dagger): also require
+            -- itemSellPrice > 0. Soulbound weapons with no vendor value
+            -- CANNOT be sold - EC_IsSellable's knownProcPass path gates
+            -- on hasSellPrice for the same reason. Without this gate the
+            -- tooltip advertises "Will Sell" while the vendor refuses,
+            -- diverging from /ec sellinfo which correctly reports "vendor
+            -- won't accept".
+            local procKnown = false
+            if EC_compCache.playerHasExtractedProc and EC_compCache.liveTooltipChanceProcLine then
+                local procLine = EC_compCache.liveTooltipChanceProcLine(tooltip)
+                if procLine then
+                    procKnown = EC_compCache.playerHasExtractedProc(nil, nil, id, procLine)
+                end
+            end
+            local hasSellPriceHere = itemSellPrice and itemSellPrice > 0
+            if procKnown and DB.sellChanceOnHitKnown and hasSellPriceHere then
+                statusLine = "|cff66ccff[EC]|r |cffb6ffb6"
+                    .. L["Will Sell (chance-on-hit proc known)"]
+                    .. "|r"
+                statusTag = "willsell"
+            elseif procKnown then
+                statusLine = "|cff66ccff[EC]|r |cffffb84d"
+                    .. L["Keep (chance-on-hit proc known)"]
+                    .. "|r"
+                statusTag = "keep"
+            else
+                statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (chance-on-hit proc)"] .. "|r"
+                statusTag = "keep"
+            end
         end
     end
 

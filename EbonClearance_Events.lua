@@ -468,6 +468,24 @@ local function EnsureAccountDB()
     if type(ADB.lootLogHidden) ~= "table" then
         ADB.lootLogHidden = {}
     end
+    -- v2.49.0: chance-on-hit procLine -> PE spellID map, populated by the
+    -- on-the-fly autolearn (bag-diff snapshot + LEARNED_SPELL_IN_TAB
+    -- handler). Complements the hardcoded EC_CHANCE_PROC_KEYWORDS seed
+    -- map: seed catches common procs by keyword, autolearn catches the
+    -- exact procLine each item ships with. Account-wide because
+    -- extraction state is account-wide. Key: verbatim item procLine
+    -- string. Value: PE affix spell ID (700xxx range).
+    if type(ADB.chanceProcMap) ~= "table" then
+        ADB.chanceProcMap = {}
+    end
+    -- v2.49.0: autolearn ambiguity queue. When LEARNED_SPELL_IN_TAB fires
+    -- and MULTIPLE unmapped chance-on-hit weapons had disappeared from
+    -- bags in the recent window, we can't correlate 1:1 - save all
+    -- candidates + the new spell for /ec captureproc review. Cleared on
+    -- successful resolution or on demand via /ec resetprocmap.
+    if type(ADB.chanceProcAmbiguous) ~= "table" then
+        ADB.chanceProcAmbiguous = {}
+    end
     -- v2.38.1: account-wide stats ledger. Every per-character stat write
     -- mirrors into ADB.accountStats so the Stats panel's Account view
     -- aggregates totals across all characters. Counts forward from
@@ -899,6 +917,17 @@ local function EnsureDB()
     -- filter (the proc text is the signal, not the rarity).
     if type(DB.protectChanceOnHitItems) ~= "boolean" then
         DB.protectChanceOnHitItems = true
+    end
+    -- v2.49.0: sell known chance-on-hit procs (experimental). When on,
+    -- items whose chance-on-hit proc matches a PE-extracted spell in the
+    -- player's spellbook fall through the chance-on-hit protection - the
+    -- proc is no longer a keeper since the player has extracted it.
+    -- Mirrors DB.affixAllowExactDupes for the affix side. Off by default
+    -- (experimental: relies on the hand-curated EC_CHANCE_PROC_KEYWORDS
+    -- seed map + on-the-fly autolearn to bridge item-side procLines to
+    -- spell-side spell IDs, and coverage is item-specific).
+    if type(DB.sellChanceOnHitKnown) ~= "boolean" then
+        DB.sellChanceOnHitKnown = false
     end
     -- Tome protection. Tome / recipe learn-state is per-character in
     -- Project Ebonhold (only @affix@ items save account-wide via the
@@ -1698,6 +1727,28 @@ local function EC_BuildBagSnapshot()
     return snap
 end
 
+-- v2.49.0: equipped snapshot for the unequip guard on EC_ScanLootDelta.
+-- Reported by Serv: unequipping a worn item counts it as loot because
+-- the item moves from an equipment slot to a bag slot, showing as a
+-- new bag delta. Comparing this snapshot across scan runs lets us
+-- detect "was equipped last scan, isn't now" and subtract that itemID
+-- from the positive bag delta before crediting as loot. Standard
+-- inventory slots 1-19 (INVSLOT_HEAD through INVSLOT_TABARD).
+local EC_lootEquippedSnapshot = {}
+local function EC_BuildEquippedSnapshot()
+    local snap = {}
+    if not GetInventoryItemID then
+        return snap
+    end
+    for slot = 1, 19 do
+        local id = GetInventoryItemID("player", slot)
+        if id then
+            snap[id] = (snap[id] or 0) + 1
+        end
+    end
+    return snap
+end
+
 -- Diff current bags against the last snapshot and record positive deltas as
 -- looted. Called from the BAG_UPDATE debounce flush. The first call after
 -- login / reload only baselines (existing bag contents are not "loot").
@@ -1719,8 +1770,24 @@ local function EC_ScanLootDelta()
     -- re-baseline without crediting any delta as loot.
     if not EC_lootSnapshotReady or EC_LootTransactionWindowOpen() then
         EC_lootBagSnapshot = snap
+        EC_lootEquippedSnapshot = EC_BuildEquippedSnapshot()
         EC_lootSnapshotReady = true
         return
+    end
+    -- v2.49.0: unequip guard. Reported by Serv - unequipping a worn
+    -- item moves it from an equipment slot to a bag slot, showing as
+    -- a positive bag delta and getting credited as loot. Diff the
+    -- equipped snapshot vs the previous run and build a per-itemID
+    -- "just unequipped" count. Subtract from the bag delta before
+    -- crediting. Equipping (bag -> slot) doesn't trigger a positive
+    -- bag delta so no equivalent guard needed on that side.
+    local equippedNow = EC_BuildEquippedSnapshot()
+    local unequipped = {}
+    for id, prevEq in pairs(EC_lootEquippedSnapshot) do
+        local nowEq = equippedNow[id] or 0
+        if nowEq < prevEq then
+            unequipped[id] = prevEq - nowEq
+        end
     end
     -- v2.46.6: skip items the addon is about to destroy. Reported by Broyo:
     -- looted PvP-Resilience items left "item:XXXXX" ghost rows in the Loot
@@ -1738,16 +1805,22 @@ local function EC_ScanLootDelta()
     for id, count in pairs(snap) do
         local prev = EC_lootBagSnapshot[id] or 0
         if count > prev then
+            local delta = count - prev
+            -- v2.49.0: subtract items just unequipped so a worn->bag
+            -- transition doesn't count as loot.
+            local unequipDelta = unequipped[id] or 0
+            local netDelta = delta - unequipDelta
             -- NS.IsInSet rather than the file-local IsInSet because that
             -- local is declared further down in the chunk (after this
             -- function's definition point) and isn't a captured upvalue
             -- here. Same membership semantics; one extra table lookup.
-            if not (deleteList and NS.IsInSet(deleteList, id)) then
-                EC_BumpLoot(id, count - prev)
+            if netDelta > 0 and not (deleteList and NS.IsInSet(deleteList, id)) then
+                EC_BumpLoot(id, netDelta)
             end
         end
     end
     EC_lootBagSnapshot = snap
+    EC_lootEquippedSnapshot = equippedNow
 end
 NS.ScanLootDelta = EC_ScanLootDelta
 
@@ -4724,7 +4797,13 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- the player wants unsellable affix dupes gone, the v2.47.0
     -- autoMarkAffixDupes toggle routes them to the Delete List path
     -- instead - a different flow that separately checks sellPrice = 0.
-    local affixRankPass = hasSellPrice
+    -- v2.49.0 fix (Serv report, Windrunner Legguards at a normal merchant
+    -- while Merchant Mode was "goblin"): junkOnly gating was missing here,
+    -- so an affixed Rare with rank below the floor would sell at ANY
+    -- merchant even when the user restricted the sweep to the goblin.
+    -- Same pattern needed on autoDupePass and knownProcPass below.
+    local affixRankPass = not junkOnly
+        and hasSellPrice
         and DB.affixMinSellRank
         and DB.affixMinSellRank > 0
         and affixForRank
@@ -4739,7 +4818,7 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- the affix-protection block downstream.
     -- v2.48.1 hasSellPrice gate: see the note above affixRankPass.
     local autoDupePass = false
-    if hasSellPrice and DB.affixAllowExactDupes and affixForRank then
+    if not junkOnly and hasSellPrice and DB.affixAllowExactDupes and affixForRank then
         local descKnown = affixForRank.description
             and EC_compCache.playerHasAffixDescription
             and EC_compCache.playerHasAffixDescription(affixForRank.description)
@@ -4810,7 +4889,39 @@ local function EC_IsSellable(bag, slot, junkOnly)
             end
         end
     end
-    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass) then
+    -- v2.49.0 (Serv report, Nightfall): "Sell known chance-on-hit procs
+    -- (experimental)" is a POSITIVE sell signal, not just a veto release.
+    -- Mirrors the affix side's DB.affixAllowExactDupes semantics from
+    -- v2.44.0: the toggle label says "sell", so the behaviour should
+    -- positively sell items whose proc has been extracted, without needing
+    -- a quality rule or other signal to fire alongside. Pre-fix this was
+    -- only a release for the chance-on-hit veto, so Nightfall (proc
+    -- extracted, Epic quality rule off, no affix, not on any list) never
+    -- sold - matched Serv's expectation of Interpretation-B behaviour.
+    -- Gated on hasSellPrice (unsellable items should never wear a Will
+    -- Sell verdict), DB.protectChanceOnHitItems (parent toggle is the
+    -- protection; this child releases from it), and the item actually
+    -- having a chance-on-hit proc line. playerHasExtractedProc gates
+    -- itself on the NEVER_EXTRACTABLE set + CONFIRMED_ITEMS map +
+    -- keyword-map inference.
+    local knownProcPass = false
+    if not junkOnly
+        and hasSellPrice
+        and DB.sellChanceOnHitKnown
+        and DB.protectChanceOnHitItems
+        and EC_compCache.itemHasChanceOnHit
+        and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+    then
+        local procLine = EC_compCache.chanceProcLine
+            and EC_compCache.chanceProcLine(bag, slot, itemID)
+        if procLine
+            and EC_compCache.playerHasExtractedProc
+            and EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
+        then
+            knownProcPass = true
+        end
+    end
+    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass or knownProcPass) then
         return false
     end
     if IsEquippedItem(itemID) or blacklisted then
@@ -4929,7 +5040,18 @@ local function EC_IsSellable(bag, slot, junkOnly)
         -- marked via Alt+Right-Click -> "Allow Sell" fall through to
         -- the normal sell / DE rules. Unmarked items stay protected.
         -- Account-wide because extraction state is account-wide.
-        if not (ADB.allowedItems and ADB.allowedItems[itemID]) then
+        -- v2.49.0: also released when the player has extracted the
+        -- proc's PE spell AND the "Sell known chance-on-hit procs
+        -- (experimental)" toggle is on. Mirrors the affix side's
+        -- DB.affixAllowExactDupes gate. Coverage is seed-map + ADB
+        -- autolearn map; items whose proc PE hasn't ported to the
+        -- 700xxx family stay protected regardless.
+        -- v2.49.0: knownProcPass is the pre-computed positive signal
+        -- (computed above with the other pass flags). Re-use it here as
+        -- the release trigger - no need to recompute the same catalog
+        -- lookup. knownProcPass survives the clear-block regardless
+        -- because it's not one of the flags being cleared.
+        if not (ADB.allowedItems and ADB.allowedItems[itemID]) and not knownProcPass then
             qualityPass = false
             affixRankPass = false
             autoDupePass = false
@@ -4972,7 +5094,7 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- of this recheck "to match the original v2.20.x recheck" - they
     -- are positive sell signals and dropping them silently breaks the
     -- /ec rules vs vendor cycle agreement (was the v2.44.1 bug).
-    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass) then
+    if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass or knownProcPass) then
         return false
     end
     return true, link, itemID, sellPrice, itemCount

@@ -725,15 +725,33 @@ If you add a new migration, put it with the others at the top of
 
 ### Grey items are always sold, independent of every other setting
 
-In `EC_IsSellable`, three independent predicates (`isJunk`, `qualityPass`,
-`whitelistPass`) are ORed together. `isJunk` fires on `quality == 0 and
-hasSellPrice`. This means grey items with a positive sell price are *always*
-matched -- the quality-threshold toggle and the whitelist have no say.
+In `EC_IsSellable`, positive sell signals are ORed together in the initial
+gate and the exit-gate recheck. As of v2.49.0 the signals are:
 
-Do not combine the three passes into "one cleaner check." You will silently
-break the grey-always-sold invariant that users and the README rely on. The
-only things that can veto a match are `IsEquippedItem(itemID)` and the
-blacklist, both of which are safety gates.
+- `isJunk` (grey `quality == 0 and hasSellPrice`)
+- `qualityPass` (per-rarity iLvl rule)
+- `whitelistPass` (Sell List membership)
+- `affixRankPass` (rank below `DB.affixMinSellRank` floor)
+- `autoDupePass` (`DB.affixAllowExactDupes` + player owns this affix)
+- `recipePass` (`DB.sellKnownRecipes` + learned profession recipe)
+- `knownProcPass` (`DB.sellChanceOnHitKnown` + extracted chance-on-hit proc)
+
+`isJunk` is the only one that is NOT gated on `junkOnly`. This means grey
+items with a positive sell price are *always* matched at any merchant --
+the merchant-mode restriction, the quality-threshold toggle, and the
+whitelist all have no say. Every OTHER positive signal MUST gate on
+`not junkOnly` so `Merchant Mode = goblin` at a normal merchant restricts
+sales to grey only. Serv reported the pre-v2.49.0 bug (Windrunner Legguards
+sold at a normal merchant in goblin mode) where `affixRankPass`,
+`autoDupePass`, and `knownProcPass` were missing this gate; if you add a
+new positive signal, mirror the `not junkOnly` prefix from `qualityPass`
+and add a `check("Test 110k: ...")` line so a future regression fails at
+CI. Test 110k currently pins the three fixed gates.
+
+Do not combine the passes into "one cleaner check." You will silently
+break either the grey-always-sold invariant OR the merchant-mode
+restriction. The only things that can veto a match are
+`IsEquippedItem(itemID)` and the blacklist, both of which are safety gates.
 
 ### Localisation: `TARGET_NAME` / `PET_NAME` mirror `DB.merchantName` / `DB.scavengerName`
 

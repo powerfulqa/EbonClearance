@@ -1406,8 +1406,29 @@ function EC_compCache.describeSellability(bag, slot)
         and EC_compCache.itemHasChanceOnHit
         and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     then
+        -- v2.49.0 mirror: check whether the player has extracted the
+        -- proc AND the experimental toggle is on. If yes, the item is
+        -- eligible for auto-sell despite the chance-on-hit protection.
+        local knownProcRelease = false
+        local knownFamily
+        if DB.sellChanceOnHitKnown and EC_compCache.playerHasExtractedProc then
+            local procLine = EC_compCache.chanceProcLine
+                and EC_compCache.chanceProcLine(bag, slot, itemID)
+            if procLine then
+                local known, _, family = EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
+                knownProcRelease = known
+                knownFamily = family
+            end
+        end
         if ADB and ADB.allowedItems and ADB.allowedItems[itemID] then
             step("chanceOnHitProtection", true, L["chance-on-hit proc, but you Allow-Sold this one"])
+        elseif knownProcRelease then
+            step(
+                "chanceOnHitProtection",
+                true,
+                string.format(L["chance-on-hit proc known (%s), 'Sell known chance-on-hit procs' is on"],
+                    knownFamily or "?")
+            )
         else
             procProtected = true
             qualityPass = false

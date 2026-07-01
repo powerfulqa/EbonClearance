@@ -356,6 +356,24 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
+        id = "gate-sell-known-chance-on-hit",
+        q = L["Sell known chance-on-hit procs (experimental)"],
+        a = L["Off by default. When on, chance-on-hit weapons whose proc you've already extracted at the Anvil fall through the chance-on-hit protection - the auto-rule sweep can vendor them. Mirrors the affix side's 'Allow selling affixes you already have' toggle. Marked experimental because coverage relies on a hand-curated map of proc-text keywords to PE spell IDs; items whose proc PE hasn't ported to its 700xxx affix family stay protected regardless. If a specific item auto-sells when you didn't want it to, Alt+Right-Click and Keep-List it to override."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "label-keep-chance-on-hit-known",
+        q = L["Keep (chance-on-hit proc known)"],
+        a = L["You've extracted this item's chance-on-hit proc at the Anvil. The item is still being kept because 'Sell known chance-on-hit procs (experimental)' is off. Turn that toggle on in Protection Settings if you want extras auto-sold."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "label-will-sell-chance-on-hit-known",
+        q = L["Will Sell (chance-on-hit proc known)"],
+        a = L["Chance-on-hit item whose proc you've already extracted at the Anvil, and 'Sell known chance-on-hit procs (experimental)' is on. The auto-rule sweep will vendor it at the next merchant visit."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
         id = "gate-tome-recipe",
         q = L["Tome / recipe protection"],
         a = L["Plans, Schematics, Patterns, Recipes, class tomes, and mount scrolls are protected from auto-sell so you don't accidentally vendor a learnable spell. Alt+Right-Click 'Allow Sell' to override. 'Protect all tomes / recipes' decides whether already-learned items are also protected (useful for saving spares for the auction house or alts)."],

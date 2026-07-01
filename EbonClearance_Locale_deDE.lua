@@ -177,6 +177,12 @@ NS.RegisterLocale("deDE", {
 
     -- EbonClearance_ProfilesPanel.lua
     ["Profiles"] = "",
+    -- v2.49.0: Main-panel Slash Commands section headings.
+    ["Basics"] = "",
+    ["Lists cleanup"] = "",
+    ["Windows & reports"] = "",
+    ["Diagnostics"] = "",
+    ["Language"] = "",
     ["Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots."] = "",
     ["|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Account Sell List|r|cffaaaaaa (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"] = "",
     ["Profile name:"] = "",
@@ -716,6 +722,14 @@ NS.RegisterLocale("deDE", {
     ["you own this affix, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"] = "",
     ["Will Delete (unsellable affix)"] = "",
     ["rank %d below floor of %d, but item has no vendor value AND you don't own this rank yet - kept for extraction"] = "",
+    -- v2.49.0 chance-on-hit auto-release (experimental)
+    ["Sell known chance-on-hit procs (experimental)"] = "",
+    ["Keep (chance-on-hit proc known)"] = "",
+    ["Will Sell (chance-on-hit proc known)"] = "",
+    ["chance-on-hit proc known (%s), 'Sell known chance-on-hit procs' is on"] = "",
+    ["Off by default. When on, chance-on-hit weapons whose proc you've already extracted at the Anvil fall through the chance-on-hit protection - the auto-rule sweep can vendor them. Mirrors the affix side's 'Allow selling affixes you already have' toggle. Marked experimental because coverage relies on a hand-curated map of proc-text keywords to PE spell IDs; items whose proc PE hasn't ported to its 700xxx affix family stay protected regardless. If a specific item auto-sells when you didn't want it to, Alt+Right-Click and Keep-List it to override."] = "",
+    ["You've extracted this item's chance-on-hit proc at the Anvil. The item is still being kept because 'Sell known chance-on-hit procs (experimental)' is off. Turn that toggle on in Protection Settings if you want extras auto-sold."] = "",
+    ["Chance-on-hit item whose proc you've already extracted at the Anvil, and 'Sell known chance-on-hit procs (experimental)' is on. The auto-rule sweep will vendor it at the next merchant visit."] = "",
     ["|cffff4444WILL DELETE at the next vendor visit|r"] = "",
     ["|cff00ff00WILL SELL at the next vendor visit|r"] = "",
     ["|cffffb84dwon't sell - no rule matched|r"] = "",

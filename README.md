@@ -18,7 +18,7 @@ Sells what you don't want. Keeps what you do. Knows the difference because it re
 ## What it protects
 
 - **Affixed Rare/Epic drops.** Affix-keyed Allow-Sell overrides for the ones you've decided you don't need.
-- **Chance-on-hit procs you haven't extracted yet**, plus tomes and recipes you haven't learned. Class-aware: bows on Druids and relics on Mages stay off your Keep List.
+- **Chance-on-hit procs you haven't extracted yet**, plus tomes and recipes you haven't learned. Class-aware: bows on Druids and relics on Mages stay off your Keep List. When you've extracted a weapon proc at the Anvil, an experimental toggle in Protection Settings lets extra copies auto-sell (v2.49.0).
 - **Quest items, equipped gear, equipment-manager set members.** Each protection has an Alt+Right-Click → Allow Sell override.
 
 ## The loop

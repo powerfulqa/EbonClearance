@@ -1854,6 +1854,25 @@ local function EC_ScanLootDelta()
             end
         end
     end
+    -- v2.49.1: log chance-on-hit item REMOVALS for autolearn correlation.
+    -- Walk the PREVIOUS snapshot for itemIDs whose count dropped this
+    -- scan; look up the cached procLine from EC_compCache.procLineByItemID
+    -- (populated during prior chanceProcLine calls before the item left);
+    -- push an entry into the ring buffer. Prune stale entries first so
+    -- the buffer never accumulates beyond the 5-second window.
+    EC_PruneChanceProcRemovals()
+    for id, prev in pairs(EC_lootBagSnapshot) do
+        local now = snap[id] or 0
+        if now < prev and EC_compCache.procLineByItemID and EC_compCache.procLineByItemID[id] then
+            local _, link = GetItemInfo(id)
+            EC_recentChanceProcRemovals[#EC_recentChanceProcRemovals + 1] = {
+                itemID = id,
+                itemName = link or ("item:" .. id),
+                procLine = EC_compCache.procLineByItemID[id],
+                removedAt = GetTime(),
+            }
+        end
+    end
     EC_lootBagSnapshot = snap
     EC_lootEquippedSnapshot = equippedNow
 end

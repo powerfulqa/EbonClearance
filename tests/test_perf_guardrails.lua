@@ -6912,6 +6912,14 @@ do
             and ev:find("now %- entry%.removedAt > EC_CHANCE_PROC_WINDOW_SECONDS") ~= nil
             and ev:find("NS%.recentChanceProcRemovals = EC_recentChanceProcRemovals") ~= nil,
         "v2.49.1: chance-on-hit item removals get logged into a session-local ring buffer during EC_ScanLootDelta. Buffer window is 5 seconds - typical LEARNED_SPELL_IN_TAB fires within 1-2s of the anvil click so 5s is comfortably wide. Buffer is exposed via NS.recentChanceProcRemovals so the /ec autolearnsim command can inject synthetic entries.")
+    check("Test 111c: chanceProcLine caches procLine per itemID + EC_ScanLootDelta logs removals",
+        prot:find("EC_compCache%.procLineByItemID%[itemID%] = txt") ~= nil
+            and prot:find("EC_compCache%.procLineByItemID = EC_compCache%.procLineByItemID or {}") ~= nil
+            and ev:find("EC_PruneChanceProcRemovals%(%)") ~= nil
+            and ev:find("for id, prev in pairs%(EC_lootBagSnapshot%) do") ~= nil
+            and ev:find("EC_compCache%.procLineByItemID and EC_compCache%.procLineByItemID%[id%]") ~= nil
+            and ev:find("removedAt = GetTime%(%),") ~= nil,
+        "v2.49.1: chanceProcLine populates EC_compCache.procLineByItemID (itemID -> procLine string) every time it computes a proc text; the cache is the ONLY way to recover the proc text after the item is gone from bags. EC_ScanLootDelta walks the previous bag snapshot for items whose count dropped, looks up the cached procLine, and pushes an entry into EC_recentChanceProcRemovals. Also prunes the buffer at the start of every scan pass.")
     check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
         prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil
             and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,

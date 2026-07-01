@@ -1505,6 +1505,11 @@ function EC_compCache.chanceProcLine(bag, slot, itemID)
         return nil
     end
     EC_compCache.scanBagItem(bag, slot)
+    -- v2.49.1: cache the proc-line text per itemID as we compute it.
+    -- This is the only recovery path for the proc text once the item is
+    -- gone from bags (autolearn consumes this when correlating a
+    -- LEARNED_SPELL_IN_TAB event to a just-removed weapon).
+    EC_compCache.procLineByItemID = EC_compCache.procLineByItemID or {}
     for i = 1, 30 do
         local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
         if not line then
@@ -1512,6 +1517,7 @@ function EC_compCache.chanceProcLine(bag, slot, itemID)
         end
         local txt = line:GetText()
         if txt and EC_compCache.lineLooksLikeChanceProc(txt) then
+            EC_compCache.procLineByItemID[itemID] = txt
             return txt
         end
     end

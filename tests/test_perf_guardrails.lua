@@ -6899,6 +6899,12 @@ do
             and prot:find("%[2825%]  = { spellID = 700121") ~= nil
             and prot:find("if itemID and EC_CHANCE_PROC_CONFIRMED_ITEMS%[itemID%] then") ~= nil,
         "the confirmed-items table wins over the keyword map for weapons whose PE spellID has been observed directly via /ec captureproc. Ships with 8 itemID -> spellID mappings verified via Serv's captureproc dump: Axe of the Deep Woods 811 -> Wilds, Bow of Searing Arrows 2825 -> Fire Blast, Blackblade of Shahram 12592 -> Shahram, Hammer of the Titans 12796 -> Concussion, Annihilator 12798 -> Rending, Alcor's Sunrazor 14555 -> Incineration, Electrified Dagger 19100 -> Wilds, Nightfall 19169 -> Vulnerability. The v2.49.1 autolearn will grow ADB.chanceProcMap dynamically alongside this stable seed layer.")
+    check("Test 111a: EnsureAccountDB initialises chance-proc autolearn tables",
+        ev:find('if type%(ADB%.chanceProcConfirmedItems%) ~= "table" then') ~= nil
+            and ev:find("ADB%.chanceProcConfirmedItems = {}") ~= nil
+            and ev:find('if type%(ADB%.chanceProcAmbiguous%) ~= "table" then') ~= nil
+            and ev:find("ADB%.chanceProcAmbiguous = {}") ~= nil,
+        "v2.49.1: EnsureAccountDB MUST init both ADB.chanceProcConfirmedItems (itemID -> {spellID, family, item, learnedAt} autolearn writes) and ADB.chanceProcAmbiguous (array of correlation-failed events) as empty tables. Additive nil-default migration so v2.49.0 accounts pick up the new fields on next load. ADB.chanceProcMap (procLine-keyed, reserved) stays as-is for the v2.50.0 peer-share transport.")
     check("Test 110k: affixRankPass / autoDupePass / knownProcPass respect junkOnly at a disallowed merchant",
         ev:find("local affixRankPass = not junkOnly") ~= nil
             and ev:find("if not junkOnly and hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil

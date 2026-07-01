@@ -478,11 +478,18 @@ local function EnsureAccountDB()
     if type(ADB.chanceProcMap) ~= "table" then
         ADB.chanceProcMap = {}
     end
-    -- v2.49.0: autolearn ambiguity queue. When LEARNED_SPELL_IN_TAB fires
-    -- and MULTIPLE unmapped chance-on-hit weapons had disappeared from
-    -- bags in the recent window, we can't correlate 1:1 - save all
-    -- candidates + the new spell for /ec captureproc review. Cleared on
-    -- successful resolution or on demand via /ec resetprocmap.
+    -- v2.49.1: itemID -> {spellID, family, item, learnedAt} pairings
+    -- autolearned via LEARNED_SPELL_IN_TAB correlation. Written when
+    -- exactly one unmapped chance-on-hit weapon disappeared from bags
+    -- in the recent window and a new PE 700xxx spell was learned.
+    if type(ADB.chanceProcConfirmedItems) ~= "table" then
+        ADB.chanceProcConfirmedItems = {}
+    end
+    -- v2.49.1: array of correlation-failed events. When
+    -- LEARNED_SPELL_IN_TAB fires and MULTIPLE unmapped chance-on-hit
+    -- weapons had disappeared from bags in the recent window, we can't
+    -- correlate 1:1 - save all candidates + the new spell for review
+    -- via /ec autolearnpeek. Never auto-promoted.
     if type(ADB.chanceProcAmbiguous) ~= "table" then
         ADB.chanceProcAmbiguous = {}
     end

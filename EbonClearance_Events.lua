@@ -1883,7 +1883,6 @@ local function EC_TryAutolearnFromLearnedSpell(spellID, family, source)
             item = candidate.itemName,
             learnedAt = GetTime(),
         }
-        local L = NS.L or setmetatable({}, { __index = function(_, k) return k end })
         PrintNicef(
             L["|cff66ccff[EbonClearance]|r Learned proc pairing: |cffb6ffb6%s|r extracts to |cffb6ffb6%s|r. Sell known chance-on-hit procs now covers this item."],
             candidate.itemName,

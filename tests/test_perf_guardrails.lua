@@ -6946,6 +6946,12 @@ do
         prot:find("if itemID and ADB and ADB%.chanceProcConfirmedItems and ADB%.chanceProcConfirmedItems%[itemID%] then") ~= nil
             and prot:find("local rec = ADB%.chanceProcConfirmedItems%[itemID%]") ~= nil,
         "v2.49.1: playerHasExtractedProc MUST consult ADB.chanceProcConfirmedItems AFTER the in-code EC_CHANCE_PROC_CONFIRMED_ITEMS check but BEFORE the keyword-map fallback. Two-tier confirmed map (author + autolearn) lets a /reload wipe of ADB survive without losing the author-vetted pairings. NEVER_EXTRACTABLE still gates ahead of everything.")
+    check("Test 111h: /ec autolearnsim + /ec autolearnpeek slash commands wired",
+        ev:find('if cmd == "autolearnsim" then') ~= nil
+            and ev:find('if cmd == "autolearnpeek" then') ~= nil
+            and ev:find('EC_TryAutolearnFromLearnedSpell%(spellID, %(rec and rec%.name%) or nil, "sim"%)') ~= nil
+            and ev:find('PrintNice%(L%["|cff66ccff%[EbonClearance%]|r %(sim%) autolearn run complete') ~= nil,
+        "v2.49.1: /ec autolearnsim <itemID> <spellID> pre-populates EC_recentChanceProcRemovals with a synthetic entry then calls EC_TryAutolearnFromLearnedSpell(spellID, name, \"sim\") to walk the SAME code path a real event would. /ec autolearnpeek dumps ADB.chanceProcConfirmedItems + ADB.chanceProcAmbiguous into a copy window. Both commands MUST be present so the diagnostic layer is stable across the release.")
     check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
         prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil
             and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,

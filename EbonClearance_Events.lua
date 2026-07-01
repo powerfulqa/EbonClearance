@@ -6560,6 +6560,82 @@ function EbonClearance_ForceSell()
     StartRun()
 end
 
+-- v2.49.1: dump the chance-on-hit autolearn state into a copyable window.
+-- Three sections: author-vetted (in-code EC_CHANCE_PROC_CONFIRMED_ITEMS),
+-- autolearned (ADB.chanceProcConfirmedItems), and ambiguous events
+-- (ADB.chanceProcAmbiguous). Read-only.
+function NS.ShowAutolearnPeek()
+    EnsureAccountDB()
+    local lines = {}
+    lines[#lines + 1] = "=== EbonClearance /ec autolearnpeek ==="
+    lines[#lines + 1] = "Author-vetted (in-code EC_CHANCE_PROC_CONFIRMED_ITEMS):"
+    local authored = NS.chanceProcConfirmedItems or {}
+    local authoredKeys = {}
+    for k in pairs(authored) do
+        authoredKeys[#authoredKeys + 1] = k
+    end
+    table.sort(authoredKeys)
+    if #authoredKeys == 0 then
+        lines[#lines + 1] = "  (none)"
+    else
+        for _, id in ipairs(authoredKeys) do
+            local rec = authored[id]
+            lines[#lines + 1] = string.format(
+                "  [%d] %s -> %s (spellID %d)",
+                id, tostring(rec.item), tostring(rec.family), rec.spellID
+            )
+        end
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Autolearned (ADB.chanceProcConfirmedItems):"
+    local learned = ADB.chanceProcConfirmedItems or {}
+    local learnedKeys = {}
+    for k in pairs(learned) do
+        learnedKeys[#learnedKeys + 1] = k
+    end
+    table.sort(learnedKeys)
+    if #learnedKeys == 0 then
+        lines[#lines + 1] = "  (none)"
+    else
+        for _, id in ipairs(learnedKeys) do
+            local rec = learned[id]
+            lines[#lines + 1] = string.format(
+                "  [%d] %s -> %s (spellID %d, learnedAt %.1f)",
+                id, tostring(rec.item), tostring(rec.family), rec.spellID, rec.learnedAt or 0
+            )
+        end
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Ambiguous events (ADB.chanceProcAmbiguous):"
+    local amb = ADB.chanceProcAmbiguous or {}
+    if #amb == 0 then
+        lines[#lines + 1] = "  (none)"
+    else
+        for i, ev in ipairs(amb) do
+            lines[#lines + 1] = string.format(
+                "  #%d: spellID %d (%s) @ %.1f, source=%s, %d candidate(s)",
+                i, ev.spellID or 0, tostring(ev.family), ev.timestamp or 0,
+                tostring(ev.source), #(ev.candidates or {})
+            )
+            for _, c in ipairs(ev.candidates or {}) do
+                lines[#lines + 1] = string.format(
+                    "    [%d] %s (procLine: %s)",
+                    c.itemID or 0, tostring(c.itemName), tostring(c.procLine)
+                )
+            end
+        end
+    end
+    -- Reuse the existing copy-window infrastructure. NS.ShowCopyDialog is
+    -- the shared entry point used by ShowCaptureProcDump / ShowAffixDebugDump.
+    -- If not exposed as a shared helper, fall back to printing to chat.
+    local body = table.concat(lines, "\n")
+    if NS.ShowCopyDialog then
+        NS.ShowCopyDialog("EbonClearance /ec autolearnpeek", body)
+    else
+        PrintNice(body)
+    end
+end
+
 SLASH_EBONCLEARANCE1 = "/ec"
 SlashCmdList["EBONCLEARANCE"] = function(msg)
     msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -6969,6 +7045,95 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             NS.ShowCaptureProcDump()
         else
             PrintNice("|cffff4444Capture-proc helper unavailable.|r")
+        end
+        return
+    end
+
+    if cmd == "autolearnsim" then
+        -- v2.49.1: chance-on-hit proc autolearn simulation harness.
+        -- Injects a synthetic entry into EC_recentChanceProcRemovals for
+        -- the given itemID, then fires the correlation handler as if
+        -- LEARNED_SPELL_IN_TAB had just delivered the given spellID.
+        -- Walks the same code path as a production event so we can test
+        -- the correlation logic without needing an actual unlearned
+        -- weapon proc at the Anvil (most weapon procs already extracted
+        -- so real events are hard to trigger).
+        local idS, spellS = rest:match("^(%S+)%s+(%S+)")
+        local itemID = tonumber(idS)
+        local spellID = tonumber(spellS)
+        if not itemID or not spellID then
+            PrintNice(L["Usage: /ec autolearnsim <itemID> <spellID>"])
+            return
+        end
+        local neverSet = NS.chanceProcNeverExtractable
+        if neverSet and neverSet[itemID] then
+            PrintNicef(
+                L["|cffff4444%s (%d) is in NEVER_EXTRACTABLE; sim refused.|r"],
+                neverSet[itemID],
+                itemID
+            )
+            return
+        end
+        -- Verify the item is in bags so we can read its live proc line.
+        local foundBag, foundSlot
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag) or 0
+            for slot = 1, slots do
+                if GetContainerItemID(bag, slot) == itemID then
+                    foundBag, foundSlot = bag, slot
+                    break
+                end
+            end
+            if foundBag then
+                break
+            end
+        end
+        if not foundBag then
+            PrintNicef(
+                L["|cffff4444Item %d not in bags; sim needs the item present to read its proc line. Try /ec captureproc first to confirm the proc text.|r"],
+                itemID
+            )
+            return
+        end
+        local procLine = EC_compCache.chanceProcLine
+            and EC_compCache.chanceProcLine(foundBag, foundSlot, itemID)
+        if not procLine then
+            PrintNicef(
+                L["|cffff4444Item %d has no chance-on-hit line detected; sim refused.|r"],
+                itemID
+            )
+            return
+        end
+        local _, link = GetItemInfo(itemID)
+        EC_recentChanceProcRemovals[#EC_recentChanceProcRemovals + 1] = {
+            itemID = itemID,
+            itemName = link or ("item:" .. itemID),
+            procLine = procLine,
+            removedAt = GetTime(),
+        }
+        -- Look up the spell's name from the PE catalog for the toast.
+        local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+        local rec
+        if type(catalog) == "table" then
+            for _, r in pairs(catalog) do
+                if type(r) == "table" and r.id == spellID then
+                    rec = r
+                    break
+                end
+            end
+        end
+        EC_TryAutolearnFromLearnedSpell(spellID, (rec and rec.name) or nil, "sim")
+        PrintNice(L["|cff66ccff[EbonClearance]|r (sim) autolearn run complete. Check the chat above and /ec autolearnpeek."])
+        return
+    end
+
+    if cmd == "autolearnpeek" then
+        -- v2.49.1: read-only copy-window dump of the autolearn state.
+        -- Same style as /ec captureproc, /ec affixdebug dump.
+        if NS.ShowAutolearnPeek then
+            NS.ShowAutolearnPeek()
+        else
+            PrintNice(L["|cffff4444Autolearn peek window unavailable.|r"])
         end
         return
     end

@@ -3855,7 +3855,10 @@ do
         local bagStart = protSrc:find("function EC_compCache%.itemIsTome%(")
         local bagBody
         if bagStart then
-            bagBody = protSrc:sub(bagStart, bagStart + 3500)
+            -- v2.49.1: window widened from 3500 to 5000 chars after the
+            -- nil-guard on GetItemInfo pushed the collectible-phrase
+            -- asserts past the original slice.
+            bagBody = protSrc:sub(bagStart, bagStart + 5000)
             local nextFnIdx = bagBody:find("\nfunction EC_compCache%.", 2)
             if nextFnIdx then
                 bagBody = bagBody:sub(1, nextFnIdx - 1)

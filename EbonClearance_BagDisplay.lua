@@ -1252,29 +1252,38 @@ function EC_compCache.describeSellability(bag, slot)
     end
 
     -- Sell Known Recipes: mirror EC_IsSellable's recipePass so the trace
-    -- agrees with the merchant cycle. Only emits a step for items that
-    -- are actually profession recipes while the feature is on, so the
-    -- trace stays uncluttered for everything else. itemIsTome / tomeKind /
-    -- playerKnowsTomeSpell are all cached, so the repeated calls are cheap.
+    -- agrees with the merchant cycle.
+    --
+    -- v2.49.1 fix (Serv report, Pattern: Big Voodoo Robe + Schematic:
+    -- Large Seaforium Charge): earlier version emitted a knownRecipeRule
+    -- step ONLY when itemIsTome+tomeKind both passed, so a false-return
+    -- from itemIsTome looked identical to "not a recipe" in the trace.
+    -- Now every gate that fails emits its own step so the reader sees
+    -- exactly which check killed the sell decision.
     local recipePass = false
-    if hasSellPrice
-        and DB
-        and DB.sellKnownRecipes
-        and EC_compCache.itemIsTome
-        and EC_compCache.itemIsTome(bag, slot, itemID)
-        and EC_compCache.tomeKind
-        and EC_compCache.tomeKind(itemID) == "Recipe"
-    then
-        local known = EC_compCache.playerKnowsTomeSpell
-            and EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
-        local qualOn = DB.sellKnownRecipeQualities and quality and DB.sellKnownRecipeQualities[quality]
-        if not qualOn then
-            step("knownRecipeRule", false, L["known-recipe selling is off for this quality"])
-        elseif not known then
-            step("knownRecipeRule", false, L["recipe not yet learned (kept safe)"])
+    if hasSellPrice and DB and DB.sellKnownRecipes then
+        local isTome = EC_compCache.itemIsTome and EC_compCache.itemIsTome(bag, slot, itemID)
+        if not isTome then
+            step("knownRecipeRule", false, L["not detected as a tome/recipe (GetItemInfo class + 'Use: Teaches' tooltip scan both failed)"])
         else
-            recipePass = true
-            step("knownRecipeRule", true, L["known recipe - sells via Sell Known Recipes"])
+            local kind = EC_compCache.tomeKind and EC_compCache.tomeKind(itemID)
+            if kind ~= "Recipe" then
+                step("knownRecipeRule", false, string.format(L["tome kind is '%s', not 'Recipe' - Sell Known Recipes only applies to profession recipes"], tostring(kind)))
+            else
+                local qualOn = DB.sellKnownRecipeQualities and quality and DB.sellKnownRecipeQualities[quality]
+                if not qualOn then
+                    step("knownRecipeRule", false, L["known-recipe selling is off for this quality"])
+                else
+                    local known = EC_compCache.playerKnowsTomeSpell
+                        and EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
+                    if not known then
+                        step("knownRecipeRule", false, L["recipe not yet learned (kept safe)"])
+                    else
+                        recipePass = true
+                        step("knownRecipeRule", true, L["known recipe - sells via Sell Known Recipes"])
+                    end
+                end
+            end
         end
     end
 

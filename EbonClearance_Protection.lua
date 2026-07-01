@@ -1618,7 +1618,17 @@ function EC_compCache.itemIsTome(bag, slot, itemID)
     -- Fast path: GetItemInfo class "Recipe" covers every profession
     -- recipe (cookbook, schematic, manual, design, formula, etc.) and
     -- is set on the itemID alone, so it works even without a bag/slot.
-    local _, _, _, _, _, itype, isubtype = GetItemInfo(itemID)
+    -- v2.49.1 fix (Serv report on Pattern: Big Voodoo Robe): GetItemInfo
+    -- returns nil-values for items whose data hasn't been sent by the
+    -- server yet (first appearance in bags after login, etc.). Detect
+    -- the nil-name case and refuse to cache the result - a stale FALSE
+    -- from an unpopulated GetItemInfo would poison the tomeCache for
+    -- the whole session and prevent Sell Known Recipes from ever firing
+    -- on that itemID. Retry on the next call once GetItemInfo populates.
+    local name, _, _, _, _, itype, isubtype = GetItemInfo(itemID)
+    if not name then
+        return false
+    end
     if itype == "Recipe" then
         EC_compCache.tomeCache[itemID] = true
         return true

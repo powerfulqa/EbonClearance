@@ -7395,6 +7395,11 @@ f:SetScript("OnEvent", function(self, event, ...)
             if EC_manualSell and EC_manualSell.installHookOnce then
                 EC_manualSell.installHookOnce()
             end
+            -- v2.49.1: prime the extraction catalog snapshot so the first
+            -- LEARNED_SPELL_IN_TAB event correctly diffs against login
+            -- state (learned=true records already in the catalog don't
+            -- fire spurious autolearns).
+            EC_RefreshExtractionCatalogSnapshot()
         elseif addonName == "Bagnon" then
             -- The host bag UI's slot class was registered during its load
             -- pass; install the sell-border hook now so the first paint
@@ -7514,6 +7519,19 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
         end
     elseif event == "LEARNED_SPELL_IN_TAB" or event == "SPELLS_CHANGED" then
+        -- v2.49.1: chance-on-hit proc autolearn. Run the catalog diff
+        -- SYNCHRONOUSLY per event so a single anvil extraction with its
+        -- correlated bag-removal (5-second window) is captured in the
+        -- same tick. The v2.30.0 debounced known-affix rescan below is
+        -- independent and stays debounced. LEARNED_SPELL_IN_TAB is the
+        -- richer signal (per-spell fires); SPELLS_CHANGED is the bulk
+        -- signal (login / respec), so only the former triggers autolearn.
+        if event == "LEARNED_SPELL_IN_TAB" then
+            local newSpellID, newRec = EC_FindNewlyLearnedSpell()
+            if newSpellID and newRec then
+                EC_TryAutolearnFromLearnedSpell(newSpellID, newRec.name, "event")
+            end
+        end
         -- v2.30.0 perf: debounced. Soul ash tree and login can fire
         -- dozens of spell events in rapid succession; a synchronous
         -- spellbook scan on each one caused 30+ second freezes. Reset

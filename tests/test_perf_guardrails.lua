@@ -3404,12 +3404,13 @@ do
         local eventsSrc = eventsFile:read("*a") or ""
         eventsFile:close()
         -- Locate the LEARNED_SPELL_IN_TAB branch and look for the wipe
-        -- within the next ~30 lines.
+        -- within the next ~50 lines. The v2.49.1 autolearn diff sits at
+        -- the top of the branch so the wipe now lives further down.
         local branchAt = eventsSrc:find('event == "LEARNED_SPELL_IN_TAB"', 1, true)
         check(
             "LEARNED_SPELL_IN_TAB branch wipes tomeIsKnownCache",
             branchAt
-                and eventsSrc:sub(branchAt, branchAt + 1500):find("wipe%(EC_compCache%.tomeIsKnownCache%)") ~= nil,
+                and eventsSrc:sub(branchAt, branchAt + 2500):find("wipe%(EC_compCache%.tomeIsKnownCache%)") ~= nil,
             "the cache wipe must live in the event branch; without it a just-learned recipe stays \"unlearned\" until /reload"
         )
         -- The EC_IsSellable veto block must reference both toggles AND
@@ -6935,6 +6936,12 @@ do
             and ev:find("ADB%.chanceProcAmbiguous%[#ADB%.chanceProcAmbiguous %+ 1%] = {") ~= nil
             and ev:find("NS%.chanceProcNeverExtractable") ~= nil,
         "v2.49.1: correlation handler MUST (1) short-circuit spellIDs outside [700000, 800000) (PE weapon-proc range), (2) filter the ring buffer to remove candidates in NEVER_EXTRACTABLE (defensive: if the hard set says PE can't extract, we don't trust a correlation), (3) write to ADB.chanceProcConfirmedItems on exactly-one-candidate + emit the chat toast, (4) write to ADB.chanceProcAmbiguous on zero-or-multiple and stay silent. Function name and signature MUST be exactly EC_TryAutolearnFromLearnedSpell(spellID, family, source) - the /ec autolearnsim command and the LEARNED_SPELL_IN_TAB dispatch both call this same entry point.")
+    check("Test 111f: LEARNED_SPELL_IN_TAB dispatch runs autolearn diff BEFORE the debounced rescan",
+        ev:find('elseif event == "LEARNED_SPELL_IN_TAB" or event == "SPELLS_CHANGED" then') ~= nil
+            and ev:find("local newSpellID, newRec = EC_FindNewlyLearnedSpell%(%)") ~= nil
+            and ev:find('EC_TryAutolearnFromLearnedSpell%(newSpellID, newRec%.name, "event"%)') ~= nil
+            and ev:find("EC_compCache%.spellUpdatePending = true") ~= nil,
+        "v2.49.1: the LEARNED_SPELL_IN_TAB / SPELLS_CHANGED handler must run the autolearn diff FIRST (synchronously, before the debounce fires) so a single learn event with its correlated bag removal is captured in the same tick. The v2.30.0 debounced-rescan (spellUpdatePending / spellUpdateFrame) keeps its downstream job of rebuilding the known-affix map; do NOT move the autolearn hook into the debounce - the bag-removal window is only 5s and the debounce is 0.5s of quiet, so a batch could push the correlation past the window.")
     check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
         prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil
             and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,

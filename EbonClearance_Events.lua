@@ -1893,7 +1893,7 @@ local function EC_TryAutolearnFromLearnedSpell(spellID, family, source)
         -- populated regardless of source-line ordering. Same reason the
         -- correlation-error branch below uses NS.PrintNicef too.
         NS.PrintNicef(
-            L["|cff66ccff[EbonClearance]|r Learned proc pairing: |cffb6ffb6%s|r extracts to |cffb6ffb6%s|r. Sell known chance-on-hit procs now covers this item."],
+            L["Learned proc pairing: |cffb6ffb6%s|r extracts to |cffb6ffb6%s|r. Sell known chance-on-hit procs now covers this item."],
             candidate.itemName,
             family
         )
@@ -7135,7 +7135,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             end
         end
         EC_TryAutolearnFromLearnedSpell(spellID, (rec and rec.name) or nil, "sim")
-        PrintNice(L["|cff66ccff[EbonClearance]|r (sim) autolearn run complete. Check the chat above and /ec autolearnpeek."])
+        PrintNice(L["(sim) autolearn run complete. Check the chat above and /ec autolearnpeek."])
         return
     end
 

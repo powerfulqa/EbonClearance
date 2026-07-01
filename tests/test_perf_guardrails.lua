@@ -6931,7 +6931,7 @@ do
     check("Test 111e: EC_TryAutolearnFromLearnedSpell writes + emits + gates correctly",
         ev:find("local function EC_TryAutolearnFromLearnedSpell%(spellID, family, source%)") ~= nil
             and ev:find("if spellID < 700000 or spellID >= 800000 then") ~= nil
-            and ev:find('L%["|cff66ccff%[EbonClearance%]|r Learned proc pairing:') ~= nil
+            and ev:find('L%["Learned proc pairing:') ~= nil
             and ev:find("ADB%.chanceProcConfirmedItems%[candidate%.itemID%] = {") ~= nil
             and ev:find("ADB%.chanceProcAmbiguous%[#ADB%.chanceProcAmbiguous %+ 1%] = {") ~= nil
             and ev:find("NS%.chanceProcNeverExtractable") ~= nil,
@@ -6950,7 +6950,7 @@ do
         ev:find('if cmd == "autolearnsim" then') ~= nil
             and ev:find('if cmd == "autolearnpeek" then') ~= nil
             and ev:find('EC_TryAutolearnFromLearnedSpell%(spellID, %(rec and rec%.name%) or nil, "sim"%)') ~= nil
-            and ev:find('PrintNice%(L%["|cff66ccff%[EbonClearance%]|r %(sim%) autolearn run complete') ~= nil,
+            and ev:find('PrintNice%(L%["%(sim%) autolearn run complete') ~= nil,
         "v2.49.1: /ec autolearnsim <itemID> <spellID> pre-populates EC_recentChanceProcRemovals with a synthetic entry then calls EC_TryAutolearnFromLearnedSpell(spellID, name, \"sim\") to walk the SAME code path a real event would. /ec autolearnpeek dumps ADB.chanceProcConfirmedItems + ADB.chanceProcAmbiguous into a copy window. Both commands MUST be present so the diagnostic layer is stable across the release.")
     check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
         prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil

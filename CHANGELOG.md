@@ -20,12 +20,16 @@ The v2.49.0 experimental toggle `Sell known chance-on-hit procs` ships with an i
 - **playerHasExtractedProc priority order** now: `NEVER_EXTRACTABLE` (hard set) -> `EC_CHANCE_PROC_CONFIRMED_ITEMS` (in-code, author-vetted) -> `ADB.chanceProcConfirmedItems` (autolearn) -> keyword-map inference -> catalog check on the resolved spellID.
 - **Additive schema.** `ADB.chanceProcConfirmedItems` and `ADB.chanceProcAmbiguous` initialised as empty tables by `EnsureAccountDB` with nil-defaults. Downgrade-safe.
 
+**Polish bundled: Slash Commands list no longer has gap-toothed rows.**
+
+Every argument-requiring row in the Main panel's Slash Commands list now has a Run button that opens the chat edit box with the command stem prefilled and the cursor at the end, ready for the player to type the remaining args and hit Enter. Applies to `/ec profile save|load|delete <name>`, `/ec minimap on|off|reset`, `/ec scandebug <bag> <slot>`, and `/ec autolearnsim <itemID> <spellID>`. Uses Blizzard's `ChatFrame_OpenChat` helper. Complementary to the direct-execute Run button on argument-less rows; neither replaces the other. Test 107e pins the new `prefill` field.
+
 **Bug fixes bundled:**
 
 - **Recipes with a crafted-item chance-on-hit proc silently refused to sell** despite `Sell Known Recipes` being on. Reported against `Plans: Frost Tiger Blade` (id=3868) and similar. The recipe's tooltip embeds the crafted item's stats, including any `Chance on hit:` line, and `itemHasChanceOnHit`'s tooltip scan classified the recipe as a chance-on-hit weapon - the veto in `EC_IsSellable` then cleared `recipePass`. Fix: both `itemHasChanceOnHit` (bag-slot variant) and `liveTooltipHasChanceOnHit` (live-tooltip variant) now short-circuit `false` when the item is a tome/recipe, since recipes aren't equippable and can't themselves BE chance-on-hit weapons. Test 112a pins both gates.
 - **`itemIsTome` cache-poisoning on early item lookup.** Reported against `Pattern: Big Voodoo Robe` (id=8386) and `Schematic: Large Seaforium Charge` (id=4417) - both known-and-in-bags but neither selling via `Sell Known Recipes`. Root cause: `itemIsTome`'s fast path called `GetItemInfo`, and if the item metadata hadn't arrived from the server yet, `itype` was nil, the slow tooltip scan came up empty (tooltip also unpopulated), and `result=false` got cached into `EC_compCache.tomeCache`. Once cached, no subsequent call retried. Fix: refuse to cache the result when `GetItemInfo` returns a nil name; retry on the next call once metadata arrives. Trace mirror in `describeSellability` also now emits a `Known recipe` step for every gate outcome (instead of only when both `itemIsTome` and `tomeKind` passed), so the failing check is always visible in `/ec sellinfo`.
 
-Tests 111a-h + 112a pin the new invariants.
+Tests 107e + 111a-h + 112a pin the new invariants.
 
 ---
 

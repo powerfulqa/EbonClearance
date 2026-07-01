@@ -784,6 +784,7 @@ local function BuildMainPanel(panel, content)
         { heading = L["Profiles"] },
         { run = "profile list", label = "|cffffff00/ec profile list|r  " .. L["Show your saved profiles"] },
         {
+            prefill = "/ec profile ",
             label = "|cffffff00/ec profile [save|load|delete] <name>|r  "
                 .. L["Manage profiles by name |cffaaaaaa(or use the Profiles panel)|r"],
         },
@@ -812,6 +813,7 @@ local function BuildMainPanel(panel, content)
             -- string. A single `|r` would terminate the |cffffff00 colour
             -- block and the trailing "eset" would render in the default
             -- colour (rendered as "on|offeset" until this fix).
+            prefill = "/ec minimap ",
             label = "|cffffff00/ec minimap on||off||reset|r  "
                 .. L["Show, hide, or re-centre the EC minimap button"],
         },
@@ -821,6 +823,7 @@ local function BuildMainPanel(panel, content)
         },
         { heading = L["Diagnostics"] },
         {
+            prefill = "/ec scandebug ",
             label = "|cffffff00/ec scandebug <bag> <slot>|r  "
                 .. L["Diagnostic: dump the scan tooltip lines for a bag slot"],
         },
@@ -830,6 +833,7 @@ local function BuildMainPanel(panel, content)
                 .. L["Diagnostic: dump chance-on-hit items + engrave-affix spells + PE catalog (for future auto-sell)"],
         },
         {
+            prefill = "/ec autolearnsim ",
             label = "|cffffff00/ec autolearnsim <itemID> <spellID>|r  "
                 .. L["Simulate an autolearn event for a bag item + PE spell (diagnostic)"],
         },
@@ -940,7 +944,7 @@ local function BuildMainPanel(panel, content)
             EC_compCache.setPanelWidth(fs, LABEL_COL_X + PANEL_RIGHT_PAD)
             fs:SetText(row.label)
 
-            if row.run then
+            if row.run or row.prefill then
                 local btn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
                 btn:SetSize(48, 20)
                 -- LEFT-to-LEFT vertically-centres the button against the
@@ -951,14 +955,38 @@ local function BuildMainPanel(panel, content)
                 -- whole wrapped block, which is acceptable visual drift.
                 btn:SetPoint("LEFT", fs, "LEFT", -LABEL_COL_X, 0)
                 btn:SetText(L["Run"])
-                local runCmd = row.run
-                btn:SetScript("OnClick", function()
-                    local handler = SlashCmdList and SlashCmdList["EBONCLEARANCE"]
-                    if handler then
-                        handler(runCmd)
-                    end
-                    PlaySound("igMainMenuOptionCheckBoxOn")
-                end)
+                if row.run then
+                    local runCmd = row.run
+                    btn:SetScript("OnClick", function()
+                        local handler = SlashCmdList and SlashCmdList["EBONCLEARANCE"]
+                        if handler then
+                            handler(runCmd)
+                        end
+                        PlaySound("igMainMenuOptionCheckBoxOn")
+                    end)
+                else
+                    -- v2.49.1: `prefill` variant. Rows whose command requires
+                    -- arguments (profile save/load/delete, scandebug bag slot,
+                    -- autolearnsim itemID spellID, minimap on/off/reset) can't
+                    -- fire directly - the user has to type the missing pieces.
+                    -- Rather than leave them with no Run button, open the chat
+                    -- edit box, prefill the command stem, focus + position the
+                    -- cursor at the end so the player just types the rest and
+                    -- hits Enter. ChatFrame_OpenChat is the Blizzard-native
+                    -- 3.3.5a helper for this.
+                    local prefillCmd = row.prefill
+                    btn:SetScript("OnClick", function()
+                        if ChatFrame_OpenChat then
+                            ChatFrame_OpenChat(prefillCmd)
+                        elseif ChatFrame1EditBox then
+                            ChatFrame1EditBox:Show()
+                            ChatFrame1EditBox:SetText(prefillCmd)
+                            ChatFrame1EditBox:SetFocus()
+                            ChatFrame1EditBox:SetCursorPosition(#prefillCmd)
+                        end
+                        PlaySound("igMainMenuOptionCheckBoxOn")
+                    end)
+                end
             end
 
             prevAnchor = fs

@@ -6748,6 +6748,14 @@ do
         mp:find('run = "captureproc"') ~= nil
             and mp:find("|cffffff00/ec captureproc|r") ~= nil,
         "every diagnostic slash command MUST have a row in the Main panel SLASH_ROWS table (that's the in-game slash-command list players see). Without this row, /ec captureproc is invisible unless the player already knows the exact command name - defeating the discoverability rationale that put every other diagnostic (/ec bugreport, /ec scandebug, /ec affixdebug, /ec processdebug) in the same list.")
+    check("Test 107e: v2.49.1 SLASH_ROWS supports `prefill` field for argument-requiring commands",
+        mp:find('prefill = "/ec profile "') ~= nil
+            and mp:find('prefill = "/ec minimap "') ~= nil
+            and mp:find('prefill = "/ec scandebug "') ~= nil
+            and mp:find('prefill = "/ec autolearnsim "') ~= nil
+            and mp:find("if row%.run or row%.prefill then") ~= nil
+            and mp:find("ChatFrame_OpenChat%(prefillCmd%)") ~= nil,
+        "v2.49.1 (Serv report): the Main panel Slash Commands list had rows with no Run button for commands that require arguments (/ec profile save/load/delete, /ec minimap on/off/reset, /ec scandebug <bag> <slot>, /ec autolearnsim <itemID> <spellID>). The fix: rows with `prefill = \"/ec ... \"` get a Run button that opens the chat edit box via ChatFrame_OpenChat with the command stem prefilled and cursor at the end - user just types the remaining args and hits Enter. Complementary to the direct-execute `run = \"...\"` field; neither replaces the other. Any argument-requiring command MUST now use prefill so the list has no gap-toothed rows.")
 end
 
 -- ---------------------------------------------------------------------------

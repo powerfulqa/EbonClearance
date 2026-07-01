@@ -6905,6 +6905,13 @@ do
             and ev:find('if type%(ADB%.chanceProcAmbiguous%) ~= "table" then') ~= nil
             and ev:find("ADB%.chanceProcAmbiguous = {}") ~= nil,
         "v2.49.1: EnsureAccountDB MUST init both ADB.chanceProcConfirmedItems (itemID -> {spellID, family, item, learnedAt} autolearn writes) and ADB.chanceProcAmbiguous (array of correlation-failed events) as empty tables. Additive nil-default migration so v2.49.0 accounts pick up the new fields on next load. ADB.chanceProcMap (procLine-keyed, reserved) stays as-is for the v2.50.0 peer-share transport.")
+    check("Test 111b: EC_recentChanceProcRemovals ring buffer + 5-second prune",
+        ev:find("local EC_recentChanceProcRemovals = {}") ~= nil
+            and ev:find("local EC_CHANCE_PROC_WINDOW_SECONDS = 5") ~= nil
+            and ev:find("local function EC_PruneChanceProcRemovals%(%)") ~= nil
+            and ev:find("now %- entry%.removedAt > EC_CHANCE_PROC_WINDOW_SECONDS") ~= nil
+            and ev:find("NS%.recentChanceProcRemovals = EC_recentChanceProcRemovals") ~= nil,
+        "v2.49.1: chance-on-hit item removals get logged into a session-local ring buffer during EC_ScanLootDelta. Buffer window is 5 seconds - typical LEARNED_SPELL_IN_TAB fires within 1-2s of the anvil click so 5s is comfortably wide. Buffer is exposed via NS.recentChanceProcRemovals so the /ec autolearnsim command can inject synthetic entries.")
     check("Test 110k: affixRankPass / autoDupePass / knownProcPass respect junkOnly at a disallowed merchant",
         ev:find("local affixRankPass = not junkOnly") ~= nil
             and ev:find("if not junkOnly and hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil

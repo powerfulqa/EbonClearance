@@ -1756,6 +1756,34 @@ local function EC_BuildEquippedSnapshot()
     return snap
 end
 
+-- v2.49.1: chance-on-hit removal ring buffer. Rolling 5-second window
+-- of itemIDs that vanished from bags AND had a chance-on-hit line.
+-- Consumed by EC_TryAutolearnFromLearnedSpell to correlate an anvil
+-- extraction (LEARNED_SPELL_IN_TAB) with the specific weapon that was
+-- consumed. Session-local; never persisted.
+--
+-- Entry shape: { itemID, itemName, procLine, removedAt = GetTime() }.
+-- Populated inside EC_ScanLootDelta's diff loop. Pruned at the start of
+-- every scan pass so the window stays tight.
+local EC_recentChanceProcRemovals = {}
+local EC_CHANCE_PROC_WINDOW_SECONDS = 5
+NS.recentChanceProcRemovals = EC_recentChanceProcRemovals
+NS.chanceProcWindowSeconds = EC_CHANCE_PROC_WINDOW_SECONDS
+
+local function EC_PruneChanceProcRemovals()
+    local now = GetTime()
+    local i = 1
+    while i <= #EC_recentChanceProcRemovals do
+        local entry = EC_recentChanceProcRemovals[i]
+        if now - entry.removedAt > EC_CHANCE_PROC_WINDOW_SECONDS then
+            table.remove(EC_recentChanceProcRemovals, i)
+        else
+            i = i + 1
+        end
+    end
+end
+NS.PruneChanceProcRemovals = EC_PruneChanceProcRemovals
+
 -- Diff current bags against the last snapshot and record positive deltas as
 -- looted. Called from the BAG_UPDATE debounce flush. The first call after
 -- login / reload only baselines (existing bag contents are not "loot").

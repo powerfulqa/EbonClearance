@@ -1468,14 +1468,22 @@ NS.chanceProcConfirmedItems = EC_CHANCE_PROC_CONFIRMED_ITEMS
 --      (Anvil UI truth: PE cannot extract this weapon's proc, period).
 --   2. EC_CHANCE_PROC_CONFIRMED_ITEMS: use the mapped spellID directly
 --      (unambiguous ground truth, bypasses keyword-map guesses).
---   3. chanceProcSpellID: keyword-map inference (best-effort).
+--   3. ADB.chanceProcConfirmedItems (autolearned, v2.49.1): pairings
+--      correlated at runtime from LEARNED_SPELL_IN_TAB observations.
+--      Belt-and-braces nil-guards handle early-boot / fresh-account.
+--   4. chanceProcSpellID: keyword-map inference (best-effort).
 function EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
     if itemID and EC_CHANCE_PROC_NEVER_EXTRACTABLE[itemID] then
         return false, nil, nil
     end
+    local ADB = NS.ADB
     local spellID, family
     if itemID and EC_CHANCE_PROC_CONFIRMED_ITEMS[itemID] then
         local rec = EC_CHANCE_PROC_CONFIRMED_ITEMS[itemID]
+        spellID, family = rec.spellID, rec.family
+    elseif itemID and ADB and ADB.chanceProcConfirmedItems and ADB.chanceProcConfirmedItems[itemID] then
+        -- v2.49.1: autolearned pairings from LEARNED_SPELL_IN_TAB observations
+        local rec = ADB.chanceProcConfirmedItems[itemID]
         spellID, family = rec.spellID, rec.family
     else
         spellID, family = EC_compCache.chanceProcSpellID(bag, slot, itemID, procLine)

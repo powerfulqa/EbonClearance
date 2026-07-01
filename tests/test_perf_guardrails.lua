@@ -6942,6 +6942,10 @@ do
             and ev:find('EC_TryAutolearnFromLearnedSpell%(newSpellID, newRec%.name, "event"%)') ~= nil
             and ev:find("EC_compCache%.spellUpdatePending = true") ~= nil,
         "v2.49.1: the LEARNED_SPELL_IN_TAB / SPELLS_CHANGED handler must run the autolearn diff FIRST (synchronously, before the debounce fires) so a single learn event with its correlated bag removal is captured in the same tick. The v2.30.0 debounced-rescan (spellUpdatePending / spellUpdateFrame) keeps its downstream job of rebuilding the known-affix map; do NOT move the autolearn hook into the debounce - the bag-removal window is only 5s and the debounce is 0.5s of quiet, so a batch could push the correlation past the window.")
+    check("Test 111g: playerHasExtractedProc consults ADB.chanceProcConfirmedItems between the in-code map and the keyword-map",
+        prot:find("if itemID and ADB and ADB%.chanceProcConfirmedItems and ADB%.chanceProcConfirmedItems%[itemID%] then") ~= nil
+            and prot:find("local rec = ADB%.chanceProcConfirmedItems%[itemID%]") ~= nil,
+        "v2.49.1: playerHasExtractedProc MUST consult ADB.chanceProcConfirmedItems AFTER the in-code EC_CHANCE_PROC_CONFIRMED_ITEMS check but BEFORE the keyword-map fallback. Two-tier confirmed map (author + autolearn) lets a /reload wipe of ADB survive without losing the author-vetted pairings. NEVER_EXTRACTABLE still gates ahead of everything.")
     check("Test 112a: itemHasChanceOnHit + liveTooltipHasChanceOnHit short-circuit on tome/recipe items",
         prot:find("if EC_compCache%.itemIsTome and EC_compCache%.itemIsTome%(bag, slot, itemID%) then") ~= nil
             and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,

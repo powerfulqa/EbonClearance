@@ -6989,6 +6989,11 @@ do
             and ev:find('if type%(DB%.warnConflictingAddons%) ~= "boolean" then') ~= nil
             and ev:find("DB%.warnConflictingAddons = true") ~= nil,
         "v2.49.2: EnsureDB MUST seed DB.autoDeleteGreyOnLoot (destructive-off-by-default per project convention) and DB.warnConflictingAddons (informational-on-by-default so the conflict is surfaced immediately when detectable). Both are per-character. Explicit type() guards match the shape used by all v2.48.x-v2.49.x additive fields.")
+    check("Test 113e: EC_HasConflictingDeleteAddon detects the third-party addon via IsAddOnLoaded",
+        ev:find("local function EC_HasConflictingDeleteAddon%(%)") ~= nil
+            and ev:find('IsAddOnLoaded and IsAddOnLoaded%("AutoDelete"%)') ~= nil
+            and ev:find("NS%.HasConflictingDeleteAddon = EC_HasConflictingDeleteAddon") ~= nil,
+        "v2.49.2: detection helper for the third-party auto-delete addon. Per CLAUDE.md, code MAY reference the specific folder name via IsAddOnLoaded (necessary detection code); comments + local variable + all user-facing text stay neutral. Exposed on NS so /ec bugreport can consume it too.")
 end
 
 -- ---------------------------------------------------------------------------

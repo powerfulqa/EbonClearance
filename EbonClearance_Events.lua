@@ -7485,6 +7485,16 @@ SlashCmdList["ECDEBUG"] = function()
     PrintNice(L["|cffffff00=== End Debug ===|r"])
 end
 
+-- v2.49.2: detects a third-party auto-delete addon running alongside
+-- EC. Called at PLAYER_LOGIN (chat warning) and by /ec bugreport
+-- (Environment Capabilities line). Only the IsAddOnLoaded string is
+-- specific; comments + variable names stay neutral per CLAUDE.md's
+-- "No third-party addon references in new EC artefacts" rule.
+local function EC_HasConflictingDeleteAddon()
+    return (IsAddOnLoaded and IsAddOnLoaded("AutoDelete")) and true or false
+end
+NS.HasConflictingDeleteAddon = EC_HasConflictingDeleteAddon
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGOUT")

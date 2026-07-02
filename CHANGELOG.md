@@ -5,29 +5,18 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
-### v2.49.3
+### v2.50.0
 
-**Settings reshuffle: "Protection Settings" is now "Keep Settings", and "Sell recipes you already know" moves to Merchant Settings.**
+**Auto-delete grey drops, a warning when another delete addon is running, and a settings reshuffle: "Protection Settings" is now "Keep Settings".**
 
+- **`Auto-delete grey items on loot`** (Delete Settings, opt-in, default off). When on, grey (quality 0) items with a positive sell price are destroyed the moment they land in your bags. For players who prefer bag space over the copper a grey would vendor. Gates: master delete switch on, quality == 0, sellPrice > 0, not a quest item, not equipped, and not on any Keep List / auto-blacklist / Delete List. Merchant-open pauses the scan so vendor copper wins when a vendor is about to be visited.
+- **`Warn about conflicting addons`** (main EbonClearance panel, opt-out, default on). A popup at login when EC's delete path is active AND a conflicting bag-management addon is detected running alongside EC. It's a popup rather than a chat line so it can't be scrolled past, and it names the detected addon so you know exactly what to turn off. Silence via the toggle once acknowledged.
 - **Keep Settings panel.** The panel formerly called "Protection Settings" is renamed **Keep Settings** and repositioned in the sidebar to sit directly under **Keep List** - so Keep List + Keep Settings mirror Delete List + Delete Settings. All its "Keep ..." toggles are unchanged (equipped gear, upgrades, equipment sets, affixed items, chance-on-hit, tomes). The internal panel id is unchanged, so existing help links and deep-links keep working.
-- **Sell recipes you already know moves to Merchant Settings.** It's a sell rule, so it now lives with the other merchant sell rules (per-rarity checkboxes + bind-type dropdowns come with it). Behaviour is identical, including that "Keep them even after you learn them" (tome protection, still in Keep Settings) wins over it.
-- **No settings lost.** Purely a relabel + relocation. No schema change, no behaviour change to what gets kept or sold. Your existing choices carry over untouched.
+- **`Sell recipes you already know` moves to Merchant Settings.** It's a sell rule, so it now lives with the other merchant sell rules (per-rarity checkboxes + bind-type dropdowns come with it). Behaviour is identical, including that "Keep them even after you learn them" (tome protection, still in Keep Settings) wins over it.
+- **`/ec bugreport` capability flag.** New "Third-party auto-delete addon detected: yes/no" line under Environment Capabilities.
+- **Additive schema.** `DB.autoDeleteGreyOnLoot` (false) and `DB.warnConflictingAddons` (true) initialised via EnsureDB with type-guarded nil-defaults. No settings lost; downgrade-safe.
 
-Tests 104c-e updated/added to pin the moved control + the rename.
-
----
-
-
-### v2.49.2
-
-**Two new Delete Settings toggles: auto-delete grey items on loot, and warn about conflicting addons.**
-
-- **`Auto-delete grey items on loot`** (opt-in, default off). When on, grey (quality 0) items with a positive sell price are destroyed the moment they land in your bags. For players who prefer bag space over the copper a grey would vendor. Gates: master delete switch on, quality == 0, sellPrice > 0, not a quest item, not equipped, and not on any Keep List / auto-blacklist / Delete List. Merchant-open pauses the scan so vendor copper wins when a vendor is about to be visited.
-- **`Warn about conflicting addons`** (opt-out, default on, on the main EbonClearance panel). A popup at login when EC's delete path is active AND a conflicting bag-management addon is detected running alongside EC. It's a popup rather than a chat line so it can't be scrolled past, and it names the detected addon so you know exactly what to turn off. Silence via the toggle once acknowledged.
-- **`/ec bugreport` capability flag.** New "Third-party auto-delete addon detected: yes/no" line under Environment Capabilities. The Loaded Addons dump further down already lists every addon by folder name; the neutral flag is the pre-filtered summary.
-- **Additive schema.** `DB.autoDeleteGreyOnLoot` (false) and `DB.warnConflictingAddons` (true) initialised via EnsureDB with type-guarded nil-defaults. Downgrade-safe.
-
-Tests 113a-h pin the new invariants.
+Tests 104c-e + 113a-h pin the new invariants (grey scan gates, conflict detection + popup, the panel rename, and the recipe relocation).
 
 ---
 

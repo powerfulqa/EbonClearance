@@ -5135,7 +5135,7 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- Sell List or the auto-rule sweep matched them. The base itemID
     -- and the affixed itemID are the same; only the per-link suffix /
     -- tooltip-title differs. Default ON; users can opt out via the
-    -- Protection Settings panel. White/Green items are NOT covered
+    -- Keep Settings panel. White/Green items are NOT covered
     -- (per user scope), so per-rarity sweep rules still vendor them.
     -- v2.20.0: narrowed detection requires rank-suffix in name to
     -- avoid misfiring on standard ItemRandomSuffix.dbc entries.

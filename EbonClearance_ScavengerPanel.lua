@@ -257,7 +257,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         -- our anchor (autoOpenNote) is itself indented +26 to align with the
         -- auto-open checkbox label. Back-shift the x by -26 to put fastLootCB
         -- on the panel's left margin, level with autoOpenCB above. Same trick
-        -- the Protection Settings panel uses to keep its toggle stack
+        -- the Keep Settings panel uses to keep its toggle stack
         -- left-aligned beneath each toggle's wrapped explanatory note.
         fastLootCB:ClearAllPoints()
         fastLootCB:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", -26, -10)

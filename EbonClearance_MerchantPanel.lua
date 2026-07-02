@@ -533,7 +533,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             -- Re-anchor the rarity-row checkbox's auto-label so its right edge
             -- is bounded by the "Use equipped iLvl" text's left edge. The
             -- shared AddCheckbox helper applies a fixed 420 px label width
-            -- which fits the wider Main / Protection Settings panels but
+            -- which fits the wider Main / Keep Settings panels but
             -- overruns the right-anchored max-iLvl input on this row at
             -- narrow panel widths. Anchoring instead of fixed-width lets the
             -- rarity name truncate cleanly rather than visually colliding

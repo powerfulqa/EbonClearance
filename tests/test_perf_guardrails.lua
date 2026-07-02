@@ -6994,6 +6994,11 @@ do
             and ev:find('IsAddOnLoaded and IsAddOnLoaded%("AutoDelete"%)') ~= nil
             and ev:find("NS%.HasConflictingDeleteAddon = EC_HasConflictingDeleteAddon") ~= nil,
         "v2.49.2: detection helper for the third-party auto-delete addon. Per CLAUDE.md, code MAY reference the specific folder name via IsAddOnLoaded (necessary detection code); comments + local variable + all user-facing text stay neutral. Exposed on NS so /ec bugreport can consume it too.")
+    check("Test 113f: PLAYER_LOGIN emits neutral conflict warning when both toggle + detection + enableDeletion are true",
+        ev:find('event == "PLAYER_LOGIN"') ~= nil
+            and ev:find("if DB%.enableDeletion and DB%.warnConflictingAddons and EC_HasConflictingDeleteAddon%(%) then") ~= nil
+            and ev:find('L%["|cffff4444Another auto%-delete addon is running%.') ~= nil,
+        "v2.49.2: PLAYER_LOGIN handler MUST emit the chat warning only when all three conditions hold - EC's delete path is active (enableDeletion), the player hasn't opted out (warnConflictingAddons), and the detection helper reports a conflicting addon. Neutral framing: the L[] key contains no third-party addon name. One-shot per session (gated inside the PLAYER_LOGIN-only branch, not PLAYER_ENTERING_WORLD).")
 end
 
 -- ---------------------------------------------------------------------------

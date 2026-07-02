@@ -7636,6 +7636,17 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
             EC_scavStateBootstrapped = true
         end
+        -- v2.49.2: conflict warning. Fires only when EC's delete path
+        -- is active AND the player hasn't opted out AND a third-party
+        -- auto-delete addon is loaded. Neutral framing per project
+        -- rule; player identifies the other addon via their own list.
+        -- Inside the PLAYER_LOGIN-only branch so it's one-shot per
+        -- session (PLAYER_ENTERING_WORLD zone changes don't re-fire it).
+        if event == "PLAYER_LOGIN" then
+            if DB.enableDeletion and DB.warnConflictingAddons and EC_HasConflictingDeleteAddon() then
+                PrintNice(L["|cffff4444Another auto-delete addon is running.|r Both may try to delete items, and the delete-confirm popup can get contested. If items disappear unexpectedly or delete popups misbehave, disable one of the two. Silence this warning: uncheck 'Warn about conflicting addons' in Delete Settings."])
+            end
+        end
         -- Version gossip: once per session (login / reload, not zone changes),
         -- after a short settle, ask the guild for versions.
         if event == "PLAYER_LOGIN" then

@@ -738,21 +738,27 @@ local function BuildMainPanel(panel, content)
     -- v2.49.2: conflicting-addon warning opt-out. Sits with the other
     -- global toggles (version alert / minimap button) rather than in
     -- Delete Settings - it's an informational preference, not a delete
-    -- rule. Per-character DB.warnConflictingAddons; default on. When on
+    -- rule. Per-character NS.DB.warnConflictingAddons; default on. When on
     -- (and EC's delete path is active), a popup at login flags a
     -- third-party auto-delete addon running alongside EC. Neutral label
     -- per project rule; the other addon is never named.
+    -- EC-TRAP: read/write NS.DB fully-qualified, NOT a bare `DB`.
+    -- BuildMainPanel has no `DB` upvalue (the file-local `DB` at the top
+    -- belongs to a sibling function that ends before this one), so bare
+    -- `DB` resolves to the nil global and the toggle silently fails to
+    -- persist - the tick reverts on /reload. enableCB above uses the
+    -- same NS.DB pattern for this reason.
     local warnConflictCB = NS.AddCheckbox(
         content,
         "EbonClearanceWarnConflictingAddonsCB",
         minimapButtonCB,
         L["Warn about conflicting addons"],
         function()
-            return DB and DB.warnConflictingAddons ~= false
+            return NS.DB and NS.DB.warnConflictingAddons ~= false
         end,
         function(v)
-            if DB then
-                DB.warnConflictingAddons = v and true or false
+            if NS.DB then
+                NS.DB.warnConflictingAddons = v and true or false
             end
         end,
         -2

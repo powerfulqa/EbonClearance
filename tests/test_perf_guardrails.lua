@@ -7021,11 +7021,11 @@ do
             and dp:find("DB%.autoDeleteGreyOnLoot") ~= nil
             and dp:find('L%["Auto%-delete grey items on loot"%]') ~= nil,
         "v2.49.2: Delete Settings panel MUST expose the grey-delete toggle with the frame name locked (tests grep for it) and the label pinned. Positioned after the Auto-delete on pickup checkbox for conceptual adjacency (both are 'delete on arrival' flows). Gated under the master Enable via refreshAutoCBEnabled like the sibling destructive toggles.")
-    check("Test 113g: main panel surfaces Warn about conflicting addons checkbox",
+    check("Test 113g: main panel surfaces Warn about conflicting addons checkbox (persists via NS.DB)",
         mp:find("EbonClearanceWarnConflictingAddonsCB") ~= nil
-            and mp:find("DB%.warnConflictingAddons") ~= nil
+            and mp:find("NS%.DB%.warnConflictingAddons") ~= nil
             and mp:find('L%["Warn about conflicting addons"%]') ~= nil,
-        "v2.49.2: the conflict-warning opt-out lives on the MAIN panel with the other global toggles (version alert / minimap button), NOT in Delete Settings - it's an informational preference, not a delete rule. Frame name locked (tests grep for it) and the label pinned.")
+        "v2.49.2: the conflict-warning opt-out lives on the MAIN panel with the other global toggles (version alert / minimap button), NOT in Delete Settings - it's an informational preference, not a delete rule. Frame name locked (tests grep for it) and the label pinned. MUST read/write NS.DB fully-qualified: BuildMainPanel has NO `DB` upvalue (bare `DB` resolves to the nil global), so a bare `DB.warnConflictingAddons` getter/setter silently fails to persist - the tick reverts on /reload (v2.49.2 in-game bug report from Serv). enableCB uses the same NS.DB pattern.")
     check("Test 113h: /ec bugreport surfaces third-party auto-delete addon detection",
         br:find("Third%-party auto%-delete addon detected:") ~= nil
             and br:find("NS%.HasConflictingDeleteAddon") ~= nil,

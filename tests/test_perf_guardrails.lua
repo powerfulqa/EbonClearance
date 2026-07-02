@@ -6983,6 +6983,12 @@ do
             and ev:find("local unequipDelta = unequipped%[id%] or 0") ~= nil
             and ev:find("local netDelta = delta %- unequipDelta") ~= nil,
         "reported by Serv: unequipping a worn item counts it as loot because the item moves from an equipment slot to a bag slot. Fix: snapshot equipped items (INVSLOT 1-19) each scan, diff vs previous, subtract per-itemID decreases from the positive bag delta. Snapshot MUST re-baseline on the transaction-window skip path AND after the loop; without either, a transaction close would treat prior equipped state as unequipped noise.")
+    check("Test 113a: EnsureDB seeds autoDeleteGreyOnLoot=false + warnConflictingAddons=true",
+        ev:find('if type%(DB%.autoDeleteGreyOnLoot%) ~= "boolean" then') ~= nil
+            and ev:find("DB%.autoDeleteGreyOnLoot = false") ~= nil
+            and ev:find('if type%(DB%.warnConflictingAddons%) ~= "boolean" then') ~= nil
+            and ev:find("DB%.warnConflictingAddons = true") ~= nil,
+        "v2.49.2: EnsureDB MUST seed DB.autoDeleteGreyOnLoot (destructive-off-by-default per project convention) and DB.warnConflictingAddons (informational-on-by-default so the conflict is surfaced immediately when detectable). Both are per-character. Explicit type() guards match the shape used by all v2.48.x-v2.49.x additive fields.")
 end
 
 -- ---------------------------------------------------------------------------

@@ -809,6 +809,18 @@ local function EnsureDB()
     if type(DB.announceAutoDelete) ~= "boolean" then
         DB.announceAutoDelete = true
     end
+    -- v2.49.2: auto-delete grey items on loot (opt-in, destructive-
+    -- off-by-default). Runs from the existing BAG_UPDATE debounce
+    -- alongside the auto-mark scans. See the grey auto-delete scan below.
+    if type(DB.autoDeleteGreyOnLoot) ~= "boolean" then
+        DB.autoDeleteGreyOnLoot = false
+    end
+    -- v2.49.2: warn once at PLAYER_LOGIN when a third-party auto-delete
+    -- addon is running alongside EC. Opt-out; default on so the conflict
+    -- is surfaced immediately without the player having to opt in first.
+    if type(DB.warnConflictingAddons) ~= "boolean" then
+        DB.warnConflictingAddons = true
+    end
     if type(DB.summonGreedy) ~= "boolean" then
         DB.summonGreedy = true
     end

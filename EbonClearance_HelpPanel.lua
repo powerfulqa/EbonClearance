@@ -68,6 +68,18 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
+        id = "gate-auto-delete-grey",
+        q = L["What does 'Auto-delete grey items on loot' do?"],
+        a = L["Off by default. When on, grey (poor-quality) items are destroyed the moment they land in your bags - skips the vendor round-trip so you keep bag slots open for green+ drops. The trade-off: you lose the few copper the greys would have vendored. Never touches keep-listed items, equipped gear, or quest items. If a merchant is open when the grey drops, the delete is skipped so the vendor gets first pick."],
+        panel = "EbonClearanceOptionsDeletionSettings",
+    },
+    {
+        id = "gate-warn-conflicting-addons",
+        q = L["What does 'Warn about conflicting addons' do?"],
+        a = L["On by default. When another auto-delete addon is loaded alongside EbonClearance and EC's delete path is on, you'll see one chat message at login pointing out the conflict. Disable one of the two to resolve. Off = silent even when a conflict is detected; use if you've decided to run both intentionally."],
+        panel = "EbonClearanceOptionsDeletionSettings",
+    },
+    {
         id = "see-item-decision",
         q = L["How do I see what will happen to an item?"],
         a = L["Hover any bag item with EbonClearance enabled and the tooltip shows what the addon will do: 'Keep', 'Will Sell', 'Will Delete', or 'Won't Sell' with a reason. For a full step-by-step, Alt+Right-Click the item and pick 'Sell Info' (or Alt+Shift+Right-Click, or type /ec sellinfo)."],

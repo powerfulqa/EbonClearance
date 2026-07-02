@@ -202,6 +202,11 @@ NS.RegisterLocale("frFR", {
     ["|cff888888Grey items destroy the instant they hit your bags. Skips vendor copper; keeps bag slots open. Never touches keep-listed items, equipment, or quest items.|r"] = "",
     ["Warn about conflicting addons"] = "",
     ["|cff888888One chat message at login when EC detects another auto-delete addon running. Off = silent even when a conflict is detected.|r"] = "",
+    -- v2.49.2: Help/FAQ entries.
+    ["What does 'Auto-delete grey items on loot' do?"] = "",
+    ["Off by default. When on, grey (poor-quality) items are destroyed the moment they land in your bags - skips the vendor round-trip so you keep bag slots open for green+ drops. The trade-off: you lose the few copper the greys would have vendored. Never touches keep-listed items, equipped gear, or quest items. If a merchant is open when the grey drops, the delete is skipped so the vendor gets first pick."] = "",
+    ["What does 'Warn about conflicting addons' do?"] = "",
+    ["On by default. When another auto-delete addon is loaded alongside EbonClearance and EC's delete path is on, you'll see one chat message at login pointing out the conflict. Disable one of the two to resolve. Off = silent even when a conflict is detected; use if you've decided to run both intentionally."] = "",
     ["Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots."] = "",
     ["|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Account Sell List|r|cffaaaaaa (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"] = "",
     ["Profile name:"] = "",

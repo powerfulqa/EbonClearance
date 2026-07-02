@@ -110,6 +110,30 @@ MerchantPanel:SetScript("OnShow", function(self)
                 cb._applyInputEnabled()
             end
         end
+        -- v2.49.3: re-sync the moved "Sell recipes you already know" controls.
+        if self.sellRecipesCB then
+            self.sellRecipesCB:SetChecked(DB.sellKnownRecipes)
+        end
+        if self.recipeQualityCBs then
+            for q = 1, 4 do
+                local qcb = self.recipeQualityCBs[q]
+                if qcb then
+                    qcb:SetChecked(DB.sellKnownRecipeQualities and DB.sellKnownRecipeQualities[q])
+                end
+            end
+        end
+        if self.recipeBindDDs and self._BindFilterText then
+            for q = 1, 4 do
+                local dd = self.recipeBindDDs[q]
+                if dd then
+                    local v = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
+                    UIDropDownMenu_SetText(dd, self._BindFilterText(v))
+                end
+            end
+        end
+        if self.UpdateRecipeQualitiesEnabled then
+            self:UpdateRecipeQualitiesEnabled()
+        end
     end, function(self, content)
         -- Build-time table population. See the EC_WHITELIST_QUALITIES
         -- declaration above for why this can't run at file load.
@@ -689,9 +713,148 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- the option set.
         self._BindFilterText = EC_BindFilterText
 
+        -- v2.49.3: "Sell recipes you already know" moved here from the
+        -- Keep Settings panel (formerly Protection Settings) - it is a sell
+        -- rule, so it belongs with the merchant sell rules. When ON,
+        -- profession recipes this character has ALREADY learned auto-sell at
+        -- vendors, gated per rarity + bind type. Unknown recipes are never
+        -- sold. The runtime "keep all tomes wins over sell-known-recipes"
+        -- precedence still lives in EC_IsSellable; this toggle is not greyed
+        -- by that setting (it just loses at decision time), so no cross-panel
+        -- dependency is needed. Reuses EC_BIND_FILTER_OPTIONS / EC_BindFilterText
+        -- (previously duplicated on the Protection panel; the dupe is gone).
+        local sellRecipesCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceSellKnownRecipesCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        sellRecipesCB:SetPoint("TOPLEFT", row4CB, "BOTTOMLEFT", 0, -60)
+        sellRecipesCB:SetChecked(DB.sellKnownRecipes)
+        local srText = _G[sellRecipesCB:GetName() .. "Text"]
+        if srText then
+            srText:SetText(L["Sell recipes you already know"])
+            EC_compCache.setPanelWidth(srText, 60)
+            srText:SetJustifyH("LEFT")
+        end
+        self.sellRecipesCB = sellRecipesCB
+        if srText then
+            NS.AddHelpIcon(content, srText, "LEFT", "RIGHT", 6, 0, "gate-sell-known-recipes")
+        end
+
+        -- Per-quality gate: four indented child checkboxes, one per recipe
+        -- rarity, each writing DB.sellKnownRecipeQualities[q]. Greyed out when
+        -- the parent is off. Each row has a Bind dropdown mirroring the
+        -- per-rarity bind-type filter on the quality rules above.
+        local recipeQualityLabels = { L["White"], L["Green"], L["Blue"], L["Epic"] }
+        local recipeQualityCBs = {}
+        local recipeBindDDs = {}
+        local recipeAnchor = sellRecipesCB
+        for q = 1, 4 do
+            local qcb = CreateFrame(
+                "CheckButton",
+                "EbonClearanceSellKnownRecipeQ" .. q .. "CB",
+                content,
+                "InterfaceOptionsCheckButtonTemplate"
+            )
+            if q == 1 then
+                qcb:SetPoint("TOPLEFT", recipeAnchor, "BOTTOMLEFT", 26, -6)
+            else
+                qcb:SetPoint("TOPLEFT", recipeAnchor, "BOTTOMLEFT", 0, -4)
+            end
+            qcb:SetChecked(DB.sellKnownRecipeQualities and DB.sellKnownRecipeQualities[q] or false)
+            local qText = _G[qcb:GetName() .. "Text"]
+            if qText then
+                qText:SetText(recipeQualityLabels[q])
+                qText:SetJustifyH("LEFT")
+            end
+            qcb:SetScript("OnClick", function(cb)
+                DB.sellKnownRecipeQualities = DB.sellKnownRecipeQualities or {}
+                DB.sellKnownRecipeQualities[q] = cb:GetChecked() and true or false
+                PlaySound("igMainMenuOptionCheckBoxOn")
+                if NS.RefreshSellBorders then
+                    NS.RefreshSellBorders()
+                end
+            end)
+            recipeQualityCBs[q] = qcb
+
+            -- Bind-type dropdown to the right of this rarity row.
+            local bindDD = CreateFrame(
+                "Frame",
+                "EbonClearanceSellKnownRecipeQ" .. q .. "BindDD",
+                content,
+                "UIDropDownMenuTemplate"
+            )
+            bindDD:SetPoint("LEFT", qcb, "RIGHT", 56, 0)
+            local function BindFilterInit(_frame, _level)
+                for _, entry in ipairs(EC_BIND_FILTER_OPTIONS) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = entry.text
+                    info.value = entry.value
+                    local cur = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
+                    info.checked = (cur == entry.value)
+                    info.func = function()
+                        DB.sellKnownRecipeBindFilter = DB.sellKnownRecipeBindFilter or {}
+                        DB.sellKnownRecipeBindFilter[q] = entry.value
+                        UIDropDownMenu_SetText(bindDD, entry.text)
+                        PlaySound("igMainMenuOptionCheckBoxOn")
+                        if NS.RefreshSellBorders then
+                            NS.RefreshSellBorders()
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, _level)
+                end
+            end
+            UIDropDownMenu_SetWidth(bindDD, 110)
+            local curBind = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
+            UIDropDownMenu_SetText(bindDD, EC_BindFilterText(curBind))
+            UIDropDownMenu_Initialize(bindDD, BindFilterInit)
+            recipeBindDDs[q] = bindDD
+
+            recipeAnchor = qcb
+        end
+        self.recipeQualityCBs = recipeQualityCBs
+        self.recipeBindDDs = recipeBindDDs
+
+        local function UpdateRecipeQualitiesEnabled()
+            local on = DB.sellKnownRecipes == true
+            for q = 1, 4 do
+                local qcb = recipeQualityCBs[q]
+                local qText = qcb and _G[qcb:GetName() .. "Text"]
+                local dd = recipeBindDDs[q]
+                if on then
+                    qcb:Enable()
+                    if qText then
+                        qText:SetTextColor(1, 1, 1)
+                    end
+                    if dd and UIDropDownMenu_EnableDropDown then
+                        UIDropDownMenu_EnableDropDown(dd)
+                    end
+                else
+                    qcb:Disable()
+                    if qText then
+                        qText:SetTextColor(0.5, 0.5, 0.5)
+                    end
+                    if dd and UIDropDownMenu_DisableDropDown then
+                        UIDropDownMenu_DisableDropDown(dd)
+                    end
+                end
+            end
+        end
+        self.UpdateRecipeQualitiesEnabled = UpdateRecipeQualitiesEnabled
+        UpdateRecipeQualitiesEnabled()
+
+        sellRecipesCB:SetScript("OnClick", function(cb)
+            DB.sellKnownRecipes = cb:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            UpdateRecipeQualitiesEnabled()
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
+        end)
+
         -- Size the scroll content to fit the bottom-most widget so the scrollbar
-        -- range matches actual content. Purple Epic's bind dropdown is now the
-        -- lowest widget on the panel.
-        NS.FitScrollContent(content, row4DD)
+        -- range matches actual content. The Epic recipe row is now the lowest.
+        NS.FitScrollContent(content, recipeQualityCBs[4])
     end, true)
 end)

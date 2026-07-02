@@ -1,19 +1,22 @@
--- EbonClearance_ProtectionPanel - Protection Settings Interface Options panel.
+-- EbonClearance_ProtectionPanel - Keep Settings Interface Options panel.
 -- Author:  Serv
 -- Source:  https://github.com/powerfulqa/EbonClearance
 -- License: see LICENSE; attribution preservation is required.
 --
 -- Stage 8e-vi of the multi-stage file split (docs/CODE_REVIEW.md item 4).
--- The Protection Settings UI panel (named "Protection Settings" in
--- the sidebar; internal frame name "EbonClearanceOptionsBlacklistSettings"
--- preserves the v2.15.0 schema). Hosts the auto-protect toggles
--- (autoAddEquipped / autoProtectUpgrades / autoProtectEquipmentSets)
--- and the v2.20.0 affix + chance-on-hit protection toggles + the
--- affixAllowExactDupes setting.
+-- The Keep Settings UI panel (v2.49.3 renamed the sidebar label from
+-- "Protection Settings" to "Keep Settings"; internal frame name
+-- "EbonClearanceOptionsBlacklistSettings" preserves the v2.15.0 schema
+-- and is intentionally NOT renamed - help links / deep-links depend on
+-- it). Hosts the auto-protect / keep toggles (autoAddEquipped /
+-- autoProtectUpgrades / autoProtectEquipmentSets) and the v2.20.0 affix
+-- + chance-on-hit protection toggles + the affixAllowExactDupes setting.
+-- v2.49.3: "Sell recipes you already know" (a sell rule) moved OUT to
+-- EbonClearance_MerchantPanel.lua.
 --
 -- Moved into this file:
 --   * local BlacklistSettingsPanel = CreateFrame(...) frame creation
---   * The Protection Settings OnShow handler (panel-build body)
+--   * The Keep Settings OnShow handler (panel-build body)
 --
 -- Cross-file dependencies satisfied by NS:
 --   * NS.compCache (Core) - initPanel, setPanelWidth, registerWidth,
@@ -49,7 +52,7 @@ local L = NS.L
 -- drive the same protection without any wiring changes.
 local BlacklistSettingsPanel =
     CreateFrame("Frame", "EbonClearanceOptionsBlacklistSettings", InterfaceOptionsFramePanelContainer)
-BlacklistSettingsPanel.name = "Protection Settings"
+BlacklistSettingsPanel.name = "Keep Settings"
 BlacklistSettingsPanel.parent = "EbonClearance"
 
 BlacklistSettingsPanel:SetScript("OnShow", function(self)
@@ -94,29 +97,6 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.UpdateAllTomeEnabled then
             self:UpdateAllTomeEnabled()
         end
-        if self.sellRecipesCB then
-            self.sellRecipesCB:SetChecked(DB.sellKnownRecipes)
-        end
-        if self.recipeQualityCBs then
-            for q = 1, 4 do
-                local qcb = self.recipeQualityCBs[q]
-                if qcb then
-                    qcb:SetChecked(DB.sellKnownRecipeQualities and DB.sellKnownRecipeQualities[q])
-                end
-            end
-        end
-        if self.recipeBindDDs and self._RecipeBindFilterText then
-            for q = 1, 4 do
-                local dd = self.recipeBindDDs[q]
-                if dd then
-                    local v = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
-                    UIDropDownMenu_SetText(dd, self._RecipeBindFilterText(v))
-                end
-            end
-        end
-        if self.UpdateRecipeQualitiesEnabled then
-            self:UpdateRecipeQualitiesEnabled()
-        end
     end, function(self, content)
         -- Auto-protect handlers used to refresh `self.listUI` directly because
         -- the list lived on the same frame. Now the list lives on the Keep List
@@ -128,7 +108,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end
 
-        NS.MakeHeader(content, L["Protection Settings"], -16)
+        NS.MakeHeader(content, L["Keep Settings"], -16)
         local desc = NS.MakeLabel(
             content,
             L["Rules that keep specific items safe from selling. You can override any of them on a single item with Alt+Right-Click - Allow Sell."],
@@ -818,160 +798,11 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
 
-        -- Sell Known Recipes. Sits with the tome controls because it is the
-        -- inverse policy: when ON, profession recipes this character has
-        -- ALREADY learned auto-sell at vendors, gated per quality. Unknown
-        -- recipes are never sold. "Keep them even after you learn them"
-        -- (allTomeCB above, = protectAllTomes) wins and disables this.
-        local sellRecipesCB = CreateFrame(
-            "CheckButton",
-            "EbonClearanceSellKnownRecipesCB",
-            content,
-            "InterfaceOptionsCheckButtonTemplate"
-        )
-        sellRecipesCB:SetPoint("TOPLEFT", allTomeNote, "BOTTOMLEFT", -52, -12)
-        sellRecipesCB:SetChecked(DB.sellKnownRecipes)
-        local srText = _G[sellRecipesCB:GetName() .. "Text"]
-        if srText then
-            srText:SetText(L["Sell recipes you already know"])
-            EC_compCache.setPanelWidth(srText, 60)
-            srText:SetJustifyH("LEFT")
-        end
-        self.sellRecipesCB = sellRecipesCB
-        if srText then
-            NS.AddHelpIcon(content, srText, "LEFT", "RIGHT", 6, 0, "gate-sell-known-recipes")
-        end
-
-        -- Per-quality gate: four indented child checkboxes, one per recipe
-        -- rarity, each writing DB.sellKnownRecipeQualities[q]. Greyed out
-        -- when the parent is off. v2.47.1 adds a Bind dropdown to the right
-        -- of each row mirroring the per-rarity bind-type filter on the
-        -- quality rules.
-        local recipeQualityLabels = { L["White"], L["Green"], L["Blue"], L["Epic"] }
-        local recipeQualityCBs = {}
-        local recipeBindDDs = {}
-        -- Local duplicate of EC_BIND_FILTER_OPTIONS from MerchantPanel: same
-        -- semantic surface, two scopes. If a third panel needs these in
-        -- v2.48+, hoist to NS.BindFilterOptions; for v2.47.1 the duplicate
-        -- keeps the diff narrow.
-        local RECIPE_BIND_FILTER_OPTIONS = {
-            { text = L["Any bind type"], value = "any" },
-            { text = L["BoE only"], value = "boe" },
-            { text = L["BoP only"], value = "bop" },
-        }
-        local function RecipeBindFilterText(value)
-            for _, entry in ipairs(RECIPE_BIND_FILTER_OPTIONS) do
-                if entry.value == value then
-                    return entry.text
-                end
-            end
-            return RECIPE_BIND_FILTER_OPTIONS[1].text
-        end
-        self._RecipeBindFilterText = RecipeBindFilterText
-        local recipeAnchor = sellRecipesCB
-        for q = 1, 4 do
-            local qcb = CreateFrame(
-                "CheckButton",
-                "EbonClearanceSellKnownRecipeQ" .. q .. "CB",
-                content,
-                "InterfaceOptionsCheckButtonTemplate"
-            )
-            if q == 1 then
-                qcb:SetPoint("TOPLEFT", recipeAnchor, "BOTTOMLEFT", 26, -6)
-            else
-                qcb:SetPoint("TOPLEFT", recipeAnchor, "BOTTOMLEFT", 0, -4)
-            end
-            qcb:SetChecked(DB.sellKnownRecipeQualities and DB.sellKnownRecipeQualities[q] or false)
-            local qText = _G[qcb:GetName() .. "Text"]
-            if qText then
-                qText:SetText(recipeQualityLabels[q])
-                qText:SetJustifyH("LEFT")
-            end
-            qcb:SetScript("OnClick", function(cb)
-                DB.sellKnownRecipeQualities = DB.sellKnownRecipeQualities or {}
-                DB.sellKnownRecipeQualities[q] = cb:GetChecked() and true or false
-                PlaySound("igMainMenuOptionCheckBoxOn")
-                if NS.RefreshSellBorders then
-                    NS.RefreshSellBorders()
-                end
-            end)
-            recipeQualityCBs[q] = qcb
-
-            -- Bind-type dropdown to the right of this rarity row.
-            local bindDD = CreateFrame(
-                "Frame",
-                "EbonClearanceSellKnownRecipeQ" .. q .. "BindDD",
-                content,
-                "UIDropDownMenuTemplate"
-            )
-            bindDD:SetPoint("LEFT", qcb, "RIGHT", 56, 0)
-            local function BindFilterInit(_frame, _level)
-                for _, entry in ipairs(RECIPE_BIND_FILTER_OPTIONS) do
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = entry.text
-                    info.value = entry.value
-                    local cur = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
-                    info.checked = (cur == entry.value)
-                    info.func = function()
-                        DB.sellKnownRecipeBindFilter = DB.sellKnownRecipeBindFilter or {}
-                        DB.sellKnownRecipeBindFilter[q] = entry.value
-                        UIDropDownMenu_SetText(bindDD, entry.text)
-                        PlaySound("igMainMenuOptionCheckBoxOn")
-                        if NS.RefreshSellBorders then
-                            NS.RefreshSellBorders()
-                        end
-                    end
-                    UIDropDownMenu_AddButton(info, _level)
-                end
-            end
-            UIDropDownMenu_SetWidth(bindDD, 110)
-            local curBind = (DB.sellKnownRecipeBindFilter and DB.sellKnownRecipeBindFilter[q]) or "any"
-            UIDropDownMenu_SetText(bindDD, RecipeBindFilterText(curBind))
-            UIDropDownMenu_Initialize(bindDD, BindFilterInit)
-            recipeBindDDs[q] = bindDD
-
-            recipeAnchor = qcb
-        end
-        self.recipeQualityCBs = recipeQualityCBs
-        self.recipeBindDDs = recipeBindDDs
-
-        local function UpdateRecipeQualitiesEnabled()
-            local on = DB.sellKnownRecipes == true
-            for q = 1, 4 do
-                local qcb = recipeQualityCBs[q]
-                local qText = qcb and _G[qcb:GetName() .. "Text"]
-                local dd = recipeBindDDs[q]
-                if on then
-                    qcb:Enable()
-                    if qText then
-                        qText:SetTextColor(1, 1, 1)
-                    end
-                    if dd and UIDropDownMenu_EnableDropDown then
-                        UIDropDownMenu_EnableDropDown(dd)
-                    end
-                else
-                    qcb:Disable()
-                    if qText then
-                        qText:SetTextColor(0.5, 0.5, 0.5)
-                    end
-                    if dd and UIDropDownMenu_DisableDropDown then
-                        UIDropDownMenu_DisableDropDown(dd)
-                    end
-                end
-            end
-        end
-        self.UpdateRecipeQualitiesEnabled = UpdateRecipeQualitiesEnabled
-        UpdateRecipeQualitiesEnabled()
-
-        sellRecipesCB:SetScript("OnClick", function(cb)
-            DB.sellKnownRecipes = cb:GetChecked() and true or false
-            PlaySound("igMainMenuOptionCheckBoxOn")
-            UpdateRecipeQualitiesEnabled()
-            if NS.RefreshSellBorders then
-                NS.RefreshSellBorders()
-            end
-        end)
-
-        NS.FitScrollContent(content, recipeQualityCBs[4])
+        -- v2.49.3: "Sell recipes you already know" (+ per-rarity gates and
+        -- bind dropdowns) moved to Merchant Settings - it is a sell rule,
+        -- not a keep rule. The tome KEEP controls stay here. The runtime
+        -- "keep all tomes wins over sell-known-recipes" precedence still
+        -- lives in EC_IsSellable, unchanged.
+        NS.FitScrollContent(content, allTomeNote)
     end, true)
 end)

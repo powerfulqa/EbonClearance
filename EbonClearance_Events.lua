@@ -6391,7 +6391,6 @@ InterfaceOptions_AddCategory(_G["EbonClearanceOptionsMain"])
 
 
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsMerchant"]) -- Merchant Settings
-InterfaceOptions_AddCategory(_G["EbonClearanceOptionsBlacklistSettings"]) -- Protection Settings
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsScavenger"]) -- Scavenger Settings
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsCharacter"]) -- Item Highlighting
 -- v2.36.x: Stats sub-panel registered between the main settings group
@@ -6408,6 +6407,10 @@ InterfaceOptions_AddCategory(_G["EbonClearanceOptionsGuild"]) -- Stats - Guild
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsWhitelist"]) -- Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsAccountWhitelist"]) -- Account Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsBlacklist"]) -- Keep List
+-- v2.49.3: Keep Settings (internal frame name EbonClearanceOptionsBlacklistSettings,
+-- formerly labelled "Protection Settings") sits right under Keep List so it mirrors
+-- Delete List + Delete Settings. Frame name kept for compat with help-link pointers.
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsBlacklistSettings"]) -- Keep Settings
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsDeletion"]) -- Delete List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsDeletionSettings"]) -- Delete Settings
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProcessBags"]) -- Process Bags

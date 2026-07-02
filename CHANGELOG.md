@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.49.3
+
+**Settings reshuffle: "Protection Settings" is now "Keep Settings", and "Sell recipes you already know" moves to Merchant Settings.**
+
+- **Keep Settings panel.** The panel formerly called "Protection Settings" is renamed **Keep Settings** and repositioned in the sidebar to sit directly under **Keep List** - so Keep List + Keep Settings mirror Delete List + Delete Settings. All its "Keep ..." toggles are unchanged (equipped gear, upgrades, equipment sets, affixed items, chance-on-hit, tomes). The internal panel id is unchanged, so existing help links and deep-links keep working.
+- **Sell recipes you already know moves to Merchant Settings.** It's a sell rule, so it now lives with the other merchant sell rules (per-rarity checkboxes + bind-type dropdowns come with it). Behaviour is identical, including that "Keep them even after you learn them" (tome protection, still in Keep Settings) wins over it.
+- **No settings lost.** Purely a relabel + relocation. No schema change, no behaviour change to what gets kept or sold. Your existing choices carry over untouched.
+
+Tests 104c-e updated/added to pin the moved control + the rename.
+
+---
+
+
 ### v2.49.2
 
 **Two new Delete Settings toggles: auto-delete grey items on loot, and warn about conflicting addons.**

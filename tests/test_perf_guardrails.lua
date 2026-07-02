@@ -6563,6 +6563,7 @@ do
     end
     local ev = fileSrc("EbonClearance_Events.lua")
     local pp = fileSrc("EbonClearance_ProtectionPanel.lua")
+    local mp = fileSrc("EbonClearance_MerchantPanel.lua")
     check("Test 104a: EnsureDB seeds sellKnownRecipeBindFilter with 'any' per quality (additive migration)",
         ev:find('DB%.sellKnownRecipeBindFilter = { %[1%] = "any", %[2%] = "any", %[3%] = "any", %[4%] = "any" }') ~= nil
             and ev:find('if v ~= "any" and v ~= "boe" and v ~= "bop" then') ~= nil,
@@ -6571,11 +6572,20 @@ do
         ev:find("recipePass = true\n.-local recipeBindFilter = DB%.sellKnownRecipeBindFilter") ~= nil
             and ev:find('if recipeBindFilter ~= "any" then\n%s*local bindType = EC_compCache%.getBindType%(bag, slot%)\n%s*if recipeBindFilter ~= bindType then\n%s*recipePass = false') ~= nil,
         "the gate MUST run AFTER the recipePass = true assignment so it CAN disqualify the slot. If the filter check ran before the assignment, the gate would be inert. The bind-type lookup MUST go through EC_compCache.getBindType (the same helper the quality rules use) so 'no bind line at all' reads as 'any' consistently across both sell-rule surfaces, and a 'BoE only' filter doesn't sweep up reagents masquerading as recipes.")
-    check("Test 104c: ProtectionPanel surfaces a Bind dropdown per recipe-quality row",
-        pp:find('"EbonClearanceSellKnownRecipeQ" %.%. q %.%. "BindDD"') ~= nil
-            and pp:find("DB%.sellKnownRecipeBindFilter = DB%.sellKnownRecipeBindFilter or {}") ~= nil
-            and pp:find("DB%.sellKnownRecipeBindFilter%[q%] = entry%.value") ~= nil,
-        "the dropdown widget MUST exist per quality (frame name pattern locked) AND MUST write DB.sellKnownRecipeBindFilter[q] on click; without both, the toggle is invisible to the player or doesn't persist.")
+    check("Test 104c: Merchant panel surfaces a Bind dropdown per recipe-quality row (moved from Protection/Keep in v2.49.3)",
+        mp:find('"EbonClearanceSellKnownRecipeQ" %.%. q %.%. "BindDD"') ~= nil
+            and mp:find("DB%.sellKnownRecipeBindFilter = DB%.sellKnownRecipeBindFilter or {}") ~= nil
+            and mp:find("DB%.sellKnownRecipeBindFilter%[q%] = entry%.value") ~= nil,
+        "v2.49.3 moved 'Sell recipes you already know' (a sell rule) from the Keep Settings panel (formerly Protection Settings) to Merchant Settings. The dropdown widget MUST exist per quality on the MERCHANT panel now (frame name pattern locked) AND MUST write DB.sellKnownRecipeBindFilter[q] on click; without both, the toggle is invisible to the player or doesn't persist.")
+    check("Test 104d: Sell Known Recipes checkbox lives on the Merchant panel, not the Protection/Keep panel",
+        mp:find('"EbonClearanceSellKnownRecipesCB"') ~= nil
+            and pp:find('"EbonClearanceSellKnownRecipesCB"') == nil,
+        "v2.49.3: the Sell Known Recipes control (a sell rule) belongs on Merchant Settings. It must NOT remain on the Protection/Keep panel - a stray copy would double-wire DB.sellKnownRecipes and desync the two checkboxes.")
+    check("Test 104e: Protection panel relabelled 'Keep Settings' (internal frame name kept for compat)",
+        pp:find('%.name = "Keep Settings"') ~= nil
+            and pp:find('L%["Keep Settings"%]') ~= nil
+            and pp:find('CreateFrame%("Frame", "EbonClearanceOptionsBlacklistSettings"') ~= nil,
+        "v2.49.3: the panel formerly labelled 'Protection Settings' is now 'Keep Settings' (sidebar .name + in-panel header) and is repositioned under Keep List. The internal frame name EbonClearanceOptionsBlacklistSettings MUST stay unchanged so help-link panel pointers, /ec deep-links, and saved Interface Options layout keep working.")
 end
 
 -- ---------------------------------------------------------------------------

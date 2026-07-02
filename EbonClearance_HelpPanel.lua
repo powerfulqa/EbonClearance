@@ -376,7 +376,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "label-keep-chance-on-hit-known",
         q = L["Keep (chance-on-hit proc known)"],
-        a = L["You've extracted this item's chance-on-hit proc at the Anvil. The item is still being kept because 'Sell known chance-on-hit procs (experimental)' is off. Turn that toggle on in Protection Settings if you want extras auto-sold."],
+        a = L["You've extracted this item's chance-on-hit proc at the Anvil. The item is still being kept because 'Sell known chance-on-hit procs (experimental)' is off. Turn that toggle on in Keep Settings if you want extras auto-sold."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
@@ -406,8 +406,8 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-sell-known-recipes",
         q = L["Sell recipes you already know"],
-        a = L["Off by default. When you turn it on (in the panel below, with the tome controls), profession recipes this character has ALREADY learned are auto-sold at vendors, gated per rarity (White / Green / Blue / Epic). Each rarity also has a bind-type dropdown (Any / BoE only / BoP only), so you can sell known Green BoE patterns but keep all BoP ones for alts, etc. Recipes you have not learned yet are never sold. Learn-state is checked per character, so each alt only sells the recipes it knows. If 'Protect all tomes / recipes' is on, it wins and nothing recipe-like sells."],
-        panel = "EbonClearanceOptionsBlacklistSettings",
+        a = L["Off by default. When you turn it on (on the Merchant Settings panel), profession recipes this character has ALREADY learned are auto-sold at vendors, gated per rarity (White / Green / Blue / Epic). Each rarity also has a bind-type dropdown (Any / BoE only / BoP only), so you can sell known Green BoE patterns but keep all BoP ones for alts, etc. Recipes you have not learned yet are never sold. Learn-state is checked per character, so each alt only sells the recipes it knows. If 'Keep them even after you learn them' (tome protection, in Keep Settings) is on, it wins and nothing recipe-like sells."],
+        panel = "EbonClearanceOptionsMerchant",
     },
     {
         id = "gate-quest-items",
@@ -490,7 +490,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "label-affix-rank-known",
         q = L["Keep (affix rank known)"],
-        a = L["Project Ebonhold affix on the item, and you already own this exact rank. The item is still protected. Turn on 'Allow exact-rank duplicates' in Protection Settings if you want extras to auto-sell."],
+        a = L["Project Ebonhold affix on the item, and you already own this exact rank. The item is still protected. Turn on 'Allow exact-rank duplicates' in Keep Settings if you want extras to auto-sell."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
@@ -502,7 +502,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "label-affix-known",
         q = L["Keep (affix known)"],
-        a = L["Project Ebonhold transferred-proc affix on the item, and you already have the affix extracted at the Anvil. The item is still protected. Turn on 'Allow selling affixes you already have' in Protection Settings if you want extras to auto-sell. Unranked variant of 'Keep (affix rank known)' for procs like Vampirism / Resurgence that don't have ranks."],
+        a = L["Project Ebonhold transferred-proc affix on the item, and you already have the affix extracted at the Anvil. The item is still protected. Turn on 'Allow selling affixes you already have' in Keep Settings if you want extras to auto-sell. Unranked variant of 'Keep (affix rank known)' for procs like Vampirism / Resurgence that don't have ranks."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
@@ -520,7 +520,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "label-new-tome-recipe",
         q = L["Keep (new Tome) / Keep (new Recipe)"],
-        a = L["A tome or recipe you haven't learned yet. Protected so you can learn it - just right-click the item. Turn off tome/recipe protection in Protection Settings if you'd rather sell them."],
+        a = L["A tome or recipe you haven't learned yet. Protected so you can learn it - just right-click the item. Turn off tome/recipe protection in Keep Settings if you'd rather sell them."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {

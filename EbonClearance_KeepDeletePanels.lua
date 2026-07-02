@@ -8,7 +8,7 @@
 -- bundled together. Both use the shared CreateListUI helper and have
 -- the same panel rhythm (header + description + hint + list).
 --
--- The Protection Settings panel (BlacklistSettingsPanel - auto-protect
+-- The Keep Settings panel (BlacklistSettingsPanel - auto-protect
 -- toggles for equipped / upgrades / sets / affixes / chance-on-hit)
 -- stays in EbonClearance_Events.lua for now; it's a different domain
 -- (settings, not list management) and will move in a later stage.
@@ -67,7 +67,7 @@ DeletePanel:SetScript("OnShow", function(self)
         )
 
         -- Grey pointer to the sibling Delete Settings panel. Mirrors the
-        -- Keep List -> Protection Settings pointer added in v2.15.0.
+        -- Keep List -> Keep Settings pointer added in v2.15.0.
         local settingsPtr = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         settingsPtr:SetPoint("TOPLEFT", delHint, "BOTTOMLEFT", 0, -6)
         EC_compCache.setPanelWidth(settingsPtr, 16)
@@ -93,7 +93,7 @@ end)
 
 -- v2.47.2: Delete Settings sub-panel. Extracted from the Delete List panel
 -- so the list gets its full vertical space back (mirrors the v2.15.0 Keep
--- List -> Protection Settings extraction). All DB field names unchanged,
+-- List -> Keep Settings extraction). All DB field names unchanged,
 -- so slash commands / BugReport dumps / tooltip annotations continue to
 -- work. Widget names unchanged so tests that read the source still resolve.
 local DeletionSettingsPanel = CreateFrame(
@@ -280,7 +280,7 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             affixDupeNote:SetWordWrap(true)
         end
         affixDupeNote:SetText(
-            L["|cff888888Soulbound affixed items with no vendor value that EC would otherwise sell (a dupe you own, or a rank below your 'Sell affixes below rank' setting). Needs affix protection on in Protection settings.|r"]
+            L["|cff888888Soulbound affixed items with no vendor value that EC would otherwise sell (a dupe you own, or a rank below your 'Sell affixes below rank' setting). Needs affix protection on in Keep Settings.|r"]
         )
 
         -- v2.44.4: announce-in-chat toggle. Gates the "EC just deleted /
@@ -439,7 +439,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
         -- v2.15.0: the auto-protect toggles (autoAddEquipped, autoProtectUpgrades,
         -- autoProtectEquipmentSets) plus their explanatory notes used to live on
         -- this panel and dominated it visually - 3 checkboxes + 3 multi-line notes
-        -- stacked above the actual list. They moved to the new `Protection Settings`
+        -- stacked above the actual list. They moved to the new `Keep Settings`
         -- sub-panel so this panel matches the Sell List / Delete List / Account
         -- Sell List rhythm (header + description + hint + list). DB field names
         -- unchanged so all event handlers, tooltip annotations, and slash commands
@@ -464,7 +464,7 @@ BlacklistPanel:SetScript("OnShow", function(self)
             blNote:SetWordWrap(true)
         end
         blNote:SetText(
-            L["|cffaaaaaaAutomatic protection rules (equipped gear, upgrades, gear sets, affixes, chance-on-hit, tomes) are on the |r|cffffb84dProtection Settings|r|cffaaaaaa panel.|r"]
+            L["|cffaaaaaaAutomatic protection rules (equipped gear, upgrades, gear sets, affixes, chance-on-hit, tomes) are on the |r|cffffb84dKeep Settings|r|cffaaaaaa panel.|r"]
         )
 
         -- Anchored to blNote so the hint stays below even when the

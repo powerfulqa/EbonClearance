@@ -2687,6 +2687,21 @@ in EbonClearance.lua); uses `NS.MakeHeader` / `NS.FitScrollContent`
 (not bare locals); Issue B refresh calls preserved; registration
 uses `_G[]` lookup.
 
+**v2.49.3 update (current state):** this panel's display name is now
+**Keep Settings** (was "Protection Settings"), and it is registered in
+the sidebar directly under Keep List so Keep List + Keep Settings mirror
+Delete List + Delete Settings. The internal frame name
+`EbonClearanceOptionsBlacklistSettings` is UNCHANGED (help-link `panel`
+pointers, `/ec` deep-links, and saved layout depend on it). The
+**"Sell recipes you already know"** control (checkbox + 4 per-rarity
+checkboxes + 4 bind dropdowns) moved OUT of this panel to Merchant
+Settings (`EbonClearance_MerchantPanel.lua`) in v2.49.3 - it is a sell
+rule, not a keep rule, and now reuses Merchant's `EC_BIND_FILTER_OPTIONS`
+/ `EC_BindFilterText` (the former per-panel duplicate is gone). The
+runtime precedence "keep all tomes wins over sell-known-recipes" still
+lives in `EC_IsSellable`; the panel move did not touch it. Tests 104c-e
+pin the moved control + the rename.
+
 ### Stage 8e-vii: extract EbonClearance_ItemHighlightingPanel.lua (commit `e768df9`)
 
 Stage 8e-vii moves the Item Highlighting Interface Options panel

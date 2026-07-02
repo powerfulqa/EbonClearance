@@ -842,6 +842,44 @@ truth, used by BOTH `BuildQueue`'s delete branch and `runAutoDeleteOnPickup`:
   clears `pendingDelete`, so gating on `pendingDelete` would wedge the cascade
   after the first item. A batch loop breaks the single-popup serialisation.
 
+### Auto-delete grey on loot + conflicting-addon warning (v2.49.2)
+
+`DB.autoDeleteGreyOnLoot` (per-character, default off, gated by `enableDeletion`)
+destroys grey (quality 0) drops the instant they land in bags, for players who
+value bag space over the copper a grey vendors for. It uses the item's quality
+field directly, so there is no per-itemID list to tend. Implemented as
+`EC_compCache.runAutoDeleteGrey`, dispatched from the BAG_UPDATE debounce
+**after** `EC_ScanLootDelta` so a just-looted grey is counted as loot before the
+(synchronous, no-popup) delete removes it.
+
+Gate order (all must hold): `EC_IsAddonEnabledForChar()` (master Enable +
+per-character whitelist), `DB.enableDeletion`, `DB.autoDeleteGreyOnLoot`, not
+`vendorRunning`, no merchant open (`MerchantFrame:IsShown()` - a vendor
+round-trip yields copper the delete throws away), no visible `DELETE_*` popup /
+held cursor, then per slot: `quality == 0`, positive `sellPrice` (guards quest
+keys / 0-value curiosities), `itemType ~= "Quest"`, not `IsEquippedItem`, and not
+on `DB.blacklist` (Keep List) / `ADB.whitelist` (account Keep) / `DB.blacklistAuto`
+(auto-blacklist) / `DB.deleteList` (manual delete path owns those). One delete
+per burst; the delete re-fires the debounce for the next grey.
+
+EC-TRAP: `runAutoDeleteGrey` reuses `EC_compCache.executeBagSlotDelete` (the same
+shared helper the vendor delete and auto-delete-on-pickup use). Do NOT invent a
+parallel `PickupContainerItem` + `DeleteCursorItem` path - the shared helper owns
+the `pendingDelete` / `HookDeletePopupOnce` popup serialisation, and a second raw
+delete path would race the popup mutex.
+
+`DB.warnConflictingAddons` (per-character, default on, opt-out) surfaces one chat
+warning at PLAYER_LOGIN when EC's delete path is active AND a third-party
+auto-delete addon is loaded. Detection is `EC_HasConflictingDeleteAddon()`
+(exposed as `NS.HasConflictingDeleteAddon` so `/ec bugreport` shares the source
+of truth). Per the "No third-party addon references in new EC artefacts" rule,
+only the `IsAddOnLoaded` folder-name string is specific; the helper name, local
+variables, comments, chat copy, and the bug-report line all stay neutral
+("third-party auto-delete addon"). The player identifies the other addon via
+their own addon list; the bug report's Loaded Addons dump lists it by folder name
+a few lines below the neutral yes/no capability flag. This mirrors the host-bag-UI
+detection convention (specific globals in code, neutral framing everywhere else).
+
 ### Auto-mark unsellable affixes + `affixDisposable` / `playerOwnsAffix` (v2.47.0)
 
 `DB.autoMarkAffixDupes` (account-wide, default off) opts into

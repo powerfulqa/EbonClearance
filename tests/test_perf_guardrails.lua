@@ -6859,6 +6859,8 @@ do
     local prot = fileSrc("EbonClearance_Protection.lua")
     local tt = fileSrc("EbonClearance_Tooltip.lua")
     local pp = fileSrc("EbonClearance_ProtectionPanel.lua")
+    local dp = fileSrc("EbonClearance_KeepDeletePanels.lua")
+    local br = fileSrc("EbonClearance_BugReport.lua")
     check("Test 110a: EnsureDB seeds DB.sellChanceOnHitKnown = false (opt-in experimental)",
         ev:find("DB%.sellChanceOnHitKnown = false") ~= nil,
         "v2.49.0's experimental toggle MUST default OFF so existing users see no behaviour change on upgrade. Coverage is item-specific (seed map + autolearn); flipping it on turns players into experimental testers of the coverage, so explicit opt-in is required.")
@@ -7011,6 +7013,16 @@ do
     check("Test 113c: runAutoDeleteGrey dispatched from the BAG_UPDATE debounce alongside auto-mark scans",
         ev:find("EC_compCache%.runAutoDeleteGrey%(%)") ~= nil,
         "v2.49.2: the grey-delete scan piggybacks the existing BAG_UPDATE debounce. Runs after runAutoMarkResilience / runAutoMarkAffixDupes / EC_ScanLootDelta so the loot tracker counts a just-looted grey BEFORE the synchronous delete removes it. One delete per BAG_UPDATE burst (the delete re-fires the debounce for the next).")
+    check("Test 113d: DeletePanel surfaces Auto-delete grey items on loot checkbox",
+        dp:find("EbonClearanceAutoDeleteGreyCB") ~= nil
+            and dp:find("DB%.autoDeleteGreyOnLoot") ~= nil
+            and dp:find('L%["Auto%-delete grey items on loot"%]') ~= nil,
+        "v2.49.2: Delete Settings panel MUST expose the grey-delete toggle with the frame name locked (tests grep for it) and the label pinned. Positioned after the Auto-delete on pickup checkbox for conceptual adjacency (both are 'delete on arrival' flows). Gated under the master Enable via refreshAutoCBEnabled like the sibling destructive toggles.")
+    check("Test 113g: DeletePanel surfaces Warn about conflicting addons checkbox",
+        dp:find("EbonClearanceWarnConflictingAddonsCB") ~= nil
+            and dp:find("DB%.warnConflictingAddons") ~= nil
+            and dp:find('L%["Warn about conflicting addons"%]') ~= nil,
+        "v2.49.2: Delete Settings panel MUST expose the conflict-warning opt-out with the frame name locked and the label pinned. Positioned at the bottom of the toggle list (least likely to be flipped in normal play).")
 end
 
 -- ---------------------------------------------------------------------------

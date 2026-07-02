@@ -196,6 +196,33 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             L["|cff888888Delete-List items are destroyed the instant they hit your bags. Skips the merchant round-trip; irreversible. Turning this on shows a confirm popup and clears any items already in bags right away.|r"]
         )
 
+        -- v2.49.2: grey-auto-delete sub-toggle. Destroys grey (quality 0)
+        -- drops the moment they land in bags. For players who value bag
+        -- space over the copper a grey vendors for. Uses the item's
+        -- quality field directly (no per-itemID list to tend). Greyed
+        -- when deletion is off, same as autoCB. Reversible (no items
+        -- list is cleared), so no confirm popup; enabling kicks a scan.
+        local greyCB =
+            CreateFrame("CheckButton", "EbonClearanceAutoDeleteGreyCB", self, "InterfaceOptionsCheckButtonTemplate")
+        greyCB:SetPoint("TOPLEFT", autoNote, "BOTTOMLEFT", -26, -8)
+        greyCB:SetChecked(DB.autoDeleteGreyOnLoot)
+        local greyText = _G[greyCB:GetName() .. "Text"]
+        if greyText then
+            greyText:SetText(L["Auto-delete grey items on loot"])
+            greyText:SetWidth(420)
+            greyText:SetJustifyH("LEFT")
+        end
+        local greyNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        greyNote:SetPoint("TOPLEFT", greyCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(greyNote, 42)
+        greyNote:SetJustifyH("LEFT")
+        if greyNote.SetWordWrap then
+            greyNote:SetWordWrap(true)
+        end
+        greyNote:SetText(
+            L["|cff888888Grey items destroy the instant they hit your bags. Skips vendor copper; keeps bag slots open. Never touches keep-listed items, equipment, or quest items.|r"]
+        )
+
         -- v2.44.0: Resilience auto-mark sub-toggle. Adds PvP gear with the
         -- "Resilience" tooltip line to the Delete List on the next BAG_UPDATE.
         -- The existing vendor / auto-delete-on-pickup pipelines then destroy
@@ -207,7 +234,7 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             self,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        resilienceCB:SetPoint("TOPLEFT", autoNote, "BOTTOMLEFT", -26, -8)
+        resilienceCB:SetPoint("TOPLEFT", greyNote, "BOTTOMLEFT", -26, -8)
         resilienceCB:SetChecked(DB.autoMarkResilience)
         local resilienceText = _G[resilienceCB:GetName() .. "Text"]
         if resilienceText then
@@ -289,14 +316,52 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             PlaySound(DB.announceAutoDelete and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
         end)
 
+        -- v2.49.2: conflicting-addon warning toggle. Independent of the
+        -- deletion grey-out group above (it's a warning preference, not a
+        -- destructive action), so it stays enabled even when deletion is
+        -- off - though the warning itself only fires when deletion is on.
+        -- Bottom of the list; least likely to be flipped in normal play.
+        local warnCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceWarnConflictingAddonsCB",
+            self,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        warnCB:SetPoint("TOPLEFT", announceNote, "BOTTOMLEFT", -26, -8)
+        warnCB:SetChecked(DB.warnConflictingAddons)
+        local warnText = _G[warnCB:GetName() .. "Text"]
+        if warnText then
+            warnText:SetText(L["Warn about conflicting addons"])
+            warnText:SetWidth(420)
+            warnText:SetJustifyH("LEFT")
+        end
+        local warnNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        warnNote:SetPoint("TOPLEFT", warnCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(warnNote, 42)
+        warnNote:SetJustifyH("LEFT")
+        if warnNote.SetWordWrap then
+            warnNote:SetWordWrap(true)
+        end
+        warnNote:SetText(
+            L["|cff888888One chat message at login when EC detects another auto-delete addon running. Off = silent even when a conflict is detected.|r"]
+        )
+        warnCB:SetScript("OnClick", function()
+            DB.warnConflictingAddons = warnCB:GetChecked() and true or false
+            PlaySound(DB.warnConflictingAddons and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+        end)
+
         refreshAutoCBEnabled = function()
             if DB.enableDeletion then
                 autoCB:Enable()
+                greyCB:Enable()
                 resilienceCB:Enable()
                 affixDupeCB:Enable()
                 announceCB:Enable()
                 if autoText then
                     autoText:SetTextColor(1, 1, 1)
+                end
+                if greyText then
+                    greyText:SetTextColor(1, 1, 1)
                 end
                 if resilienceText then
                     resilienceText:SetTextColor(1, 1, 1)
@@ -309,11 +374,15 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
                 end
             else
                 autoCB:Disable()
+                greyCB:Disable()
                 resilienceCB:Disable()
                 affixDupeCB:Disable()
                 announceCB:Disable()
                 if autoText then
                     autoText:SetTextColor(0.5, 0.5, 0.5)
+                end
+                if greyText then
+                    greyText:SetTextColor(0.5, 0.5, 0.5)
                 end
                 if resilienceText then
                     resilienceText:SetTextColor(0.5, 0.5, 0.5)
@@ -347,6 +416,19 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             else
                 DB.autoDeleteOnPickup = false
                 PlaySound("igMainMenuOptionCheckBoxOff")
+            end
+        end)
+
+        -- v2.49.2: grey-auto-delete OnClick. No confirm popup (turning it
+        -- off leaves nothing changed, and it only touches greys). Enabling
+        -- kicks a debounce scan so greys already in bags get cleaned.
+        greyCB:SetScript("OnClick", function()
+            DB.autoDeleteGreyOnLoot = greyCB:GetChecked() and true or false
+            PlaySound(DB.autoDeleteGreyOnLoot and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+            if DB.autoDeleteGreyOnLoot and EC_compCache.bagUpdateFrame then
+                EC_compCache.bagUpdatePending = true
+                EC_compCache.bagUpdateAccum = 0
+                EC_compCache.bagUpdateFrame:Show()
             end
         end)
 

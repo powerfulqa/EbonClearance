@@ -199,6 +199,11 @@ NS.RegisterLocale("deDE", {
     ["|cffffff00/ec autolearnsim <itemID> <spellID>|r simulates an autolearn event for testing - useful when you want to verify the feature works but don't have any un-extracted procs left. The item must be in your bags. |cffffff00/ec autolearnpeek|r opens a copyable window with the current state: author-vetted pairings (ship-with-the-addon), autolearned pairings (from your own extractions), and any ambiguous events where the addon couldn't be sure which item was extracted."] = "",
     -- v2.49.2: conflicting-addon chat warning.
     ["|cffff4444Another auto-delete addon is running.|r Both may try to delete items, and the delete-confirm popup can get contested. If items disappear unexpectedly or delete popups misbehave, disable one of the two. Silence this warning: uncheck 'Warn about conflicting addons' in Delete Settings."] = "",
+    -- v2.49.2: Delete Settings checkbox labels + grey notes.
+    ["Auto-delete grey items on loot"] = "",
+    ["|cff888888Grey items destroy the instant they hit your bags. Skips vendor copper; keeps bag slots open. Never touches keep-listed items, equipment, or quest items.|r"] = "",
+    ["Warn about conflicting addons"] = "",
+    ["|cff888888One chat message at login when EC detects another auto-delete addon running. Off = silent even when a conflict is detected.|r"] = "",
     ["Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots."] = "",
     ["|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Account Sell List|r|cffaaaaaa (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"] = "",
     ["Profile name:"] = "",

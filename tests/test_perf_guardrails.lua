@@ -6999,6 +6999,18 @@ do
             and ev:find("if DB%.enableDeletion and DB%.warnConflictingAddons and EC_HasConflictingDeleteAddon%(%) then") ~= nil
             and ev:find('L%["|cffff4444Another auto%-delete addon is running%.') ~= nil,
         "v2.49.2: PLAYER_LOGIN handler MUST emit the chat warning only when all three conditions hold - EC's delete path is active (enableDeletion), the player hasn't opted out (warnConflictingAddons), and the detection helper reports a conflicting addon. Neutral framing: the L[] key contains no third-party addon name. One-shot per session (gated inside the PLAYER_LOGIN-only branch, not PLAYER_ENTERING_WORLD).")
+    check("Test 113b: runAutoDeleteGrey gates on all safety conditions",
+        ev:find("function EC_compCache%.runAutoDeleteGrey%(%)") ~= nil
+            and ev:find("DB%.autoDeleteGreyOnLoot") ~= nil
+            and ev:find("DB%.enableDeletion") ~= nil
+            and ev:find("quality == 0") ~= nil
+            and ev:find("sellPrice") ~= nil
+            and ev:find('itemType ~= "Quest"') ~= nil
+            and ev:find("MerchantFrame and MerchantFrame:IsShown%(%)") ~= nil,
+        "v2.49.2: grey-auto-delete scan MUST gate on the master switch (enableDeletion), the opt-in toggle (autoDeleteGreyOnLoot), quality == 0, sellPrice > 0 (guards quest keys / 0-value curiosities), NOT a quest item, and NOT while a merchant is open (vendor round-trip is imminent; grey copper > delete). Keep List / account Keep / auto-blacklist / equipped / delete-list vetoes MUST also be present - the scan indexes the same DB.blacklist / ADB.whitelist / DB.blacklistAuto / DB.deleteList sets the sibling auto-mark scans use. Uses EC_compCache.executeBagSlotDelete (the shared delete plumbing), NOT a new delete path.")
+    check("Test 113c: runAutoDeleteGrey dispatched from the BAG_UPDATE debounce alongside auto-mark scans",
+        ev:find("EC_compCache%.runAutoDeleteGrey%(%)") ~= nil,
+        "v2.49.2: the grey-delete scan piggybacks the existing BAG_UPDATE debounce. Runs after runAutoMarkResilience / runAutoMarkAffixDupes / EC_ScanLootDelta so the loot tracker counts a just-looted grey BEFORE the synchronous delete removes it. One delete per BAG_UPDATE burst (the delete re-fires the debounce for the next).")
 end
 
 -- ---------------------------------------------------------------------------

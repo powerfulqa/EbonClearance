@@ -3058,6 +3058,15 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     if EC_ScanLootDelta then
         EC_ScanLootDelta()
     end
+    -- v2.49.2: grey auto-delete. Runs LAST in the flush - after the
+    -- loot-delta scan above - so a just-looted grey is counted as loot
+    -- before the (synchronous, no-popup) delete removes it. Opt-in via
+    -- DB.autoDeleteGreyOnLoot; self-gates on the master Enable +
+    -- enableDeletion. One delete per burst; the delete re-fires the
+    -- debounce for the next.
+    if EC_compCache.runAutoDeleteGrey then
+        EC_compCache.runAutoDeleteGrey()
+    end
 end)
 
 -- True iff the slotted item shows ITEM_OPENABLE in its tooltip and is not
@@ -5449,6 +5458,80 @@ function EC_compCache.runAutoDeleteOnPickup()
             if id then
                 EC_compCache.executeBagSlotDelete(bag, slot, id, count, quality, true)
                 return
+            end
+        end
+    end
+end
+
+-- v2.49.2: auto-delete grey items on loot. Runs from the BAG_UPDATE
+-- debounce alongside the auto-mark scans. Opt-in via
+-- DB.autoDeleteGreyOnLoot, gated on DB.enableDeletion (master switch)
+-- + the per-character Enable, a merchant NOT being open (a vendor
+-- round-trip yields copper the delete throws away), item quality 0,
+-- positive sellPrice (avoids trashing quest keys / 0-value
+-- curiosities), not a quest item, not equipped, and not on any Keep
+-- List variant / auto-blacklist / the manual Delete List. Deletes via
+-- the shared executeBagSlotDelete path (same plumbing + stats + popup
+-- serialisation as the auto-delete-on-pickup scan). One delete per
+-- BAG_UPDATE burst; the resulting BAG_UPDATE re-fires the debounce for
+-- the next grey, self-terminating when none remain.
+-- EC-TRAP: reuse EC_compCache.executeBagSlotDelete - do NOT invent a
+-- parallel PickupContainerItem + DeleteCursorItem path. The shared
+-- helper owns pendingDelete / HookDeletePopupOnce serialisation; a
+-- second raw delete path would race the popup mutex.
+function EC_compCache.runAutoDeleteGrey()
+    local DB = NS.DB
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    if not (DB and DB.enableDeletion and DB.autoDeleteGreyOnLoot) then
+        return
+    end
+    if EC_compCache.vendorRunning then
+        return
+    end
+    -- Vendor round-trip is imminent and yields copper; a grey delete
+    -- throws that away. Skip while a merchant is open; the next
+    -- BAG_UPDATE after MERCHANT_CLOSED re-fires this scan.
+    if MerchantFrame and MerchantFrame:IsShown() then
+        return
+    end
+    -- Wait on a visible delete popup / held cursor, same discipline as
+    -- the auto-delete-on-pickup scan (gate on the VISIBLE popup, not
+    -- pendingDelete - low-rarity greys delete with no popup).
+    local popup = StaticPopup1
+    if popup and popup:IsShown() and popup.which and popup.which:find("^DELETE_") then
+        return
+    end
+    if GetCursorInfo() then
+        return
+    end
+    local keepList = DB.blacklist
+    local accountKeep = NS.ADB and NS.ADB.whitelist
+    local blacklistAuto = DB.blacklistAuto
+    local deleteList = DB.deleteList
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local id = GetContainerItemID(bag, slot)
+            if id then
+                local _, _, quality, _, _, itemType, _, _, _, _, sellPrice = GetItemInfo(id)
+                if quality == 0
+                    and sellPrice
+                    and sellPrice > 0
+                    and itemType ~= "Quest"
+                    and not IsEquippedItem(id)
+                    and not (keepList and keepList[id])
+                    and not (accountKeep and accountKeep[id])
+                    and not (blacklistAuto and blacklistAuto[id])
+                    and not (deleteList and deleteList[id])
+                then
+                    local _, count, locked = GetContainerItemInfo(bag, slot)
+                    if not locked and count and count > 0 then
+                        EC_compCache.executeBagSlotDelete(bag, slot, id, count, quality, true)
+                        return -- one delete per BAG_UPDATE burst
+                    end
+                end
             end
         end
     end

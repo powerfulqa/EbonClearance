@@ -7002,8 +7002,8 @@ do
             and ev:find("if DB%.enableDeletion and DB%.warnConflictingAddons and EC_HasConflictingDeleteAddon%(%) then") ~= nil
             and ev:find('StaticPopup_Show%("EC_CONFLICT_WARNING"%)') ~= nil
             and ev:find('StaticPopupDialogs%["EC_CONFLICT_WARNING"%]') ~= nil
-            and ev:find('L%["|cffff4444Another auto%-delete addon is running%.') ~= nil,
-        "v2.49.2: PLAYER_LOGIN handler MUST show the modal conflict popup (a one-time chat line was easy to miss) only when all three conditions hold - EC's delete path is active (enableDeletion), the player hasn't opted out (warnConflictingAddons), and the detection helper reports a conflicting addon. Neutral framing: the popup's L[] key contains no third-party addon name. One-shot per session (gated inside the PLAYER_LOGIN-only branch, not PLAYER_ENTERING_WORLD).")
+            and ev:find('L%["|cffff4444EbonClearance has detected that Auto Delete is also running%.') ~= nil,
+        "v2.49.2: PLAYER_LOGIN handler MUST show the modal conflict popup (a one-time chat line was easy to miss) only when all three conditions hold - EC's delete path is active (enableDeletion), the player hasn't opted out (warnConflictingAddons), and the detection helper reports a conflicting addon. The popup NAMES the conflicting addon ('Auto Delete') - a user-sanctioned one-off exception to the no-third-party-names rule so the warning is actionable; the detection helper, comments, and /ec bugreport line stay neutral. One-shot per session (gated inside the PLAYER_LOGIN-only branch, not PLAYER_ENTERING_WORLD).")
     check("Test 113b: runAutoDeleteGrey gates on all safety conditions",
         ev:find("function EC_compCache%.runAutoDeleteGrey%(%)") ~= nil
             and ev:find("DB%.autoDeleteGreyOnLoot") ~= nil

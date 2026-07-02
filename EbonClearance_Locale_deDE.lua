@@ -198,7 +198,7 @@ NS.RegisterLocale("deDE", {
     ["What do /ec autolearnsim and /ec autolearnpeek do?"] = "",
     ["|cffffff00/ec autolearnsim <itemID> <spellID>|r simulates an autolearn event for testing - useful when you want to verify the feature works but don't have any un-extracted procs left. The item must be in your bags. |cffffff00/ec autolearnpeek|r opens a copyable window with the current state: author-vetted pairings (ship-with-the-addon), autolearned pairings (from your own extractions), and any ambiguous events where the addon couldn't be sure which item was extracted."] = "",
     -- v2.49.2: conflicting-addon warning popup.
-    ["|cffff4444Another auto-delete addon is running.|r Both may try to delete items, and the delete-confirm popup can get contested. If items disappear unexpectedly or delete popups misbehave, disable one of the two. You can silence this warning in EbonClearance settings."] = "",
+    ["|cffff4444EbonClearance has detected that Auto Delete is also running.|r Only one bag-management addon should handle deletions at a time - running both can contest the delete-confirm popup and make items disappear unexpectedly. Turn off one of the two. You can silence this warning in EbonClearance settings."] = "",
     -- v2.49.2: grey-delete checkbox label + grey note (Delete Settings)
     -- and the conflict-warning toggle label (main panel).
     ["Auto-delete grey items on loot"] = "",

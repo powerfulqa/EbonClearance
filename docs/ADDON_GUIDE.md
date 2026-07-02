@@ -876,12 +876,18 @@ because a one-time chat message was easy to scroll past. Detection is
 `EC_HasConflictingDeleteAddon()` (exposed as `NS.HasConflictingDeleteAddon` so
 `/ec bugreport` shares the source of truth). Per the "No third-party addon
 references in new EC artefacts" rule, only the `IsAddOnLoaded` folder-name string
-is specific; the helper name, local variables, comments, popup copy, and the
-bug-report line all stay neutral ("third-party auto-delete addon"). The player
-identifies the other addon via their own addon list; the bug report's Loaded
-Addons dump lists it by folder name a few lines below the neutral yes/no
-capability flag. This mirrors the host-bag-UI detection convention (specific
-globals in code, neutral framing everywhere else). The opt-out toggle lives on
+is specific; the helper name, local variables, comments, and the bug-report line
+all stay neutral ("third-party auto-delete addon"). **Exception:** the popup copy
+itself NAMES the conflicting addon ("Auto Delete") - a user-sanctioned one-off
+carve-out from the "No third-party addon references in new EC artefacts" rule,
+granted because the detection is folder-specific and naming it makes the warning
+actionable. The carve-out is that single `L[]` string; everything else stays
+neutral (an `EC-TRAP` marker on the popup definition records this so a future
+reader does not "neutralise" it back). The bug report's Loaded Addons dump lists
+the addon by folder name a few lines below the neutral yes/no capability flag.
+This mirrors the host-bag-UI detection convention (specific globals in code,
+neutral framing everywhere except the one sanctioned player-facing string). The
+opt-out toggle lives on
 the **main** panel (`EbonClearanceOptionsMain`) with the other global toggles
 (version alert / minimap button), not in Delete Settings - it's an informational
 preference, not a delete rule.

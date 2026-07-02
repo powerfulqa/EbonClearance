@@ -6299,13 +6299,19 @@ StaticPopupDialogs["EC_CONFIRM_AUTODELETE"] = {
 -- OnAccept invokes the callback function passed via StaticPopup_Show's
 -- third "data" argument, mirroring the EC_CONFIRM_CLEAR_LIST pattern.
 -- v2.49.2: conflicting-addon warning popup. Shown once at PLAYER_LOGIN
--- when EC's delete path is active AND another auto-delete addon is
+-- when EC's delete path is active AND the detected conflicting addon is
 -- loaded AND the player hasn't opted out. Modal so it can't be missed
--- (a one-time chat line was easy to scroll past). Neutral framing per
--- project rule; the other addon is never named. "Open Settings" jumps
+-- (a one-time chat line was easy to scroll past). "Open Settings" jumps
 -- to the main panel where the opt-out toggle lives.
+-- EC-TRAP: this popup deliberately NAMES the conflicting addon ("Auto
+-- Delete") - a user-sanctioned exception to the "No third-party addon
+-- references in new EC artefacts" rule, granted because the detection is
+-- folder-specific and naming it makes the warning actionable. The
+-- exception is THIS STRING ONLY: the detection helper, all comments, and
+-- the /ec bugreport line stay neutral. Do NOT propagate the name
+-- elsewhere, and do NOT "neutralise" this string back.
 StaticPopupDialogs["EC_CONFLICT_WARNING"] = {
-    text = L["|cffff4444Another auto-delete addon is running.|r Both may try to delete items, and the delete-confirm popup can get contested. If items disappear unexpectedly or delete popups misbehave, disable one of the two. You can silence this warning in EbonClearance settings."],
+    text = L["|cffff4444EbonClearance has detected that Auto Delete is also running.|r Only one bag-management addon should handle deletions at a time - running both can contest the delete-confirm popup and make items disappear unexpectedly. Turn off one of the two. You can silence this warning in EbonClearance settings."],
     button1 = L["Open Settings"],
     button2 = OKAY,
     OnAccept = function()

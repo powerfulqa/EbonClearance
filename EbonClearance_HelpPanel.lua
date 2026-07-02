@@ -76,8 +76,8 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-warn-conflicting-addons",
         q = L["What does 'Warn about conflicting addons' do?"],
-        a = L["On by default. When another auto-delete addon is loaded alongside EbonClearance and EC's delete path is on, you'll see one chat message at login pointing out the conflict. Disable one of the two to resolve. Off = silent even when a conflict is detected; use if you've decided to run both intentionally."],
-        panel = "EbonClearanceOptionsDeletionSettings",
+        a = L["On by default (on the main EbonClearance panel). When another auto-delete addon is loaded alongside EbonClearance and EC's delete path is on, a popup appears at login pointing out the conflict. Disable one of the two to resolve. Off = silent even when a conflict is detected; use if you've decided to run both intentionally."],
+        panel = "EbonClearanceOptionsMain",
     },
     {
         id = "see-item-decision",

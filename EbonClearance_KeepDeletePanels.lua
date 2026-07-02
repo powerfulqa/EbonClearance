@@ -316,40 +316,6 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             PlaySound(DB.announceAutoDelete and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
         end)
 
-        -- v2.49.2: conflicting-addon warning toggle. Independent of the
-        -- deletion grey-out group above (it's a warning preference, not a
-        -- destructive action), so it stays enabled even when deletion is
-        -- off - though the warning itself only fires when deletion is on.
-        -- Bottom of the list; least likely to be flipped in normal play.
-        local warnCB = CreateFrame(
-            "CheckButton",
-            "EbonClearanceWarnConflictingAddonsCB",
-            self,
-            "InterfaceOptionsCheckButtonTemplate"
-        )
-        warnCB:SetPoint("TOPLEFT", announceNote, "BOTTOMLEFT", -26, -8)
-        warnCB:SetChecked(DB.warnConflictingAddons)
-        local warnText = _G[warnCB:GetName() .. "Text"]
-        if warnText then
-            warnText:SetText(L["Warn about conflicting addons"])
-            warnText:SetWidth(420)
-            warnText:SetJustifyH("LEFT")
-        end
-        local warnNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        warnNote:SetPoint("TOPLEFT", warnCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(warnNote, 42)
-        warnNote:SetJustifyH("LEFT")
-        if warnNote.SetWordWrap then
-            warnNote:SetWordWrap(true)
-        end
-        warnNote:SetText(
-            L["|cff888888One chat message at login when EC detects another auto-delete addon running. Off = silent even when a conflict is detected.|r"]
-        )
-        warnCB:SetScript("OnClick", function()
-            DB.warnConflictingAddons = warnCB:GetChecked() and true or false
-            PlaySound(DB.warnConflictingAddons and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
-        end)
-
         refreshAutoCBEnabled = function()
             if DB.enableDeletion then
                 autoCB:Enable()

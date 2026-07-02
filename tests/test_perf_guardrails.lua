@@ -6860,6 +6860,7 @@ do
     local tt = fileSrc("EbonClearance_Tooltip.lua")
     local pp = fileSrc("EbonClearance_ProtectionPanel.lua")
     local dp = fileSrc("EbonClearance_KeepDeletePanels.lua")
+    local mp = fileSrc("EbonClearance_MainPanel.lua")
     local br = fileSrc("EbonClearance_BugReport.lua")
     check("Test 110a: EnsureDB seeds DB.sellChanceOnHitKnown = false (opt-in experimental)",
         ev:find("DB%.sellChanceOnHitKnown = false") ~= nil,
@@ -6996,11 +6997,13 @@ do
             and ev:find('IsAddOnLoaded and IsAddOnLoaded%("AutoDelete"%)') ~= nil
             and ev:find("NS%.HasConflictingDeleteAddon = EC_HasConflictingDeleteAddon") ~= nil,
         "v2.49.2: detection helper for the third-party auto-delete addon. Per CLAUDE.md, code MAY reference the specific folder name via IsAddOnLoaded (necessary detection code); comments + local variable + all user-facing text stay neutral. Exposed on NS so /ec bugreport can consume it too.")
-    check("Test 113f: PLAYER_LOGIN emits neutral conflict warning when both toggle + detection + enableDeletion are true",
+    check("Test 113f: PLAYER_LOGIN shows the neutral conflict popup when toggle + detection + enableDeletion are all true",
         ev:find('event == "PLAYER_LOGIN"') ~= nil
             and ev:find("if DB%.enableDeletion and DB%.warnConflictingAddons and EC_HasConflictingDeleteAddon%(%) then") ~= nil
+            and ev:find('StaticPopup_Show%("EC_CONFLICT_WARNING"%)') ~= nil
+            and ev:find('StaticPopupDialogs%["EC_CONFLICT_WARNING"%]') ~= nil
             and ev:find('L%["|cffff4444Another auto%-delete addon is running%.') ~= nil,
-        "v2.49.2: PLAYER_LOGIN handler MUST emit the chat warning only when all three conditions hold - EC's delete path is active (enableDeletion), the player hasn't opted out (warnConflictingAddons), and the detection helper reports a conflicting addon. Neutral framing: the L[] key contains no third-party addon name. One-shot per session (gated inside the PLAYER_LOGIN-only branch, not PLAYER_ENTERING_WORLD).")
+        "v2.49.2: PLAYER_LOGIN handler MUST show the modal conflict popup (a one-time chat line was easy to miss) only when all three conditions hold - EC's delete path is active (enableDeletion), the player hasn't opted out (warnConflictingAddons), and the detection helper reports a conflicting addon. Neutral framing: the popup's L[] key contains no third-party addon name. One-shot per session (gated inside the PLAYER_LOGIN-only branch, not PLAYER_ENTERING_WORLD).")
     check("Test 113b: runAutoDeleteGrey gates on all safety conditions",
         ev:find("function EC_compCache%.runAutoDeleteGrey%(%)") ~= nil
             and ev:find("DB%.autoDeleteGreyOnLoot") ~= nil
@@ -7018,11 +7021,11 @@ do
             and dp:find("DB%.autoDeleteGreyOnLoot") ~= nil
             and dp:find('L%["Auto%-delete grey items on loot"%]') ~= nil,
         "v2.49.2: Delete Settings panel MUST expose the grey-delete toggle with the frame name locked (tests grep for it) and the label pinned. Positioned after the Auto-delete on pickup checkbox for conceptual adjacency (both are 'delete on arrival' flows). Gated under the master Enable via refreshAutoCBEnabled like the sibling destructive toggles.")
-    check("Test 113g: DeletePanel surfaces Warn about conflicting addons checkbox",
-        dp:find("EbonClearanceWarnConflictingAddonsCB") ~= nil
-            and dp:find("DB%.warnConflictingAddons") ~= nil
-            and dp:find('L%["Warn about conflicting addons"%]') ~= nil,
-        "v2.49.2: Delete Settings panel MUST expose the conflict-warning opt-out with the frame name locked and the label pinned. Positioned at the bottom of the toggle list (least likely to be flipped in normal play).")
+    check("Test 113g: main panel surfaces Warn about conflicting addons checkbox",
+        mp:find("EbonClearanceWarnConflictingAddonsCB") ~= nil
+            and mp:find("DB%.warnConflictingAddons") ~= nil
+            and mp:find('L%["Warn about conflicting addons"%]') ~= nil,
+        "v2.49.2: the conflict-warning opt-out lives on the MAIN panel with the other global toggles (version alert / minimap button), NOT in Delete Settings - it's an informational preference, not a delete rule. Frame name locked (tests grep for it) and the label pinned.")
     check("Test 113h: /ec bugreport surfaces third-party auto-delete addon detection",
         br:find("Third%-party auto%-delete addon detected:") ~= nil
             and br:find("NS%.HasConflictingDeleteAddon") ~= nil,

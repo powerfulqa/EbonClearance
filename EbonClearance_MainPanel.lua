@@ -735,12 +735,35 @@ local function BuildMainPanel(panel, content)
         -2
     )
 
+    -- v2.49.2: conflicting-addon warning opt-out. Sits with the other
+    -- global toggles (version alert / minimap button) rather than in
+    -- Delete Settings - it's an informational preference, not a delete
+    -- rule. Per-character DB.warnConflictingAddons; default on. When on
+    -- (and EC's delete path is active), a popup at login flags a
+    -- third-party auto-delete addon running alongside EC. Neutral label
+    -- per project rule; the other addon is never named.
+    local warnConflictCB = NS.AddCheckbox(
+        content,
+        "EbonClearanceWarnConflictingAddonsCB",
+        minimapButtonCB,
+        L["Warn about conflicting addons"],
+        function()
+            return DB and DB.warnConflictingAddons ~= false
+        end,
+        function(v)
+            if DB then
+                DB.warnConflictingAddons = v and true or false
+            end
+        end,
+        -2
+    )
+
     -- Slash commands reference.
     -- Stats widgets + Reset buttons moved to EbonClearance_StatsPanel.lua
     -- in v2.36.x; this anchor chain now goes mainTip -> versionAlertCB ->
-    -- minimapButtonCB -> cmdHeader.
+    -- minimapButtonCB -> warnConflictCB -> cmdHeader.
     local cmdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cmdHeader:SetPoint("TOPLEFT", minimapButtonCB, "BOTTOMLEFT", 0, -20)
+    cmdHeader:SetPoint("TOPLEFT", warnConflictCB, "BOTTOMLEFT", 0, -20)
     cmdHeader:SetText(L["Slash Commands"])
 
     -- v2.37.6: per-row slash command list. Each row gets a [Run] button

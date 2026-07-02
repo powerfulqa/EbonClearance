@@ -868,17 +868,23 @@ parallel `PickupContainerItem` + `DeleteCursorItem` path - the shared helper own
 the `pendingDelete` / `HookDeletePopupOnce` popup serialisation, and a second raw
 delete path would race the popup mutex.
 
-`DB.warnConflictingAddons` (per-character, default on, opt-out) surfaces one chat
-warning at PLAYER_LOGIN when EC's delete path is active AND a third-party
-auto-delete addon is loaded. Detection is `EC_HasConflictingDeleteAddon()`
-(exposed as `NS.HasConflictingDeleteAddon` so `/ec bugreport` shares the source
-of truth). Per the "No third-party addon references in new EC artefacts" rule,
-only the `IsAddOnLoaded` folder-name string is specific; the helper name, local
-variables, comments, chat copy, and the bug-report line all stay neutral
-("third-party auto-delete addon"). The player identifies the other addon via
-their own addon list; the bug report's Loaded Addons dump lists it by folder name
-a few lines below the neutral yes/no capability flag. This mirrors the host-bag-UI
-detection convention (specific globals in code, neutral framing everywhere else).
+`DB.warnConflictingAddons` (per-character, default on, opt-out) surfaces a modal
+warning popup (`StaticPopupDialogs["EC_CONFLICT_WARNING"]`, "Open Settings" jumps
+to the main panel) at PLAYER_LOGIN when EC's delete path is active AND a
+third-party auto-delete addon is loaded. It is a popup rather than a chat line
+because a one-time chat message was easy to scroll past. Detection is
+`EC_HasConflictingDeleteAddon()` (exposed as `NS.HasConflictingDeleteAddon` so
+`/ec bugreport` shares the source of truth). Per the "No third-party addon
+references in new EC artefacts" rule, only the `IsAddOnLoaded` folder-name string
+is specific; the helper name, local variables, comments, popup copy, and the
+bug-report line all stay neutral ("third-party auto-delete addon"). The player
+identifies the other addon via their own addon list; the bug report's Loaded
+Addons dump lists it by folder name a few lines below the neutral yes/no
+capability flag. This mirrors the host-bag-UI detection convention (specific
+globals in code, neutral framing everywhere else). The opt-out toggle lives on
+the **main** panel (`EbonClearanceOptionsMain`) with the other global toggles
+(version alert / minimap button), not in Delete Settings - it's an informational
+preference, not a delete rule.
 
 ### Auto-mark unsellable affixes + `affixDisposable` / `playerOwnsAffix` (v2.47.0)
 

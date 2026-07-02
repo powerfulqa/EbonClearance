@@ -6298,6 +6298,25 @@ StaticPopupDialogs["EC_CONFIRM_AUTODELETE"] = {
 -- with the count of stale entries detected by /ec clean upgrades. The
 -- OnAccept invokes the callback function passed via StaticPopup_Show's
 -- third "data" argument, mirroring the EC_CONFIRM_CLEAR_LIST pattern.
+-- v2.49.2: conflicting-addon warning popup. Shown once at PLAYER_LOGIN
+-- when EC's delete path is active AND another auto-delete addon is
+-- loaded AND the player hasn't opted out. Modal so it can't be missed
+-- (a one-time chat line was easy to scroll past). Neutral framing per
+-- project rule; the other addon is never named. "Open Settings" jumps
+-- to the main panel where the opt-out toggle lives.
+StaticPopupDialogs["EC_CONFLICT_WARNING"] = {
+    text = L["|cffff4444Another auto-delete addon is running.|r Both may try to delete items, and the delete-confirm popup can get contested. If items disappear unexpectedly or delete popups misbehave, disable one of the two. You can silence this warning in EbonClearance settings."],
+    button1 = L["Open Settings"],
+    button2 = OKAY,
+    OnAccept = function()
+        NS.OpenOptionsPanel("EbonClearanceOptionsMain")
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["EC_CONFIRM_CLEAN_UPGRADES"] = {
     text = L["Remove |cffffff00%d|r stale 'Upgrade'-tagged entries from your Keep List?\n|cffaaaaaaThese items were auto-tagged as upgrades but are no longer above your currently-equipped iLvl. Manual Keep List entries (no auto-tag) and 'Worn'-tagged entries are not affected.|r"],
     button1 = YES,
@@ -7721,13 +7740,14 @@ f:SetScript("OnEvent", function(self, event, ...)
         end
         -- v2.49.2: conflict warning. Fires only when EC's delete path
         -- is active AND the player hasn't opted out AND a third-party
-        -- auto-delete addon is loaded. Neutral framing per project
-        -- rule; player identifies the other addon via their own list.
-        -- Inside the PLAYER_LOGIN-only branch so it's one-shot per
+        -- auto-delete addon is loaded. Modal popup (not a chat line -
+        -- a one-time chat message was easy to miss). Neutral framing per
+        -- project rule; player identifies the other addon via their own
+        -- list. Inside the PLAYER_LOGIN-only branch so it's one-shot per
         -- session (PLAYER_ENTERING_WORLD zone changes don't re-fire it).
         if event == "PLAYER_LOGIN" then
             if DB.enableDeletion and DB.warnConflictingAddons and EC_HasConflictingDeleteAddon() then
-                PrintNice(L["|cffff4444Another auto-delete addon is running.|r Both may try to delete items, and the delete-confirm popup can get contested. If items disappear unexpectedly or delete popups misbehave, disable one of the two. Silence this warning: uncheck 'Warn about conflicting addons' in Delete Settings."])
+                StaticPopup_Show("EC_CONFLICT_WARNING")
             end
         end
         -- Version gossip: once per session (login / reload, not zone changes),

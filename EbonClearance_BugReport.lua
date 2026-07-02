@@ -293,6 +293,13 @@ local function EC_BuildBugReport()
     add("--- Environment Capabilities ---")
     local hostBagUI = (_G.Bagnon ~= nil) or (_G.BagnonFrame ~= nil) or (_G.ArkInventory ~= nil) or (_G.ElvUI ~= nil)
     add("Host bag UI detected: " .. (hostBagUI and "yes" or "no"))
+    -- v2.49.2: neutral-framed conflict flag. The Loaded Addons dump
+    -- below lists specific folder names; this line is the pre-filtered
+    -- yes/no for scanning.
+    add(
+        "Third-party auto-delete addon detected: "
+            .. ((NS.HasConflictingDeleteAddon and NS.HasConflictingDeleteAddon()) and "yes" or "no")
+    )
     add(
         "Host bag-UI category API: "
             .. ((_G.LibStub and pcall(_G.LibStub, "AceAddon-3.0", true)) and "available" or "absent")

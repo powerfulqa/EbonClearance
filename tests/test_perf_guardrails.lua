@@ -7023,6 +7023,10 @@ do
             and dp:find("DB%.warnConflictingAddons") ~= nil
             and dp:find('L%["Warn about conflicting addons"%]') ~= nil,
         "v2.49.2: Delete Settings panel MUST expose the conflict-warning opt-out with the frame name locked and the label pinned. Positioned at the bottom of the toggle list (least likely to be flipped in normal play).")
+    check("Test 113h: /ec bugreport surfaces third-party auto-delete addon detection",
+        br:find("Third%-party auto%-delete addon detected:") ~= nil
+            and br:find("NS%.HasConflictingDeleteAddon") ~= nil,
+        "v2.49.2: /ec bugreport MUST include the neutral capability line under Environment Capabilities. Consumes NS.HasConflictingDeleteAddon so the source of truth is the same helper the PLAYER_LOGIN warning uses. The Loaded Addons dump further down already lists every addon by folder name - this line is the flag the maintainer scans for first.")
 end
 
 -- ---------------------------------------------------------------------------

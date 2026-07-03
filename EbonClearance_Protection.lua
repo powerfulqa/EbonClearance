@@ -1350,6 +1350,14 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     [21856] = "Neretzek, The Blood Drinker",
     [13953] = "Silent Fang",
     [1263]  = "Brain Hacker",
+    -- v2.50.1 (Serv Anvil verification): three more items whose PE
+    -- Anvil UI refuses extraction. Dazzling Longsword and Phantom Blade
+    -- share the vanilla armor-debuff + anti-stealth proc that has no
+    -- PE 700xxx equivalent; Hand of Antu'sul's thunder-AoE looks like
+    -- Thunderfury but PE hasn't ported it.
+    [869]   = "Dazzling Longsword",         -- armor + anti-stealth
+    [7961]  = "Phantom Blade",              -- armor + anti-stealth
+    [9639]  = "The Hand of Antu'sul",       -- thunder-AoE + attack slow
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1450,6 +1458,17 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     [14555] = { spellID = 700087, family = "Incineration",  item = "Alcor's Sunrazor" },
     [19100] = { spellID = 700088, family = "Wilds",         item = "Electrified Dagger" },
     [19169] = { spellID = 700103, family = "Vulnerability", item = "Nightfall" },
+    -- v2.50.1: six more pairings from a fresh captureproc + Anvil
+    -- verification pass. Diabolic Skiver's Maiming pairing was
+    -- ground-truth confirmed by the Anvil showing "You already know
+    -- this affix" red text; the others follow from proc-text matches
+    -- against the same learned-affix catalog.
+    [6660]  = { spellID = 700114, family = "Julie's Blessing", item = "Julie's Dagger" },
+    [9475]  = { spellID = 700080, family = "Maiming",          item = "Diabolic Skiver" },
+    [10623] = { spellID = 700085, family = "Glaciation",       item = "Winter's Bite" },
+    [10628] = { spellID = 700080, family = "Maiming",          item = "Deathblow" },
+    [17705] = { spellID = 700098, family = "Flurry",           item = "Thrash Blade" },
+    [17753] = { spellID = 700116, family = "Keeper's Sting",   item = "Verdant Keeper's Aim" },
     -- Arcanite Champion 12790 ("Heal self for 270-450 and increases
     -- Strength by 120 for 30 sec") deferred: no clean PE catalog match
     -- (Resurgence 700097 is a low-HP trigger, not an on-hit heal+STR

@@ -5,6 +5,20 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.50.1
+
+**Nine more chance-on-hit weapon pairings from a fresh Anvil pass.**
+
+Data-only patch. Extends the in-code `Sell known chance-on-hit procs` coverage without any new logic or settings.
+
+- **`EC_CHANCE_PROC_CONFIRMED_ITEMS` grew from 8 to 14 rows** (six new pairings). Verdant Keeper's Aim -> Keeper's Sting, Julie's Dagger -> Julie's Blessing, Thrash Blade -> Flurry, Deathblow -> Maiming, Diabolic Skiver -> Maiming, Winter's Bite -> Glaciation. Diabolic Skiver's pairing was ground-truth confirmed by the Anvil showing "You already know this affix"; the others match unique proc-text phrasings against the same learned-affix catalog.
+- **`EC_CHANCE_PROC_NEVER_EXTRACTABLE` grew from 7 to 10 rows** (three new safety-net entries). Dazzling Longsword, Phantom Blade, and The Hand of Antu'sul all had their Extract buttons greyed out at the Anvil - vanilla WoW procs PE has not ported to the 700xxx family. Adding them to the hard-set means a future autolearn misfire (or a keyword collision) can't ever auto-release them.
+
+Downgrade-safe (data-only additions). Anyone with the v2.49.1 autolearn still catches items outside these two sets on real extraction, so real-world coverage keeps growing beyond the shipped map.
+
+---
+
+
 ### v2.50.0
 
 **Auto-delete grey drops, a warning when another delete addon is running, and a settings reshuffle: "Protection Settings" is now "Keep Settings".**

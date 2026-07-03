@@ -6872,6 +6872,7 @@ do
     local dp = fileSrc("EbonClearance_KeepDeletePanels.lua")
     local mp = fileSrc("EbonClearance_MainPanel.lua")
     local br = fileSrc("EbonClearance_BugReport.lua")
+    local sp = fileSrc("EbonClearance_StatsPanel.lua")
     check("Test 110a: EnsureDB seeds DB.sellChanceOnHitKnown = false (opt-in experimental)",
         ev:find("DB%.sellChanceOnHitKnown = false") ~= nil,
         "v2.49.0's experimental toggle MUST default OFF so existing users see no behaviour change on upgrade. Coverage is item-specific (seed map + autolearn); flipping it on turns players into experimental testers of the coverage, so explicit opt-in is required.")
@@ -7040,6 +7041,11 @@ do
         br:find("Third%-party auto%-delete addon detected:") ~= nil
             and br:find("NS%.HasConflictingDeleteAddon") ~= nil,
         "v2.49.2: /ec bugreport MUST include the neutral capability line under Environment Capabilities. Consumes NS.HasConflictingDeleteAddon so the source of truth is the same helper the PLAYER_LOGIN warning uses. The Loaded Addons dump further down already lists every addon by folder name - this line is the flag the maintainer scans for first.")
+    check("Test 114: Loot Log window refresh is dirty-driven (EC_BumpLoot flags; window consumes) not an unconditional 1s rebuild",
+        ev:find("EC_compCache%.lootWindowDirty = true") ~= nil
+            and sp:find("EC_compCache%.lootWindowDirty") ~= nil
+            and sp:find("self%._lootTick >= 2%.0") ~= nil,
+        "v2.50.1 perf: the Loot Log window MUST rebuild only when new loot was actually credited (EC_BumpLoot sets EC_compCache.lootWindowDirty), coalesced, with a 2 s safety fallback - NOT an unconditional per-second lootRefresh. The old 1s rebuild called GetItemInfo over every looted itemID + re-sorted every second while the window was open even when nothing dropped. EC_BumpLoot MUST set the flag and the window's OnUpdate MUST consume it and keep the 2 s safety cap so the view can't go stale.")
 end
 
 -- ---------------------------------------------------------------------------

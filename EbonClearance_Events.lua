@@ -1674,6 +1674,10 @@ local function EC_BumpLoot(itemID, qty)
         ADB.accountStats.lootedItemCounts = ADB.accountStats.lootedItemCounts or {}
         ADB.accountStats.lootedItemCounts[itemID] = (ADB.accountStats.lootedItemCounts[itemID] or 0) + qty
     end
+    -- v2.50.1: mark the Loot Log window for refresh. Its OnUpdate rebuilds
+    -- on this flag (throttled) instead of unconditionally every second, so
+    -- an open window costs nothing while no new loot is arriving.
+    EC_compCache.lootWindowDirty = true
 end
 
 -- Loot capture. We track NET BAG INCREASES rather than parsing

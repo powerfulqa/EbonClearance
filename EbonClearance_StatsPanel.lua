@@ -848,12 +848,26 @@ local function lootEnsureWindow()
     -- tick keeps the open window current without a manual reopen. Cheap
     -- (one script call/sec, gated on visibility).
     win:SetScript("OnUpdate", function(self, elapsed)
+        if not self:IsShown() then
+            return
+        end
         self._lootTick = (self._lootTick or 0) + elapsed
-        if self._lootTick >= 1.0 then
+        -- v2.50.1: rebuild when new loot was actually credited (EC_BumpLoot
+        -- flips EC_compCache.lootWindowDirty), coalesced to at most once a
+        -- second so a Scavenger multi-item burst rebuilds once. A 2 s safety
+        -- refresh backs it up so the view can never go stale even if the
+        -- flag is missed. Previously this rebuilt unconditionally every
+        -- second - an open window kept calling GetItemInfo over every looted
+        -- itemID and re-sorting even when nothing new had dropped (e.g. a
+        -- boss fight with the window left open).
+        if EC_compCache.lootWindowDirty and self._lootTick >= 1.0 then
             self._lootTick = 0
-            if self:IsShown() then
-                lootRefresh(self)
-            end
+            EC_compCache.lootWindowDirty = false
+            lootRefresh(self)
+        elseif self._lootTick >= 2.0 then
+            self._lootTick = 0
+            EC_compCache.lootWindowDirty = false
+            lootRefresh(self)
         end
     end)
 

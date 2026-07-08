@@ -200,6 +200,24 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsScavenger",
     },
     {
+        id = "merchant-auto-sell",
+        q = L["Does EbonClearance sell automatically, or do I click?"],
+        a = L["Automatically. The moment you open a merchant that matches your Merchant Mode (Goblin only / normal only / all), it starts selling your junk and anything your rules mark 'Will Sell'. No clicking. Selling is paced by the sell-speed setting so it doesn't overload the vendor."],
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
+        id = "merchant-force-sell",
+        q = L["How do I make it sell right now?"],
+        a = L["Just open an allowed merchant and it sells on its own. To trigger a pass by hand (say you changed a setting mid-visit), bind a key to 'Force sell at current merchant' under Key Bindings > EbonClearance. A merchant has to be open for it to do anything."],
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
+        id = "merchant-buyback",
+        q = L["I sold something by accident - can I get it back?"],
+        a = L["Yes. The vendor's Buyback tab holds the last 12 items you sold this visit - click one to buy it back for what it sold for, before you close the merchant. Accidents are rare: EbonClearance never sells Keep-listed items, gear you're wearing, or protected items."],
+        panel = "EbonClearanceOptionsMerchant",
+    },
+    {
         id = "tshoot-bag-borders",
         q = L["The bag-slot border colors aren't showing."],
         a = L["They're off by default. Tick 'Show borders' in the panel below, then turn on the categories you want colored (Delete, Keep, Account Sell, Character Sell, Affix, Junk, Rule)."],

@@ -207,6 +207,13 @@ NS.RegisterLocale("frFR", {
     ["Off by default. When on, grey (poor-quality) items are destroyed the moment they land in your bags - skips the vendor round-trip so you keep bag slots open for green+ drops. The trade-off: you lose the few copper the greys would have vendored. Never touches keep-listed items, equipped gear, or quest items. If a merchant is open when the grey drops, the delete is skipped so the vendor gets first pick."] = "",
     ["What does 'Warn about conflicting addons' do?"] = "",
     ["On by default (on the main EbonClearance panel). When another auto-delete addon is loaded alongside EbonClearance and EC's delete path is on, a popup appears at login pointing out the conflict. Disable one of the two to resolve. Off = silent even when a conflict is detected; use if you've decided to run both intentionally."] = "",
+    -- v2.50.x: Merchant behaviour FAQ entries.
+    ["Does EbonClearance sell automatically, or do I click?"] = "",
+    ["Automatically. The moment you open a merchant that matches your Merchant Mode (Goblin only / normal only / all), it starts selling your junk and anything your rules mark 'Will Sell'. No clicking. Selling is paced by the sell-speed setting so it doesn't overload the vendor."] = "",
+    ["How do I make it sell right now?"] = "",
+    ["Just open an allowed merchant and it sells on its own. To trigger a pass by hand (say you changed a setting mid-visit), bind a key to 'Force sell at current merchant' under Key Bindings > EbonClearance. A merchant has to be open for it to do anything."] = "",
+    ["I sold something by accident - can I get it back?"] = "",
+    ["Yes. The vendor's Buyback tab holds the last 12 items you sold this visit - click one to buy it back for what it sold for, before you close the merchant. Accidents are rare: EbonClearance never sells Keep-listed items, gear you're wearing, or protected items."] = "",
     ["Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots."] = "",
     ["|cffaaaaaaProfiles do NOT touch the |cffb6ffb6Account Sell List|r|cffaaaaaa (which is shared across every alt and never replaced). The |cffb6ffb6Default|r|cffaaaaaa profile is permanently empty - give your profile a real name before saving.|r"] = "",
     ["Profile name:"] = "",

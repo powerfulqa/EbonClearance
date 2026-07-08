@@ -572,6 +572,8 @@ NS.RegisterLocale("deDE", {
     ["|cffff4444Auto-deleted|r %s."] = "",
     ["|cffff4444Marked for deletion (Resilience, unsellable):|r %s"] = "",
     ["|cffff4444Marked for delete|r %s - affix you can't sell (no vendor value)."] = "",
+    -- v2.50.2: recovery hint suffix appended to both auto-mark chat messages.
+    ["|cffaaaaaaAdd to Keep List (Alt+Right-Click on the bag slot) to save it.|r"] = "",
     ["|cffffff00Sold %d items this trip (%d more left). Talk to the merchant again to sell the rest.|r"] = "",
     ["Sold |cffffff00%d|r items so far. Checking for more..."] = "",
     ["Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s"] = "",

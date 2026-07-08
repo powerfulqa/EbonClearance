@@ -1365,6 +1365,38 @@ The 200-local cap influenced the implementation: the helpers
 junk-drawer for v2.9.x state) rather than as module-scope `local function`
 declarations. Same pattern as `PROF_LOOT_SPELLS`.
 
+**v2.50.2 addition - destruction-time Keep rescue.** The auto-mark scans
+(`runAutoMarkAffixDupes`, `runAutoMarkResilience`) write itemIDs directly
+into `DB.deleteList` without routing through `EC_AddItemToList` /
+`EC_FindAddConflict`. Any subsequent Keep intent that DOES route through
+`EC_AddItemToList` (equipment-set stamp via `protectEquipmentSetItem`,
+manual Add-to-Keep via the context menu, `syncEquipped` sweep) is refused
+by the cross-intent conflict guard with `quiet=true`, so the user never
+sees a warning that their Keep add didn't take. To rescue those items
+without untangling the quiet-mode conflict-guard behaviour,
+`deleteListSlotEligible` (`EbonClearance_Events.lua`) now consults
+`DB.blacklist`, `ADB.whitelist`, and `IsEquippedItem(id)` before the
+affix gate - any Keep signal that arrived after the auto-mark write
+vetoes destruction at the last moment. This matches the `blacklist >
+deleteList` precedence already documented for `/ec clean`.
+
+The scan side also grew a **session-scoped `EC_compCache.equipmentSetIDs`
+cache** (populated inside `syncEquipmentSets`, rebuilt on
+`EQUIPMENT_SETS_CHANGED` regardless of the `autoProtectEquipmentSets`
+toggle) that `runAutoMarkAffixDupes` consults so items in any saved
+equipment set are never auto-marked in the first place. Cache rebuild
+runs unconditionally even when the toggle is off because the scan-side
+rescue must honour set membership as user intent independent of whether
+the automatic Keep-List stamping is opt-in.
+
+**EC-TRAP:** the `deleteListSlotEligible` header comment used to declare
+"the Delete List is explicit user intent". That claim is retired in
+v2.50.2 - the auto-mark scans DO NOT go through `EC_FindAddConflict`, so
+Delete List entries are NOT pure user intent. Do not collapse the
+Keep-signal + IsEquippedItem vetoes back into the affix gate, and do not
+restore the "explicit user intent" comment - shirt-loss regressions
+will follow.
+
 ### BAG_UPDATE handler must coalesce bursts (v2.24.0+)
 
 The Greedy Scavenger picking up N items in an AOE pull fires N

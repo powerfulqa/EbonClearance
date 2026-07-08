@@ -3653,7 +3653,11 @@ do
                 "the release decision must cover owned exact-rank dupes AND ranks below the affixMinSellRank floor (so the auto-mark scan clears unsellable below-floor affixes too)"
             )
             local delStart = eventsSrc:find("function EC_compCache%.deleteListSlotEligible%(")
-            local delBlock = delStart and eventsSrc:sub(delStart, delStart + 1200) or ""
+            -- v2.50.2: window widened from 1200 to 2500 chars after the
+            -- v2.50.2 Keep-signal + IsEquippedItem rescue gates and their
+            -- header-comment block pushed the affixDisposable call past
+            -- the original 1200-char slice.
+            local delBlock = delStart and eventsSrc:sub(delStart, delStart + 2500) or ""
             check(
                 "deleteListSlotEligible routes its affix gate through affixDisposable",
                 delBlock:find("EC_compCache%.affixDisposable%(affix%)") ~= nil,
@@ -6450,8 +6454,9 @@ do
             and markBody:find("IsEquippedItem") ~= nil
             and markBody:find("isQuestItem") ~= nil
             and markBody:find("itemIsTome") ~= nil
-            and markBody:find("baselineProtectedIDs") ~= nil,
-        "only soulbound (bop), no-vendor-value affixes EC would otherwise sell (affixDisposable: dupe or below-floor) are marked, and Keep-listed / equipped / quest / tome / profession-tool items are always skipped."
+            and markBody:find("baselineProtectedIDs") ~= nil
+            and markBody:find("EC_compCache%.equipmentSetIDs") ~= nil,
+        "only soulbound (bop), no-vendor-value affixes EC would otherwise sell (affixDisposable: dupe or below-floor) are marked, and Keep-listed / equipped / quest / tome / profession-tool / equipment-set-member items are always skipped. v2.50.2: equipmentSetIDs check added because a shirt-loss report showed Auto-Add Equipped skipping slot 4 AND protectEquipmentSetItem being silently refused by EC_FindAddConflict when the item was already on the auto-marked deleteList - the scan-side veto MUST honour set membership as user intent even when the Keep-List stamp was refused."
     )
 
     -- Count >= 2: the definition line plus at least one call site. The
@@ -6467,6 +6472,38 @@ do
         "Test 102g: KeepDeletePanels surfaces the affix-dupe checkbox",
         kdp:find("EbonClearanceAutoMarkAffixDupesCB") ~= nil and kdp:find("DB%.autoMarkAffixDupes") ~= nil,
         "the toggle lives on the Delete List panel next to the resilience auto-mark; same enabled-state rule (greyed when 'Allow items to be deleted' is off)."
+    )
+    check(
+        "Test 102h: deleteListSlotEligible rescues on Keep signal + IsEquippedItem",
+        delBody:find("DB%.blacklist and DB%.blacklist%[id%]") ~= nil
+            and delBody:find("ADB and ADB%.whitelist and ADB%.whitelist%[id%]") ~= nil
+            and delBody:find("IsEquippedItem%(id%)") ~= nil,
+        "v2.50.2 (Stickybackpack shirt-loss report): the auto-mark scans write to deleteList without going through EC_FindAddConflict, so a subsequent Keep-List add via EC_AddItemToList (equipment-set stamp, manual context-menu add, auto-add-equipped) gets silently refused with quiet=true. The destruction gate MUST read Keep signals independently to rescue the item. Also vetoes when IsEquippedItem returns true - a duplicate copy of gear the player is currently wearing shouldn't be destroyed."
+    )
+    check(
+        "Test 102i: protectEquipSlot now covers slot 4 (shirt), only slot 19 (tabard) stays skipped",
+        ev:find("if not slot or slot == 19 then") ~= nil
+            and ev:find("if not slot or slot == 4 or slot == 19 then") == nil,
+        "v2.50.2 (Stickybackpack shirt-loss report): PE puts affix stat rolls onto shirts (Ironhide IV etc.), so slot 4 is real gear and MUST be picked up by Auto-Add Equipped. The pre-v2.50.2 skip on slot 4 meant a worn affix shirt was never Keep-List-stamped, and the auto-mark-affix-dupes scan destroyed it the moment the shirt landed in bags. Slot 19 (tabard) stays skipped - no evidence PE affixes tabards, and cosmetic-only guild tabards rotate freely."
+    )
+    -- Locate syncEquipmentSets body for the cache-population pin.
+    local syncStart = ev:find("function EC_compCache%.syncEquipmentSets%(silent%)")
+    local syncEnd = ev:find("\nfunction EC_compCache%.", (syncStart or 1) + 1)
+    local syncBody = (syncStart and syncEnd) and ev:sub(syncStart, syncEnd) or ""
+    check(
+        "Test 102j: syncEquipmentSets populates EC_compCache.equipmentSetIDs; EQUIPMENT_SETS_CHANGED rebuilds unconditionally",
+        syncStart ~= nil
+            and syncBody:find("EC_compCache%.equipmentSetIDs = EC_compCache%.equipmentSetIDs or {}") ~= nil
+            and syncBody:find("wipe%(EC_compCache%.equipmentSetIDs%)") ~= nil
+            and syncBody:find("seen%[id%] = true") ~= nil
+            and ev:find('elseif event == "EQUIPMENT_SETS_CHANGED" then') ~= nil
+            and ev:find("EC_compCache%.syncEquipmentSets%(true%)") ~= nil,
+        "v2.50.2: the session-scoped equipmentSetIDs cache is populated inside the syncEquipmentSets walk (dedupe map doubles as the cache). Rebuild runs on EQUIPMENT_SETS_CHANGED regardless of DB.autoProtectEquipmentSets - the scan-side rescue MUST honour set membership as user intent even when the automatic Keep-List stamping is opt-out. syncEquipmentSets itself gates the Keep-List stamp on the toggle internally."
+    )
+    check(
+        "Test 102k: both auto-mark chat messages carry the Add-to-Keep-List recovery hint",
+        ev:find("Add to Keep List %(Alt%+Right%-Click on the bag slot%) to save it") ~= nil,
+        "v2.50.2: both auto-mark chat prints (affix-dupe + resilience) now concatenate the recovery-hint locale key onto the base message so a user who missed the moment of destruction still has a path back the next time they see the mark line. The hint is a NEW locale key concatenated onto the existing message so existing frFR/deDE translations of the base string keep working."
     )
 end
 

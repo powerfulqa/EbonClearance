@@ -5,6 +5,29 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.50.2
+
+**Bug fix: soulbound shirts with known affixes could be silently auto-deleted despite being in equipment sets and manually added to the Keep List.**
+
+Reported by Bizzaro on behalf of Stickybackpack: an Epic Purple Shirt of Ironhide IV got destroyed by `Auto-mark unsellable affixes for deletion` when the player swapped it for a Rocket Pack. The shirt was a member of three saved equipment sets AND had been manually added to the Keep List via the context menu; both protections were silently ignored. Root cause was two overlapping bugs; the fix is a three-layer defence plus a recovery hint.
+
+- **Slot 4 (shirt) is now covered by Auto-Add Equipped.** `protectEquipSlot` used to skip slot 4 as "cosmetic-only". Project Ebonhold puts affix stat rolls onto shirts, so this assumption is wrong on this server; the skip is dropped. Wearing an affix shirt now auto-Keeps it with tag `equipped`, matching every other worn slot. Slot 19 (tabard) stays skipped - no evidence PE affixes tabards.
+- **Equipment-set membership is honoured by the auto-mark scan.** A new session-scoped `EC_compCache.equipmentSetIDs` cache is populated inside `syncEquipmentSets` and rebuilt on `EQUIPMENT_SETS_CHANGED` regardless of the `Auto-Protect Equipment Sets` toggle. `runAutoMarkAffixDupes` consults the cache so items in any saved equipment set are never auto-marked, even if the user has the automatic Keep-List stamping opt-out or the stamp was silently refused by the cross-intent conflict guard.
+- **`deleteListSlotEligible` rescues at destruction time.** The destruction gate now vetoes when the item is on Keep List (character or account) OR currently equipped, in addition to the existing affix gate. Any protection signal that arrives after the auto-mark write rescues the item at the last moment. Matches the `blacklist > deleteList` precedence already documented for `/ec clean`.
+- **Recovery hint on both auto-mark chat messages.** `Marked for delete X - affix you can't sell (no vendor value).` and `Marked for deletion (Resilience, unsellable): X` both now suffix with `Add to Keep List (Alt+Right-Click on the bag slot) to save it.` so a player who missed the moment of destruction still has a path back the next time they see the mark line.
+
+Tests 102e (extended) + 102h/i/j/k pin all four layers.
+
+**Semantic shift risks (documented so downgrade-testers aren't surprised):**
+
+- Users who manually added a **currently-equipped** item to the Delete List expecting delete-on-unequip now see the destruction deferred by one BAG_UPDATE tick (it still deletes after the item leaves the equipment slot). Not a break; a small delay.
+- Legacy DBs with **cross-list conflicts** (an itemID on both Delete List and Keep List) - which pre-`EC_FindAddConflict` versions could produce - now honour the Keep List at destruction time. Same behaviour as running `/ec clean apply`. No user data lost; conflicts still surface via the `/ec clean` reporter.
+
+No schema changes. All new state is session-local (`EC_compCache.equipmentSetIDs`). Downgrade-safe to v2.50.1.
+
+---
+
+
 ### v2.50.1
 
 **Nine more chance-on-hit weapon pairings from a fresh Anvil pass.**

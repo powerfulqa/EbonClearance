@@ -3793,10 +3793,18 @@ end
 -- bag context menu's "Remove from ... list" row click handlers.
 NS.RemoveItemFromList = EC_RemoveItemFromList
 
--- v2.10.0: equipped-gear protection. Slot 4 is the shirt, slot 19 the tabard;
--- both are cosmetic-only and skipped. Helpers hang off EC_compCache (same
--- pattern as the v2.9.2 PROF_LOOT_SPELLS set) to keep this addon under Lua
--- 5.1's 200-local cap.
+-- v2.10.0: equipped-gear protection. Slot 19 (tabard) is cosmetic-only and
+-- skipped. Slot 4 (shirt) USED to be skipped too but v2.50.2 pulled it out
+-- of the skip: Project Ebonhold puts affix stat rolls onto shirts (Ironhide
+-- IV etc.), so shirts are real gear that must land on the Keep List when
+-- worn - otherwise runAutoMarkAffixDupes (v2.47.0) sees a soulbound affix
+-- shirt in bags with no Keep signal and writes it to deleteList. Reported
+-- by Bizzaro on behalf of Stickybackpack against v2.50.1. Helpers hang off
+-- EC_compCache (same pattern as the v2.9.2 PROF_LOOT_SPELLS set) to keep
+-- this addon under Lua 5.1's 200-local cap.
+-- EC-TRAP: do NOT re-add "slot == 4" to the skip below. On PE the "cosmetic
+-- only" assumption is false for shirts, and the auto-mark scan will destroy
+-- affix shirts if the equipped-protection path skips them.
 
 -- Auto-protect a single equipped slot. Routes through EC_AddItemToList in
 -- quiet mode so the success / dedupe / conflict chat lines are suppressed
@@ -3806,7 +3814,7 @@ NS.RemoveItemFromList = EC_RemoveItemFromList
 -- equipped)" suffix at hover time. Returns true iff the slot was newly
 -- added to the whitelist.
 function EC_compCache.protectEquipSlot(slot)
-    if not slot or slot == 4 or slot == 19 then
+    if not slot or slot == 19 then
         return false
     end
     local link = GetInventoryItemLink and GetInventoryItemLink("player", slot)
@@ -3911,8 +3919,22 @@ function EC_compCache.syncEquipmentSets(silent)
         end
         return 0
     end
+    -- v2.50.2: reuse this walk to rebuild EC_compCache.equipmentSetIDs, a
+    -- session-scoped { [itemID] = true } cache consumed by runAutoMarkAffixDupes
+    -- and runAutoMarkResilience so items in any saved equipment set are never
+    -- auto-marked, even if the Keep-List stamp is delayed or silently refused
+    -- by EC_FindAddConflict (see the shirt-loss root-cause note in v2.50.2's
+    -- CHANGELOG). Wipe the cache upfront so removed set members don't linger.
+    -- The same table doubles as the dedupe map for the outer walk (replacing
+    -- the previous file-local `seen`), so populating the cache costs nothing.
+    -- Cache rebuild runs even when DB.autoProtectEquipmentSets is off - the
+    -- scan-side rescue MUST honour set membership as user intent regardless
+    -- of whether the user opted into the automatic Keep-List stamping.
+    EC_compCache.equipmentSetIDs = EC_compCache.equipmentSetIDs or {}
+    wipe(EC_compCache.equipmentSetIDs)
+    local seen = EC_compCache.equipmentSetIDs
+    local stampToKeep = DB and DB.autoProtectEquipmentSets
     local added, sets = 0, 0
-    local seen = {}
     local buf = {}
     for i = 1, n do
         local name = GetEquipmentSetInfo(i)
@@ -3925,7 +3947,7 @@ function EC_compCache.syncEquipmentSets(silent)
             for _, id in pairs(buf) do
                 if id and id > 1 and not seen[id] then
                     seen[id] = true
-                    if EC_compCache.protectEquipmentSetItem(id) then
+                    if stampToKeep and EC_compCache.protectEquipmentSetItem(id) then
                         added = added + 1
                     end
                 end
@@ -5334,11 +5356,25 @@ end
 
 -- v2.42.0: shared Delete-List eligibility predicate. Returns (itemID, count,
 -- quality) when the bag slot holds a Delete-List item eligible for destruction
--- (on the list, not locked, and not affix-protected), else nil. Used by both
--- BuildQueue's delete branch and the auto-delete-on-pickup scan so vendor-delete
--- and auto-delete apply identical policy with zero drift. Affix protection is the
--- only veto; quest items / tomes / profession tools are NOT protected - the
--- Delete List is explicit user intent.
+-- (on the list, not locked, not Keep-protected, not equipped, and not affix-
+-- protected), else nil. Used by both BuildQueue's delete branch and the
+-- auto-delete-on-pickup scan so vendor-delete and auto-delete apply identical
+-- policy with zero drift.
+--
+-- v2.50.2 (Stickybackpack shirt-loss report): destruction now vetoes on any
+-- Keep signal or IsEquippedItem, not just affix protection. The pre-v2.50.2
+-- comment claimed "the Delete List is explicit user intent" - but the
+-- auto-mark scans (runAutoMarkAffixDupes / runAutoMarkResilience) write
+-- directly to deleteList without going through EC_FindAddConflict, so any
+-- later Keep intent (Keep-List add, equipment-set stamp, auto-add-equipped)
+-- routed through EC_AddItemToList is silently REFUSED with quiet=true and
+-- the user never sees a warning. Reading Keep signals at destruction time
+-- rescues the item without needing to untangle the cross-intent guard's
+-- quiet-mode behaviour. Matches the blacklist > deleteList precedence
+-- already documented for /ec clean.
+-- EC-TRAP: do NOT restore the "Delete List is explicit user intent" claim
+-- and do NOT collapse these vetoes back into the affix gate. Auto-mark
+-- inserts break the pure-user-intent assumption.
 function EC_compCache.deleteListSlotEligible(bag, slot)
     local DB = NS.DB
     if not (DB and DB.deleteList) then
@@ -5346,6 +5382,18 @@ function EC_compCache.deleteListSlotEligible(bag, slot)
     end
     local id = GetContainerItemID(bag, slot)
     if not (id and IsInSet(DB.deleteList, id)) then
+        return nil
+    end
+    -- v2.50.2: Keep-signal + equipped rescue vetoes. Consulted before the
+    -- affix gate so the cheapest checks short-circuit first.
+    if DB.blacklist and DB.blacklist[id] then
+        return nil
+    end
+    local ADB = NS.ADB
+    if ADB and ADB.whitelist and ADB.whitelist[id] then
+        return nil
+    end
+    if IsEquippedItem(id) then
         return nil
     end
     local _, count, locked = GetContainerItemInfo(bag, slot)
@@ -5594,7 +5642,15 @@ function EC_compCache.runAutoMarkResilience()
                             deleteList[id] = true
                             if DB and DB.announceAutoDelete ~= false then
                                 local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
-                                PrintNicef(L["|cffff4444Marked for deletion (Resilience, unsellable):|r %s"], link)
+                                -- v2.50.2: append recovery hint so the player
+                                -- has a path back if the auto-mark caught an
+                                -- item they wanted to keep.
+                                PrintNicef(
+                                    L["|cffff4444Marked for deletion (Resilience, unsellable):|r %s"]
+                                        .. " "
+                                        .. L["|cffaaaaaaAdd to Keep List (Alt+Right-Click on the bag slot) to save it.|r"],
+                                    link
+                                )
                             end
                             -- One add per BAG_UPDATE fire keeps the
                             -- chat tidy if the player loots multiple
@@ -5646,6 +5702,17 @@ function EC_compCache.runAutoMarkAffixDupes()
     end
     local keepList = DB.blacklist
     local accountKeep = NS.ADB and NS.ADB.whitelist
+    -- v2.50.2: honour equipment-set membership as user intent. The cache
+    -- is rebuilt on EQUIPMENT_SETS_CHANGED regardless of the auto-protect
+    -- toggle; if we're pre-first-fire (no set-change since login), lazily
+    -- prime it here so the scan sees the same set-members the Anvil UI
+    -- would show. Closes the shirt-loss failure mode where the scan
+    -- would fire between EQUIPMENT_SETS_CHANGED and the (silently-refused)
+    -- Keep-List stamp - see v2.50.2 root-cause in CHANGELOG.
+    if EC_compCache.equipmentSetIDs == nil and EC_compCache.syncEquipmentSets then
+        EC_compCache.syncEquipmentSets(true)
+    end
+    local setMembers = EC_compCache.equipmentSetIDs
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
@@ -5653,6 +5720,7 @@ function EC_compCache.runAutoMarkAffixDupes()
             if id and not deleteList[id] then
                 local protectedByKeep = (keepList and keepList[id])
                     or (accountKeep and accountKeep[id])
+                    or (setMembers and setMembers[id])
                 -- Respect every other protection: Keep List, equipped, quest
                 -- items, tomes/recipes, and baseline profession tools are
                 -- never auto-marked.
@@ -5706,8 +5774,13 @@ function EC_compCache.runAutoMarkAffixDupes()
                                 deleteList[id] = true
                                 if DB.announceAutoDelete ~= false then
                                     local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
+                                    -- v2.50.2: append recovery hint so the
+                                    -- player has a path back if the auto-mark
+                                    -- caught an item they wanted to keep.
                                     PrintNicef(
-                                        L["|cffff4444Marked for delete|r %s - affix you can't sell (no vendor value)."],
+                                        L["|cffff4444Marked for delete|r %s - affix you can't sell (no vendor value)."]
+                                            .. " "
+                                            .. L["|cffaaaaaaAdd to Keep List (Alt+Right-Click on the bag slot) to save it.|r"],
                                         link
                                     )
                                 end
@@ -7830,11 +7903,19 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- v2.13.0: live re-sync of Blizzard equipment-manager sets onto
         -- the Keep list. Silent variant suppresses the chat summary so
         -- save-edit-save cycles in the Equipment Manager UI don't spam.
-        if DB and DB.autoProtectEquipmentSets then
+        -- v2.50.2: run the sync UNCONDITIONALLY so EC_compCache.equipmentSetIDs
+        -- is rebuilt whether or not autoProtectEquipmentSets is on. The scan-
+        -- side rescue (runAutoMarkAffixDupes) consults the cache to veto
+        -- auto-marking items in a saved set - that veto MUST hold even when
+        -- the automatic Keep-List stamping is opt-out. syncEquipmentSets
+        -- itself now gates the Keep-List stamp on the toggle internally.
+        if DB then
             EC_compCache.syncEquipmentSets(true)
-            local bp = _G["EbonClearanceOptionsBlacklist"]
-            if bp and bp.listUI then
-                bp.listUI:Refresh()
+            if DB.autoProtectEquipmentSets then
+                local bp = _G["EbonClearanceOptionsBlacklist"]
+                if bp and bp.listUI then
+                    bp.listUI:Refresh()
+                end
             end
         end
     elseif event == "LEARNED_SPELL_IN_TAB" or event == "SPELLS_CHANGED" then

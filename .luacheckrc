@@ -8,11 +8,18 @@
 std = "lua51"
 max_line_length = 140
 
--- Ignore:
---   212/self  : unused function argument "self" (WoW script handlers are self-receiving)
---   213       : unused loop variable (common in pairs/ipairs with only values)
---   631       : line is too long (some colour-coded strings are unavoidably long)
-ignore = { "212/self", "213", "631" }
+-- Ignore (idiomatic WoW-UI noise, not defects; see docs/ADDON_GUIDE.md):
+--   212 : unused function argument. WoW script handlers and panel-builder
+--         callbacks have fixed positional signatures (self, event, elapsed,
+--         slider, panel, ...); many callbacks legitimately use only some.
+--   213 : unused loop variable (common in pairs/ipairs with only values).
+--   431 : shadowing an upvalue. Nested closures re-localise `DB = NS.DB`
+--         inside a builder/handler; harmless and common across the panels.
+--   432 : shadowing an upvalue ARGUMENT. The pervasive pattern is the outer
+--         `self` (the panel) vs an inner widget-handler `self`; the inner
+--         one is the intended receiver at that scope.
+--   631 : line is too long (some colour-coded strings are unavoidably long).
+ignore = { "212", "213", "431", "432", "631" }
 
 -- WoW saved variables and slash-command handles: addon writes to these at the
 -- global scope. Everything else in the addon should stay local.
@@ -56,6 +63,20 @@ globals = {
     -- Treating it as writable silences the "setting read-only field" noise
     -- on every dialog registration.
     "StaticPopupDialogs",
+    -- v2.50.x: loot-log toggle handler + its Bindings.xml name (called from
+    -- Bindings.xml / SlashCmdList, same pattern as the other handler globals).
+    "EbonClearance_ToggleLootLog",
+    "BINDING_NAME_EBONCLEARANCE_TOGGLE_LOOTLOG",
+    -- SetItemRef is REPLACED (not hooked) so a custom "ecupdate:" chat link
+    -- opens the update popup; the stock 3.3.5a handler errors on it. See the
+    -- EC-TRAP in EbonClearance_Comms.lua. Written at file scope, so writable.
+    "SetItemRef",
+    -- GameTooltip / ItemRefTooltip get a custom `__EC_annotated` marker field
+    -- written on them (dedupe guard for the tooltip annotation hook). Listed
+    -- as writable so the field write isn't flagged read-only; still read
+    -- elsewhere, which writable also permits.
+    "GameTooltip",
+    "ItemRefTooltip",
 }
 
 -- WoW 3.3.5a API surface this addon touches. Grouped loosely by subsystem.
@@ -63,12 +84,19 @@ globals = {
 -- the whole check.
 read_globals = {
     -- Frame/UI
-    "CreateFrame", "UIParent", "WorldFrame", "GameTooltip", "ItemRefTooltip", "Minimap",
+    -- (GameTooltip / ItemRefTooltip moved to the writable `globals` block:
+    -- we set a custom __EC_annotated field on them.)
+    "CreateFrame", "UIParent", "WorldFrame", "Minimap",
     "MerchantFrame", "OpenAllBags", "OpenBackpack", "OpenBag", "ContainerFrame1",
     "InterfaceOptionsFramePanelContainer",
     "InterfaceOptions_AddCategory", "InterfaceOptionsFrame_OpenToCategory",
     "InterfaceOptionsFrame",
-    "PlaySound", "StaticPopup_Show",
+    "PlaySound", "StaticPopup_Show", "StaticPopup_Hide",
+    "GameTooltip_Hide", "UIFrameFlash",
+    "BankFrame", "CharacterFrame", "InspectFrame", "ColorPickerFrame",
+    "OpacitySliderFrame", "OpenColorPicker", "CloseDropDownMenus",
+    "ChatFrame1EditBox", "ChatFrame_OpenChat",
+    "CANCEL", "CLOSE",
     -- StaticPopup1 named globals are auto-created by Blizzard when a
     -- StaticPopup_Show fires; we read them to drive a few input-popup edge
     -- cases (Enter-to-confirm wiring, focus, etc).
@@ -139,6 +167,45 @@ read_globals = {
     "NORMAL_FONT_COLOR", "HIGHLIGHT_FONT_COLOR", "ITEM_QUALITY_COLORS",
     "GetTime", "date", "time",
     "GetRealmName", "GetCurrentRegion",
+
+    -- ------------------------------------------------------------------
+    -- Additional 3.3.5a API surface reconciled when the luacheck CI gate
+    -- was re-enabled (docs/CODE_REVIEW.md item 4). Grouped by subsystem.
+    -- ------------------------------------------------------------------
+    -- Items / bags (more)
+    "GetItemCount", "GetItemFamily", "IsEquippableItem", "IsUsableItem",
+    "HasRandomProperty", "CursorHasItem",
+    "NUM_BAG_SLOTS", "NUM_BANKGENERIC_SLOTS", "NUM_CONTAINER_FRAMES",
+    -- Item tooltip locale strings (Process Bags + protection scans)
+    "ITEM_MILLABLE", "ITEM_PROSPECTABLE", "ITEM_SOULBOUND", "ITEM_SPELL_KNOWN",
+    "ITEM_SPELL_TRIGGER_ONPROC", "ITEM_SPELL_TRIGGER_ONUSE",
+    -- Merchant / buyback
+    "GetBuybackItemLink", "BUYBACK_ITEMS_PER_PAGE", "MERCHANT_ITEMS_PER_PAGE",
+    -- Loot
+    "LootSlot", "GetLootSlotInfo", "GetLootSlotLink", "GetNumLootItems",
+    "ConfirmLootSlot",
+    -- Unit / player (more)
+    "UnitLevel", "UnitCastingInfo", "UnitChannelInfo",
+    -- Spellbook (affix / proc / recipe learn-state scans)
+    "BOOKTYPE_SPELL", "GetNumSpellTabs", "GetSpellTabInfo",
+    "GetSpellInfo", "GetSpellLink", "IsSpellKnown",
+    -- Equipment Manager sets (auto-protect-sets path)
+    "GetEquipmentSetInfo", "GetEquipmentSetItemIDs", "GetNumEquipmentSets",
+    -- CVars / modified-click
+    "GetCVarBool", "IsModifiedClick",
+    -- Addon list + CPU/memory diagnostics (/ec bugreport)
+    "GetNumAddOns", "GetAddOnCPUUsage", "GetAddOnMemoryUsage",
+    "UpdateAddOnCPUUsage", "UpdateAddOnMemoryUsage",
+    -- Money / coin text
+    "GetCoinTextureString",
+    -- Zone / locale / guild / group / perf
+    "GetRealZoneText", "GetLocale", "GetGuildInfo", "GetInventoryItemID",
+    "GetNumPartyMembers", "GetNumRaidMembers", "GetFramerate",
+    -- Addon-to-addon comms transport
+    "SendAddonMessage",
+    -- Bit library (3.3.5a exposes the BitLib `bit` table globally)
+    "bit",
+
     -- _G moved to the writable globals block above; we write to _G[...]
     -- for one keybinding name that contains a space.
 }

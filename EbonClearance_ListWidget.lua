@@ -433,7 +433,7 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
     -- here now) + the Search input and rarity dropdown on the line below.
     local search, sortNameBtn, clearAllBtn, rarityDD = EC_compCache.buildListSearchAndSortRow(box, setTableName)
 
-    local scroll, content = EC_compCache.buildListScrollArea(box, w, setTableName)
+    local _, content = EC_compCache.buildListScrollArea(box, w, setTableName)
 
     local rowFactory = EC_compCache.makeListRowFactory(content, setTableName)
 

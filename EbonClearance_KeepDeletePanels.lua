@@ -34,7 +34,6 @@ DeletePanel.name = "Delete List"
 DeletePanel.parent = "EbonClearance"
 
 DeletePanel:SetScript("OnShow", function(self)
-    local DB = NS.DB
     EC_compCache.initPanel(self, function(self)
         if self.listUI then
             self.listUI:Refresh()
@@ -430,7 +429,6 @@ BlacklistPanel.name = "Keep List"
 BlacklistPanel.parent = "EbonClearance"
 
 BlacklistPanel:SetScript("OnShow", function(self)
-    local DB = NS.DB
     EC_compCache.initPanel(self, function(self)
         if self.listUI then
             self.listUI:Refresh()

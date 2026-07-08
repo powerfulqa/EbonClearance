@@ -1072,7 +1072,7 @@ HelpPanel:SetScript("OnShow", function(self)
         local textW = w - 8 -- entries sit at x=4 with 4px right margin
 
         local y = -4
-        local currentSection = nil
+        local currentSection
         local currentSectionShown = true
         local currentSectionCollapsed = false
         local HEADER_H = 22
@@ -1313,7 +1313,7 @@ HelpPanel:SetScript("OnShow", function(self)
                     end
                     db.helpSectionsCollapsed = db.helpSectionsCollapsed or {}
                     db.helpSectionsCollapsed[sectionKey] =
-                        not (db.helpSectionsCollapsed[sectionKey] == true)
+                        db.helpSectionsCollapsed[sectionKey] ~= true
                     refreshLayout(s)
                     PlaySound("igMainMenuOptionCheckBoxOn")
                 end)
@@ -1444,8 +1444,8 @@ HelpPanel:SetScript("OnShow", function(self)
         -- Reflow on scroll-frame OnSizeChanged: wrapped answer text
         -- retracks the live viewport width instead of clipping past
         -- the right edge (BarWarden pattern from Options_Help.lua:492).
-        local scrollName = (s:GetName() or "EbonClearanceOptionsHelp") .. "Scroll"
-        local hostScroll = _G[scrollName]
+        local scrollName2 = (s:GetName() or "EbonClearanceOptionsHelp") .. "Scroll"
+        local hostScroll = _G[scrollName2]
         if hostScroll and hostScroll.HookScript then
             hostScroll:HookScript("OnSizeChanged", function()
                 refreshLayout(s)

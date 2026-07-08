@@ -768,15 +768,15 @@ local function EC_AnnotateTooltip(tooltip)
         -- BuildQueue already check affix first, so this aligns the
         -- tooltip with the existing behaviour.
         local affixKept = (statusTag == "affixknown" or statusTag == "affixneeded")
-        if onExplicit then
+        if onExplicit then -- luacheck: ignore 542
             -- Explicit list verdict stands; leave statusLine alone.
-        elseif affixKept then
+        elseif affixKept then -- luacheck: ignore 542
             -- Affix protection took the verdict already; leave it.
         elseif ADB and ADB.allowedItems and ADB.allowedItems[id] then
             -- Allow Sell is on. If a quality-rule already produced a
             -- "Will Sell (...)" verdict, leave it alone. Otherwise
             -- prompt the user to pick a list.
-            if statusTag == "willsell" then
+            if statusTag == "willsell" then -- luacheck: ignore 542
                 -- Existing verdict stands.
             else
                 statusLine = "|cff66ccff[EC]|r |cffffea80"
@@ -894,7 +894,7 @@ local function EC_AnnotateTooltip(tooltip)
         -- Sell List membership, so the Keep label is the truth. Keep
         -- List membership stays. Allow Sell override flips to the
         -- destination-list label.
-        if IsInSet(DB.blacklist, id) then
+        if IsInSet(DB.blacklist, id) then -- luacheck: ignore 542
             -- Keep List wins; leave the earlier Keep label alone.
         elseif ADB and ADB.allowedItems and ADB.allowedItems[id] then
             -- destinationLabel walks the explicit-list precedence chain.

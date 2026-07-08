@@ -1407,7 +1407,6 @@ function EC_compCache.describeSellability(bag, slot)
     -- the gate on qualityPass and reported "n/a" for items that were
     -- being sold via affixRankPass / autoDupePass / recipePass instead -
     -- a lie about the actual verdict when the item had a proc.
-    local procProtected = false
     if
         (qualityPass or affixRankPass or autoDupePass or recipePass)
         and DB
@@ -1439,7 +1438,6 @@ function EC_compCache.describeSellability(bag, slot)
                     knownFamily or "?")
             )
         else
-            procProtected = true
             qualityPass = false
             affixRankPass = false
             autoDupePass = false

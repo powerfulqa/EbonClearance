@@ -423,7 +423,7 @@ local function EC_BuildBugReport()
     else
         local entries = {}
         for i = 1, n do
-            local name, title, _, _, _, reason, _ = GetAddOnInfo(i)
+            local name, title = GetAddOnInfo(i)
             local loaded = IsAddOnLoaded and IsAddOnLoaded(i)
             if loaded then
                 local meta = GetAddOnMetadata and GetAddOnMetadata(i, "Version") or nil

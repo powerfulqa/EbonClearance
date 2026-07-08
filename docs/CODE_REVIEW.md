@@ -204,32 +204,32 @@ code.
 
 ---
 
-### 4. Reconcile luacheck so CI gating can be re-enabled - medium effort, low risk
+### 4. Reconcile luacheck so CI gating can be re-enabled - DONE
 
-Added v2.43.0. A `luacheck EbonClearance_*.lua` step was added to
-[.github/workflows/test.yml](../.github/workflows/test.yml) but
-surfaced ~162 pre-existing warnings, so the gate was **deferred** (the
-step is commented out; CI still runs `luac -p` + all six suites). The
-warnings predate localization and fall into two buckets:
+Added v2.43.0, deferred through v2.50.x, **reconciled and re-enabled** in
+a session with luacheck 1.2.0 installed locally. By then the count had
+grown from ~162 to **259 warnings**; all cleared to **0**:
 
-- **Missing `read_globals` (most of the count):** WoW API globals the
-  addon legitimately uses but that aren't in
-  [`.luacheckrc`](../.luacheckrc) - e.g. `BankFrame`, `InspectFrame`,
-  `CharacterFrame`, `NUM_BANKGENERIC_SLOTS`, `BUYBACK_ITEMS_PER_PAGE`,
-  `MERCHANT_ITEMS_PER_PAGE`, `GetBuybackItemLink`, `NUM_CONTAINER_FRAMES`,
-  `UnitLevel`, `GetLocale`, `GetNumAddOns`, and more. Add each to
-  `read_globals` (CLAUDE.md: extend, don't blanket-silence).
-- **Dead locals / unused args (~28):** e.g. `merchantOpen`
-  (BagContextMenu), `procProtected` never accessed (BagDisplay),
-  `reason` (BugReport), plus unused callback arguments across Comms /
-  panels. Remove or underscore-prefix; consider whether `212` (unused
-  argument) belongs in the `ignore` list given WoW's fixed handler
-  signatures.
+- **W113 missing `read_globals` (163, the bulk):** every WoW 3.3.5a API
+  global the addon uses is now declared in [`.luacheckrc`](../.luacheckrc)
+  (loot, spellbook, equipment-set, buyback, CPU/mem, coin-text, zone,
+  guild, group APIs, plus the `bit` library).
+- **W111/W122 undeclared intentional globals (5):** `SetItemRef` (the
+  EC-TRAP link-handler override), `EbonClearance_ToggleLootLog` +
+  `BINDING_NAME_..._LOOTLOG`, and `GameTooltip`/`ItemRefTooltip` (custom
+  `__EC_annotated` field write) declared in the writable `globals` block.
+- **Idiomatic noise ignored with rationale:** `212` (unused args in fixed
+  WoW handler/callback signatures), `213`, `431`/`432` (self/DB shadowing
+  in nested closures), `631` (long colour-coded strings).
+- **Real code fixed (~29):** duplicate locale keys (W314), dead locals /
+  dead assignments (W211/W231/W241/W311), shadowed locals renamed
+  (W411/W421), `not (x == y)` -> `x ~= y` (W581), `_level` -> `level`
+  (W214), and intentional empty branches given inline `-- luacheck:
+  ignore 542` with their existing explanatory comments (W542).
 
-**Do this in a session with luacheck installed** (`luarocks install
-luacheck`) so the fixes are verifiable locally rather than via CI
-round-trips. When green, uncomment the step in test.yml and restore the
-"luacheck runs in CI" note in CLAUDE.md.
+The gate now runs on every push (test.yml installs luacheck via luarocks
+and runs `luacheck EbonClearance_*.lua`). Keep it at 0: fix the cause or
+extend `.luacheckrc`, never a blanket silence.
 
 ---
 

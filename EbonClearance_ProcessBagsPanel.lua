@@ -125,7 +125,7 @@ function EC_compCache.rearmProcessButton()
         end
         -- Step 2: armedMode sticky preference - only if the mode
         -- itself isn't collapsed.
-        if not idx and EC_compCache.armedMode and not (collapsed[EC_compCache.armedMode] == true) then
+        if not idx and EC_compCache.armedMode and collapsed[EC_compCache.armedMode] ~= true then
             for i = 1, #list do
                 if list[i].mode == EC_compCache.armedMode and not isCollapsed(list[i]) then
                     idx = i
@@ -336,7 +336,6 @@ end)
 -- change (skip arrow, left-click on a row, BAG_UPDATE re-arm) reflects
 -- in the list immediately. Cheap loop; rows table is small.
 function EC_compCache.updateProcessSelection()
-    local DB = NS.DB
     local panel = _G["EbonClearanceOptionsProcessBags"]
     if not panel or not panel.rows then
         return
@@ -375,14 +374,14 @@ function EC_compCache.skipProcessTarget()
     end
     local idx
     for i = start, #list do
-        if not (collapsed[list[i].mode] == true) then
+        if collapsed[list[i].mode] ~= true then
             idx = i
             break
         end
     end
     if not idx then
         for i = 1, start - 1 do
-            if not (collapsed[list[i].mode] == true) then
+            if collapsed[list[i].mode] ~= true then
                 idx = i
                 break
             end
@@ -474,7 +473,7 @@ function EC_compCache.refreshProcessPanel()
                         return
                     end
                     DB.processCollapsedModes = DB.processCollapsedModes or {}
-                    DB.processCollapsedModes[self.mode] = not (DB.processCollapsedModes[self.mode] == true)
+                    DB.processCollapsedModes[self.mode] = DB.processCollapsedModes[self.mode] ~= true
                     PlaySound("igMainMenuOptionCheckBoxOn")
                     EC_compCache.refreshProcessPanel()
                 end)
@@ -504,7 +503,7 @@ function EC_compCache.refreshProcessPanel()
         -- click to expand. rowY stays where the header left it, so
         -- the next section's header anchors directly below the
         -- collapsed-section header.
-        if not (collapsedModes[entry.mode] == true) then
+        if collapsedModes[entry.mode] ~= true then
             rowIdx = rowIdx + 1
             local row = panel.rows[rowIdx]
             if not row then

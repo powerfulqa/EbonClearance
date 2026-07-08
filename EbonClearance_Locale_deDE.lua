@@ -725,8 +725,6 @@ NS.RegisterLocale("deDE", {
     ["Profession tool safety"] = "",
     ["Currently worn"] = "",
     ["Affix protection"] = "",
-    ["Chance-on-hit protection"] = "",
-    ["Tome / recipe protection"] = "",
     ["you already have this exact affix"] = "",
     ["you already have this affix at this rank"] = "",
     ["Kept - quest item (add to Sell List to override)"] = "",

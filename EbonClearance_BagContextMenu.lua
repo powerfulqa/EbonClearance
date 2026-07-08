@@ -281,7 +281,6 @@ local function EC_ShowItemContextMenu(button)
     local itemAllowed = procAllowed or affixAllowed or tomeAllowed
     local procProtected = hasProtection and not itemAllowed
 
-    local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
     local visibleSlot = 0
     for i, row in ipairs(EC_CTX_ROWS) do
         local btn = frame.buttons[i]

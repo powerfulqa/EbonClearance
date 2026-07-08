@@ -246,10 +246,10 @@ function NS.RefreshStats()
     if sessionGPH and elapsed >= 300 then
         local zone = GetRealZoneText()
         local zoneText = (zone and zone ~= "") and zone or "Unknown"
-        local now = time()
+        local nowTime = time()
         if sessionGPH > (DB.bestGPH or 0) then
             DB.bestGPH = sessionGPH
-            DB.bestGPHAt = now
+            DB.bestGPHAt = nowTime
             DB.bestGPHZone = zoneText
         end
         -- v2.38.1: account-wide best record. Stamp the character name
@@ -257,7 +257,7 @@ function NS.RefreshStats()
         local AS = ADB and ADB.accountStats
         if AS and sessionGPH > (AS.bestGPH or 0) then
             AS.bestGPH = sessionGPH
-            AS.bestGPHAt = now
+            AS.bestGPHAt = nowTime
             AS.bestGPHZone = zoneText
             AS.bestGPHChar = (UnitName and UnitName("player")) or ""
         end

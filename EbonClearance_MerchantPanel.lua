@@ -645,7 +645,7 @@ MerchantPanel:SetScript("OnShow", function(self)
             )
             bindDD:SetPoint("LEFT", bindLbl, "RIGHT", -8, -2)
 
-            local function BindFilterInit(_frame, _level)
+            local function BindFilterInit(_frame, level)
                 for _, entry in ipairs(EC_BIND_FILTER_OPTIONS) do
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = entry.text
@@ -661,7 +661,7 @@ MerchantPanel:SetScript("OnShow", function(self)
                             NS.RefreshSellBorders()
                         end
                     end
-                    UIDropDownMenu_AddButton(info, _level)
+                    UIDropDownMenu_AddButton(info, level)
                 end
             end
             UIDropDownMenu_SetWidth(bindDD, 120)
@@ -786,7 +786,7 @@ MerchantPanel:SetScript("OnShow", function(self)
                 "UIDropDownMenuTemplate"
             )
             bindDD:SetPoint("LEFT", qcb, "RIGHT", 56, 0)
-            local function BindFilterInit(_frame, _level)
+            local function BindFilterInit(_frame, level)
                 for _, entry in ipairs(EC_BIND_FILTER_OPTIONS) do
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = entry.text
@@ -802,7 +802,7 @@ MerchantPanel:SetScript("OnShow", function(self)
                             NS.RefreshSellBorders()
                         end
                     end
-                    UIDropDownMenu_AddButton(info, _level)
+                    UIDropDownMenu_AddButton(info, level)
                 end
             end
             UIDropDownMenu_SetWidth(bindDD, 110)

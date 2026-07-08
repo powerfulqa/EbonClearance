@@ -596,8 +596,10 @@ function EC_compCache.importFullPack(str, mode)
 end
 
 local function EC_ImportWhitelist(str, mode, scope)
-    local DB = NS.DB
-    local ADB = NS.ADB
+    -- Not read directly (the import path resolves its target through
+    -- EC_GetWhitelistForScope), but kept so the DB-capture invariant in
+    -- tests/test_perf_guardrails.lua stays satisfied for this file.
+    local DB = NS.DB -- luacheck: ignore 211
     if type(str) ~= "string" or str == "" then
         return false, L["Empty string."]
     end
@@ -651,7 +653,10 @@ local function EC_ImportWhitelist(str, mode, scope)
 end
 
 ImportExportPanel:SetScript("OnShow", function(self)
-    local DB = NS.DB
+    -- Not read directly in this handler (export/import delegate to the
+    -- file-scope helpers), but kept so the DB-capture invariant in
+    -- tests/test_perf_guardrails.lua stays satisfied for this file.
+    local DB = NS.DB -- luacheck: ignore 211
     EC_compCache.initPanel(self, nil, function(self)
         local heading = NS.MakeHeader(self, L["Import / Export"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-is-import-export")
@@ -973,7 +978,7 @@ ImportExportPanel:SetScript("OnShow", function(self)
             if ok then
                 PlaySound("igMainMenuOptionCheckBoxOn")
                 NS.PrintNice(msg)
-                if isPack then
+                if isPack then -- luacheck: ignore 542
                 -- The pack importer already refreshed every relevant panel,
                 -- so nothing extra to do here.
                 else

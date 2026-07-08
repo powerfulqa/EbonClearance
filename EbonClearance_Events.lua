@@ -38,11 +38,9 @@ local PET_NAME = "Greedy scavenger"
 -- Provenance globals (EBONCLEARANCE_* and __EbonClearance_*) plus the
 -- EC_Fingerprint helper now live in EbonClearance_Core.lua per the file
 -- split (Stage 2, see docs/CODE_REVIEW.md item 4). Core writes those
--- globals on load and exposes the helper as NS.Fingerprint; we re-bind
--- the byline strings here from the namespace because the settings panel
--- byline (still defined in this file) reads them as upvalues.
-local ADDON_AUTHOR = NS.ADDON_AUTHOR
-local ADDON_URL = NS.ADDON_URL
+-- globals on load and exposes the helper as NS.Fingerprint. The byline
+-- strings are read directly from NS.ADDON_AUTHOR / NS.ADDON_URL where the
+-- settings byline is built (EbonClearance_MainPanel.lua).
 
 -- Localization passthrough. NS.L is a metatable-backed table set by
 -- EbonClearance_Locale.lua (loads earlier per the .toc), so it exists at
@@ -3375,15 +3373,10 @@ local function EC_HandleLootReady()
     -- because the OnUpdate body bails on isProcessing == false.
     if not q.frame then
         q.frame = CreateFrame("Frame")
-        q.frame:SetScript("OnUpdate", function(self, elapsed)
+        q.frame:SetScript("OnUpdate", function(self)
             local qs = EC_compCache.lootQueue
             if not qs.isProcessing then
                 return
-            end
-            -- Cap elapsed so a long pause (Alt-Tab, /reload) doesn't
-            -- void the next throttle window and drain in a burst.
-            if elapsed > 0.1 then
-                elapsed = 0.1
             end
             if (GetTime() - qs.lastLootAt) < qs.delay then
                 return
@@ -4197,7 +4190,7 @@ function EC_compCache.checkBagsForUpgrades()
                 -- Murlocked. IsUsableItem returns false on a class
                 -- restriction; `nil` (uncached) doesn't match and lets
                 -- the iLvl logic still run on the warmup pass.
-                if IsUsableItem and IsUsableItem(itemID) == false then
+                if IsUsableItem and IsUsableItem(itemID) == false then -- luacheck: ignore 542
                     -- Intentional no-op fall-through to the next slot.
                     -- upgradeProcessed[itemID] stays true so we don't
                     -- re-check every BAG_UPDATE; /reload reseeds the
@@ -5591,7 +5584,7 @@ function EC_compCache.runAutoMarkResilience()
                         -- Skip anything sellable; the normal sell rules
                         -- handle them (Sell List, quality rule).
                         local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
-                        if sellPrice and sellPrice > 0 then
+                        if sellPrice and sellPrice > 0 then -- luacheck: ignore 542
                             -- Sellable; let the vendor cycle do its
                             -- job. Don't fall through to the next
                             -- slot via `return` - the BAG_UPDATE
@@ -5704,7 +5697,7 @@ function EC_compCache.runAutoMarkAffixDupes()
                                 and DB.affixMinSellRank > 0
                                 and affix.rank
                                 and affix.rank < DB.affixMinSellRank
-                            if rankBelowOnly then
+                            if rankBelowOnly then -- luacheck: ignore 542
                                 -- Skip; item stays for extraction.
                             else
                             local soulbound = EC_compCache.getBindType(bag, slot) == "bop"
@@ -7727,7 +7720,7 @@ f:SetScript("OnEvent", function(self, event, ...)
                 EC_compCache.installHostBagItemLevelHook()
             end
         end
-    elseif event == "PLAYER_LOGOUT" then
+    elseif event == "PLAYER_LOGOUT" then -- luacheck: ignore 542
         -- No-op. The previous body (`EbonClearanceDB = DB`) was a defensive
         -- mirror back to the saved-variable when DB == EbonClearanceDB.
         -- After the v2.34.x per-character partition, DB is a metatable

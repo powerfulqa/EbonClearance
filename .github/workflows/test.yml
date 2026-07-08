@@ -29,6 +29,18 @@ jobs:
           done
           lua5.1 -v
 
+      - name: Install luacheck
+        # Same transient-apt retry pattern as the Lua install. luarocks pulls
+        # luacheck (+ argparse); the version query asserts the install worked
+        # so a genuine failure fails loudly rather than skipping the lint gate.
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y luarocks && break
+            echo "apt attempt $i failed; retrying in 5s..." && sleep 5
+          done
+          sudo luarocks install luacheck
+          luacheck --version
+
       - name: Lua syntax check
         # v2.30.0+: post file-split, every shipped source file is checked.
         # Add new EbonClearance_*.lua files to this list as future
@@ -64,13 +76,15 @@ jobs:
           luac5.1 -p EbonClearance_Tooltip.lua
           luac5.1 -p EbonClearance_BagContextMenu.lua
 
-      # NOTE: luacheck is intentionally NOT gated in CI yet. Enabling
-      # `luacheck EbonClearance_*.lua` surfaced ~162 pre-existing warnings
-      # (WoW API globals missing from .luacheckrc read_globals, plus a handful
-      # of dead locals / unused args) that predate the localization work. The
-      # gate is deferred until that debt is reconciled in a session with
-      # luacheck installed locally - tracked in docs/CODE_REVIEW.md. Run
-      # `luacheck *.lua` locally before committing in the meantime.
+      - name: Luacheck lint gate
+        # Re-enabled once the ~162 (grown to 259) pre-existing warnings were
+        # reconciled: the WoW 3.3.5a API surface is declared in .luacheckrc
+        # read_globals, intentional globals are declared, idiomatic-noise
+        # categories (212/213/431/432/631) are ignored with rationale, and
+        # the real code issues (dead locals, dup locale keys, negated
+        # comparisons, dead assignments) were fixed. Must stay at 0 warnings;
+        # fix the cause or extend .luacheckrc (never blanket-silence).
+        run: luacheck EbonClearance_*.lua
 
       - name: Invariant test suites
         # Single entry point; tests/run_all.lua is the source of truth for

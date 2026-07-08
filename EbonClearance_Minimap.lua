@@ -215,7 +215,6 @@ end
 -- so users on Titan Panel / Bazooka / ChocolateBar / etc. get an entry in
 -- their display addon without us taking a hard dependency on anything.
 local function EC_CreateLDBLauncher()
-    local DB = NS.DB
     if not _G.LibStub then
         return
     end

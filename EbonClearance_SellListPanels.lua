@@ -28,7 +28,6 @@ WhitelistPanel.name = "Sell List"
 WhitelistPanel.parent = "EbonClearance"
 
 WhitelistPanel:SetScript("OnShow", function(self)
-    local DB = NS.DB
     EC_compCache.initPanel(self, function(self)
         if self.listUI then
             self.listUI:Refresh()
@@ -82,7 +81,6 @@ AccountWhitelistPanel.name = "Account Sell List"
 AccountWhitelistPanel.parent = "EbonClearance"
 
 AccountWhitelistPanel:SetScript("OnShow", function(self)
-    local DB = NS.DB
     EC_compCache.initPanel(self, function(self)
         if self.listUI then
             self.listUI:Refresh()

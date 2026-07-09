@@ -1627,7 +1627,19 @@ function EC_compCache.printSellabilityTrace(bag, slot)
     lines[#lines + 1] = string.format(L["Bag / Slot: %d / %d"], bag, slot)
     lines[#lines + 1] = string.format(L["Item: %s"], itemLink or "(no item)")
     lines[#lines + 1] = ""
-    lines[#lines + 1] = string.format("%s%s|r - %s", verdictColor, verdictText, tostring(r.summary))
+    -- v2.51.0 cosmetic: r.summary already starts with the verdict word
+    -- ("WILL SELL at ...", "won't sell - ..."). Since the header already
+    -- carries the verdict prominently in colour, strip the redundant
+    -- prefix from summary so the header line doesn't read
+    -- "WON'T SELL - won't sell - <reason>".
+    local reason = tostring(r.summary or "")
+    reason = reason:gsub("^[Ww][Oo][Nn]'[Tt]%s+[Ss][Ee][Ll][Ll]%s*%-?%s*", "")
+    reason = reason:gsub("^[Ww][Ii][Ll][Ll]%s+[Ss][Ee][Ll][Ll]%s*", "")
+    reason = reason:gsub("^[Ww][Ii][Ll][Ll]%s+[Dd][Ee][Ll][Ee][Tt][Ee]%s*", "")
+    if reason == "" then
+        reason = tostring(r.summary or "")
+    end
+    lines[#lines + 1] = string.format("%s%s|r - %s", verdictColor, verdictText, reason)
     lines[#lines + 1] = ""
     lines[#lines + 1] = L["--- Full trace ---"]
     for _, s in ipairs(r.steps) do

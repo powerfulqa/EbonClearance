@@ -1627,17 +1627,19 @@ function EC_compCache.printSellabilityTrace(bag, slot)
     lines[#lines + 1] = string.format(L["Bag / Slot: %d / %d"], bag, slot)
     lines[#lines + 1] = string.format(L["Item: %s"], itemLink or "(no item)")
     lines[#lines + 1] = ""
-    -- v2.51.0 cosmetic: r.summary already starts with the verdict word
-    -- ("WILL SELL at ...", "won't sell - ..."). Since the header already
-    -- carries the verdict prominently in colour, strip the redundant
-    -- prefix from summary so the header line doesn't read
+    -- v2.51.0 cosmetic: r.summary is wrapped in colour codes and
+    -- already starts with the verdict word ("|cff...WILL SELL at ...",
+    -- "|cff...won't sell - ..."). Since the header prepends the
+    -- verdict word again, strip both the colour codes AND the
+    -- verdict-prefix so the line doesn't read
     -- "WON'T SELL - won't sell - <reason>".
     local reason = tostring(r.summary or "")
+    reason = reason:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     reason = reason:gsub("^[Ww][Oo][Nn]'[Tt]%s+[Ss][Ee][Ll][Ll]%s*%-?%s*", "")
-    reason = reason:gsub("^[Ww][Ii][Ll][Ll]%s+[Ss][Ee][Ll][Ll]%s*", "")
-    reason = reason:gsub("^[Ww][Ii][Ll][Ll]%s+[Dd][Ee][Ll][Ee][Tt][Ee]%s*", "")
+    reason = reason:gsub("^[Ww][Ii][Ll][Ll]%s+[Ss][Ee][Ll][Ll]%s*[Aa][Tt]?%s*", "")
+    reason = reason:gsub("^[Ww][Ii][Ll][Ll]%s+[Dd][Ee][Ll][Ee][Tt][Ee]%s*[Aa][Tt]?%s*", "")
     if reason == "" then
-        reason = tostring(r.summary or "")
+        reason = tostring(r.summary or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     end
     lines[#lines + 1] = string.format("%s%s|r - %s", verdictColor, verdictText, reason)
     lines[#lines + 1] = ""

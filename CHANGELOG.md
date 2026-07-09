@@ -5,6 +5,24 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.50.4
+
+**Bug fix: soulbound recipes with a mismatched bind-filter setting showed "Will Sell (known recipe)" but the vendor cycle refused.**
+
+Reported by Serv against `Plans: Ragesteel Breastplate` (id=23613, Rare, soulbound, learned). The player's Blue-recipe bind-filter was set to `boe`, so the vendor cycle correctly refused the soulbound plans - but the `/ec sellinfo` trace and the bag tooltip both showed `Will Sell (known recipe)` because both mirrors were missing the bind-filter check.
+
+`EC_IsSellable`'s `recipePass` at `EbonClearance_Events.lua` ~line 5100 already honoured `DB.sellKnownRecipeBindFilter` (added in v2.47.1). The two mirrors did not:
+
+- **`describeSellability` trace** (`EbonClearance_BagDisplay.lua`) now emits `known recipe but this quality's bind filter is 'boe' - recipe is bind-on-pickup, not eligible` (or similar) when the filter rejects the recipe's bind type. Uses `EC_compCache.getBindType(bag, slot)` to match the sell-decision code path.
+- **`recipeSellable` tooltip check** (`EbonClearance_Tooltip.lua`) now runs the same filter via `EC_compCache.getBindTypeFromTooltip(tooltip, id)` (the live-tooltip variant, since the tooltip surface doesn't have a bag/slot pair). Filter-rejected recipes no longer show `Will Sell (known recipe)`.
+
+Test 107i pins the mirrored gate on both files. No schema or behaviour change to the sell decision itself - only the trace / tooltip surfaces now agree with what the vendor cycle actually does.
+
+Downgrade-safe to v2.50.3.
+
+---
+
+
 ### v2.50.3
 
 **Bug reports pack more diagnostic detail.** Motivated by Bizzaro's v2.50.1 report where the tooltip said "Will Delete" but no destruction actually happened - the pre-v2.50.3 bugreport didn't surface enough state to tell whether the item was queued for a merchant visit, auto-delete-on-pickup was off, or something else was blocking. This release closes the gap.

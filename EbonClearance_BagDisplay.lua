@@ -1279,8 +1279,32 @@ function EC_compCache.describeSellability(bag, slot)
                     if not known then
                         step("knownRecipeRule", false, L["recipe not yet learned (kept safe)"])
                     else
-                        recipePass = true
-                        step("knownRecipeRule", true, L["known recipe - sells via Sell Known Recipes"])
+                        -- v2.50.4 fix (Serv report, Plans: Ragesteel Breastplate):
+                        -- EC_IsSellable's recipePass ALSO gates on the per-quality
+                        -- bind-type filter (DB.sellKnownRecipeBindFilter). Trace
+                        -- mirror was missing this check, so a soulbound Blue
+                        -- recipe with the Blue-recipe filter set to "boe" would
+                        -- read WILL SELL in /ec sellinfo but the vendor cycle
+                        -- would correctly refuse. Match the gate here.
+                        local recipeBindFilter = DB.sellKnownRecipeBindFilter
+                            and DB.sellKnownRecipeBindFilter[quality]
+                            or "any"
+                        local passedBindFilter = true
+                        if recipeBindFilter ~= "any" then
+                            local bindType = EC_compCache.getBindType
+                                and EC_compCache.getBindType(bag, slot) or "any"
+                            if recipeBindFilter ~= bindType then
+                                passedBindFilter = false
+                            end
+                        end
+                        if not passedBindFilter then
+                            step("knownRecipeRule", false, string.format(
+                                L["known recipe but this quality's bind filter is '%s' - recipe is bind-on-pickup, not eligible"],
+                                tostring(recipeBindFilter)))
+                        else
+                            recipePass = true
+                            step("knownRecipeRule", true, L["known recipe - sells via Sell Known Recipes"])
+                        end
                     end
                 end
             end

@@ -863,6 +863,25 @@ local function EC_AnnotateTooltip(tooltip)
         and EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
         and true
         or false
+    -- v2.50.4 fix (Serv report, Plans: Ragesteel Breastplate): also honour
+    -- the per-quality recipe bind-type filter, matching EC_IsSellable's
+    -- recipePass at EbonClearance_Events.lua ~5100. Without this, a
+    -- soulbound Blue recipe with the Blue-recipe filter set to "boe" showed
+    -- "Will Sell (known recipe)" in the tooltip but the vendor cycle
+    -- correctly refused. Uses the live-tooltip bind-type reader since we
+    -- don't have a bag/slot pair here.
+    if recipeSellable then
+        local recipeBindFilter = DB.sellKnownRecipeBindFilter
+            and DB.sellKnownRecipeBindFilter[itemQuality]
+            or "any"
+        if recipeBindFilter ~= "any" then
+            local bindType = EC_compCache.getBindTypeFromTooltip
+                and EC_compCache.getBindTypeFromTooltip(tooltip, id) or "any"
+            if recipeBindFilter ~= bindType then
+                recipeSellable = false
+            end
+        end
+    end
 
     local tomeProtected = false
     local tomeHave = false

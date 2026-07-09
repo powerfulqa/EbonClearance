@@ -6821,6 +6821,17 @@ do
             and ev:find('EC_LogAutoMark%(id, "resilience"%)') ~= nil
             and ev:find('EC_LogAutoMark%(id, "affix"%)') ~= nil,
         "v2.50.3: session-scoped ring buffer of the last 15 auto-mark events, populated by runAutoMarkResilience (reason=resilience) and runAutoMarkAffixDupes (reason=affix). Both hook sites MUST call EC_LogAutoMark alongside their deleteList[id] = true write so /ec bugreport's Recent Auto-Mark Events section shows what/when/why regardless of whether the announce-in-chat toggle was on.")
+    do
+        local bd107i = fileSrc("EbonClearance_BagDisplay.lua")
+        local tt107i = fileSrc("EbonClearance_Tooltip.lua")
+        check("Test 107i: recipe bind-filter gate mirrored in describeSellability trace + tooltip recipeSellable",
+            bd107i:find("DB%.sellKnownRecipeBindFilter") ~= nil
+                and bd107i:find("EC_compCache%.getBindType%(bag, slot%)") ~= nil
+                and bd107i:find("passedBindFilter") ~= nil
+                and tt107i:find("DB%.sellKnownRecipeBindFilter") ~= nil
+                and tt107i:find("EC_compCache%.getBindTypeFromTooltip%(tooltip, id%)") ~= nil,
+            "v2.50.4 fix (Serv report, Plans: Ragesteel Breastplate): EC_IsSellable's recipePass at Events.lua ~5100 gates on the per-quality bind-type filter (DB.sellKnownRecipeBindFilter) - a soulbound Blue recipe with the Blue-recipe filter set to 'boe' correctly refuses at the vendor. Both mirrors (BagDisplay.lua describeSellability + Tooltip.lua recipeSellable) were missing this gate, so /ec sellinfo said WILL SELL and the tooltip showed 'Will Sell (known recipe)' but the vendor cycle refused. Both mirrors now honour the bind filter, matching EC_IsSellable exactly.")
+    end
     check("Test 107e: v2.49.1 SLASH_ROWS supports `prefill` field for argument-requiring commands",
         mp:find('prefill = "/ec profile "') ~= nil
             and mp:find('prefill = "/ec minimap "') ~= nil

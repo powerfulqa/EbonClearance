@@ -1408,6 +1408,13 @@ local function EnsureDB()
             -- visual idiom; distinct from the warm-toned sell verdicts
             -- and the cool-toned Keep List.
             affix = { enabled = false, color = { r = 0.78, g = 0.40, b = 1.00, a = 0.9 } },
+            -- v2.52.0: complementary to `affix`. Fires when the bag
+            -- item carries a random affix the player does NOT own
+            -- (any of description / rank / family). Gold-ish default
+            -- signals "wanted / target for extraction" without
+            -- clashing with the warm-toned sell family or the purple
+            -- Known Affix. Default OFF (opt-in like Keep + Known Affix).
+            affixneeded = { enabled = false, color = { r = 1.00, g = 0.85, b = 0.20, a = 0.9 } },
         }
         local function clamp01b(v, fallback)
             if type(v) ~= "number" or v ~= v then

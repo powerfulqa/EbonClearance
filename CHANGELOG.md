@@ -5,17 +5,37 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
-### v2.51.3
+### v2.52.0
 
-**Rename the affix highlight row to prep for the incoming Needed Affix companion tint.**
+**Affix highlight rework: Known vs Needed split now honest + rank VI supported.**
 
-Panel row label only. No behaviour change. The `affix` sell-border category continues to fire on any bag item carrying a random affix - the swatch, tint colour, and enable-toggle all work exactly as before.
+Reported by Serv against `Netherweave Pants of Relentless Crits VI` and confirmed by observation: the v2.51.3 preview shipped a `Known Affix items` label but the underlying category still fired on ANY affix, so the label lied. This release makes the category names accurate.
 
-- **`EbonClearance_ItemHighlightingPanel.lua`**: the row previously labelled `Random affix items (purple)` now reads `Known Affix items (purple)`. Prep-rename before v2.52.0's companion `Needed Affix items` tint lands, so the panel reads as a natural pair: `Known Affix items` (any random-affixed item) + `Needed Affix items` (an affix at rank needed).
-- **Locale templates**: `EbonClearance_Locale_frFR.lua` + `EbonClearance_Locale_deDE.lua` migrate the empty template key from the old string to the new. Existing translations (both are empty templates today) unaffected.
-- **Test 110p** pins the new label and forbids regression to the old string.
+**Semantic split** (`EbonClearance_BagDisplay.lua` `bagSlotWillSellCategory`):
 
-No schema change; no downgrade impact.
+- **`affix` (Known Affix items, purple)** now fires ONLY when the player owns the affix at rank/family/description. Uses the same `EC_compCache.playerOwnsAffix` predicate the tooltip's `statusTag = "affixknown"` branch computes. Existing users' highlight setting stays exactly as it was; only the firing predicate narrowed.
+- **`affixneeded` (Needed Affix items, gold)** is new. Fires when the item carries a random affix the player does NOT own - the extraction-target case. Complementary to `affix`. Mirrors the tooltip's `statusTag = "affixneeded"` branch. Default OFF (opt-in like Keep + Known Affix).
+- **Panel row** in `EbonClearance_ItemHighlightingPanel.lua` also carries this release's rename: the affix row previously labelled `Random affix items (purple)` now reads `Known Affix items (purple)`, and a new `Needed Affix items (gold)` row appears right below it. Panel reads as a natural pair.
+
+**`describeSellability` trace parity**: the affix-protection step at `EbonClearance_BagDisplay.lua` used to emit a generic `Kept - Rare/Epic affix protection`. Now splits by ownership:
+
+- **Known**: `Kept - affix known (Rare/Epic affix protection). Tip: turn off 'Protect Affixed Rare Items' ...`
+- **Needed**: `Kept - affix needed (Rare/Epic affix you haven't extracted yet). Tip: extract at the Anvil to learn it, or ...`
+
+Trace text now matches the tooltip's `Keep (affix rank known)` vs `Keep (affix rank needed)` split.
+
+**Rank VI extension** (Serv note during v2.51.2): Project Ebonhold extended affix ranks to VI (6). Changes:
+
+- **Protection panel slider** (`EbonClearance_ProtectionPanel.lua`) - "Sell affixes below rank" widened from max 5 to max 6.
+- **Quickstart Q8b `affixRankFloor`** - new `belowVI` option added, plus the reverse-mapping `snapshotAnswersFromDB` updated to recognise rank 6. Existing radio labels updated from `keep III-V` / `keep IV-V` / `keep only V` to `keep III-VI` / `keep IV-VI` / `keep V-VI` / new `Sell ranks I-V (keep only VI)`.
+- **Roman numeral parsing** - the existing `romanToInt` in `EbonClearance_Protection.lua` already handles multi-char (`VI` = V + I via the standard algorithm), no changes needed.
+- **`EnsureDB`'s `affixMinSellRank` clamp** was already unbounded above, so no schema migration is required. Existing saves with rank 6 pass through.
+
+**Tests**: 110q (semantic split), 110r (rank VI), 110s (trace parity), 88i updated for the renamed local.
+
+**Ship notes**: this release also carries the row-label rename (`Random affix items` -> `Known Affix items`) that was prepped as v2.51.3 in-tree but never tagged - the label + the narrowing land together so the label becomes accurate the moment the release lands, rather than lying in between tags.
+
+**Downgrade safety**: additive schema (`DB.sellBorderCategories.affixneeded`), opt-in default off. Existing users see no changed behaviour on the `affix` row unless they had it enabled AND owned the affix vs didn't - in which case the highlight would stop firing on unknown-affix items (which is now the intended semantic). A one-time enable of `Needed Affix items` gives them the complementary tint.
 
 ---
 

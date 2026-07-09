@@ -6275,12 +6275,12 @@ do
             local ihpSrc = ihpf:read("*a") or ""
             ihpf:close()
             check(
-                "Test 88i: random-affix border category wired + listed in UI",
+                "Test 88i: affix border category wired + listed in UI (v2.52.0 renamed hasAffixForBorder -> hasKnownAffix)",
                 evSrc:find("affix%s*=%s*{%s*enabled%s*=%s*false") ~= nil
-                    and bdSrc:find("hasAffixForBorder") ~= nil
+                    and bdSrc:find("hasKnownAffix") ~= nil
                     and bdSrc:find('return "affix"') ~= nil
                     and ihpSrc:find('key%s*=%s*"affix"') ~= nil,
-                "DB defaults must seed affix as opt-in; bagSlotWillSellCategory must return 'affix' for affixed items; ItemHighlightingPanel must list the row in SELL_BORDER_CATEGORIES."
+                "DB defaults must seed affix as opt-in; bagSlotWillSellCategory must return 'affix' for affixed items; ItemHighlightingPanel must list the row in SELL_BORDER_CATEGORIES. v2.52.0 renamed the local from hasAffixForBorder to hasKnownAffix (companion hasNeededAffix added for the affixneeded category)."
             )
         end
 
@@ -6956,6 +6956,27 @@ do
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find('DB%.sellKnownRecipeBindFilter = %{ %[1%] = "bop"') ~= nil
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find("Yes, all recipes %(any bind type%)") ~= nil,
             "v2.51.1 addition: Q9b sellRecipes now offers no / all / boeOnly / bopOnly instead of just yes/no. The Quickstart answer explicitly sets DB.sellKnownRecipeBindFilter[1..4] to the chosen filter so the tooltip verdict matches the vendor cycle from the first Quickstart run. Root-cause of the class of bug that hit Serv on Ragesteel Breastplate + Shining Forest Emerald was that the Quickstart's yes-answer defaulted the bind filter to 'any' silently.")
+        check("Test 110q: v2.52.0 affix-highlight semantic split - affix = known-only, affixneeded = unknown",
+            fileSrc("EbonClearance_BagDisplay.lua"):find("EC_compCache%.playerOwnsAffix") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find("hasKnownAffix") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find("hasNeededAffix") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find('return "affixneeded"') ~= nil
+                and ev:find("affixneeded = { enabled = false") ~= nil
+                and fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('key = "affixneeded"') ~= nil
+                and fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Needed Affix items %(gold%)"%]') ~= nil,
+            "v2.52.0 (Serv report): the v2.51.3 rename made 'Known Affix items' lie because the underlying category still fired on ANY affix. Split into two complementary categories: `affix` (Known Affix items) fires ONLY when player owns the affix at rank/family/description via EC_compCache.playerOwnsAffix; new `affixneeded` (Needed Affix items) fires when player does NOT own it. Precedence in bagSlotWillSellCategory: affixneeded > affix (guards against future logic drift; they're complementary today).")
+        check("Test 110r: v2.52.0 rank ceiling widened from V (5) to VI (6)",
+            fileSrc("EbonClearance_ProtectionPanel.lua"):find("Sell affixes below rank") ~= nil
+                and fileSrc("EbonClearance_ProtectionPanel.lua"):find("0,%s+6,%s+1,") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("belowVI = function%(DB%)") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("DB%.affixMinSellRank = 6") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find('a%.affixRankFloor = "belowVI"') ~= nil,
+            "v2.52.0: Project Ebonhold added rank VI. ROMAN_VALUES already handles multi-char (VI = V+I via the standard algorithm), and EnsureDB's clamp is unbounded above, so only the Protection panel slider max (5 -> 6) and the Quickstart Q7c belowVI option + snapshot mapping need widening. Downgrade-safe: old client with affixMinSellRank=6 just clamps back to 5 via the older slider next time the setting is changed.")
+        check("Test 110s: v2.52.0 describeSellability trace splits affix protection into known vs needed",
+            fileSrc("EbonClearance_BagDisplay.lua"):find("Kept %- affix known") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find("Kept %- affix needed") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find("Kept %- Rare/Epic affix protection") == nil,
+            "v2.52.0 trace parity: describeSellability's affix-protection step now emits 'Kept - affix known' vs 'Kept - affix needed' based on EC_compCache.playerOwnsAffix, matching the tooltip's Keep (affix rank known) vs Keep (affix rank needed) split. The generic 'Kept - Rare/Epic affix protection' phrasing was retired.")
         check("Test 110p: v2.51.3 ItemHighlightingPanel affix row renamed 'Random affix items' -> 'Known Affix items'",
             fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Known Affix items %(purple%)"%]') ~= nil
                 and fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Random affix items %(purple%)"%]') == nil,

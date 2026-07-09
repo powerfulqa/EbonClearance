@@ -160,6 +160,7 @@ NS.RegisterLocale("frFR", {
     ["Account Sell List (green)"] = "",
     ["Character Sell List (cyan)"] = "",
     ["Known Affix items (purple)"] = "",
+    ["Needed Affix items (gold)"] = "",
     ["Junk - greys (low-alpha grey)"] = "",
     ["Quality rule match (gold)"] = "",
     ["Change colour"] = "",

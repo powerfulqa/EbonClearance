@@ -142,17 +142,39 @@ function EC_compCache.bagSlotWillSellCategory(bag, slot)
     -- Explicit user Sell List adds below still take precedence so the
     -- player's deliberate categorisation overrides the at-a-glance
     -- marker.
-    local affixCat = DB.sellBorderCategories and DB.sellBorderCategories.affix
-    local hasAffixForBorder = affixCat
-        and affixCat.enabled
-        and EC_compCache.bagSlotAffixData
-        and EC_compCache.bagSlotAffixData(bag, slot) ~= nil
+    --
+    -- v2.52.0 (Serv report): split the single `affix` marker into two
+    -- complementary categories per the tooltip's parallel affixknown /
+    -- affixneeded statusTag split. `affix` is now "Known Affix" -
+    -- fires only when player HAS extracted this affix at rank/family;
+    -- new `affixneeded` fires when player DOES NOT have it. Both use
+    -- the same EC_compCache.playerOwnsAffix predicate the tooltip
+    -- verdict computes. Precedence: `affixneeded` wins over `affix` in
+    -- edge cases (should not happen since they're complementary, but
+    -- guards against future logic drift).
+    local affixData = EC_compCache.bagSlotAffixData and EC_compCache.bagSlotAffixData(bag, slot)
+    local hasKnownAffix = false
+    local hasNeededAffix = false
+    if affixData then
+        local knowsIt = EC_compCache.playerOwnsAffix and EC_compCache.playerOwnsAffix(affixData) or false
+        local knownCat = DB.sellBorderCategories and DB.sellBorderCategories.affix
+        local neededCat = DB.sellBorderCategories and DB.sellBorderCategories.affixneeded
+        if knowsIt and knownCat and knownCat.enabled then
+            hasKnownAffix = true
+        end
+        if (not knowsIt) and neededCat and neededCat.enabled then
+            hasNeededAffix = true
+        end
+    end
     -- Everything below this point requires the item to be sellable per
     -- the normal predicate chain. Filters out protected items,
     -- equipped items, items without a sell price, etc.
     local sellable = NS.IsSellable(bag, slot, false)
     if not sellable then
-        if hasAffixForBorder then
+        if hasNeededAffix then
+            return "affixneeded"
+        end
+        if hasKnownAffix then
             return "affix"
         end
         return nil
@@ -173,7 +195,10 @@ function EC_compCache.bagSlotWillSellCategory(bag, slot)
     end
     -- v2.37.5: affix overrides the default "rule" tint so the marker
     -- isn't lost on rare/epic affixed items that match a quality rule.
-    if hasAffixForBorder then
+    if hasNeededAffix then
+        return "affixneeded"
+    end
+    if hasKnownAffix then
         return "affix"
     end
     -- Default: the per-rarity rule sweep matched. Gold tint by default
@@ -1418,7 +1443,18 @@ function EC_compCache.describeSellability(bag, slot)
                 ))
             else
                 affixProtected = true
-                step("affixProtection", false, L["Kept - Rare/Epic affix protection. Tip: turn off 'Protect Affixed Rare Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this affix."])
+                -- v2.52.0: split the generic affix-protection detail
+                -- into known/needed so the trace matches the tooltip's
+                -- Keep (affix rank known) vs Keep (affix rank needed)
+                -- split (statusTag "affixknown" vs "affixneeded"). Uses
+                -- the same EC_compCache.playerOwnsAffix predicate the
+                -- tooltip uses.
+                local ownsIt = EC_compCache.playerOwnsAffix and EC_compCache.playerOwnsAffix(affix) or false
+                if ownsIt then
+                    step("affixProtection", false, L["Kept - affix known (Rare/Epic affix protection). Tip: turn off 'Protect Affixed Rare Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this affix."])
+                else
+                    step("affixProtection", false, L["Kept - affix needed (Rare/Epic affix you haven't extracted yet). Tip: extract at the Anvil to learn it, or turn off 'Protect Affixed Rare Items', or Alt+Right-Click -> Allow Sell."])
+                end
             end
         else
             step("affixProtection", true, L["no random affix on this item"])

@@ -337,13 +337,18 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- replaces the default "Sell affixes below rank: N" with
         -- "Off" when the value is 0 (a numeric "0" alongside ranks
         -- I-V reads as confusing).
+        -- v2.52.0: rank ceiling widened from V (5) to VI (6) - Project
+        -- Ebonhold added rank VI affixes. The Roman numeral parser
+        -- already handles multi-char (`VI` = V + I = 6) so only the
+        -- slider range needs widening. Existing SavedVariables with
+        -- affixMinSellRank = 6 pass EnsureDB's unbounded clamp fine.
         local rankSlider = NS.AddSlider(
             content,
             "EbonClearanceAffixMinSellRankSlider",
             dupeAffixNote,
             L["Sell affixes below rank"],
             0,
-            5,
+            6,
             1,
             function()
                 return DB.affixMinSellRank or 0

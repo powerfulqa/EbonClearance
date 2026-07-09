@@ -267,6 +267,9 @@ local ANSWER_MAP = {
         belowV = function(DB)
             DB.affixMinSellRank = 5
         end,
+        belowVI = function(DB)
+            DB.affixMinSellRank = 6
+        end,
     },
     tomes = {
         unlearned = function(DB)
@@ -729,9 +732,11 @@ local function snapshotAnswersFromDB(DB)
     else
         a.safetyNets = "critical"
     end
-    -- v2.44.0: Q7c affix-rank floor. Maps DB.affixMinSellRank (0-5)
-    -- onto the four Quickstart radio values. Any non-standard
-    -- numeric values (1, 2) snap to the nearest mapped tier.
+    -- v2.44.0: Q7c affix-rank floor. Maps DB.affixMinSellRank (0-6)
+    -- onto the Quickstart radio values. Any non-standard numeric
+    -- values (1, 2) snap to the nearest mapped tier.
+    -- v2.52.0: rank ceiling widened to VI (6) for Project Ebonhold's
+    -- new top rank; belowVI is the max-aggressive tier now.
     local rank = DB.affixMinSellRank or 0
     if rank <= 0 then
         a.affixRankFloor = "off"
@@ -739,8 +744,10 @@ local function snapshotAnswersFromDB(DB)
         a.affixRankFloor = "belowIII"
     elseif rank == 4 then
         a.affixRankFloor = "belowIV"
-    else
+    elseif rank == 5 then
         a.affixRankFloor = "belowV"
+    else
+        a.affixRankFloor = "belowVI"
     end
     -- Q7b tomes
     if DB.protectAllTomes then
@@ -1277,9 +1284,10 @@ local function buildPanel(self, content)
             L["Q8b. Auto-sell low-rank affixed items? (Useful once you've collected the high ranks.)"],
             {
                 { value = "off", label = L["No - keep them all (default)"] },
-                { value = "belowIII", label = L["Sell ranks I and II (keep III-V)"] },
-                { value = "belowIV", label = L["Sell ranks I-III (keep IV-V)"] },
-                { value = "belowV", label = L["Sell ranks I-IV (keep only V)"] },
+                { value = "belowIII", label = L["Sell ranks I and II (keep III-VI)"] },
+                { value = "belowIV", label = L["Sell ranks I-III (keep IV-VI)"] },
+                { value = "belowV", label = L["Sell ranks I-IV (keep V-VI)"] },
+                { value = "belowVI", label = L["Sell ranks I-V (keep only VI)"] },
             },
             refresh
         )

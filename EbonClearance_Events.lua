@@ -216,6 +216,19 @@ local EC_manualSell = {
 -- account whitelist) do not conflict.
 local EC_FindAddConflict
 
+-- v2.51.0: forward-declare the diagnostic-hook helpers so hook sites
+-- above their definitions can call them. Each helper is a session-local
+-- ring-buffer / snapshot / timestamp appender consumed by
+-- /ec bugreport. Bodies are assigned further down the file next to the
+-- ring buffer they own. Without the forward-declare, load-time
+-- resolution would bind these names to (nil) globals - the runtime
+-- error "attempt to call global 'EC_StampEvent' (a nil value)" v2.51.0
+-- initially shipped with, before this fix.
+local EC_LogSilentRefusal
+local EC_LogRecentSold
+local EC_LogRecentDeleted
+local EC_StampEvent
+
 -- Forward-declared on NS so the Character Settings panel's toggle +
 -- colour-picker closures can call it before the bag-display hooks (which
 -- own the body) install. Stub-assigned to a no-op here so settings flips
@@ -3473,7 +3486,7 @@ NS.RefreshAllListPanels = EC_RefreshAllListPanels
 -- on /reload. Ring shifts oldest out on overflow.
 local EC_SILENT_REFUSAL_LOG_MAX = 15
 local EC_silentRefusalLog = {}
-local function EC_LogSilentRefusal(itemID, targetList, conflictList, caller)
+EC_LogSilentRefusal = function(itemID, targetList, conflictList, caller)
     if not itemID then
         return
     end
@@ -5676,7 +5689,7 @@ local EC_RECENT_DELETED_LOG_MAX = 20
 local EC_recentSoldLog = {}
 local EC_recentDeletedLog = {}
 
-local function EC_LogRecentSold(itemID, count, path, copper)
+EC_LogRecentSold = function(itemID, count, path, copper)
     if not itemID then
         return
     end
@@ -5694,7 +5707,7 @@ local function EC_LogRecentSold(itemID, count, path, copper)
     }
 end
 
-local function EC_LogRecentDeleted(itemID, count, source)
+EC_LogRecentDeleted = function(itemID, count, source)
     if not itemID then
         return
     end
@@ -5792,7 +5805,7 @@ local EC_lastEventAt = {
     vendorRunStart = nil,     -- StartRun fired
     autoDeleteScan = nil,     -- runAutoDeleteOnPickup ran
 }
-local function EC_StampEvent(key)
+EC_StampEvent = function(key)
     EC_lastEventAt[key] = date("%H:%M:%S")
 end
 NS.lastEventAt = EC_lastEventAt

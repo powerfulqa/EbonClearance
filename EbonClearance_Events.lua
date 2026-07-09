@@ -5582,6 +5582,34 @@ function EC_compCache.runAutoDeleteGrey()
     end
 end
 
+-- v2.50.3: session-scoped auto-mark event log. Ring buffer of the last N
+-- items runAutoMarkAffixDupes or runAutoMarkResilience wrote to
+-- DB.deleteList. Consumed by /ec bugreport so a report tells us WHEN and
+-- WHY EC last auto-marked something, without asking the user's chat log
+-- to survive as evidence. Session-local (not persisted); wiped on
+-- /reload. Ring shifts oldest out on overflow.
+local EC_AUTOMARK_LOG_MAX = 15
+local EC_autoMarkLog = {}
+
+local function EC_LogAutoMark(itemID, reason)
+    if not itemID then
+        return
+    end
+    if #EC_autoMarkLog >= EC_AUTOMARK_LOG_MAX then
+        table.remove(EC_autoMarkLog, 1)
+    end
+    local _, link = GetItemInfo(itemID)
+    EC_autoMarkLog[#EC_autoMarkLog + 1] = {
+        itemID = itemID,
+        itemName = link or ("item:" .. tostring(itemID)),
+        reason = reason or "?",
+        loggedAt = date("%H:%M:%S"),
+    }
+end
+NS.LogAutoMark = EC_LogAutoMark
+NS.autoMarkLog = EC_autoMarkLog
+NS.autoMarkLogMax = EC_AUTOMARK_LOG_MAX
+
 -- v2.44.0: auto-mark Resilience PvP gear for deletion. When the
 -- toggle is on, every BAG_UPDATE scans bags for items with a
 -- "Resilience" tooltip line and adds them to the Delete List (one
@@ -5640,6 +5668,8 @@ function EC_compCache.runAutoMarkResilience()
                             -- in scope for this same sweep.
                         else
                             deleteList[id] = true
+                            -- v2.50.3: session ring-buffer log for /ec bugreport.
+                            EC_LogAutoMark(id, "resilience")
                             if DB and DB.announceAutoDelete ~= false then
                                 local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
                                 -- v2.50.2: append recovery hint so the player
@@ -5772,6 +5802,8 @@ function EC_compCache.runAutoMarkAffixDupes()
                             local noValue = not (sellPrice and sellPrice > 0)
                             if soulbound and noValue then
                                 deleteList[id] = true
+                                -- v2.50.3: session ring-buffer log for /ec bugreport.
+                                EC_LogAutoMark(id, "affix")
                                 if DB.announceAutoDelete ~= false then
                                     local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
                                     -- v2.50.2: append recovery hint so the

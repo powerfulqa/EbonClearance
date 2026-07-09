@@ -6801,6 +6801,26 @@ do
             and br:find("Autolearned chance%-on%-hit pairings:") ~= nil
             and br:find("Ambiguous autolearn events:") ~= nil,
         "v2.49.1: /ec bugreport MUST surface the v2.49.0 experimental sell-known-chance-on-hit toggle AND the v2.49.1 autolearn counts (ADB.chanceProcConfirmedItems, ADB.chanceProcAmbiguous). Reports on 'my Blackblade auto-sold' or 'my chance-on-hit toggle does nothing' need both the toggle state AND the autolearn state to be diagnosable from a single copy-paste. Ambiguous-count > 0 also points the reporter at /ec autolearnpeek so they can share the ambiguous events too.")
+    check("Test 107g: /ec bugreport surfaces v2.50.3 destructive toggles + runtime counters + preview sections",
+        br:find("Auto%-Delete on Pickup:") ~= nil
+            and br:find("Auto%-Delete Grey on Loot:") ~= nil
+            and br:find("Announce Auto%-Delete in Chat:") ~= nil
+            and br:find("Warn about Conflicting Addons:") ~= nil
+            and br:find("Equipment Sets Saved:") ~= nil
+            and br:find("Equipment%-Set Members Cached:") ~= nil
+            and br:find('add%("%-%-%- Delete List Preview %-%-%-"%)') ~= nil
+            and br:find("Cross%-list conflicts %(also on Keep List%):") ~= nil
+            and br:find('add%("%-%-%- Recent Auto%-Mark Events %-%-%-"%)') ~= nil
+            and br:find("NS%.autoMarkLog") ~= nil,
+        "v2.50.3: /ec bugreport MUST surface every destructive toggle (Auto-Delete on Pickup, Grey on Loot, Announce chat line, Warn about Conflicting Addons) so a report like Bizzaro's v2.50.1 - where the tooltip said Will Delete but nothing destroyed - is diagnosable from a single copy-paste. Equipment-set counters (Saved + Members Cached) surface whether the v2.50.2 rescue cache is warm. Delete List Preview + Cross-list conflict count + Recent Auto-Mark Events sections give the maintainer 'what's queued for destruction, and why' at a glance without asking the user to reproduce.")
+    check("Test 107h: EC_LogAutoMark ring buffer + hooks on both auto-mark scans",
+        ev:find("local EC_AUTOMARK_LOG_MAX = 15") ~= nil
+            and ev:find("local EC_autoMarkLog = {}") ~= nil
+            and ev:find("local function EC_LogAutoMark%(itemID, reason%)") ~= nil
+            and ev:find("NS%.LogAutoMark = EC_LogAutoMark") ~= nil
+            and ev:find('EC_LogAutoMark%(id, "resilience"%)') ~= nil
+            and ev:find('EC_LogAutoMark%(id, "affix"%)') ~= nil,
+        "v2.50.3: session-scoped ring buffer of the last 15 auto-mark events, populated by runAutoMarkResilience (reason=resilience) and runAutoMarkAffixDupes (reason=affix). Both hook sites MUST call EC_LogAutoMark alongside their deleteList[id] = true write so /ec bugreport's Recent Auto-Mark Events section shows what/when/why regardless of whether the announce-in-chat toggle was on.")
     check("Test 107e: v2.49.1 SLASH_ROWS supports `prefill` field for argument-requiring commands",
         mp:find('prefill = "/ec profile "') ~= nil
             and mp:find('prefill = "/ec minimap "') ~= nil

@@ -102,6 +102,15 @@ local function EC_BuildBugReport()
     add("Repair via Guild Bank: " .. tostring(DB.repairUseGuildBank))
     add("Keep Bags Open: " .. tostring(DB.keepBagsOpen))
     add("Enable Deletion: " .. tostring(DB.enableDeletion))
+    -- v2.50.3: destructive-side toggles that materially change what a
+    -- "Marked for delete" or "Will Delete" chat line MEANS. Reports were
+    -- ambiguous without these (Bizzaro v2.50.1: tooltip said Will Delete
+    -- but nothing destroyed - autoDeleteOnPickup was off so destruction
+    -- deferred to the next vendor).
+    add("Auto-Delete on Pickup: " .. tostring(DB.autoDeleteOnPickup))
+    add("Auto-Delete Grey on Loot: " .. tostring(DB.autoDeleteGreyOnLoot))
+    add("Announce Auto-Delete in Chat: " .. tostring(DB.announceAutoDelete ~= false))
+    add("Warn about Conflicting Addons: " .. tostring(DB.warnConflictingAddons ~= false))
     add("Vendor Interval: " .. tostring(DB.vendorInterval))
     add("Max Items Per Run: " .. tostring(DB.maxItemsPerRun))
     add("Fast Mode: " .. tostring(DB.fastMode))
@@ -198,6 +207,21 @@ local function EC_BuildBugReport()
         add(string.format("Goblin Summon Timer: %.2fs", tonumber(d.summonGoblinTimer) or 0))
         add("Goblin Retry Count: " .. tostring(d.goblinRetryCount))
     end
+    -- v2.50.3: equipment-set diagnostic counters. `Saved` is the number of
+    -- sets the Blizzard Equipment Manager knows about; `Members Cached`
+    -- reflects EC_compCache.equipmentSetIDs (v2.50.2 shirt-loss rescue
+    -- cache). A stale-or-empty cache with Saved > 0 hints that the
+    -- EQUIPMENT_SETS_CHANGED handler didn't fire this session and the
+    -- Layer 2 rescue is degraded.
+    local setsSaved = (GetNumEquipmentSets and GetNumEquipmentSets()) or 0
+    local setsCached = 0
+    if EC_compCache.equipmentSetIDs then
+        for _ in pairs(EC_compCache.equipmentSetIDs) do
+            setsCached = setsCached + 1
+        end
+    end
+    add("Equipment Sets Saved: " .. tostring(setsSaved))
+    add("Equipment-Set Members Cached: " .. tostring(setsCached))
     add("")
 
     add("--- Sell Rules ---")
@@ -405,6 +429,73 @@ local function EC_BuildBugReport()
     )
 
     add("")
+    -- v2.50.3: Delete List preview + cross-list conflict summary. The
+    -- delete list can grow to hundreds of items over time (Bizzaro:
+    -- 714) so we don't dump the whole thing - just the first 15
+    -- itemIDs with names for a "what does EC think is queued for
+    -- destruction?" read. Cross-list conflict count flags legacy
+    -- pre-EC_FindAddConflict data where an itemID is on both
+    -- deleteList AND blacklist; v2.50.2's destruction-side rescue
+    -- honours the blacklist, so a non-zero count is not a bug BUT
+    -- indicates the user should run /ec clean apply.
+    add("--- Delete List Preview ---")
+    if DB.deleteList then
+        local ids = {}
+        for id in pairs(DB.deleteList) do
+            if type(id) == "number" then
+                ids[#ids + 1] = id
+            end
+        end
+        table.sort(ids)
+        local previewMax = 15
+        local shown = math.min(previewMax, #ids)
+        for i = 1, shown do
+            local id = ids[i]
+            local _, link = GetItemInfo(id)
+            add(string.format("  [%d] %s", id, link or ("item:" .. id)))
+        end
+        if #ids > previewMax then
+            add(string.format("  ... and %d more (total %d)", #ids - previewMax, #ids))
+        elseif #ids == 0 then
+            add("  (empty)")
+        end
+        local conflicts = 0
+        if DB.blacklist then
+            for id in pairs(DB.deleteList) do
+                if DB.blacklist[id] then
+                    conflicts = conflicts + 1
+                end
+            end
+        end
+        add("Cross-list conflicts (also on Keep List): "
+            .. tostring(conflicts)
+            .. (conflicts > 0 and " - run /ec clean apply to reconcile" or ""))
+    else
+        add("  (deleteList not initialised)")
+    end
+    add("")
+
+    -- v2.50.3: recent auto-mark events. Ring buffer of the last N items
+    -- runAutoMarkAffixDupes / runAutoMarkResilience wrote to deleteList
+    -- this session. Directly answers "did EC mark my item, and when /
+    -- why?" without needing the user's chat log to survive as evidence.
+    -- Empty on a fresh session or when neither auto-mark scan has fired.
+    add("--- Recent Auto-Mark Events ---")
+    local log = NS.autoMarkLog or {}
+    if #log == 0 then
+        add("  (none this session)")
+    else
+        for i = 1, #log do
+            local e = log[i]
+            add(string.format("  [%s] %d %s - %s",
+                tostring(e.loggedAt),
+                tonumber(e.itemID) or 0,
+                tostring(e.itemName),
+                tostring(e.reason)))
+        end
+    end
+    add("")
+
     add("--- Bags ---")
     add("Free Slots: " .. tostring(NS.GetFreeBagSlots()))
 

@@ -5,6 +5,22 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.50.3
+
+**Bug reports pack more diagnostic detail.** Motivated by Bizzaro's v2.50.1 report where the tooltip said "Will Delete" but no destruction actually happened - the pre-v2.50.3 bugreport didn't surface enough state to tell whether the item was queued for a merchant visit, auto-delete-on-pickup was off, or something else was blocking. This release closes the gap.
+
+- **Four destructive/protection toggles added to the Settings dump.** `Auto-Delete on Pickup`, `Auto-Delete Grey on Loot`, `Announce Auto-Delete in Chat`, and `Warn about Conflicting Addons` are now surfaced. Any report about unexpected destruction (or unexpectedly no destruction) is now diagnosable at a glance without asking the user to re-check panel toggles.
+- **Equipment-set diagnostic counters added to Runtime State.** `Equipment Sets Saved` (from the Blizzard Equipment Manager) + `Equipment-Set Members Cached` (from v2.50.2's `EC_compCache.equipmentSetIDs` rescue cache). A `Saved > 0` with `Cached = 0` immediately flags that the `EQUIPMENT_SETS_CHANGED` handler didn't fire this session and the v2.50.2 Layer 2 rescue is degraded.
+- **New `--- Delete List Preview ---` section.** First 15 itemIDs on the Delete List with resolved names, plus a `Cross-list conflicts (also on Keep List)` count. Legacy pre-`EC_FindAddConflict` DBs could produce cross-list conflicts; v2.50.2's destruction-side rescue makes them harmless but a non-zero count still points the user at `/ec clean apply` for cleanup.
+- **New `--- Recent Auto-Mark Events ---` section.** Session-scoped ring buffer of the last 15 items `runAutoMarkAffixDupes` or `runAutoMarkResilience` wrote to `DB.deleteList`, with itemID, name, reason (`affix` or `resilience`), and timestamp. Directly answers "did EC mark my item, and when / why?" without needing the user's chat log to survive as evidence. Session-local; wiped on `/reload`. Ring shifts oldest out at 15 entries.
+
+Tests 107g + 107h pin the new bugreport surface + ring buffer contract.
+
+No schema changes. All new state is session-local. Downgrade-safe to v2.50.2.
+
+---
+
+
 ### v2.50.2
 
 **Bug fix: soulbound shirts with known affixes could be silently auto-deleted despite being in equipment sets and manually added to the Keep List.**

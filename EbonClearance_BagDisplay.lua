@@ -1282,6 +1282,15 @@ function EC_compCache.describeSellability(bag, slot)
                         -- v2.50.4 fix (Serv report, Plans: Ragesteel Breastplate):
                         -- EC_IsSellable's recipePass ALSO gates on the per-quality
                         -- bind-type filter (DB.sellKnownRecipeBindFilter). Trace
+                        --
+                        -- v2.50.5 (Serv report, Design: Shining Forest Emerald):
+                        -- read bindType unconditionally so the fail branch can
+                        -- name the actual detected bind, not a hardcoded
+                        -- "bind-on-pickup" (which lied when the recipe reads as
+                        -- "any" - no bind line on the tooltip - and the filter
+                        -- was set to "bop"). Also handles the "no bind line"
+                        -- explanation so the user understands why an unbound
+                        -- recipe only matches a filter of "any".
                         -- mirror was missing this check, so a soulbound Blue
                         -- recipe with the Blue-recipe filter set to "boe" would
                         -- read WILL SELL in /ec sellinfo but the vendor cycle
@@ -1289,18 +1298,24 @@ function EC_compCache.describeSellability(bag, slot)
                         local recipeBindFilter = DB.sellKnownRecipeBindFilter
                             and DB.sellKnownRecipeBindFilter[quality]
                             or "any"
+                        local bindType = "any"
+                        if EC_compCache.getBindType then
+                            bindType = EC_compCache.getBindType(bag, slot) or "any"
+                        end
                         local passedBindFilter = true
-                        if recipeBindFilter ~= "any" then
-                            local bindType = EC_compCache.getBindType
-                                and EC_compCache.getBindType(bag, slot) or "any"
-                            if recipeBindFilter ~= bindType then
-                                passedBindFilter = false
-                            end
+                        if recipeBindFilter ~= "any" and recipeBindFilter ~= bindType then
+                            passedBindFilter = false
                         end
                         if not passedBindFilter then
-                            step("knownRecipeRule", false, string.format(
-                                L["known recipe but this quality's bind filter is '%s' - recipe is bind-on-pickup, not eligible"],
-                                tostring(recipeBindFilter)))
+                            if bindType == "any" then
+                                step("knownRecipeRule", false, string.format(
+                                    L["known recipe but bind filter is '%s' and this recipe has no bind line (reads as 'any' - only matches filter 'any')"],
+                                    tostring(recipeBindFilter)))
+                            else
+                                step("knownRecipeRule", false, string.format(
+                                    L["known recipe but bind filter is '%s' and this recipe binds as '%s'"],
+                                    tostring(recipeBindFilter), tostring(bindType)))
+                            end
                         else
                             recipePass = true
                             step("knownRecipeRule", true, L["known recipe - sells via Sell Known Recipes"])
@@ -1574,13 +1589,35 @@ function EC_compCache.printSellabilityTrace(bag, slot)
     end
 
     local r = EC_compCache.describeSellability(bag, slot)
-    NS.PrintNicef(L["|cffffff00=== Sellability trace: bag %d slot %d ===|r"], bag, slot)
+    -- v2.50.5 (Serv request): route the trace to the shared copy-frame
+    -- popup instead of the chat window. Rationale: 10+ trace lines
+    -- scroll off in busy chat channels before the player can screenshot
+    -- or copy them, and the popup's EditBox lets the player select /
+    -- Ctrl+C the whole trace for pasting into Discord / bug reports.
+    -- Falls back to chat prints if NS.ShowCopyFrame isn't loaded
+    -- (impossible under the .toc load order but defensive against a
+    -- future refactor that separates BugReport from the addon).
+    local lines = {}
+    lines[#lines + 1] = string.format(L["=== Sellability trace: bag %d slot %d ==="], bag, slot)
     for _, s in ipairs(r.steps) do
         local marker = s.passed and "|cff00ff00+|r" or "|cffff4444-|r"
         local label = EC_STEP_LABELS[s.name] or s.name
-        NS.PrintNicef("  %s %s - %s", marker, label, s.detail)
+        lines[#lines + 1] = string.format("  %s %s - %s", marker, label, s.detail)
     end
-    NS.PrintNicef(L["Result: %s"], r.summary)
+    lines[#lines + 1] = string.format(L["Result: %s"], r.summary)
+    local body = table.concat(lines, "\n")
+
+    if NS.ShowCopyFrame then
+        NS.ShowCopyFrame(L["EbonClearance Sell Info"], body, nil)
+    else
+        NS.PrintNicef(L["|cffffff00=== Sellability trace: bag %d slot %d ===|r"], bag, slot)
+        for _, s in ipairs(r.steps) do
+            local marker = s.passed and "|cff00ff00+|r" or "|cffff4444-|r"
+            local label = EC_STEP_LABELS[s.name] or s.name
+            NS.PrintNicef("  %s %s - %s", marker, label, s.detail)
+        end
+        NS.PrintNicef(L["Result: %s"], r.summary)
+    end
 end
 
 -- Look up a bag-slot button's (bag, slot) from a hover. Works for both the

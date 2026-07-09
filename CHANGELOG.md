@@ -5,6 +5,26 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.50.5
+
+**Sell Info opens a copyable popup + the recipe bind-filter reject label now tells the truth.**
+
+Two fixes to the sellability-trace surface, both from Serv reports against Design: Shining Forest Emerald (id=41782, Rare, `Already known`, no bind line on the tooltip).
+
+**Popup for `/ec sellinfo` + Alt+Right-Click -> Sell Info.** The trace was chat-only, so the 10-12 line trace scrolled off in busy channels before the player could screenshot or copy it. Now both entry points route through the shared `EC_ShowCopyFrame` popup (same one `/ec bugreport`, `/ec affixdebug dump`, `/ec captureproc dump`, `/ec rules` use) - Ctrl+A / Ctrl+C to paste the trace into Discord or a GitHub issue. Chat prints stay as a defensive fallback if the copy-frame helper isn't loaded (impossible under the current `.toc` order but the branch is there in case a future refactor separates BugReport from the addon).
+
+**Reject label now names the actual detected bind, not a hardcoded string.** v2.50.4's reject-branch label was hardcoded to `recipe is bind-on-pickup, not eligible` regardless of what was actually detected. When Design: Shining Forest Emerald read as `any` (no bind line on the tooltip - a data quirk on this server) and the Blue-recipe filter was set to `bop`, the trace said the recipe was BoP when it wasn't. The label now:
+
+- Names both the filter value AND the detected bind (`filter is 'bop' and this recipe binds as 'boe'`).
+- Has a distinct `no bind line` branch for the `any` case (`filter is 'bop' and this recipe has no bind line (reads as 'any' - only matches filter 'any')`) so the player understands why an unbound recipe only matches a filter of `any`.
+
+Tests 107j (label honesty) + 107k (popup routing) pin both. No schema change, no behaviour change to the sell decision itself - only the trace surface.
+
+Downgrade-safe to v2.50.4.
+
+---
+
+
 ### v2.50.4
 
 **Bug fix: soulbound recipes with a mismatched bind-filter setting showed "Will Sell (known recipe)" but the vendor cycle refused.**

@@ -6831,6 +6831,16 @@ do
                 and tt107i:find("DB%.sellKnownRecipeBindFilter") ~= nil
                 and tt107i:find("EC_compCache%.getBindTypeFromTooltip%(tooltip, id%)") ~= nil,
             "v2.50.4 fix (Serv report, Plans: Ragesteel Breastplate): EC_IsSellable's recipePass at Events.lua ~5100 gates on the per-quality bind-type filter (DB.sellKnownRecipeBindFilter) - a soulbound Blue recipe with the Blue-recipe filter set to 'boe' correctly refuses at the vendor. Both mirrors (BagDisplay.lua describeSellability + Tooltip.lua recipeSellable) were missing this gate, so /ec sellinfo said WILL SELL and the tooltip showed 'Will Sell (known recipe)' but the vendor cycle refused. Both mirrors now honour the bind filter, matching EC_IsSellable exactly.")
+        check("Test 107j: recipe bind-filter reject label names the actual detected bind, not a hardcoded string",
+            bd107i:find("this recipe has no bind line") ~= nil
+                and bd107i:find("this recipe binds as '%%s'") ~= nil
+                and bd107i:find("recipe is bind%-on%-pickup") == nil,
+            "v2.50.5 fix (Serv report, Design: Shining Forest Emerald): v2.50.4's reject-branch label was hardcoded to 'recipe is bind-on-pickup, not eligible' regardless of the actual detected bind. When a recipe reads as 'any' (no bind line on the tooltip, as on Serv's Design: Shining Forest Emerald) and the filter was set to 'bop', the label lied about the reason. Now the label names both the filter value AND the detected bind, with a distinct 'no bind line' branch for the 'any' case so the player understands why the recipe only matches filter='any'.")
+        check("Test 107k: printSellabilityTrace routes to the shared copy-frame popup instead of chat-spamming",
+            bd107i:find("NS%.ShowCopyFrame") ~= nil
+                and bd107i:find("table%.concat%(lines, \"\\n\"%)") ~= nil
+                and bd107i:find("EbonClearance Sell Info") ~= nil,
+            "v2.50.5 request (Serv): /ec sellinfo + Alt+Right-Click -> Sell Info now open the shared EC_ShowCopyFrame popup (same one /ec bugreport, /ec affixdebug dump, /ec captureproc dump, /ec rules use) instead of printing 10+ lines to chat. Chat lines scroll off in busy channels before the player can copy them for a Discord paste; the popup's EditBox is Ctrl+A / Ctrl+C-selectable. Falls back to chat prints if NS.ShowCopyFrame is nil - impossible under the .toc load order but defensive against future refactors that separate BugReport from the addon.")
     end
     check("Test 107e: v2.49.1 SLASH_ROWS supports `prefill` field for argument-requiring commands",
         mp:find('prefill = "/ec profile "') ~= nil

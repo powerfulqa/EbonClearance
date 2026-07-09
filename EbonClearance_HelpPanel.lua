@@ -238,7 +238,13 @@ local EC_HELP_ENTRIES = {
     {
         id = "tshoot-sellinfo",
         q = L["How do I see exactly why a bag item will or won't sell?"],
-        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance opens a copyable popup with the full step-by-step decision. Ctrl+A then Ctrl+C to copy it for a Discord paste."],
+        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance opens a copyable popup with the full step-by-step decision. Ctrl+A then Ctrl+C to copy it for a Discord paste. The verdict is at the top so you see the answer without scrolling; common rejection reasons include a 'Tip:' phrase naming the panel + toggle you can flip to make the item sellable."],
+        panel = nil,
+    },
+    {
+        id = "bugreport-sections",
+        q = L["What's in the /ec bugreport window?"],
+        a = L["Everything the addon knows about your current session that helps diagnose a report: Issue Summary flags at the top, current settings, sell rules, delete list preview with item names, recent auto-mark events, silent refusals (list adds that were blocked by cross-list conflicts), recent sold + recent deleted, toggles you changed this session, last-event timestamps, cache sizes, and your loaded-addon list. Resize the window if the report is long. Ctrl+A then Ctrl+C to copy it for a Discord / GitHub paste."],
         panel = nil,
     },
     {

@@ -5,6 +5,45 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.51.0
+
+**Diagnostic-hooks release. `/ec bugreport` gains six new sections + an at-a-glance Issue Summary; Sell Info popup leads with the verdict; resizable copy frame; every rejection reason names the toggle to flip.**
+
+The goal of this release is to make future user reports diagnose faster - both for me (the maintainer) reading a pasted `/ec bugreport`, and for the player reading their own Sell Info trace. Every hook below is a "why didn't this fire?" or "why didn't this stick?" answer that previously required back-and-forth.
+
+**New session-scoped ring buffers (all surface in `/ec bugreport`):**
+
+- **Silent Refusals.** `EC_AddItemToList`'s cross-list conflict guard refuses adds silently when called with `quiet=true` (the auto-protect sync path). Pre-fix, a Keep-Add refused because the item was already on Delete List returned `false` and left no trail - this was the root cause of the v2.50.2 shirt-loss bug. The ring buffer captures the last 15 silent refusals with itemID, target list, conflict list, caller label, timestamp.
+- **Recent Sold + Recent Deleted.** Last 20 of each, tagged with the flow (`manual` / `worker` for sold, `auto` / `vendor` for deleted) so "which item did EC actually sell just now?" has an answer beyond lifetime totals.
+
+**New diagnostic snapshots + timestamps:**
+
+- **Toggles Changed This Session.** Watched-toggle snapshot taken at `PLAYER_LOGIN` after `EnsureDB` seeds defaults; diff-since-login runs at `/ec bugreport` time. Surfaces `enableDeletion: true -> false` (or similar) for the 23 watched toggles. No mutation hooks needed, no metatable proxy invasiveness.
+- **Last Event Times.** Eight stamp sites (BAG_UPDATE, EQUIPMENT_SETS_CHANGED, MERCHANT_SHOW / _CLOSED, StartRun, runAutoMarkAffixDupes, runAutoMarkResilience, runAutoDeleteOnPickup). A `(never)` reading is diagnostic on its own - subsystem hasn't run despite being enabled.
+- **Cache Stats.** Sizes of `bindCache` (broken out by boe/bop/any counts), `itemAffixLookupCache`, `bagSlotAffixData`, `chanceOnHitCache`, `processCache`, `equipmentSetIDs`. Anomalies like a 500-entry `bindCache` with 400 `any` entries are a scan-time red flag.
+
+**Bug report Issue Summary at the top:**
+
+Rule-based flags surfaced before Live State so a reviewer sees "here's what looks off" first. Fires on destructive toggles being ON, cross-list conflicts > 0, silent refusals > 0, `enableDeletion` OFF but Delete List populated, Delete List > 200 items, conflicting delete-addon detected, watched toggles diff > 0. Every flag is a hypothesis, not a diagnosis - the sections below carry the raw data to confirm.
+
+**Delete List Preview now shows item names.** The v2.50.3 spec said "names when available"; the fallback fired for every row because `GetItemInfo` returns nil at report-build time for items not seen this session. New `EC_ResolveItemLabel` helper primes the client cache via `NS.scanTooltip:SetHyperlink` then retries. Items with data in the client's session cache resolve to their full colored link; items the client has never seen fall back to `item:ID`.
+
+**Loaded Addons now partitions into Potentially Relevant + Other.** 53 addons with zero triage was hard to skim. Substring match on `bag / vendor / sell / loot / auction / mail / tooltip / bug / err / prof / craft / ...` promotes the addons most likely to interact with EC's surfaces to a highlighted section; the rest goes under Other.
+
+**Sell Info popup - verdict header + config hints:**
+
+- **Verdict at the top, not the bottom.** Header block leads with character + realm, date/timestamp, bag/slot, item link, and a colored `WILL SELL` / `WILL DELETE` / `WON'T SELL` verdict. Reader sees the answer without scrolling; the `--- Full trace ---` follows.
+- **Config hints on the common rejection branches.** Tome protection, Rare/Epic affix protection, chance-on-hit protection, and recipe bind-filter mismatches now include an inline `Tip: ...` phrase naming the panel + toggle the player can flip (or the Alt+Right-Click Allow Sell escape hatch). Fewer round trips: user reads the trace and knows exactly what to change.
+
+**Shared copy frame is now resizable.** Bottom-right resize grip (using Blizzard's `UI-ChatIM-SizeGrabber` textures). Default size bumped from 460x400 to 560x400 so the wider bug-report lines (loaded-addon rows, cache-stats lines, delete-list preview with resolved names) don't wrap. `OnSizeChanged` rebinds the edit box width so growing the frame grows the readable area. Applies to all callers of the shared frame - `/ec bugreport`, `/ec sellinfo`, `/ec rules`, `/ec affixdebug dump`, `/ec captureproc dump`.
+
+**Test additions:** 11 new pattern checks (Test 110a-k) pin every hook, every new section, and the shared-frame resize wiring. All 6 test suites stay at green.
+
+**Downgrade safety:** all new state is session-local (ring buffers, snapshots, timestamps). No schema changes. Downgrade to v2.50.5 loses only the diagnostic hooks, no data.
+
+---
+
+
 ### v2.50.5
 
 **Sell Info opens a copyable popup + the recipe bind-filter reject label now tells the truth.**

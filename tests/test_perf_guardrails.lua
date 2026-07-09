@@ -6850,6 +6850,98 @@ do
             and mp:find("if row%.run or row%.prefill then") ~= nil
             and mp:find("ChatFrame_OpenChat%(prefillCmd%)") ~= nil,
         "v2.49.1 (Serv report): the Main panel Slash Commands list had rows with no Run button for commands that require arguments (/ec profile save/load/delete, /ec minimap on/off/reset, /ec scandebug <bag> <slot>, /ec autolearnsim <itemID> <spellID>). The fix: rows with `prefill = \"/ec ... \"` get a Run button that opens the chat edit box via ChatFrame_OpenChat with the command stem prefilled and cursor at the end - user just types the remaining args and hits Enter. Complementary to the direct-execute `run = \"...\"` field; neither replaces the other. Any argument-requiring command MUST now use prefill so the list has no gap-toothed rows.")
+    -- -----------------------------------------------------------------------
+    -- Test 110 (v2.51.0): diagnostic-hooks release. Six ring buffers +
+    -- one snapshot + eight last-run timestamps + expanded bug report +
+    -- Sell Info popup header. Each surface is a hook I need for
+    -- diagnosing user reports faster; the tests below pin all of them.
+    -- -----------------------------------------------------------------------
+    do
+        local ev = fileSrc("EbonClearance_Events.lua")
+        local br = fileSrc("EbonClearance_BugReport.lua")
+        local bd = fileSrc("EbonClearance_BagDisplay.lua")
+        check("Test 110a: v2.51.0 silent-refusal ring buffer in EC_AddItemToList quiet-mode conflict path",
+            ev:find("EC_silentRefusalLog") ~= nil
+                and ev:find("EC_LogSilentRefusal%(itemID") ~= nil
+                and ev:find("NS%.silentRefusalLog = EC_silentRefusalLog") ~= nil,
+            "v2.51.0 (diagnostic hook): EC_AddItemToList's cross-list conflict refusal returns false silently when called with quiet=true (auto-protect sync uses quiet=true). Pre-fix, the refusal left no audit trail - root cause of the v2.50.2 shirt-loss bug. The ring buffer captures itemID, target list, conflict list, caller label, timestamp so /ec bugreport surfaces the last N silent refusals.")
+        check("Test 110b: v2.51.0 recent sold + recent deleted ring buffers",
+            ev:find("EC_recentSoldLog") ~= nil
+                and ev:find("EC_recentDeletedLog") ~= nil
+                and ev:find("EC_LogRecentSold%(snap%.itemID") ~= nil
+                and ev:find("EC_LogRecentSold%(action%.itemID") ~= nil
+                and ev:find("EC_LogRecentDeleted%(itemID, delCount") ~= nil
+                and ev:find("NS%.recentSoldLog = EC_recentSoldLog") ~= nil
+                and ev:find("NS%.recentDeletedLog = EC_recentDeletedLog") ~= nil,
+            "v2.51.0 (diagnostic hook): three hook sites populate the ring buffers - the manual sell hook (hooksecurefunc on UseContainerItem, at the manual-sell attribution site), the worker sell path (in DoNextAction's sell branch), and executeBagSlotDelete (both auto-delete and vendor-cycle delete flows). Source/path tags distinguish flows; /ec bugreport dumps the last N of each.")
+        check("Test 110c: v2.51.0 watch-list toggle snapshot at PLAYER_LOGIN",
+            ev:find("EC_TOGGLE_WATCH_LIST") ~= nil
+                and ev:find("EC_CaptureToggleLoginSnapshot") ~= nil
+                and ev:find("EC_ToggleDiffSinceLogin") ~= nil
+                and ev:find("NS%.CaptureToggleLoginSnapshot") ~= nil
+                and ev:find('if event == "PLAYER_LOGIN" and NS%.CaptureToggleLoginSnapshot then') ~= nil,
+            "v2.51.0 (diagnostic hook): watch-list of high-value toggles captured at PLAYER_LOGIN after EnsureDB. Diff-since-login at /ec bugreport time surfaces 'toggles the user flipped this session' without needing mutation hooks on every settings widget. Avoids the metatable-proxy invasiveness while delivering 80% of the diagnostic value.")
+        check("Test 110d: v2.51.0 last-run event timestamps at 8 hook sites",
+            ev:find("EC_lastEventAt") ~= nil
+                and ev:find("EC_StampEvent") ~= nil
+                and ev:find('EC_StampEvent%("bagUpdate"%)') ~= nil
+                and ev:find('EC_StampEvent%("equipmentSetsChanged"%)') ~= nil
+                and ev:find('EC_StampEvent%("merchantShow"%)') ~= nil
+                and ev:find('EC_StampEvent%("merchantClosed"%)') ~= nil
+                and ev:find('EC_StampEvent%("vendorRunStart"%)') ~= nil
+                and ev:find('EC_StampEvent%("autoMarkAffix"%)') ~= nil
+                and ev:find('EC_StampEvent%("autoMarkResilience"%)') ~= nil
+                and ev:find('EC_StampEvent%("autoDeleteScan"%)') ~= nil,
+            "v2.51.0 (diagnostic hook): eight stamp sites so /ec bugreport can show when each subsystem last fired. A nil / '(never)' reading is diagnostic on its own - subsystem didn't run despite being enabled. Narrows the search when the user reports 'auto-mark isn't firing' or 'the vendor cycle got stuck'.")
+        check("Test 110e: v2.51.0 bug report - item name resolution via EC_ResolveItemLabel (Delete List Preview fix)",
+            br:find("EC_ResolveItemLabel") ~= nil
+                and br:find("NS%.scanTooltip") ~= nil
+                and br:find("SetHyperlink") ~= nil
+                and br:find('EC_ResolveItemLabel%(id%)') ~= nil,
+            "v2.51.0 fix (v2.50.3 spec said 'names when available'; the fallback fired for all items). Resolver primes the client cache via NS.scanTooltip:SetHyperlink (synchronous for already-client-cached items) then retries GetItemInfo, falling back to 'item:ID' only if the client genuinely has no data yet. Called from Delete List Preview so long-standing Delete-List entries the user hasn't hovered still resolve to names.")
+        check("Test 110f: v2.51.0 bug report - Issue Summary block at top with rule-based flags",
+            br:find('add%("%-%-%- Issue Summary %-%-%-"%)') ~= nil
+                and br:find("Auto%-Delete on Pickup is ON") ~= nil
+                and br:find("cross%-list conflict") ~= nil
+                and br:find("silent refusal") ~= nil,
+            "v2.51.0 (diagnostic hook): rules-based Issue Summary at the top of every bug report so a reviewer sees 'here's what looks off' before scrolling. Flags on destructive toggles, cross-list conflicts, silent refusals, enableDeletion-off-but-deleteList-populated, large delete list, conflicting addon detected, toggle diffs.")
+        check("Test 110g: v2.51.0 bug report - new sections (silent refusals, recent sold, recent deleted, toggle diff, last event times, cache stats)",
+            br:find('add%("%-%-%- Silent Refusals') ~= nil
+                and br:find('add%("%-%-%- Recent Sold %(this session%) %-%-%-"%)') ~= nil
+                and br:find('add%("%-%-%- Recent Deleted %(this session%) %-%-%-"%)') ~= nil
+                and br:find('add%("%-%-%- Toggles Changed This Session %-%-%-"%)') ~= nil
+                and br:find('add%("%-%-%- Last Event Times %-%-%-"%)') ~= nil
+                and br:find('add%("%-%-%- Cache Stats %-%-%-"%)') ~= nil,
+            "v2.51.0 (diagnostic hook): six new dedicated sections in /ec bugreport for the ring buffers + snapshot + cache stats + timestamps. Each labelled with a '--- Section ---' header so the pasted report stays greppable.")
+        check("Test 110h: v2.51.0 bug report - Loaded Addons partitioned into 'Potentially Relevant' + 'Other'",
+            br:find("Potentially Relevant") ~= nil
+                and br:find("looksRelevant") ~= nil
+                and br:find("KEYWORDS") ~= nil,
+            "v2.51.0 (diagnostic hook): 53 addons with zero triage was hard to skim. The Loaded Addons section now partitions into Potentially Relevant (bag / vendor / loot / auction / tooltip / error keywords) vs Other. Full list stays for completeness.")
+        check("Test 110i: v2.51.0 shared copy-frame resize grip + width bump + OnSizeChanged binds",
+            br:find("SetResizable%(true%)") ~= nil
+                and br:find("SetMinResize%(360, 240%)") ~= nil
+                and br:find("StartSizing") ~= nil
+                and br:find("UI%-ChatIM%-SizeGrabber") ~= nil
+                and br:find('OnSizeChanged"') ~= nil,
+            "v2.51.0 (Serv request): bottom-right resize grip on the shared copy frame (Bug Report, Sell Info, /ec rules, /ec affixdebug dump all share it). Frame default bumped to 560x400 (was 460x360) so the widest bug-report lines don't wrap. OnSizeChanged rebinds the edit box width so growing the frame grows the readable area.")
+        check("Test 110j: v2.51.0 Sell Info popup - verdict header (character, date, item, VERDICT) before the trace",
+            bd:find("=== EbonClearance Sell Info ===") ~= nil
+                and bd:find("Character: %%s %- %%s") ~= nil
+                and bd:find("Bag / Slot: %%d / %%d") ~= nil
+                and bd:find("verdictText") ~= nil
+                and bd:find("WILL DELETE") ~= nil
+                and bd:find("WILL SELL") ~= nil
+                and bd:find("WON'T SELL") ~= nil
+                and bd:find("GetContainerItemLink%(bag, slot%)") ~= nil,
+            "v2.51.0 (Serv request): Sell Info popup now leads with a header block (character + realm + date + bag/slot + item link + colored VERDICT). Answers the question at the top instead of forcing the reader to scroll to Result:. The trace steps still follow under '--- Full trace ---' for the reader who wants the reasoning.")
+        check("Test 110k: v2.51.0 Sell Info popup - filter-config hints on 4 rejection branches",
+            bd:find("Tip: turn off 'Protect all tomes'") ~= nil
+                and bd:find("Tip: turn off 'Protect Affixed Rare Items'") ~= nil
+                and bd:find("Tip: turn off 'Protect Chance%-on%-Hit Items'") ~= nil
+                and bd:find("Tip: set this quality's bind filter") ~= nil,
+            "v2.51.0 (Serv request): common-toggle rejection branches now include an inline 'Tip: ...' phrase naming the panel + toggle the player can flip to make the item sellable, or the Alt+Right-Click Allow Sell escape hatch. Reduces round-trips - user reads the trace and knows the exact toggle to change.")
+    end
 end
 
 -- ---------------------------------------------------------------------------

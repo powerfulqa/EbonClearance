@@ -3159,3 +3159,22 @@ refactor.
   lookup at call time, so load order between feature files doesn't
   matter (Core must still load first because it owns the namespace
   shape and the EnsureDB migrations).
+
+## Diagnostic hooks (v2.51.0)
+
+Session-local ring buffers + snapshots + timestamps that `/ec bugreport` dumps. Every hook exists so a pasted bug report answers "why didn't X fire?" or "why didn't Y stick?" without a back-and-forth. All lifecycle is session-local (wiped on `/reload`); no SavedVariables persistence.
+
+- **`NS.silentRefusalLog`** (ring, 15 max). `EC_AddItemToList`'s cross-list conflict guard refuses `quiet=true` adds silently - the auto-protect sync path uses `quiet=true`, so a Keep-Add refused because the item's already on Delete List returns `false` with no chat trail. This was the root cause of the v2.50.2 shirt-loss bug. `EC_LogSilentRefusal(itemID, targetList, conflictList, caller)` populates the ring. `caller` is the label the panel passed (e.g. `"Keep List"`, `"Equipment Set"`).
+- **`NS.recentSoldLog`** (ring, 20 max) + **`NS.recentDeletedLog`** (ring, 20 max). `EC_LogRecentSold(itemID, count, path, copper)` + `EC_LogRecentDeleted(itemID, count, source)`. Three hook sites populate them:
+  - `hooksecurefunc("UseContainerItem", ...)` in the manual-sell attribution block: `path = "manual"`.
+  - `DoNextAction`'s `sell` branch in the worker cycle: `path = "worker"`.
+  - `EC_compCache.executeBagSlotDelete`'s single call site (both auto-delete and vendor-cycle delete): `source = announce and "auto" or "vendor"`.
+- **`NS.CaptureToggleLoginSnapshot()`** + **`NS.ToggleDiffSinceLogin()`**. Watched-toggle snapshot at PLAYER_LOGIN (after `EnsureDB` seeds defaults). Diff at report time surfaces "toggles the user flipped this session" without needing mutation hooks on every settings widget. Watch list is `EC_TOGGLE_WATCH_LIST` (23 high-value toggles: destructive, auto-mark, protection, auto-protect, sell rules, vendor mode, scavenger).
+- **`NS.lastEventAt`** (table) + **`NS.StampEvent(key)`**. Eight stamp sites: `bagUpdate`, `equipmentSetsChanged`, `merchantShow`, `merchantClosed`, `vendorRunStart`, `autoMarkAffix`, `autoMarkResilience`, `autoDeleteScan`. Values start nil; a `(never)` reading in `/ec bugreport`'s Last Event Times section is diagnostic on its own.
+- **`NS.compCache.bindCache` / `itemAffixLookupCache` / `bagSlotAffixData` / `chanceOnHitCache` / `processCache` / `equipmentSetIDs`**. Existing session caches; `/ec bugreport`'s Cache Stats section counts each and breaks out `bindCache` by `boe / bop / any` tag totals so a scan-time regression (e.g. `any` share >> `boe + bop`) shows up as a data anomaly.
+
+**Shared copy frame** (`EC_ShowCopyFrame` in `EbonClearance_BugReport.lua`, exposed as `NS.ShowCopyFrame`): resizable (v2.51.0) via a bottom-right grip using Blizzard's `UI-ChatIM-SizeGrabber` textures. `OnSizeChanged` binds the edit box width to the scroll frame's dynamic width, so growing the frame grows the readable area. Default 560x400, min-resize 360x240.
+
+**Sell Info popup** (`printSellabilityTrace` in `EbonClearance_BagDisplay.lua`): leads with a header block (character, realm, date/timestamp, bag/slot, item link, colored `WILL SELL` / `WILL DELETE` / `WON'T SELL` verdict), then a `--- Full trace ---` section with the same step chain as before. Rejection branches for tome-protection, Rare/Epic affix protection, chance-on-hit protection, and recipe bind-filter mismatches include an inline `Tip: ...` phrase naming the panel + toggle the player can flip.
+
+**Item name resolver** (`EC_ResolveItemLabel` in `EbonClearance_BugReport.lua`): primes the client cache via `NS.scanTooltip:SetHyperlink` then retries `GetItemInfo`. Used by every "list of item IDs" section in the bug report so long-standing Delete-List entries the user hasn't hovered still resolve to names / links.

@@ -27,6 +27,50 @@ local L = NS.L
 local IsInSet = NS.IsInSet
 
 -- Bug report diagnostic snapshot
+-- v2.51.0: item-name resolver used by every "list of item IDs" section
+-- in the bug report (Delete List Preview, Recent Sold, Recent Deleted,
+-- Silent Refusals, Auto-Mark Events). GetItemInfo returns nil at
+-- report-build time for items not in the client's session cache
+-- (previous sessions' Delete-List entries the user hasn't hovered), so
+-- v2.50.3's Delete List Preview printed "item:ID" for every row - the
+-- format the fallback branch produces. This resolver primes the client
+-- cache via NS.scanTooltip:SetHyperlink (synchronous for
+-- already-client-cached items) then retries GetItemInfo, falling back
+-- to the raw id only if the client genuinely has no data yet.
+--
+-- Return: item link (with color code + brackets) when possible, else
+-- plain name, else "item:ID". Never nil.
+local function EC_ResolveItemLabel(id)
+    if not id then
+        return "?"
+    end
+    local name, link = GetItemInfo(id)
+    if link then
+        return link
+    end
+    if name then
+        return name
+    end
+    -- Prime the cache. SetHyperlink is a no-op for items the client
+    -- already has data for; for items it doesn't, it fires an async
+    -- fetch (GET_ITEM_INFO_RECEIVED). We retry synchronously in case
+    -- the priming completed the cache lookup on this frame.
+    local st = NS.scanTooltip
+    if st and st.SetHyperlink then
+        pcall(st.SetOwner, st, UIParent, "ANCHOR_NONE")
+        pcall(st.ClearLines, st)
+        pcall(st.SetHyperlink, st, "item:" .. id)
+        name, link = GetItemInfo(id)
+        if link then
+            return link
+        end
+        if name then
+            return name
+        end
+    end
+    return "item:" .. id
+end
+
 local function EC_CopperToPlainText(copper)
     if not copper or copper <= 0 then
         return "0"
@@ -72,6 +116,82 @@ local function EC_BuildBugReport()
     add("Class / Level: " .. className .. " / " .. tostring(level))
     add("Locale: " .. tostring(locale))
     add("Date: " .. dateStr)
+    add("")
+
+    -- v2.51.0 Issue Summary section: rules-based flags surfaced at the
+    -- top so a reviewer sees "here's what looks off" before scrolling.
+    -- Every flag is a HYPOTHESIS not a diagnosis - the sections below
+    -- have the raw data to confirm. Flags fire on additive conditions;
+    -- absence of a flag doesn't mean absence of an issue.
+    add("--- Issue Summary ---")
+    do
+        local flags = {}
+        -- Destructive toggles that turn the addon into a shredder.
+        if DB.autoDeleteOnPickup then
+            flags[#flags + 1] = "! Auto-Delete on Pickup is ON - Delete-List items are destroyed as they enter bags"
+        end
+        if DB.autoDeleteGreyOnLoot then
+            flags[#flags + 1] = "! Auto-Delete Grey on Loot is ON - grey items are destroyed at loot time"
+        end
+        -- Cross-list conflicts imply a stale state that /ec clean should resolve.
+        local conflictCount = 0
+        if DB.deleteList and DB.blacklist then
+            for id in pairs(DB.deleteList) do
+                if DB.blacklist[id] then
+                    conflictCount = conflictCount + 1
+                end
+            end
+        end
+        if conflictCount > 0 then
+            flags[#flags + 1] = string.format(
+                "! %d cross-list conflict(s) - item(s) on Keep + Delete simultaneously; run /ec clean apply",
+                conflictCount)
+        end
+        -- enableDeletion off but delete list populated - user disabled the flow
+        -- but items are still queued. Not a bug on its own, but if they report
+        -- "delete isn't working" this is the answer.
+        local delListCount = 0
+        if DB.deleteList then
+            for _ in pairs(DB.deleteList) do delListCount = delListCount + 1 end
+        end
+        if not DB.enableDeletion and delListCount > 0 then
+            flags[#flags + 1] = string.format(
+                "* enableDeletion OFF but %d item(s) queued on Delete List - flow is paused",
+                delListCount)
+        end
+        if delListCount > 200 then
+            flags[#flags + 1] = string.format(
+                "* Delete List large (%d items) - review with /ec clean or the Delete Settings panel",
+                delListCount)
+        end
+        -- Silent refusals imply the auto-protect sync tried to Keep-Add items
+        -- that were already on the Delete List. The v2.50.2 shirt-loss root
+        -- cause pattern - always worth investigating when count > 0.
+        local refusals = NS.silentRefusalLog or {}
+        if #refusals > 0 then
+            flags[#flags + 1] = string.format(
+                "! %d silent refusal(s) this session - Keep-Add refused because item was on a conflicting list (see Silent Refusals section)",
+                #refusals)
+        end
+        -- Third-party auto-delete addon detected. Comment neutral per repo rules.
+        if NS.HasConflictingDeleteAddon and NS.HasConflictingDeleteAddon() then
+            flags[#flags + 1] = "! Third-party auto-delete addon detected - potential race with EC's delete pipeline"
+        end
+        -- Toggles changed this session - reviewer needs to know user isn't at defaults.
+        local diffs = NS.ToggleDiffSinceLogin and NS.ToggleDiffSinceLogin() or {}
+        if #diffs > 0 then
+            flags[#flags + 1] = string.format(
+                "* %d watched toggle(s) changed since login - see Toggles Changed This Session section",
+                #diffs)
+        end
+        if #flags == 0 then
+            add("  (no red-flag conditions detected)")
+        else
+            for i = 1, #flags do
+                add("  " .. flags[i])
+            end
+        end
+    end
     add("")
 
     -- v2.13.1 Live State section. Captures the runtime context at the
@@ -451,8 +571,10 @@ local function EC_BuildBugReport()
         local shown = math.min(previewMax, #ids)
         for i = 1, shown do
             local id = ids[i]
-            local _, link = GetItemInfo(id)
-            add(string.format("  [%d] %s", id, link or ("item:" .. id)))
+            -- v2.51.0: resolver primes the client cache via
+            -- NS.scanTooltip so items not seen this session
+            -- can still resolve to names / links.
+            add(string.format("  [%d] %s", id, EC_ResolveItemLabel(id)))
         end
         if #ids > previewMax then
             add(string.format("  ... and %d more (total %d)", #ids - previewMax, #ids))
@@ -496,6 +618,165 @@ local function EC_BuildBugReport()
     end
     add("")
 
+    -- v2.51.0: silent refusals from EC_AddItemToList's quiet-mode
+    -- cross-list conflict guard. The auto-protect sync (equipped
+    -- gear, upgrade scan, equipment sets) uses quiet=true so the
+    -- refusal returns false with zero chat output - this ring buffer
+    -- is the audit trail. Root cause of the v2.50.2 shirt-loss bug.
+    add("--- Silent Refusals (Add rejected by cross-list conflict) ---")
+    do
+        local refusals = NS.silentRefusalLog or {}
+        if #refusals == 0 then
+            add("  (none this session)")
+        else
+            for i = 1, #refusals do
+                local e = refusals[i]
+                add(string.format("  [%s] %d %s - tried '%s' but item is on '%s' (caller: %s)",
+                    tostring(e.loggedAt),
+                    tonumber(e.itemID) or 0,
+                    tostring(e.itemName),
+                    tostring(e.targetList),
+                    tostring(e.conflictList),
+                    tostring(e.caller)))
+            end
+        end
+    end
+    add("")
+
+    -- v2.51.0: recent-sold ring buffer. Answers "which specific items
+    -- did EC sell in the last vendor visit / manual sell burst?" -
+    -- lifetime totals answer "how many", not "which".
+    add("--- Recent Sold (this session) ---")
+    do
+        local rs = NS.recentSoldLog or {}
+        if #rs == 0 then
+            add("  (none this session)")
+        else
+            for i = 1, #rs do
+                local e = rs[i]
+                add(string.format("  [%s] %d x%d %s (%s, %s)",
+                    tostring(e.loggedAt),
+                    tonumber(e.itemID) or 0,
+                    tonumber(e.count) or 1,
+                    tostring(e.itemName),
+                    tostring(e.path),
+                    EC_CopperToPlainText(e.copper or 0)))
+            end
+        end
+    end
+    add("")
+
+    -- v2.51.0: recent-deleted ring buffer. Distinguishes auto-delete
+    -- (auto-delete-on-pickup fired between BAG_UPDATE ticks) from
+    -- vendor-cycle delete-queue actions. When a user says "it deleted
+    -- something", the source tag says which flow.
+    add("--- Recent Deleted (this session) ---")
+    do
+        local rd = NS.recentDeletedLog or {}
+        if #rd == 0 then
+            add("  (none this session)")
+        else
+            for i = 1, #rd do
+                local e = rd[i]
+                add(string.format("  [%s] %d x%d %s (%s)",
+                    tostring(e.loggedAt),
+                    tonumber(e.itemID) or 0,
+                    tonumber(e.count) or 1,
+                    tostring(e.itemName),
+                    tostring(e.source)))
+            end
+        end
+    end
+    add("")
+
+    -- v2.51.0: watched-toggle diff since PLAYER_LOGIN. Snapshot was
+    -- taken right after EnsureDB seeded defaults, so this section only
+    -- shows toggles the user actively flipped this session. Empty on
+    -- a fresh login when nothing was changed.
+    add("--- Toggles Changed This Session ---")
+    do
+        local diffs = NS.ToggleDiffSinceLogin and NS.ToggleDiffSinceLogin() or {}
+        if #diffs == 0 then
+            add("  (none this session)")
+        else
+            for i = 1, #diffs do
+                local d = diffs[i]
+                add(string.format("  %s: %s -> %s",
+                    tostring(d.key),
+                    tostring(d.before),
+                    tostring(d.now)))
+            end
+        end
+    end
+    add("")
+
+    -- v2.51.0: last-run event timestamps. Answers "did BAG_UPDATE fire
+    -- this session? did EQUIPMENT_SETS_CHANGED? when was the last
+    -- vendor visit?" - a nil / "never" reading is diagnostic on its
+    -- own (subsystem hasn't run despite being enabled).
+    add("--- Last Event Times ---")
+    do
+        local ts = NS.lastEventAt or {}
+        local order = {
+            { "bagUpdate",             "Last BAG_UPDATE" },
+            { "equipmentSetsChanged",  "Last EQUIPMENT_SETS_CHANGED" },
+            { "merchantShow",          "Last MERCHANT_SHOW" },
+            { "merchantClosed",        "Last MERCHANT_CLOSED" },
+            { "vendorRunStart",        "Last vendor cycle StartRun" },
+            { "autoMarkAffix",         "Last runAutoMarkAffixDupes" },
+            { "autoMarkResilience",    "Last runAutoMarkResilience" },
+            { "autoDeleteScan",        "Last runAutoDeleteOnPickup" },
+        }
+        for i = 1, #order do
+            local k, label = order[i][1], order[i][2]
+            add(string.format("  %s: %s", label, tostring(ts[k] or "(never)")))
+        end
+    end
+    add("")
+
+    -- v2.51.0: session cache stats. Large caches with mostly-'any'
+    -- entries suggest a scan-time issue (bind detection race, tooltip
+    -- not populated at scan time). Empty caches suggest the paths that
+    -- populate them haven't been exercised - which is diagnostic when
+    -- the user reports "detection isn't working".
+    add("--- Cache Stats ---")
+    do
+        local cc = NS.compCache or {}
+        local function sizeOf(t)
+            if type(t) ~= "table" then
+                return 0
+            end
+            local n = 0
+            for _ in pairs(t) do n = n + 1 end
+            return n
+        end
+        local function countBindTypes(t)
+            if type(t) ~= "table" then
+                return 0, 0, 0
+            end
+            local boe, bop, any = 0, 0, 0
+            for _, v in pairs(t) do
+                if v == "boe" then
+                    boe = boe + 1
+                elseif v == "bop" then
+                    bop = bop + 1
+                elseif v == "any" then
+                    any = any + 1
+                end
+            end
+            return boe, bop, any
+        end
+        local boe, bop, anyBind = countBindTypes(cc.bindCache)
+        add(string.format("  bindCache: %d (boe=%d bop=%d any=%d)",
+            sizeOf(cc.bindCache), boe, bop, anyBind))
+        add(string.format("  itemAffixLookupCache: %d", sizeOf(cc.itemAffixLookupCache)))
+        add(string.format("  bagSlotAffixData: %d", sizeOf(cc.bagSlotAffixData)))
+        add(string.format("  chanceOnHitCache: %d", sizeOf(cc.chanceOnHitCache)))
+        add(string.format("  processCache: %d", sizeOf(cc.processCache)))
+        add(string.format("  equipmentSetIDs: %d", sizeOf(cc.equipmentSetIDs)))
+    end
+    add("")
+
     add("--- Bags ---")
     add("Free Slots: " .. tostring(NS.GetFreeBagSlots()))
 
@@ -533,12 +814,56 @@ local function EC_BuildBugReport()
         if #entries == 0 then
             add("(no addons reported as loaded)")
         else
-            add("Loaded: " .. tostring(#entries))
+            -- v2.51.0: partition into "Potentially Relevant" (bag /
+            -- vendor / loot / auction / mail / tooltip / error-handling
+            -- addons that could interact with EC's surfaces) vs.
+            -- "Other". Substring match on the addon's identifier and
+            -- title, case-folded. Not exhaustive; picks the categories
+            -- that have historically caused conflict reports.
+            local KEYWORDS = {
+                "bag", "bagn", "vend", "sell", "loot", "junk", "clean",
+                "auc", "mail", "post", "auto", "delete", "trash",
+                "tip", "tooltip", "item", "container",
+                "bug", "err", "log",
+                "prof", "craft",
+            }
+            local function looksRelevant(e)
+                local hay = ((e.name or "") .. " " .. (e.title or "")):lower()
+                for i = 1, #KEYWORDS do
+                    if hay:find(KEYWORDS[i], 1, true) then
+                        return true
+                    end
+                end
+                return false
+            end
+            local relevant, other = {}, {}
             for _, e in ipairs(entries) do
+                if looksRelevant(e) then
+                    relevant[#relevant + 1] = e
+                else
+                    other[#other + 1] = e
+                end
+            end
+            local function printOne(e)
                 if e.version ~= "" then
                     add("  " .. e.name .. " (" .. e.title .. ") v" .. e.version)
                 else
                     add("  " .. e.name .. " (" .. e.title .. ")")
+                end
+            end
+            add("Loaded: " .. tostring(#entries)
+                .. " (" .. tostring(#relevant) .. " potentially relevant, "
+                .. tostring(#other) .. " other)")
+            if #relevant > 0 then
+                add("  Potentially Relevant (bag / vendor / loot / auction / tooltip / error):")
+                for _, e in ipairs(relevant) do
+                    printOne(e)
+                end
+            end
+            if #other > 0 then
+                add("  Other:")
+                for _, e in ipairs(other) do
+                    printOne(e)
                 end
             end
         end
@@ -559,7 +884,12 @@ local function EC_EnsureCopyFrame()
         return EC_bugReportFrame
     end
     local f = CreateFrame("Frame", "EbonClearanceBugReportFrame", UIParent)
-    f:SetSize(460, 360)
+    -- v2.51.0: default width bumped to 560 (was 460) so the widest
+    -- bug-report lines (loaded-addon rows, delete-list preview with
+    -- resolved names, cache-stats lines) don't wrap inside the scroll
+    -- child. Resizable so the user can grow the frame for long
+    -- reports without endless scrolling.
+    f:SetSize(560, 400)
     f:SetPoint("CENTER")
     f:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -570,6 +900,8 @@ local function EC_EnsureCopyFrame()
         insets = { left = 8, right = 8, top = 8, bottom = 8 },
     })
     f:SetMovable(true)
+    f:SetResizable(true)
+    f:SetMinResize(360, 240)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
@@ -585,6 +917,23 @@ local function EC_EnsureCopyFrame()
     f:SetFrameStrata("TOOLTIP")
     f:SetToplevel(true)
     tinsert(UISpecialFrames, "EbonClearanceBugReportFrame")
+
+    -- v2.51.0: resize grip in the bottom-right corner. Uses the same
+    -- Blizzard UI-DialogBox-Border texture pieces the standard resize
+    -- widgets use. Anchors the edit box to the frame's dynamic size so
+    -- growing the frame grows the readable area.
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", -4, 4)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:SetScript("OnMouseDown", function(self)
+        f:StartSizing("BOTTOMRIGHT")
+    end)
+    grip:SetScript("OnMouseUp", function(self)
+        f:StopMovingOrSizing()
+    end)
 
     local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     title:SetPoint("TOP", 0, -14)
@@ -606,12 +955,22 @@ local function EC_EnsureCopyFrame()
     editBox:SetAutoFocus(false)
     editBox:SetMultiLine(true)
     editBox:SetFontObject("GameFontHighlightSmall")
-    editBox:SetWidth(400)
+    editBox:SetWidth(500)
     editBox:SetText("")
     editBox:SetScript("OnEscapePressed", function(s)
         s:ClearFocus()
     end)
     scroll:SetScrollChild(editBox)
+
+    -- v2.51.0: react to resize by updating the edit box width to match
+    -- the scroll frame's readable width. Without this the resize grip
+    -- grows the frame chrome but the text column stays 500px wide.
+    f:SetScript("OnSizeChanged", function(self)
+        local sw = scroll:GetWidth()
+        if sw and sw > 40 then
+            editBox:SetWidth(sw - 20)
+        end
+    end)
 
     f.editBox = editBox
     EC_bugReportFrame = f

@@ -1309,12 +1309,12 @@ function EC_compCache.describeSellability(bag, slot)
                         if not passedBindFilter then
                             if bindType == "any" then
                                 step("knownRecipeRule", false, string.format(
-                                    L["known recipe but bind filter is '%s' and this recipe has no bind line (reads as 'any' - only matches filter 'any')"],
+                                    L["known recipe but bind filter is '%s' and this recipe has no bind line (reads as 'any' - only matches filter 'any'). Tip: set this quality's bind filter to 'any' in Merchant Settings -> Sell Known Recipes."],
                                     tostring(recipeBindFilter)))
                             else
                                 step("knownRecipeRule", false, string.format(
-                                    L["known recipe but bind filter is '%s' and this recipe binds as '%s'"],
-                                    tostring(recipeBindFilter), tostring(bindType)))
+                                    L["known recipe but bind filter is '%s' and this recipe binds as '%s'. Tip: set this quality's bind filter to '%s' or 'any' in Merchant Settings -> Sell Known Recipes."],
+                                    tostring(recipeBindFilter), tostring(bindType), tostring(bindType)))
                             end
                         else
                             recipePass = true
@@ -1418,7 +1418,7 @@ function EC_compCache.describeSellability(bag, slot)
                 ))
             else
                 affixProtected = true
-                step("affixProtection", false, L["Kept - Rare/Epic affix protection"])
+                step("affixProtection", false, L["Kept - Rare/Epic affix protection. Tip: turn off 'Protect Affixed Rare Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this affix."])
             end
         else
             step("affixProtection", true, L["no random affix on this item"])
@@ -1481,7 +1481,7 @@ function EC_compCache.describeSellability(bag, slot)
             affixRankPass = false
             autoDupePass = false
             recipePass = false
-            step("chanceOnHitProtection", false, L["Kept - has a chance-on-hit proc"])
+            step("chanceOnHitProtection", false, L["Kept - has a chance-on-hit proc. Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
         end
     else
         step("chanceOnHitProtection", true, L["n/a"])
@@ -1505,7 +1505,7 @@ function EC_compCache.describeSellability(bag, slot)
             step("tomeProtection", true, L["tome/recipe, but you Allow-Sold this one"])
         elseif DB.protectAllTomes then
             tomeProtected = true
-            step("tomeProtection", false, L["Kept - 'protect all tomes' is on"])
+            step("tomeProtection", false, L["Kept - 'protect all tomes' is on. Tip: turn off 'Protect all tomes' in Merchant Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
         elseif DB.protectUnlearnedTomes
             and EC_compCache.playerKnowsTomeSpell
             and not EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
@@ -1597,14 +1597,44 @@ function EC_compCache.printSellabilityTrace(bag, slot)
     -- Falls back to chat prints if NS.ShowCopyFrame isn't loaded
     -- (impossible under the .toc load order but defensive against a
     -- future refactor that separates BugReport from the addon).
+    --
+    -- v2.51.0: header block adds character / date / item / VERDICT so
+    -- a pasted trace stands alone (previously the reader had to
+    -- scroll to the Result: line to know the answer; now the verdict
+    -- is at the top in the same colour a merchant border tint would
+    -- use). Item link uses GetContainerItemLink so the pasted trace
+    -- carries a clickable link when re-pasted into WoW chat.
+    local itemLink = GetContainerItemLink(bag, slot)
+    local verdictText, verdictColor
+    if r.willDelete then
+        verdictText = "WILL DELETE"
+        verdictColor = "|cffff4444"
+    elseif r.wouldSell then
+        verdictText = "WILL SELL"
+        verdictColor = "|cff00ff00"
+    else
+        verdictText = "WON'T SELL"
+        verdictColor = "|cffffea80"
+    end
+    local playerName = UnitName("player") or "?"
+    local realm = GetRealmName() or "?"
+    local timestamp = date("%Y-%m-%d %H:%M:%S")
+
     local lines = {}
-    lines[#lines + 1] = string.format(L["=== Sellability trace: bag %d slot %d ==="], bag, slot)
+    lines[#lines + 1] = string.format(L["=== EbonClearance Sell Info ==="])
+    lines[#lines + 1] = string.format(L["Character: %s - %s"], playerName, realm)
+    lines[#lines + 1] = string.format(L["Date: %s"], timestamp)
+    lines[#lines + 1] = string.format(L["Bag / Slot: %d / %d"], bag, slot)
+    lines[#lines + 1] = string.format(L["Item: %s"], itemLink or "(no item)")
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = string.format("%s%s|r - %s", verdictColor, verdictText, tostring(r.summary))
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = L["--- Full trace ---"]
     for _, s in ipairs(r.steps) do
         local marker = s.passed and "|cff00ff00+|r" or "|cffff4444-|r"
         local label = EC_STEP_LABELS[s.name] or s.name
         lines[#lines + 1] = string.format("  %s %s - %s", marker, label, s.detail)
     end
-    lines[#lines + 1] = string.format(L["Result: %s"], r.summary)
     local body = table.concat(lines, "\n")
 
     if NS.ShowCopyFrame then

@@ -3463,6 +3463,36 @@ NS.RefreshAllListPanels = EC_RefreshAllListPanels
 -- PLAYER_EQUIPMENT_CHANGED reactive handler (which prints one targeted line
 -- per add). The default-mode call sites are unchanged - they pass nil for
 -- quiet and ignore the return value.
+-- v2.51.0: session-scoped silent-refusal log. EC_AddItemToList's cross-list
+-- conflict guard refuses adds silently when called with quiet=true (the
+-- auto-protect sync path uses quiet=true, so a Keep-List add for an
+-- equipped item that's already on Delete List returns false with zero
+-- diagnostic trail). That silent-refusal path was the root cause of the
+-- Stickybackpack shirt-loss bug (v2.50.2). Ring buffer preserves the
+-- last N refusals so /ec bugreport surfaces them. Session-local, wiped
+-- on /reload. Ring shifts oldest out on overflow.
+local EC_SILENT_REFUSAL_LOG_MAX = 15
+local EC_silentRefusalLog = {}
+local function EC_LogSilentRefusal(itemID, targetList, conflictList, caller)
+    if not itemID then
+        return
+    end
+    if #EC_silentRefusalLog >= EC_SILENT_REFUSAL_LOG_MAX then
+        table.remove(EC_silentRefusalLog, 1)
+    end
+    local _, link = GetItemInfo(itemID)
+    EC_silentRefusalLog[#EC_silentRefusalLog + 1] = {
+        itemID = itemID,
+        itemName = link or ("item:" .. tostring(itemID)),
+        targetList = targetList or "?",
+        conflictList = conflictList or "?",
+        caller = caller or "?",
+        loggedAt = date("%H:%M:%S"),
+    }
+end
+NS.silentRefusalLog = EC_silentRefusalLog
+NS.silentRefusalLogMax = EC_SILENT_REFUSAL_LOG_MAX
+
 local function EC_AddItemToList(setName, itemID, label, quiet)
     if not itemID then
         return false
@@ -3490,6 +3520,13 @@ local function EC_AddItemToList(setName, itemID, label, quiet)
         if not quiet then
             PrintNicef(L["|cffff8888%s is already on %s. Remove it from there first.|r"], itemName, conflictName)
             PlaySound("igMainMenuOptionCheckBoxOff")
+        else
+            -- v2.51.0: silent quiet-mode refusals go to the diagnostic
+            -- ring buffer so /ec bugreport can surface them. The caller
+            -- (equipped-sync, upgrade-scan, equipment-set-sync,
+            -- protection-refresh) gets a false return and no chat noise;
+            -- the log is the audit trail.
+            EC_LogSilentRefusal(itemID, setName, conflictName, label)
         end
         return false
     end
@@ -4824,6 +4861,8 @@ function EC_manualSell.installHookOnce()
                 end
                 EC_session.copper = EC_session.copper + copper
                 EC_session.sold = EC_session.sold + 1
+                -- v2.51.0: recent-sold ring buffer for /ec bugreport.
+                EC_LogRecentSold(snap.itemID, snap.count or 1, "manual", copper)
             end
         end
         -- Refresh the snapshot for this slot after the sell completes. The
@@ -5442,6 +5481,12 @@ function EC_compCache.executeBagSlotDelete(bag, slot, itemID, count, quality, an
     if quality then
         EC_BumpStatBucket("deletedItemsByQuality", quality, delCount)
     end
+    -- v2.51.0: recent-deleted ring buffer for /ec bugreport. `announce`
+    -- true means the auto-delete path called us (chat announcement
+    -- follows); false means the vendor cycle's delete queue action
+    -- executed. Source tag preserves that distinction so a report can
+    -- separate "worker cleanup" from "auto-delete-on-pickup fired".
+    EC_LogRecentDeleted(itemID, delCount, announce and "auto" or "vendor")
     if announce and DB and DB.announceAutoDelete ~= false then
         local link = select(2, GetItemInfo(itemID)) or ("item:" .. tostring(itemID))
         PrintNicef(L["|cffff4444Auto-deleted|r %s."], link)
@@ -5463,6 +5508,7 @@ end
 -- not combat-protected on 3.3.5a and farming happens in combat, which is the
 -- whole point of the feature. Do NOT add a combat guard.
 function EC_compCache.runAutoDeleteOnPickup()
+    EC_StampEvent("autoDeleteScan")
     local DB = NS.DB
     -- v2.42.1: master Enable toggle must veto the sweep, same as the
     -- vendor cycle / scavenger / auto-loot paths do. Without this gate,
@@ -5610,6 +5656,148 @@ NS.LogAutoMark = EC_LogAutoMark
 NS.autoMarkLog = EC_autoMarkLog
 NS.autoMarkLogMax = EC_AUTOMARK_LOG_MAX
 
+-- v2.51.0: session-scoped ring buffers for what EC has SOLD and DELETED
+-- this session. The lifetime + session counters in DB / ADB.accountStats
+-- tell "how much" but say nothing about "which items and when", so when
+-- a user reports "it sold something I didn't want" there's no evidence
+-- trail. These ring buffers capture the last N of each so /ec bugreport
+-- surfaces them.
+--
+-- path/source tags:
+--   * recentSold.path   = "manual" (user clicked at vendor, hooksecurefunc
+--                                    fired) or "worker" (EC vendor cycle
+--                                    UseContainerItem)
+--   * recentDeleted.source = "auto" (auto-delete-on-pickup) or "vendor"
+--                                    (vendor-cycle delete queue action)
+--
+-- Ring shifts oldest out on overflow. Session-local, wiped on /reload.
+local EC_RECENT_SOLD_LOG_MAX = 20
+local EC_RECENT_DELETED_LOG_MAX = 20
+local EC_recentSoldLog = {}
+local EC_recentDeletedLog = {}
+
+local function EC_LogRecentSold(itemID, count, path, copper)
+    if not itemID then
+        return
+    end
+    if #EC_recentSoldLog >= EC_RECENT_SOLD_LOG_MAX then
+        table.remove(EC_recentSoldLog, 1)
+    end
+    local _, link = GetItemInfo(itemID)
+    EC_recentSoldLog[#EC_recentSoldLog + 1] = {
+        itemID = itemID,
+        itemName = link or ("item:" .. tostring(itemID)),
+        count = count or 1,
+        path = path or "?",
+        copper = copper or 0,
+        loggedAt = date("%H:%M:%S"),
+    }
+end
+
+local function EC_LogRecentDeleted(itemID, count, source)
+    if not itemID then
+        return
+    end
+    if #EC_recentDeletedLog >= EC_RECENT_DELETED_LOG_MAX then
+        table.remove(EC_recentDeletedLog, 1)
+    end
+    local _, link = GetItemInfo(itemID)
+    EC_recentDeletedLog[#EC_recentDeletedLog + 1] = {
+        itemID = itemID,
+        itemName = link or ("item:" .. tostring(itemID)),
+        count = count or 1,
+        source = source or "?",
+        loggedAt = date("%H:%M:%S"),
+    }
+end
+
+NS.LogRecentSold = EC_LogRecentSold
+NS.LogRecentDeleted = EC_LogRecentDeleted
+NS.recentSoldLog = EC_recentSoldLog
+NS.recentDeletedLog = EC_recentDeletedLog
+NS.recentSoldLogMax = EC_RECENT_SOLD_LOG_MAX
+NS.recentDeletedLogMax = EC_RECENT_DELETED_LOG_MAX
+
+-- v2.51.0: watch-list toggle snapshot at PLAYER_LOGIN, after EnsureDB.
+-- The watch list is a curated set of high-diagnostic-value toggles - the
+-- ones that meaningfully change addon behaviour and that a user might
+-- flip mid-session. /ec bugreport diffs this snapshot against the live
+-- values to surface "toggles you changed this session". No mutation
+-- hooks; the diff at report time is enough.
+--
+-- Not exhaustive on purpose: cosmetic toggles (tint colours, border
+-- widths) don't affect what the addon does, so they're excluded.
+local EC_TOGGLE_WATCH_LIST = {
+    -- destructive
+    "enableDeletion", "autoDeleteOnPickup", "autoDeleteGreyOnLoot",
+    "announceAutoDelete", "warnConflictingAddons",
+    -- auto-mark
+    "autoMarkAffixDupes", "autoMarkResilience",
+    -- protection
+    "protectAllTomes", "protectUnlearnedTomes", "protectAffixedRareItems",
+    "protectChanceOnHitItems", "affixAllowExactDupes", "keepBoeAffixDupes",
+    -- auto-protect (equipped / upgrades / sets)
+    "autoAddEquipped", "autoProtectUpgrades", "autoProtectEquipmentSets",
+    -- sell rules
+    "sellKnownRecipes",
+    -- vendor mode
+    "merchantMode", "repairGear", "repairViaGuildBank",
+    -- scavenger
+    "summonGreedy", "muteGreedy", "autoLootCycle",
+}
+local EC_toggleLoginSnapshot = nil
+local function EC_CaptureToggleLoginSnapshot()
+    if not DB then
+        return
+    end
+    EC_toggleLoginSnapshot = {}
+    for i = 1, #EC_TOGGLE_WATCH_LIST do
+        local k = EC_TOGGLE_WATCH_LIST[i]
+        EC_toggleLoginSnapshot[k] = DB[k]
+    end
+end
+local function EC_ToggleDiffSinceLogin()
+    if not (EC_toggleLoginSnapshot and DB) then
+        return {}
+    end
+    local diffs = {}
+    for i = 1, #EC_TOGGLE_WATCH_LIST do
+        local k = EC_TOGGLE_WATCH_LIST[i]
+        local before = EC_toggleLoginSnapshot[k]
+        local now = DB[k]
+        if before ~= now then
+            diffs[#diffs + 1] = { key = k, before = before, now = now }
+        end
+    end
+    return diffs
+end
+NS.CaptureToggleLoginSnapshot = EC_CaptureToggleLoginSnapshot
+NS.ToggleDiffSinceLogin = EC_ToggleDiffSinceLogin
+NS.toggleWatchList = EC_TOGGLE_WATCH_LIST
+
+-- v2.51.0: last-run timestamps for the addon's driving events. When a
+-- user reports "auto-mark isn't firing" or "the vendor cycle got stuck",
+-- knowing WHEN each subsystem last ran narrows the search: an
+-- EQUIPMENT_SETS_CHANGED that fired 2 hours ago vs. never is a
+-- meaningful signal. `date()` is enUS-locale-safe (24h format).
+-- Values start as nil and remain nil until the event actually fires
+-- so a "never" in the bug report is diagnostic in its own right.
+local EC_lastEventAt = {
+    bagUpdate = nil,          -- BAG_UPDATE debounce settled
+    equipmentSetsChanged = nil,
+    merchantShow = nil,
+    merchantClosed = nil,
+    autoMarkAffix = nil,      -- runAutoMarkAffixDupes ran to completion
+    autoMarkResilience = nil, -- runAutoMarkResilience ran to completion
+    vendorRunStart = nil,     -- StartRun fired
+    autoDeleteScan = nil,     -- runAutoDeleteOnPickup ran
+}
+local function EC_StampEvent(key)
+    EC_lastEventAt[key] = date("%H:%M:%S")
+end
+NS.lastEventAt = EC_lastEventAt
+NS.StampEvent = EC_StampEvent
+
 -- v2.44.0: auto-mark Resilience PvP gear for deletion. When the
 -- toggle is on, every BAG_UPDATE scans bags for items with a
 -- "Resilience" tooltip line and adds them to the Delete List (one
@@ -5623,6 +5811,7 @@ function EC_compCache.runAutoMarkResilience()
     if not EC_IsAddonEnabledForChar() then
         return
     end
+    EC_StampEvent("autoMarkResilience")
     if not (DB and DB.autoMarkResilience) then
         return
     end
@@ -5717,6 +5906,7 @@ function EC_compCache.runAutoMarkAffixDupes()
     if not EC_IsAddonEnabledForChar() then
         return
     end
+    EC_StampEvent("autoMarkAffix")
     if not (DB and DB.enableDeletion and DB.autoMarkAffixDupes) then
         return
     end
@@ -6049,11 +6239,14 @@ local function DoNextAction()
         if action.itemID then
             EC_BumpStatBucket("soldItemCounts", action.itemID, soldCount)
         end
+        local soldCopper = 0
         if action.quality then
-            local copper = (action.price or 0) * soldCount
+            soldCopper = (action.price or 0) * soldCount
             EC_BumpStatBucket("soldItemsByQuality", action.quality, soldCount)
-            EC_BumpStatBucket("soldCopperByQuality", action.quality, copper)
+            EC_BumpStatBucket("soldCopperByQuality", action.quality, soldCopper)
         end
+        -- v2.51.0: recent-sold ring buffer for /ec bugreport.
+        EC_LogRecentSold(action.itemID, soldCount, "worker", soldCopper)
     elseif action.type == "delete" then
         EC_compCache.executeBagSlotDelete(action.bag, action.slot, action.itemID, action.count, action.quality, false)
     end
@@ -6157,6 +6350,7 @@ local function StartRun()
     if not EC_IsAddonEnabledForChar() then
         return
     end
+    EC_StampEvent("vendorRunStart")
     if EC_compCache.vendorRunning then
         return
     end
@@ -7861,6 +8055,16 @@ f:SetScript("OnEvent", function(self, event, ...)
                 StaticPopup_Show("EC_CONFLICT_WARNING")
             end
         end
+        -- v2.51.0: watch-list toggle snapshot at PLAYER_LOGIN, after
+        -- EnsureDB has seeded defaults. /ec bugreport diffs against
+        -- this to show which toggles the user flipped this session.
+        -- No mutation hooks needed; the diff at report time gives us
+        -- the "since login" audit trail. Watch list is a curated set of
+        -- high-diagnostic-value toggles (destructive / protection /
+        -- feature-gating) - not every checkbox in the addon.
+        if event == "PLAYER_LOGIN" and NS.CaptureToggleLoginSnapshot then
+            NS.CaptureToggleLoginSnapshot()
+        end
         -- Version gossip: once per session (login / reload, not zone changes),
         -- after a short settle, ask the guild for versions.
         if event == "PLAYER_LOGIN" then
@@ -7932,6 +8136,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
         end
     elseif event == "EQUIPMENT_SETS_CHANGED" then
+        EC_StampEvent("equipmentSetsChanged")
         -- v2.13.0: live re-sync of Blizzard equipment-manager sets onto
         -- the Keep list. Silent variant suppresses the chat summary so
         -- save-edit-save cycles in the Equipment Manager UI don't spam.
@@ -7987,6 +8192,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             wipe(EC_compCache.tomeIsKnownCache)
         end
     elseif event == "BAG_UPDATE" or event == "ITEM_LOCK_CHANGED" then
+        EC_StampEvent("bagUpdate")
         -- v2.24.0 perf: bag-full handler stays synchronous so the
         -- cycle's responsiveness across the free-slot threshold is
         -- unchanged (its internal 1.5 s hysteresis already debounces
@@ -8094,6 +8300,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             end
         end
     elseif event == "MERCHANT_SHOW" then
+        EC_StampEvent("merchantShow")
         EnsureDB()
         EC_merchantReminderPending = false
         EC_batchTotalSold = 0
@@ -8140,6 +8347,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             EC_wasMounted = mounted
         end
     elseif event == "MERCHANT_CLOSED" then
+        EC_StampEvent("merchantClosed")
         EC_compCache.vendorRunning = false
         worker:Hide()
         -- v2.46.4: merchant gone, drop any refusal marks so the next

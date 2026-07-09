@@ -74,7 +74,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec clean apply` | Auto-resolve list conflicts using precedence Keep List > Delete List > Sell List |
 | `/ec clean upgrades` | Report stale `Keep (upgrade)` Keep List entries that are no longer above your equipped iLvl (v2.33.1+ auto-cleans these on every bag update; this command is now mainly for one-shot inspection) |
 | `/ec clean upgrades apply` | Manually remove stale `Keep (upgrade)` entries (with confirmation) |
-| `/ec bugreport` | Generate a diagnostic report you can copy and paste into a bug report (includes a list of your loaded addons for conflict diagnosis) |
+| `/ec bugreport` | Generate a comprehensive diagnostic report (Issue Summary at top, recent sold / deleted / silent-refusal ring buffers, toggle diffs, last-event times, cache stats, addon list partitioned into potentially-relevant + other). Opens in a resizable copyable window. |
 | `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell - per-predicate chain trace (also via Alt+Shift+Right-Click, or Alt+Right-Click → Sell Info) |
 | `/ec loot` | Open the Loot Log window (Session / Character / Account views; also a Stats-panel button and a bindable key) |
 | `/ec rules` | Open a plain-English summary of every active rule + the order EC applies them (also the "Current Rules" button on the Main panel) |

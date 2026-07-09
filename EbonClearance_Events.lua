@@ -5788,6 +5788,34 @@ NS.CaptureToggleLoginSnapshot = EC_CaptureToggleLoginSnapshot
 NS.ToggleDiffSinceLogin = EC_ToggleDiffSinceLogin
 NS.toggleWatchList = EC_TOGGLE_WATCH_LIST
 
+-- v2.51.0: prime the client's item cache for Delete List entries at
+-- login. GetItemInfo returns nil for items the client hasn't seen this
+-- session; Delete List entries persist across sessions and often
+-- haven't been hovered, so /ec bugreport's Delete List Preview shows
+-- "item:ID" for everything on a fresh login. SetHyperlink fires an
+-- async client-cache request; by the time the user runs /ec bugreport
+-- later in the session, the client has received the responses and
+-- names resolve properly. The single-sweep is fine for the typical
+-- delete-list size (100-500 entries) - the client batches these
+-- server-side and the burst settles in a couple of seconds.
+local function EC_PrimeDeleteListItemCache()
+    if not (DB and DB.deleteList) then
+        return
+    end
+    local st = NS.scanTooltip
+    if not st then
+        return
+    end
+    for id in pairs(DB.deleteList) do
+        if type(id) == "number" then
+            pcall(st.SetOwner, st, UIParent, "ANCHOR_NONE")
+            pcall(st.ClearLines, st)
+            pcall(st.SetHyperlink, st, "item:" .. id)
+        end
+    end
+end
+NS.PrimeDeleteListItemCache = EC_PrimeDeleteListItemCache
+
 -- v2.51.0: last-run timestamps for the addon's driving events. When a
 -- user reports "auto-mark isn't firing" or "the vendor cycle got stuck",
 -- knowing WHEN each subsystem last ran narrows the search: an
@@ -8077,6 +8105,20 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- feature-gating) - not every checkbox in the addon.
         if event == "PLAYER_LOGIN" and NS.CaptureToggleLoginSnapshot then
             NS.CaptureToggleLoginSnapshot()
+        end
+        -- v2.51.0: warm the client's item cache for Delete List entries
+        -- after a short settle so /ec bugreport (later in the session)
+        -- can resolve names. Delayed by 5s to let the login-storm
+        -- (PLAYER_LOGIN + inventory scans + Blizzard's own cache prime)
+        -- settle first. Best-effort - if the delay helper isn't loaded
+        -- (Core race) we just skip; user's next bugreport will still
+        -- get whatever the client has cached by then.
+        if event == "PLAYER_LOGIN" and NS.PrimeDeleteListItemCache then
+            if NS.Delay then
+                NS.Delay(5, NS.PrimeDeleteListItemCache)
+            else
+                NS.PrimeDeleteListItemCache()
+            end
         end
         -- Version gossip: once per session (login / reload, not zone changes),
         -- after a short settle, ask the guild for versions.

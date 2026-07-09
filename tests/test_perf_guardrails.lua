@@ -6893,6 +6893,12 @@ do
                 and ev:find('EC_StampEvent%("autoMarkResilience"%)') ~= nil
                 and ev:find('EC_StampEvent%("autoDeleteScan"%)') ~= nil,
             "v2.51.0 (diagnostic hook): eight stamp sites so /ec bugreport can show when each subsystem last fired. A nil / '(never)' reading is diagnostic on its own - subsystem didn't run despite being enabled. Narrows the search when the user reports 'auto-mark isn't firing' or 'the vendor cycle got stuck'.")
+        check("Test 110d2: v2.51.0 Delete List item cache prime at PLAYER_LOGIN",
+            ev:find("EC_PrimeDeleteListItemCache") ~= nil
+                and ev:find("NS%.PrimeDeleteListItemCache = EC_PrimeDeleteListItemCache") ~= nil
+                and ev:find('event == "PLAYER_LOGIN" and NS%.PrimeDeleteListItemCache') ~= nil
+                and ev:find("NS%.Delay%(5, NS%.PrimeDeleteListItemCache%)") ~= nil,
+            "v2.51.0 fix: /ec bugreport's Delete List Preview initially showed 'item:ID' for every entry on a fresh login because SetHyperlink priming at bugreport-time fires an async request that hasn't returned by the time the report is built. Prime hook now iterates the Delete List 5s after PLAYER_LOGIN so by the time the user runs /ec bugreport later in the session, the client has received responses and names resolve. Delay via NS.Delay lets the login-storm settle first.")
         check("Test 110e: v2.51.0 bug report - item name resolution via EC_ResolveItemLabel (Delete List Preview fix)",
             br:find("EC_ResolveItemLabel") ~= nil
                 and br:find("NS%.scanTooltip") ~= nil

@@ -1487,14 +1487,18 @@ function EC_compCache.describeSellability(bag, slot)
         step("chanceOnHitProtection", true, L["n/a"])
     end
 
-    -- Tome / recipe protection. Mirrors EC_IsSellable's tome gate: it
-    -- only fires on a Sell List or quality-rule signal (a recipe selling
-    -- purely via Sell Known Recipes is already gated on being known, so
-    -- it bypasses this veto). protectAllTomes wins; protectUnlearnedTomes
-    -- only vetoes recipes/tomes the character has not learned. Allow Sell
-    -- (Alt+Right-Click) lifts both.
+    -- Tome / recipe protection. Mirrors EC_IsSellable's tome gate.
+    -- v2.51.2 (Serv report, Pattern: Mooncloth Leggings): narrowed to
+    -- fire ONLY on qualityPass, not whitelistPass - an explicit Sell
+    -- List entry now overrides the tome veto (matches how affix +
+    -- chance-on-hit already behave since v2.20.1). Allow Sell
+    -- (Alt+Right-Click) still exists as a per-item override.
+    -- EC-TRAP: this predicate MUST match EC_IsSellable's tome-veto
+    -- block AND EC_AnnotateTooltip's tome branch - all three parity
+    -- sites use `qualityPass and not recipePass and (protectAllTomes
+    -- or protectUnlearnedTomes)`.
     local tomeProtected = false
-    if (qualityPass or whitelistPass)
+    if qualityPass
         and not recipePass
         and DB
         and (DB.protectAllTomes or DB.protectUnlearnedTomes)
@@ -1505,7 +1509,7 @@ function EC_compCache.describeSellability(bag, slot)
             step("tomeProtection", true, L["tome/recipe, but you Allow-Sold this one"])
         elseif DB.protectAllTomes then
             tomeProtected = true
-            step("tomeProtection", false, L["Kept - 'protect all tomes' is on. Tip: turn off 'Protect all tomes' in Merchant Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
+            step("tomeProtection", false, L["Kept - 'protect all tomes' is on. Tip: add this item to the Sell List, turn off 'Protect all tomes' in Merchant Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
         elseif DB.protectUnlearnedTomes
             and EC_compCache.playerKnowsTomeSpell
             and not EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)

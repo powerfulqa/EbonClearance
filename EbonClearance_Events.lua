@@ -5332,20 +5332,29 @@ local function EC_IsSellable(bag, slot, junkOnly)
             recipePass = false
         end
     end
-    -- Tome protection. HARD veto regardless of list membership - mirrors
-    -- the v2.19.0 affix protection design rather than the v2.20.1 chance-
-    -- on-hit narrowing: a protected tome cannot be vendored even when on
-    -- the Sell List. The user must explicitly mark Allow Sell
-    -- (Alt+Right-Click -> Allow Sell, ADB.allowedItems[itemID]) to lift
-    -- the protection. Two-key gate: Sell List entry expresses intent;
-    -- Allow Sell is the acknowledgment that the protection is being
-    -- overridden. protectAllTomes wins over protectUnlearnedTomes when
-    -- both are on.
+    -- Tome protection. v2.51.2 (Serv report, Pattern: Mooncloth Leggings):
+    -- narrowed to match the v2.20.1 chance-on-hit design - whitelistPass
+    -- (explicit Sell List entry) now RELEASES the tome veto, consistent
+    -- with the other safety-net protections (chance-on-hit and affix
+    -- both let Sell List through since v2.20.1). Pre-v2.51.2 this was a
+    -- two-key gate (Sell List + Allow Sell) but the resulting behaviour
+    -- was surprising: a player who added a learnt recipe to Sell List
+    -- and had "Protect all tomes" on saw the item quietly refuse to
+    -- sell, with no in-game hint that Allow Sell was also required.
+    -- Auto-rule sweeps (qualityPass alone) remain gated - the safety
+    -- net still catches a Rare pattern that fell into a per-quality
+    -- rule range without the user explicitly listing it. Allow Sell
+    -- (ADB.allowedItems[itemID]) still exists as a per-item override
+    -- for players who don't use Sell List.
     -- `not recipePass`: a known profession recipe the user opted to sell
     -- via Sell Known Recipes is carved out of the tome veto (it wins over
     -- protectAllTomes for that specific case). Non-recipe tomes and unknown
     -- recipes never set recipePass, so their protection is unaffected.
-    if (qualityPass or whitelistPass)
+    -- EC-TRAP: parity with describeSellability's tomeProtection step
+    -- (EbonClearance_BagDisplay.lua) and EC_AnnotateTooltip's tome-veto
+    -- branch (EbonClearance_Tooltip.lua) - all three MUST use the same
+    -- condition shape or the trace / tooltip disagree with the vendor.
+    if qualityPass
         and not recipePass
         and (DB.protectAllTomes or DB.protectUnlearnedTomes)
         and EC_compCache.itemIsTome(bag, slot, itemID)

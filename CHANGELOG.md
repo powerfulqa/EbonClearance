@@ -5,6 +5,32 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.51.2
+
+**Bug fix: adding a learnt recipe to the Sell List with `Protect all tomes` on made it silently refuse to sell.**
+
+Reported by Serv against `Pattern: Mooncloth Leggings` (id=14497, Rare, learnt). Player added to the Sell List, expected it to sell at the next vendor visit, but `/ec sellinfo` showed `WON'T SELL - protected` with the trace step `Kept - 'protect all tomes' is on`.
+
+**Root cause**: the tome-protection HARD veto at `EbonClearance_Events.lua:5348` was a **two-key gate** - required BOTH Sell List entry AND Allow Sell (Alt+Right-Click) to release. The design comment described this as intentional, but it was inconsistent with the chance-on-hit and affix protections (both v2.20.1) that already treat Sell List membership as sufficient explicit intent.
+
+**Fix**: narrow the tome-veto condition to fire only on `qualityPass` (auto-rule sweep signal), not `whitelistPass` (explicit Sell List entry). Now consistent across all three safety-net protections: Sell List releases each of them; Allow Sell exists as a per-item override for players not using lists; the auto-rule sweep is still gated so a tome that falls into a per-quality rule range without user intent stays protected.
+
+Applied to all three parity sites (EC-TRAP: they must stay in lockstep):
+- **`EC_IsSellable`** (`EbonClearance_Events.lua:5348`) - the vendor decision.
+- **`describeSellability`** (`EbonClearance_BagDisplay.lua`) - the `/ec sellinfo` trace mirror.
+- **`EC_AnnotateTooltip`** (`EbonClearance_Tooltip.lua`) - the bag tooltip mirror. Added an `onSellList` guard so the Sell List → `Will Sell` label at line 175 is no longer overwritten by the tome block at line 911.
+
+Also updated the trace hint on the tome-rejection branch: was `Tip: turn off 'Protect all tomes' ... or Alt+Right-Click -> Allow Sell`; now `Tip: add this item to the Sell List, turn off 'Protect all tomes' ... or Alt+Right-Click -> Allow Sell`. Three ways out instead of two.
+
+**Risk / mitigation**: any player who has a tome on Sell List by mistake AND `Protect all tomes` on will now see it sell at the next vendor visit (was previously silently kept). Mitigation: recommend a one-time Sell List audit after upgrade. The `Protect all tomes` toggle is the aggressive default, catching every unlisted tome; the semantic change only affects explicitly-listed items.
+
+Test at `tests/test_perf_guardrails.lua` "EC_IsSellable tome block gates on qualityPass alone" pins the new condition and forbids regression.
+
+Downgrade-safe to v2.51.1.
+
+---
+
+
 ### v2.51.1
 
 **Quickstart expansion + typo fix in the v2.51.0 diagnostic hook.**

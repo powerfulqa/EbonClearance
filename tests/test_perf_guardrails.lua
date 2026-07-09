@@ -3454,13 +3454,17 @@ do
                 "the tome veto must HARD-veto (return false) so Sell List membership doesn't bypass it; Allow Sell is the only bypass"
             )
             check(
-                "EC_IsSellable tome block considers whitelistPass in the gate",
-                -- `.-` tolerates the `and not recipePass` carve-out line
-                -- between the signal check and the toggle check: Sell Known
-                -- Recipes wins over the tome veto for learned recipes, but
-                -- whitelistPass must still lead into the gate.
-                eventsSrc:find("%(qualityPass or whitelistPass%).-and %(DB%.protectAllTomes") ~= nil,
-                "the tome gate must include whitelistPass so the protection fires even for Sell List entries"
+                "EC_IsSellable tome block gates on qualityPass alone (v2.51.2: whitelistPass releases the tome veto)",
+                -- v2.51.2 (Serv report, Pattern: Mooncloth Leggings): the
+                -- tome veto used to fire on `(qualityPass or whitelistPass)`
+                -- but that was inconsistent with the v2.20.1 chance-on-hit
+                -- narrowing (chance-on-hit veto explicitly exempts
+                -- whitelistPass). Sell List entries now release the tome
+                -- veto too, matching the affix + chance-on-hit family.
+                -- Allow Sell (ADB.allowedItems) is still a per-item override.
+                eventsSrc:find("if qualityPass\n%s+and not recipePass\n%s+and %(DB%.protectAllTomes") ~= nil
+                    and eventsSrc:find("%(qualityPass or whitelistPass%).-and %(DB%.protectAllTomes") == nil,
+                "the tome gate must gate on qualityPass alone; whitelistPass entries release the veto"
             )
         end
     end
@@ -6952,6 +6956,12 @@ do
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find('DB%.sellKnownRecipeBindFilter = %{ %[1%] = "bop"') ~= nil
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find("Yes, all recipes %(any bind type%)") ~= nil,
             "v2.51.1 addition: Q9b sellRecipes now offers no / all / boeOnly / bopOnly instead of just yes/no. The Quickstart answer explicitly sets DB.sellKnownRecipeBindFilter[1..4] to the chosen filter so the tooltip verdict matches the vendor cycle from the first Quickstart run. Root-cause of the class of bug that hit Serv on Ragesteel Breastplate + Shining Forest Emerald was that the Quickstart's yes-answer defaulted the bind filter to 'any' silently.")
+        check("Test 110o: v2.51.2 tome-protection veto narrowed to qualityPass only (Sell List releases)",
+            ev:find("if qualityPass\n        and not recipePass\n        and %(DB%.protectAllTomes") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not recipePass\n        and DB\n        and %(DB%.protectAllTomes") ~= nil
+                and fileSrc("EbonClearance_Tooltip.lua"):find("and not onSellList") ~= nil
+                and fileSrc("EbonClearance_Tooltip.lua"):find("local onSellList = IsInSet%(DB%.whitelist, id%)") ~= nil,
+            "v2.51.2 fix (Serv report, Pattern: Mooncloth Leggings id=14497): tome-protection HARD veto used to fire on `(qualityPass or whitelistPass)` which was inconsistent with the v2.20.1 chance-on-hit narrowing (chance-on-hit veto fires on quality/rank/dupe/recipe but NOT whitelistPass). A player who added a learnt recipe to Sell List with 'Protect all tomes' on saw the item quietly refuse to sell. Now: all three parity sites (EC_IsSellable, describeSellability trace, EC_AnnotateTooltip) narrow to qualityPass-only. Adding to Sell List becomes explicit-enough intent. Allow Sell escape hatch stays for players not using lists. Auto-rule quality sweep still protected.")
         check("Test 110n: v2.51.1 Quickstart Q13b deleteMode question wired end-to-end",
             fileSrc("EbonClearance_QuickstartPanel.lua"):find("deleteMode = %{") ~= nil
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find("vendorOnly = function%(DB%)") ~= nil
@@ -6962,11 +6972,11 @@ do
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find('deleteMode = "vendorOnly"') ~= nil,
             "v2.51.1 addition: Q13b delete-aggressiveness question. Independent of Q13 master switch so the answer sticks (destructive DB toggles are gated by enableDeletion at the flow). Three tiers ordered by increasing destructiveness: vendorOnly (safest default) / onPickup / onLoot. Presets seeded: recommended/cautious/farmer = vendorOnly; power = onPickup.")
         check("Test 110k: v2.51.0 Sell Info popup - filter-config hints on 4 rejection branches",
-            bd:find("Tip: turn off 'Protect all tomes'") ~= nil
+            bd:find("turn off 'Protect all tomes'") ~= nil
                 and bd:find("Tip: turn off 'Protect Affixed Rare Items'") ~= nil
                 and bd:find("Tip: turn off 'Protect Chance%-on%-Hit Items'") ~= nil
                 and bd:find("Tip: set this quality's bind filter") ~= nil,
-            "v2.51.0 (Serv request): common-toggle rejection branches now include an inline 'Tip: ...' phrase naming the panel + toggle the player can flip to make the item sellable, or the Alt+Right-Click Allow Sell escape hatch. Reduces round-trips - user reads the trace and knows the exact toggle to change.")
+            "v2.51.0 (Serv request): common-toggle rejection branches now include an inline 'Tip: ...' phrase naming the panel + toggle the player can flip to make the item sellable, or the Alt+Right-Click Allow Sell escape hatch. Reduces round-trips - user reads the trace and knows the exact toggle to change. v2.51.2 widened the tome-tip to also mention Sell List, so the pattern check now allows any 'turn off Protect all tomes' phrasing (with or without the leading 'Tip:').")
     end
 end
 

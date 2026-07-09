@@ -883,11 +883,22 @@ local function EC_AnnotateTooltip(tooltip)
         end
     end
 
+    -- v2.51.2 (Serv report, Pattern: Mooncloth Leggings): Sell List
+    -- membership releases the tome veto in EC_IsSellable, so the
+    -- tooltip must not overwrite the earlier "Will Sell" label with a
+    -- tome-protection label. Check both DB.whitelist (per-character)
+    -- and ADB.whitelist (account) since the earlier Sell List branch at
+    -- ~line 175 fires on either.
+    -- EC-TRAP: this predicate matches EC_IsSellable's tome-veto block
+    -- + describeSellability's tomeProtection step. Editing any one
+    -- without the other two breaks the trace-tooltip-vendor parity.
+    local onSellList = IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id))
     local tomeProtected = false
     local tomeHave = false
     local tomeKindLabel
     if (DB.protectAllTomes or DB.protectUnlearnedTomes)
         and not recipeSellable
+        and not onSellList
         and EC_compCache.liveTooltipIsTome(tooltip, id)
     then
         -- Label the protection accurately. GetItemInfo's class is

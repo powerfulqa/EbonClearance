@@ -88,7 +88,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "sell-info-menu",
         q = L["What does 'Sell Info' on the right-click menu do?"],
-        a = L["Alt+Right-Click a bag item and choose |cffb6ffb6Sell Info|r to print a step-by-step trace of how EbonClearance decided to keep, sell, or delete that exact item. It lists each check (sell price, your lists, quality rule, known-recipe rule, affix / chance-on-hit / tome protection) with a + or - and ends with the final verdict. It is the same readout as /ec sellinfo, for the item you clicked. Use it whenever an item isn't doing what you expected at a vendor."],
+        a = L["Alt+Right-Click a bag item and choose |cffb6ffb6Sell Info|r to open a copyable popup with a step-by-step trace of how EbonClearance decided to keep, sell, or delete that exact item. It lists each check (sell price, your lists, quality rule, known-recipe rule, affix / chance-on-hit / tome protection) with a + or - and ends with the final verdict. Ctrl+A then Ctrl+C to copy the whole trace for a Discord paste. Same readout as /ec sellinfo, for the item you clicked. Use it whenever an item isn't doing what you expected at a vendor."],
         panel = nil,
     },
     {
@@ -154,7 +154,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "tshoot-why-not-selling",
         q = L["Why isn't this item selling?"],
-        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints each check and tells you which one is keeping the item. Usually one of the protection toggles is catching it - the panel below has all of them."],
+        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance opens a copyable popup listing each check and tells you which one is keeping the item. Usually one of the protection toggles is catching it - the panel below has all of them."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
@@ -238,7 +238,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "tshoot-sellinfo",
         q = L["How do I see exactly why a bag item will or won't sell?"],
-        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance prints the full step-by-step decision in chat."],
+        a = L["Alt+Shift+Right-Click the item, or type /ec sellinfo. EbonClearance opens a copyable popup with the full step-by-step decision. Ctrl+A then Ctrl+C to copy it for a Discord paste."],
         panel = nil,
     },
     {

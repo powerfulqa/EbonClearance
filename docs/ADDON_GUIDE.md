@@ -2145,7 +2145,9 @@ Cross-file API surface added in this stage:
   EC_IsSellable definition. BagDisplay's `bagSlotWillSell` and
   `describeSellability` consult it via `NS.IsSellable`.
 - **`NS.PrintNice = PrintNice`** and **`NS.PrintNicef = PrintNicef`**
-  for the sellinfo trace's chat output.
+  for the sellinfo trace's fallback chat output (the primary surface
+  is the shared copy-frame popup from v2.50.5 onwards - see
+  `NS.ShowCopyFrame` published by `EbonClearance_BugReport.lua`).
 
 **Load order is load-bearing.** `.toc` order is `Core → Companion →
 Protection → Vendor → EbonClearance.lua → BagDisplay`. BagDisplay loads

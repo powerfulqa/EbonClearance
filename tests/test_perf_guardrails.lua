@@ -6956,6 +6956,10 @@ do
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find('DB%.sellKnownRecipeBindFilter = %{ %[1%] = "bop"') ~= nil
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find("Yes, all recipes %(any bind type%)") ~= nil,
             "v2.51.1 addition: Q9b sellRecipes now offers no / all / boeOnly / bopOnly instead of just yes/no. The Quickstart answer explicitly sets DB.sellKnownRecipeBindFilter[1..4] to the chosen filter so the tooltip verdict matches the vendor cycle from the first Quickstart run. Root-cause of the class of bug that hit Serv on Ragesteel Breastplate + Shining Forest Emerald was that the Quickstart's yes-answer defaulted the bind filter to 'any' silently.")
+        check("Test 110p: v2.51.3 ItemHighlightingPanel affix row renamed 'Random affix items' -> 'Known Affix items'",
+            fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Known Affix items %(purple%)"%]') ~= nil
+                and fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Random affix items %(purple%)"%]') == nil,
+            "v2.51.3 (Serv request): prep-rename before the v2.52.0 companion 'Needed Affix items' tint lands. The affix row in SELL_BORDER_CATEGORIES now reads 'Known Affix items (purple)' so the panel reads as a natural pair with the incoming Needed Affix row. Locale template keys migrated in both frFR and deDE. Behavior unchanged (still fires on any bag item carrying a random affix).")
         check("Test 110o: v2.51.2 tome-protection veto narrowed to qualityPass only (Sell List releases)",
             ev:find("if qualityPass\n        and not recipePass\n        and %(DB%.protectAllTomes") ~= nil
                 and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not recipePass\n        and DB\n        and %(DB%.protectAllTomes") ~= nil

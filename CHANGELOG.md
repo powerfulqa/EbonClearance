@@ -5,6 +5,21 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.51.3
+
+**Rename the affix highlight row to prep for the incoming Needed Affix companion tint.**
+
+Panel row label only. No behaviour change. The `affix` sell-border category continues to fire on any bag item carrying a random affix - the swatch, tint colour, and enable-toggle all work exactly as before.
+
+- **`EbonClearance_ItemHighlightingPanel.lua`**: the row previously labelled `Random affix items (purple)` now reads `Known Affix items (purple)`. Prep-rename before v2.52.0's companion `Needed Affix items` tint lands, so the panel reads as a natural pair: `Known Affix items` (any random-affixed item) + `Needed Affix items` (an affix at rank needed).
+- **Locale templates**: `EbonClearance_Locale_frFR.lua` + `EbonClearance_Locale_deDE.lua` migrate the empty template key from the old string to the new. Existing translations (both are empty templates today) unaffected.
+- **Test 110p** pins the new label and forbids regression to the old string.
+
+No schema change; no downgrade impact.
+
+---
+
+
 ### v2.51.2
 
 **Bug fix: adding a learnt recipe to the Sell List with `Protect all tomes` on made it silently refuse to sell.**

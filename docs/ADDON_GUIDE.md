@@ -642,6 +642,38 @@ guild/group stats into a transient, session-only aggregate
 - **`/ec guildtest`** injects simulated members plus the local player via the
   real send path (honoring live toggles), so the panel is testable solo.
 
+### Chance-on-hit proc-pairing sharing (`NS.ProcShare`, v2.53.0)
+
+`EbonClearance_ProcShare.lua` is the third `NS.Comms` consumer. It shares
+learned chance-on-hit proc pairings (`ADB.chanceProcConfirmedItems`) between
+opted-in guild peers. Unlike `GuildShare`'s session-only aggregate, ProcShare
+writes directly to persistent SavedVariables - a merged pair carries forward
+across `/reload` and login.
+
+- **Message types:** `PREQ` (broadcast) + `PDAT` (whisper reply, sent only if
+  `EbonClearanceDB.shareChanceProcs`). Single payload section
+  `pairs:<id>~<spellID>~<family>~<item>;...`, capped at 240 bytes with the
+  oldest `learnedAt` trimmed first. No `name:` section - unlike GuildShare,
+  attribution is not offered because pairing knowledge is a fact, not an
+  achievement.
+- **Merge policy: local-wins.** `ProcShare.mergeReply` writes a received
+  pair only if `ADB.chanceProcConfirmedItems[itemID]` is nil, so a corrupt
+  sender cannot overwrite good local records. Freshness is not preferred
+  over locality.
+- **Anonymity:** the `PDAT` handler ignores its sender arg (`_`) entirely.
+  The merge writes to ADB carry no per-contributor tracking; `NS.recentProcShareMerges`
+  logs itemID + spellID + family + item + direction + timestamp, but never
+  the sender name.
+- **Auto-fire:** 6 seconds after `PLAYER_LOGIN` for opted-in players, one
+  second after the version-probe fires. Explicit Refresh button on the
+  Guild Panel binds to `NS.ProcShare.RequestNow`.
+- **Load order:** loads AFTER `EbonClearance_GuildShare.lua` in `.toc`
+  because both need `NS.Comms` from `EbonClearance_Comms.lua`.
+- **`/ec procsharetest`** injects three high-range fake pairings (999901,
+  999902, 999903) through the real `ProcShare.mergeReply` path so the merge
+  pipeline is testable solo. Fake IDs are chosen to be outside the real
+  3.3.5a itemID range to avoid clashing with legitimate items.
+
 ## Localization (`NS.L`, v2.43.0)
 
 Hand-rolled i18n, no AceLocale. `EbonClearance_Locale.lua` loads **second**
@@ -1485,6 +1517,67 @@ The toggle (`DB.sellKnownRecipes`) is account-wide like the sibling
 `protect*Tomes` toggles, but the learn-state is read per-character from the
 live tooltip at decision time, so the same account setting yields different
 results per alt.
+
+### Sell List releases the tome veto (v2.51.2)
+
+Pre-v2.51.2 the tome-protection HARD veto in `EC_IsSellable` fired on
+`(qualityPass or whitelistPass)`, which made adding a tome to the Sell List
+insufficient to override it - a two-key gate (Sell List + Allow Sell) was
+needed. This was inconsistent with the v2.20.1 chance-on-hit narrowing
+(chance-on-hit veto explicitly exempts `whitelistPass`) and with the affix
+protection (also exempts `whitelistPass`). Reported by Serv against
+`Pattern: Mooncloth Leggings` (a learned pattern on Sell List refused to
+sell with `protectAllTomes` on).
+
+The v2.51.2 fix narrows all three parity sites to gate on `qualityPass` only:
+
+- `EC_IsSellable` (`EbonClearance_Events.lua` ~5348) - drops `or whitelistPass`.
+- `describeSellability` (`EbonClearance_BagDisplay.lua`) - matching narrowing
+  in the `tomeProtection` step so `/ec sellinfo` and the vendor agree.
+- `EC_AnnotateTooltip` (`EbonClearance_Tooltip.lua` ~886) - adds an
+  `onSellList` guard so the Sell List's `Will Sell` label at line 175
+  isn't overwritten by the tome-veto label at line 911.
+
+Adding to Sell List is now sufficient explicit intent to release the veto.
+Allow Sell (`ADB.allowedItems[itemID]`) stays as a per-item override. The
+auto-rule quality sweep is still gated so a tome that falls into a
+per-quality rule range without user intent stays protected.
+
+EC-TRAP: these three parity sites MUST stay in lockstep. Any change to one
+must be mirrored to the other two or the trace / tooltip disagrees with
+the vendor decision.
+
+### Known vs Needed affix highlight (v2.52.0)
+
+The `affix` sell-border category pre-v2.52.0 fired on any random-affixed
+item, so the Item Highlighting row (renamed to `Known Affix items (purple)`
+in the same release) was a misnomer: it highlighted unknown affixes too.
+The v2.52.0 split introduces a complementary category:
+
+- **`affix` (Known Affix items, purple)** - fires ONLY when
+  `EC_compCache.playerOwnsAffix(affixData)` returns true. Same predicate the
+  tooltip's `statusTag = "affixknown"` branch computes (`playerKnows OR
+  playerKnowsRank OR playerKnowsFamily`).
+- **`affixneeded` (Needed Affix items, gold, new)** - fires when
+  `bagSlotAffixData ~= nil AND NOT playerOwnsAffix`. Mirrors the tooltip's
+  `statusTag = "affixneeded"` branch.
+
+Precedence in `bagSlotWillSellCategory`: `affixneeded` wins over `affix`
+in edge cases (they should be complementary today, but guards against future
+logic drift). Both are opt-in defaults off; seeded in `EnsureDB`'s
+`sellBorderCategories` migration block.
+
+`describeSellability`'s `affixProtection` step also splits on
+`playerOwnsAffix` so the trace matches: `Kept - affix known` vs
+`Kept - affix needed`. Trace parity with the tooltip's known/needed labels.
+
+**Rank VI extension** (v2.52.0): Project Ebonhold added rank VI. The
+existing `romanToInt` at `EbonClearance_Protection.lua:172` already parses
+multi-char Roman numerals (VI = V + I), and `EnsureDB`'s clamp on
+`DB.affixMinSellRank` is unbounded above, so the extension only needed the
+Keep Settings slider max widened 5 -> 6 and the Quickstart `affixRankFloor`
+question extended with a `belowVI` option (plus the `snapshotAnswersFromDB`
+reverse-mapping). No SavedVariables migration required.
 
 ### Loot Log capture is a bag-delta, not loot events (v2.46.0)
 
@@ -3172,6 +3265,7 @@ Session-local ring buffers + snapshots + timestamps that `/ec bugreport` dumps. 
 - **`NS.CaptureToggleLoginSnapshot()`** + **`NS.ToggleDiffSinceLogin()`**. Watched-toggle snapshot at PLAYER_LOGIN (after `EnsureDB` seeds defaults). Diff at report time surfaces "toggles the user flipped this session" without needing mutation hooks on every settings widget. Watch list is `EC_TOGGLE_WATCH_LIST` (23 high-value toggles: destructive, auto-mark, protection, auto-protect, sell rules, vendor mode, scavenger).
 - **`NS.lastEventAt`** (table) + **`NS.StampEvent(key)`**. Eight stamp sites: `bagUpdate`, `equipmentSetsChanged`, `merchantShow`, `merchantClosed`, `vendorRunStart`, `autoMarkAffix`, `autoMarkResilience`, `autoDeleteScan`. Values start nil; a `(never)` reading in `/ec bugreport`'s Last Event Times section is diagnostic on its own.
 - **`NS.compCache.bindCache` / `itemAffixLookupCache` / `bagSlotAffixData` / `chanceOnHitCache` / `processCache` / `equipmentSetIDs`**. Existing session caches; `/ec bugreport`'s Cache Stats section counts each and breaks out `bindCache` by `boe / bop / any` tag totals so a scan-time regression (e.g. `any` share >> `boe + bop`) shows up as a data anomaly.
+- **`NS.recentProcShareMerges`** (ring, 20 max, v2.53.0). Session log of chance-on-hit proc-pairing merges via `NS.Comms` (`PREQ` / `PDAT`). Direction `"in"` = a guildmate's pair merged into local `ADB.chanceProcConfirmedItems`; `"out"` = a `PDAT` whisper sent to a peer. `/ec bugreport` dumps this under `--- Proc Pairings Shared This Session ---`. The merge write is gated by a local-wins policy in `EbonClearance_ProcShare.lua:mergeReply` (skip if the local itemID key already exists), which prevents a corrupt sender from overwriting good local records.
 
 **Shared copy frame** (`EC_ShowCopyFrame` in `EbonClearance_BugReport.lua`, exposed as `NS.ShowCopyFrame`): resizable (v2.51.0) via a bottom-right grip using Blizzard's `UI-ChatIM-SizeGrabber` textures. `OnSizeChanged` binds the edit box width to the scroll frame's dynamic width, so growing the frame grows the readable area. Default 560x400, min-resize 360x240.
 

@@ -282,13 +282,54 @@ local ANSWER_MAP = {
             DB.protectAllTomes = false
         end,
     },
+    -- v2.51.1: expanded from yes/no to no + three bind-filter variants.
+    -- The bind filter (DB.sellKnownRecipeBindFilter[quality]) was
+    -- Quickstart-invisible pre-v2.51.1 and defaulted to "any" via
+    -- EnsureDB - the class of bug that hit Serv against Plans:
+    -- Ragesteel Breastplate + Design: Shining Forest Emerald in v2.50.4
+    -- / v2.50.5. Now the Quickstart answer explicitly sets all four
+    -- qualities to the chosen filter so the tooltip verdict matches
+    -- the vendor cycle from the first Quickstart run.
     sellRecipes = {
-        yes = function(DB)
-            DB.sellKnownRecipes = true
-            DB.sellKnownRecipeQualities = { [1] = true, [2] = true, [3] = true, [4] = true }
-        end,
         no = function(DB)
             DB.sellKnownRecipes = false
+        end,
+        all = function(DB)
+            DB.sellKnownRecipes = true
+            DB.sellKnownRecipeQualities = { [1] = true, [2] = true, [3] = true, [4] = true }
+            DB.sellKnownRecipeBindFilter = { [1] = "any", [2] = "any", [3] = "any", [4] = "any" }
+        end,
+        boeOnly = function(DB)
+            DB.sellKnownRecipes = true
+            DB.sellKnownRecipeQualities = { [1] = true, [2] = true, [3] = true, [4] = true }
+            DB.sellKnownRecipeBindFilter = { [1] = "boe", [2] = "boe", [3] = "boe", [4] = "boe" }
+        end,
+        bopOnly = function(DB)
+            DB.sellKnownRecipes = true
+            DB.sellKnownRecipeQualities = { [1] = true, [2] = true, [3] = true, [4] = true }
+            DB.sellKnownRecipeBindFilter = { [1] = "bop", [2] = "bop", [3] = "bop", [4] = "bop" }
+        end,
+    },
+    -- v2.51.1: delete-aggressiveness follow-up to the master
+    -- enableDeletion toggle (Q13). Pre-v2.51.1 the Quickstart only
+    -- offered on/off for enableDeletion, and the two aggressive
+    -- flavours (autoDeleteOnPickup + autoDeleteGreyOnLoot) were
+    -- panel-only. A player who Quickstart-answers "yes to delete"
+    -- expecting immediate destruction would be confused when items
+    -- linger on the Delete List until they visit a vendor. New Q13b
+    -- makes the aggressiveness choice explicit.
+    deleteMode = {
+        vendorOnly = function(DB)
+            DB.autoDeleteOnPickup = false
+            DB.autoDeleteGreyOnLoot = false
+        end,
+        onPickup = function(DB)
+            DB.autoDeleteOnPickup = true
+            DB.autoDeleteGreyOnLoot = false
+        end,
+        onLoot = function(DB)
+            DB.autoDeleteOnPickup = true
+            DB.autoDeleteGreyOnLoot = true
         end,
     },
     repair = {
@@ -388,6 +429,7 @@ local PRESETS = {
             keepBags = "yes",
             summon = "yes",
             delete = "no",
+            deleteMode = "vendorOnly",
             ilvlSurfaces = "bags",
             borders = "on",
         },
@@ -412,6 +454,7 @@ local PRESETS = {
             keepBags = "yes",
             summon = "yes",
             delete = "no",
+            deleteMode = "vendorOnly",
             ilvlSurfaces = "bags",
             borders = "on",
         },
@@ -431,11 +474,12 @@ local PRESETS = {
             safetyNets = "all",
             affixRankFloor = "off",
             tomes = "unlearned",
-            sellRecipes = "yes",
+            sellRecipes = "boeOnly",
             repair = "guild",
             keepBags = "no",
             summon = "yes",
             delete = "no",
+            deleteMode = "vendorOnly",
             ilvlSurfaces = "bagsPaperdoll",
             borders = "on",
         },
@@ -455,11 +499,12 @@ local PRESETS = {
             safetyNets = "critical",
             affixRankFloor = "belowV",
             tomes = "unlearned",
-            sellRecipes = "yes",
+            sellRecipes = "all",
             repair = "guild",
             keepBags = "no",
             summon = "yes",
             delete = "yes",
+            deleteMode = "onPickup",
             ilvlSurfaces = "everywhere",
             borders = "on",
         },
@@ -705,8 +750,37 @@ local function snapshotAnswersFromDB(DB)
     else
         a.tomes = "off"
     end
-    -- Q9b sell known recipes
-    a.sellRecipes = DB.sellKnownRecipes and "yes" or "no"
+    -- Q9b sell known recipes. v2.51.1: also derive the shared bind
+    -- filter across the four qualities. If they're all set to the same
+    -- value ("boe" / "bop"), reflect that in the radio; otherwise fall
+    -- back to "all" (which the ANSWER_MAP normalises to all-"any" on
+    -- next answer selection - mixed states get flattened intentionally).
+    if not DB.sellKnownRecipes then
+        a.sellRecipes = "no"
+    else
+        local bf = DB.sellKnownRecipeBindFilter
+        local uniform = bf and bf[1] and bf[1] == bf[2] and bf[2] == bf[3] and bf[3] == bf[4] and bf[1]
+        if uniform == "boe" then
+            a.sellRecipes = "boeOnly"
+        elseif uniform == "bop" then
+            a.sellRecipes = "bopOnly"
+        else
+            a.sellRecipes = "all"
+        end
+    end
+    -- Q13b delete-mode. v2.51.1: reflects the aggressive-delete pair
+    -- (autoDeleteOnPickup + autoDeleteGreyOnLoot). The three tiers are
+    -- ordered by increasing destructiveness: vendorOnly (both off,
+    -- items linger until vendor visit), onPickup (auto-delete on
+    -- BAG_UPDATE debounce), onLoot (also auto-delete grey items as
+    -- they enter the loot window).
+    if DB.autoDeleteGreyOnLoot then
+        a.deleteMode = "onLoot"
+    elseif DB.autoDeleteOnPickup then
+        a.deleteMode = "onPickup"
+    else
+        a.deleteMode = "vendorOnly"
+    end
     -- Q8 repair
     if not DB.repairGear then
         a.repair = "off"
@@ -1222,8 +1296,16 @@ local function buildPanel(self, content)
         lastAnchor = makeRadioGroup(content, lastAnchor, "sellRecipes", L["Q9b. Sell recipes you've already learned?"], {
             { value = "no", label = L["No, keep my learned recipes (default)"] },
             {
-                value = "yes",
-                label = L["Yes, auto-sell recipes this character already knows (overrides 'protect all tomes' for recipes)"],
+                value = "all",
+                label = L["Yes, all recipes (any bind type)"],
+            },
+            {
+                value = "boeOnly",
+                label = L["Yes, but only BoE recipes (safer - keeps soulbound recipes for alts)"],
+            },
+            {
+                value = "bopOnly",
+                label = L["Yes, but only BoP recipes"],
             },
         }, refresh)
 
@@ -1253,6 +1335,26 @@ local function buildPanel(self, content)
             {
                 { value = "no", label = L["No - don't delete anything automatically (default)"] },
                 { value = "yes", label = L["Yes - delete them when I'm at a vendor"] },
+            },
+            refresh
+        )
+
+        -- v2.51.1: aggressiveness follow-up to Q13. Independent of the
+        -- master switch above so the answer sticks even when Q13 is off
+        -- (the DB toggles are gated by enableDeletion at the flow, so
+        -- these values are dormant until Q13=yes).
+        lastAnchor = makeRadioGroup(
+            content,
+            lastAnchor,
+            "deleteMode",
+            L["Q13b. When should EC delete Delete-List items?"],
+            {
+                { value = "vendorOnly", label = L["Only when I visit a vendor (safest, default)"] },
+                { value = "onPickup", label = L["Also on pickup (destroys items as they enter my bags)"] },
+                {
+                    value = "onLoot",
+                    label = L["Also grey items on loot (max aggressive - never lets grey junk hit my bags)"],
+                },
             },
             refresh
         )

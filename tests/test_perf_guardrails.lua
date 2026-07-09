@@ -6941,6 +6941,26 @@ do
                 and bd:find("WON'T SELL") ~= nil
                 and bd:find("GetContainerItemLink%(bag, slot%)") ~= nil,
             "v2.51.0 (Serv request): Sell Info popup now leads with a header block (character + realm + date + bag/slot + item link + colored VERDICT). Answers the question at the top instead of forcing the reader to scroll to Result:. The trace steps still follow under '--- Full trace ---' for the reader who wants the reasoning.")
+        check("Test 110L: v2.51.1 toggle watch list uses real DB keys (repairUseGuildBank, not the repairViaGuildBank typo)",
+            ev:find('"repairUseGuildBank"') ~= nil
+                and ev:find('"repairViaGuildBank"') == nil,
+            "v2.51.1 fix: v2.51.0's EC_TOGGLE_WATCH_LIST had 'repairViaGuildBank' (0 hits in the codebase) instead of the real DB key 'repairUseGuildBank' (13 hits). Silent diagnostic hole - toggle-diff-since-login snapshot could never detect a change to the guild-bank repair setting. Fix confirms the corrected key and prevents regression.")
+        check("Test 110m: v2.51.1 Quickstart Q9b sellRecipes expanded with bind-filter options",
+            fileSrc("EbonClearance_QuickstartPanel.lua"):find("boeOnly = function%(DB%)") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("bopOnly = function%(DB%)") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find('DB%.sellKnownRecipeBindFilter = %{ %[1%] = "boe"') ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find('DB%.sellKnownRecipeBindFilter = %{ %[1%] = "bop"') ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("Yes, all recipes %(any bind type%)") ~= nil,
+            "v2.51.1 addition: Q9b sellRecipes now offers no / all / boeOnly / bopOnly instead of just yes/no. The Quickstart answer explicitly sets DB.sellKnownRecipeBindFilter[1..4] to the chosen filter so the tooltip verdict matches the vendor cycle from the first Quickstart run. Root-cause of the class of bug that hit Serv on Ragesteel Breastplate + Shining Forest Emerald was that the Quickstart's yes-answer defaulted the bind filter to 'any' silently.")
+        check("Test 110n: v2.51.1 Quickstart Q13b deleteMode question wired end-to-end",
+            fileSrc("EbonClearance_QuickstartPanel.lua"):find("deleteMode = %{") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("vendorOnly = function%(DB%)") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("onPickup = function%(DB%)") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("onLoot = function%(DB%)") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find("Q13b%. When should EC delete") ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find('a%.deleteMode = "onLoot"') ~= nil
+                and fileSrc("EbonClearance_QuickstartPanel.lua"):find('deleteMode = "vendorOnly"') ~= nil,
+            "v2.51.1 addition: Q13b delete-aggressiveness question. Independent of Q13 master switch so the answer sticks (destructive DB toggles are gated by enableDeletion at the flow). Three tiers ordered by increasing destructiveness: vendorOnly (safest default) / onPickup / onLoot. Presets seeded: recommended/cautious/farmer = vendorOnly; power = onPickup.")
         check("Test 110k: v2.51.0 Sell Info popup - filter-config hints on 4 rejection branches",
             bd:find("Tip: turn off 'Protect all tomes'") ~= nil
                 and bd:find("Tip: turn off 'Protect Affixed Rare Items'") ~= nil

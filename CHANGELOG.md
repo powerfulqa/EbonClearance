@@ -5,6 +5,38 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.51.1
+
+**Quickstart expansion + typo fix in the v2.51.0 diagnostic hook.**
+
+Three changes off a Quickstart audit + one small self-report.
+
+**Q9b `sellRecipes` expanded from yes/no to four options.** The Quickstart's yes-answer defaulted `DB.sellKnownRecipeBindFilter[1..4]` to `"any"` silently, which was the class of bug that hit `Plans: Ragesteel Breastplate` (v2.50.4) and `Design: Shining Forest Emerald` (v2.50.5) - the Merchant panel's per-quality bind filter was invisible to the Quickstart. New answers set all four qualities explicitly:
+
+- **No, keep my learned recipes** (default)
+- **Yes, all recipes (any bind type)**
+- **Yes, but only BoE recipes** (safer - keeps soulbound recipes for alts)
+- **Yes, but only BoP recipes**
+
+Preset seeding: `farmer` migrates from `yes` to `boeOnly` (matches the preset's description "sells Rares too - BoE only"); `power` migrates to `all`.
+
+**New Q13b `deleteMode`: delete-aggressiveness follow-up.** Q13 was a binary master toggle for `enableDeletion` but the two aggressive flavours (`autoDeleteOnPickup` + `autoDeleteGreyOnLoot`) were panel-only. A Quickstart player answering yes to Q13 could expect immediate destruction and be confused when items linger. New Q13b:
+
+- **Only when I visit a vendor** (safest, default)
+- **Also on pickup** (destroys items as they enter my bags)
+- **Also grey items on loot** (max aggressive - never lets grey junk hit my bags)
+
+Preset seeding: `recommended` / `cautious` / `farmer` = `vendorOnly`; `power` = `onPickup`.
+
+**v2.51.0 diagnostic-hook typo caught.** `EC_TOGGLE_WATCH_LIST` had `"repairViaGuildBank"` (0 hits in the codebase) instead of `"repairUseGuildBank"` (13 hits). Silent diagnostic hole - the toggle-diff-since-login snapshot could never detect a change to the guild-bank repair setting. Fixed; Test 110L pins it.
+
+Tests 110L / 110m / 110n cover all three changes. All 6 test suites stay at green.
+
+Downgrade-safe to v2.51.0. Existing Quickstart answers still resolve via `snapshotAnswersFromDB`; the sellRecipes reverse-mapping reads the shared bind filter and falls back to `all` for mixed states.
+
+---
+
+
 ### v2.51.0
 
 **Diagnostic-hooks release. `/ec bugreport` gains six new sections + an at-a-glance Issue Summary; Sell Info popup leads with the verdict; resizable copy frame; every rejection reason names the toggle to flip.**

@@ -5754,7 +5754,7 @@ local EC_TOGGLE_WATCH_LIST = {
     -- sell rules
     "sellKnownRecipes",
     -- vendor mode
-    "merchantMode", "repairGear", "repairViaGuildBank",
+    "merchantMode", "repairGear", "repairUseGuildBank",
     -- scavenger
     "summonGreedy", "muteGreedy", "autoLootCycle",
 }

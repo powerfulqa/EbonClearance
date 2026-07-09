@@ -350,11 +350,39 @@ GuildPanel:SetScript("OnShow", function(self)
         end
         syncNameEnabled()
 
+        -- v2.53.0: chance-on-hit proc-pairing sharing. Independent of the
+        -- Guild farming-stats opt-in above - a player can share pairings
+        -- while keeping farming stats private, or vice versa. The knowledge
+        -- base being shared is account-wide (ADB.chanceProcConfirmedItems);
+        -- the opt-in is per-character for consistency with shareGuildData.
+        local procShareCB = NS.AddCheckbox(
+            content,
+            "EbonClearanceProcShareCB",
+            nameCB,
+            L["Share my chance-on-hit knowledge with my guild (anonymous)"],
+            function() return EbonClearanceDB and EbonClearanceDB.shareChanceProcs end,
+            function(v) if EbonClearanceDB then EbonClearanceDB.shareChanceProcs = v end end,
+            -12
+        )
+
+        -- Explicit refresh button. Bypasses the 6s login-delay and fires a
+        -- fresh PREQ broadcast. Own 30s throttle inside NS.ProcShare.RequestNow
+        -- prevents spam-clicking from flooding the guild channel.
+        local procShareBtn = CreateFrame("Button", "EbonClearanceProcShareBtn", content, "UIPanelButtonTemplate")
+        procShareBtn:SetSize(180, 22)
+        procShareBtn:SetPoint("TOPLEFT", procShareCB, "BOTTOMLEFT", 26, -6)
+        procShareBtn:SetText(L["Refresh from guild"])
+        procShareBtn:SetScript("OnClick", function()
+            if NS.ProcShare and NS.ProcShare.RequestNow then
+                NS.ProcShare.RequestNow()
+            end
+        end)
+
         -- ---- Guild's Best Farming Zones ----
         local zonesHeader = content:CreateFontString(
             nil, "ARTWORK", "GameFontNormalLarge"
         )
-        zonesHeader:SetPoint("TOPLEFT", nameCB, "BOTTOMLEFT", 0, -16)
+        zonesHeader:SetPoint("TOPLEFT", procShareBtn, "BOTTOMLEFT", -26, -16)
         zonesHeader:SetText(L["Guild's Best Farming Zones"])
 
         -- Pre-create a fixed pool of 5 zone rows + 1 empty-state row.

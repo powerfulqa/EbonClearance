@@ -620,6 +620,12 @@ local function EnsureDB()
     if EbonClearanceDB.shareGuildName == nil then
         EbonClearanceDB.shareGuildName = false
     end
+    -- v2.53.0: Chance-on-hit proc-pairing sharing (opt-in, default OFF).
+    -- Account-level because the underlying knowledge base
+    -- (ADB.chanceProcConfirmedItems) is account-wide.
+    if EbonClearanceDB.shareChanceProcs == nil then
+        EbonClearanceDB.shareChanceProcs = false
+    end
     -- Language override (default false = follow the client's GetLocale()).
     -- Account-level. A locale code ("frFR" / "deDE" / ...) forces that
     -- language regardless of the client; false / "auto" follows the client.
@@ -5773,6 +5779,8 @@ local EC_TOGGLE_WATCH_LIST = {
     "merchantMode", "repairGear", "repairUseGuildBank",
     -- scavenger
     "summonGreedy", "muteGreedy", "autoLootCycle",
+    -- sharing (v2.53.0)
+    "shareGuildData", "shareGuildName", "shareChanceProcs",
 }
 local EC_toggleLoginSnapshot = nil
 local function EC_CaptureToggleLoginSnapshot()
@@ -7335,6 +7343,21 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         return
     end
 
+    if cmd == "procsharetest" then
+        -- v2.53.0: solo diagnostic for the proc-share pipeline. Merges
+        -- three high-range fake pairings into ADB.chanceProcConfirmedItems
+        -- through the real ProcShare.mergeReply path. Confirms the merge
+        -- writes work and populates NS.recentProcShareMerges so the new
+        -- /ec bugreport section can be exercised without a live guildmate.
+        if NS.ProcShare then
+            local n = NS.ProcShare.InjectTestPeers()
+            PrintNicef(L["Injected %d simulated proc pairing(s) into ADB.chanceProcConfirmedItems. Run /ec bugreport to see the merge ring."], n)
+        else
+            PrintNice(L["|cffff4444ProcShare module not loaded.|r"])
+        end
+        return
+    end
+
     if cmd == "status" or cmd == "enable" or cmd == "disable" then
         -- v2.39.1: discoverable surface for the master Enable toggle.
         -- Pre-v2.39.1 the only ways to flip DB.enabled were the
@@ -8142,6 +8165,16 @@ f:SetScript("OnEvent", function(self, event, ...)
             NS.Delay(5, function()
                 if NS.Comms and GetGuildInfo("player") then
                     NS.Comms.FireVersionProbe("GUILD")
+                end
+            end)
+            -- v2.53.0: initial proc-pairing pull request 6s after login,
+            -- one second AFTER the version probe so the two don't overlap.
+            -- Opt-in gated at RequestNow (own throttle + toggle check).
+            NS.Delay(6, function()
+                if EbonClearanceDB and EbonClearanceDB.shareChanceProcs
+                    and NS.ProcShare and NS.ProcShare.RequestNow
+                then
+                    NS.ProcShare.RequestNow()
                 end
             end)
         end

@@ -5,6 +5,36 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.53.0
+
+**Chance-on-hit proc pairings can now propagate anonymously across a guild via `NS.Comms`.**
+
+Background: `ADB.chanceProcConfirmedItems` is the account-wide catalog of `itemID -> {spellID, family, item}` pairings EC has learned this account via `LEARNED_SPELL_IN_TAB` autolearn (v2.49.1) or the seed catalog. Pre-v2.53.0 every character on every account had to rediscover pairings independently - a guildmate who already extracted "Vulnerability V of Item X" had knowledge the local player could benefit from immediately, but no way to share it.
+
+**New file: `EbonClearance_ProcShare.lua`** (a third `NS.Comms` consumer, modelled on `EbonClearance_GuildShare.lua`).
+
+- **Message pair**: `PREQ` (broadcast request) + `PDAT` (whisper reply). Same shape as `GREQ`/`GDAT`.
+- **Payload**: `pairs:id~spell~family~item;id~spell~family~item;...`. Single section, 240-byte cap, trimmed by oldest `learnedAt` first if oversized. Delimiter-unsafe strings (contain `~ ; | \t`) blank out that field.
+- **Opt-in gate**: `EbonClearanceDB.shareChanceProcs` (per-character, default `false`). Seeded in `EnsureDB`.
+- **Anonymity**: `PDAT` handler ignores the sender arg (`_`) entirely; the merge writes to `ADB.chanceProcConfirmedItems` without any per-contributor attribution. Unlike `GuildShare`, there is no optional "name:" section - pairing knowledge is a fact, not an achievement.
+- **Merge policy**: local-wins. A received pair is written only if the local `ADB.chanceProcConfirmedItems[itemID]` is `nil`, so a corrupt sender cannot overwrite a good local record.
+- **Auto-fire at login**: 6 seconds after `PLAYER_LOGIN`, opt-in players broadcast a `PREQ`. Own 30-second throttle inside `NS.ProcShare.RequestNow()` prevents spam.
+- **Explicit refresh**: a `Refresh chance-on-hit knowledge from guild` button on the Guild Panel calls the same `NS.ProcShare.RequestNow()`.
+- **Diagnostic**: `NS.ProcShare.InjectTestPeers()` merges three high-range fake IDs through the real merge path so the pipeline can be exercised without a live guildmate.
+
+**Bug report addition**: new section `--- Proc Pairings Shared This Session ---` after Silent Refusals. Dumps `NS.recentProcShareMerges` (session ring buffer, last 20 entries, each with itemID, itemName, spellID, family, direction=`in`/`out`, timestamp).
+
+**Watched-toggle diff-since-login**: `shareGuildData`, `shareGuildName`, `shareChanceProcs` added to `EC_TOGGLE_WATCH_LIST`.
+
+**Docs**: `CLAUDE.md` file count bumped 32 -> 33, seventh test suite entry added; `EbonClearance.toc` load order updated (ProcShare loads right after GuildShare, both after Events + Comms).
+
+**Tests**: new suite `tests/test_procshare.lua` mirrors `test_guildshare.lua` - encode/decode roundtrip, cap enforcement, local-wins merge policy, delimiter-unsafe skipping, transport handler behaviour (opt-in ON/OFF -> 0 or 1 `PDAT` whisper, self-skip -> 0 whispers, sender name never stored), plus static-pattern checks (uses `NS.Comms`, registers `"PREQ"`/`"PDAT"`, no `RegisterAddonMessagePrefix`, no `GROUP_ROSTER_UPDATE`, panel writes `shareChanceProcs` + binds Refresh button, Events.lua fires the delayed `RequestNow`).
+
+**Ship notes**: additive schema (`EbonClearanceDB.shareChanceProcs = false`). Downgrade-safe - old client with the field simply ignores it. No changes to the underlying autolearn pipeline; `ADB.chanceProcConfirmedItems` is still writable by both the local autolearn and by inbound `PDAT` merges (local-wins prevents mutual overwrite).
+
+---
+
+
 ### v2.52.0
 
 **Affix highlight rework: Known vs Needed split now honest + rank VI supported.**

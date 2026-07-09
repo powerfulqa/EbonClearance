@@ -643,6 +643,31 @@ local function EC_BuildBugReport()
     end
     add("")
 
+    -- v2.53.0: ProcShare merge log. Session ring buffer of proc-pairing
+    -- knowledge sent/received via NS.Comms (PREQ/PDAT). Direction "in"
+    -- = merged a guildmate's pair into local ADB; "out" = whispered our
+    -- pairings to a peer. Empty when opt-in is off on both sides or no
+    -- guildmate has queried yet.
+    add("--- Proc Pairings Shared This Session ---")
+    do
+        local merges = NS.recentProcShareMerges or {}
+        if #merges == 0 then
+            add("  (none this session)")
+        else
+            for i = 1, #merges do
+                local e = merges[i]
+                add(string.format("  [%s] (%s) id=%d spellID=%d family='%s' item='%s'",
+                    tostring(e.loggedAt),
+                    tostring(e.direction),
+                    tonumber(e.itemID) or 0,
+                    tonumber(e.spellID) or 0,
+                    tostring(e.family),
+                    tostring(e.item)))
+            end
+        end
+    end
+    add("")
+
     -- v2.51.0: recent-sold ring buffer. Answers "which specific items
     -- did EC sell in the last vendor visit / manual sell burst?" -
     -- lifetime totals answer "how many", not "which".

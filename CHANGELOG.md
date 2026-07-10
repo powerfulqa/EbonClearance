@@ -5,6 +5,26 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.54.0
+
+**Sold History: see exactly what EbonClearance sold or deleted this session, and why.**
+
+`/ec sellinfo` has always traced why a single item in your bags would sell, but there was no running record of what the addon actually did after it acted. Sold History fills that gap with a copyable, newest-first list of every sell and delete this login, each line spelling out the rule that fired in plain English.
+
+- **What it shows**: `[time] Sold 3x Item Name - <why>` / `[time] Deleted 1x Item Name - <why>`. The "why" is written out fully (the history window has more room than a tooltip), for example "On your account-wide Sell List (shared across all your characters).", "A profession recipe this character has already learned - Sell Known Recipes vendored the duplicate.", or "Matched your Green auto-sell rule: its item level was below what you have equipped in that slot (BoE only)."
+- **The reason is the true one**. It is built from the exact winning signal `EC_IsSellable` recorded at decision time, so the explanation can never drift from the real sell logic or from `/ec sellinfo`.
+- **Three ways in**: a red **Sold History** button on the main panel (below Current Rules), the `/ec history` slash command, or **Alt+Right-Click any bag item -> Sold History**.
+- **Session-only**. The list lives in memory, clears on `/reload`, and is never saved - no growing database or file.
+
+**Alt+Right-Click menu dividers.** The item menu now groups its rows into three sections separated by dashed dividers - list/allow actions, then Sell Info / Sold History, then Cancel - so the longer menu is easier to scan. Dividers are non-interactive and never render as a leading or doubled line when rows above them are hidden.
+
+**Under the hood**: the existing v2.51.0 recent-sold / recent-deleted session rings gained an optional `reason` field (additive, older call sites keep their sensible defaults), a new `EC_compCache.sellReasonForSignal` helper turns the recorded signal into the plain-English line, and `NS.ShowSessionHistory` renders the merged list through the shared copy window. `/ec bugreport` now includes the reason on each recent-sold / recent-deleted line.
+
+**Docs**: README slash-command table + Alt+Right-Click bullet, in-game Help/FAQ entry, and `docs/ADDON_GUIDE.md` slash list all updated.
+
+---
+
+
 ### v2.53.0
 
 **Chance-on-hit proc pairings can now propagate anonymously across a guild via `NS.Comms`.**

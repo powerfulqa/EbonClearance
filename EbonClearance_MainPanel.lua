@@ -680,10 +680,32 @@ local function BuildMainPanel(panel, content)
     EC_compCache.setPanelWidth(rulesHint, 180)
     rulesHint:SetText(L["|cff888888See every active rule + the order EC applies them.|r"])
 
+    -- Sold History button. Opens the copyable session log of what was sold /
+    -- deleted this login and why. Same style + placement pattern as the
+    -- Quickstart / Current Rules buttons above it.
+    local historyBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    historyBtn:SetSize(140, 26)
+    historyBtn:SetPoint("TOPLEFT", rulesBtn, "BOTTOMLEFT", 0, -8)
+    historyBtn:SetText(L["Sold History"])
+    historyBtn:SetScript("OnClick", function()
+        if NS.ShowSessionHistory then
+            NS.ShowSessionHistory()
+        end
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    local historyHint = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    historyHint:SetPoint("LEFT", historyBtn, "RIGHT", 10, 0)
+    historyHint:SetJustifyH("LEFT")
+    if historyHint.SetWordWrap then
+        historyHint:SetWordWrap(true)
+    end
+    EC_compCache.setPanelWidth(historyHint, 180)
+    historyHint:SetText(L["|cff888888What was sold or deleted this session, and why. Clears on /reload.|r"])
+
     -- Tip on its own line, in grey, so it reads as a hint rather than
     -- another sentence in the main description block.
     local mainTip = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    mainTip:SetPoint("TOPLEFT", rulesBtn, "BOTTOMLEFT", 0, -14)
+    mainTip:SetPoint("TOPLEFT", historyBtn, "BOTTOMLEFT", 0, -14)
     EC_compCache.setPanelWidth(mainTip, 16)
     mainTip:SetJustifyH("LEFT")
     mainTip:SetJustifyV("TOP")

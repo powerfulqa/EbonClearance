@@ -94,7 +94,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "slash-commands",
         q = L["What are the slash commands?"],
-        a = L["/ec opens the settings. /ec help prints the full command list. /ec sellinfo explains why a bag item will or won't sell. /ec loot opens the Loot Log window. /ec bugreport opens a diagnostic snapshot. /ec clean finds items appearing on multiple lists. /ecdebug shows a bag scan summary."],
+        a = L["/ec opens the settings. /ec help prints the full command list. /ec sellinfo explains why a bag item will or won't sell. /ec loot opens the Loot Log window. /ec history shows what was sold/deleted this session and why. /ec bugreport opens a diagnostic snapshot. /ec clean finds items appearing on multiple lists. /ecdebug shows a bag scan summary."],
         panel = nil,
     },
     {
@@ -245,6 +245,12 @@ local EC_HELP_ENTRIES = {
         id = "bugreport-sections",
         q = L["What's in the /ec bugreport window?"],
         a = L["Everything the addon knows about your current session that helps diagnose a report: Issue Summary flags at the top, current settings, sell rules, delete list preview with item names, recent auto-mark events, silent refusals (list adds that were blocked by cross-list conflicts), recent sold + recent deleted, toggles you changed this session, last-event timestamps, cache sizes, proc pairings shared this session (v2.53.0), and your loaded-addon list. Resize the window if the report is long. Ctrl+A then Ctrl+C to copy it for a Discord / GitHub paste."],
+        panel = nil,
+    },
+    {
+        id = "session-history",
+        q = L["What did EbonClearance just sell or delete? (/ec history)"],
+        a = L["Opens a copyable list of everything the addon has sold or deleted this session, newest first, each line showing the item, how many, and the rule that decided it (Sell List, Auto-sell by rarity, Junk, Delete List, and so on). It answers 'what did it just do, and why?' at a glance. Three ways in: the |cffb6ffb6Sold History|r button on the main panel, /ec history, or Alt+Right-Click any bag item and pick Sold History. Session-only - the list clears on /reload and is never saved. For the full step-by-step on a specific item still in your bags, use /ec sellinfo instead."],
         panel = nil,
     },
     {

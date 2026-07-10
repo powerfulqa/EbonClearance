@@ -56,7 +56,10 @@ local EC_CTX_ROWS = {
     { kind = "list", setName = "blacklist", label = L["Keep List"] },
     { kind = "list", setName = "deleteList", label = L["Delete List"] },
     { kind = "sellNow" },
+    { kind = "separator" },
     { kind = "sellinfo", label = L["Sell Info"] },
+    { kind = "history", label = L["Sold History"] },
+    { kind = "separator" },
     { kind = "cancel" },
 }
 
@@ -110,25 +113,42 @@ local function EC_BuildCtxFrame()
         btn:SetHighlightFontObject("GameFontGreenSmall")
         btn:SetDisabledFontObject("GameFontDisableSmall")
         local fs = btn:GetFontString()
-        if fs then
-            fs:ClearAllPoints()
-            fs:SetPoint("LEFT", btn, "LEFT", 4, 0)
-            fs:SetJustifyH("LEFT")
-        end
-        -- Highlight texture so hover gives feedback.
-        local hl = btn:CreateTexture(nil, "BACKGROUND")
-        hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        hl:SetBlendMode("ADD")
-        hl:SetAllPoints(btn)
-        hl:SetAlpha(0)
-        btn:SetScript("OnEnter", function()
-            hl:SetAlpha(0.4)
-        end)
-        btn:SetScript("OnLeave", function()
+        if EC_CTX_ROWS[i].kind == "separator" then
+            -- Non-interactive divider between menu sections. No hover
+            -- highlight, no click, no mouse. Text is static (set here,
+            -- not per-show) - a muted dashed line, centred. Its shown /
+            -- hidden state is still decided per-show by the packing loop
+            -- so a divider never leads or doubles up.
+            btn:EnableMouse(false)
+            if fs then
+                fs:ClearAllPoints()
+                fs:SetPoint("LEFT", btn, "LEFT", 4, 0)
+                fs:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
+                fs:SetJustifyH("CENTER")
+            end
+            btn:SetText("|cff555555--------------------------------|r")
+        else
+            if fs then
+                fs:ClearAllPoints()
+                fs:SetPoint("LEFT", btn, "LEFT", 4, 0)
+                fs:SetJustifyH("LEFT")
+            end
+            -- Highlight texture so hover gives feedback.
+            local hl = btn:CreateTexture(nil, "BACKGROUND")
+            hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+            hl:SetBlendMode("ADD")
+            hl:SetAllPoints(btn)
             hl:SetAlpha(0)
-        end)
+            btn:SetScript("OnEnter", function()
+                hl:SetAlpha(0.4)
+            end)
+            btn:SetScript("OnLeave", function()
+                hl:SetAlpha(0)
+            end)
+        end
         -- Text + OnClick are populated per-show by EC_ShowItemContextMenu
-        -- so the row labels reflect the item's live list membership.
+        -- so the row labels reflect the item's live list membership
+        -- (separators excepted - their text is static, set above).
         frame.buttons[i] = btn
     end
 
@@ -282,6 +302,10 @@ local function EC_ShowItemContextMenu(button)
     local procProtected = hasProtection and not itemAllowed
 
     local visibleSlot = 0
+    -- Tracks whether a real (non-separator) row has been shown since the
+    -- last shown separator (or the top of the menu). Drives the divider
+    -- orphan guard below.
+    local shownSinceSep = false
     for i, row in ipairs(EC_CTX_ROWS) do
         local btn = frame.buttons[i]
         local rowHidden = false
@@ -462,12 +486,32 @@ local function EC_ShowItemContextMenu(button)
                 end
             end)
             btn:Enable()
+        elseif row.kind == "history" then
+            -- Fast access to the session sell/delete history. Always shown
+            -- (item-independent) - a quick way to answer "what did EC just
+            -- sell and why?" without opening the panel or typing a command.
+            btn:SetText(L["Sold History"])
+            btn:SetScript("OnClick", function()
+                frame:Hide()
+                if NS.ShowSessionHistory then
+                    NS.ShowSessionHistory()
+                end
+            end)
+            btn:Enable()
         elseif row.kind == "cancel" then
             btn:SetText(L["Cancel"])
             btn:SetScript("OnClick", function()
                 frame:Hide()
             end)
             btn:Enable()
+        elseif row.kind == "separator" then
+            -- Divider text + non-interactivity are fixed at build time.
+            -- Show it only when a real row precedes it in this section, so
+            -- it never renders as the first row or doubles up when the
+            -- rows above are all hidden. (No trailing-divider guard is
+            -- needed: Sell Info / Sold History / Cancel always follow a
+            -- divider and are always shown.)
+            rowHidden = not shownSinceSep
         end
 
         if rowHidden then
@@ -480,6 +524,11 @@ local function EC_ShowItemContextMenu(button)
             btn:SetPoint("TOPLEFT", 10, -(8 + 22 + 6) - visibleSlot * 22)
             btn:Show()
             visibleSlot = visibleSlot + 1
+            if row.kind == "separator" then
+                shownSinceSep = false
+            else
+                shownSinceSep = true
+            end
         end
     end
 

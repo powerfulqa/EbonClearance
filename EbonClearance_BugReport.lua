@@ -679,13 +679,14 @@ local function EC_BuildBugReport()
         else
             for i = 1, #rs do
                 local e = rs[i]
-                add(string.format("  [%s] %d x%d %s (%s, %s)",
+                add(string.format("  [%s] %d x%d %s (%s, %s) - %s",
                     tostring(e.loggedAt),
                     tonumber(e.itemID) or 0,
                     tonumber(e.count) or 1,
                     tostring(e.itemName),
                     tostring(e.path),
-                    EC_CopperToPlainText(e.copper or 0)))
+                    EC_CopperToPlainText(e.copper or 0),
+                    tostring(e.reason or "?")))
             end
         end
     end
@@ -703,12 +704,13 @@ local function EC_BuildBugReport()
         else
             for i = 1, #rd do
                 local e = rd[i]
-                add(string.format("  [%s] %d x%d %s (%s)",
+                add(string.format("  [%s] %d x%d %s (%s) - %s",
                     tostring(e.loggedAt),
                     tonumber(e.itemID) or 0,
                     tonumber(e.count) or 1,
                     tostring(e.itemName),
-                    tostring(e.source)))
+                    tostring(e.source),
+                    tostring(e.reason or "?")))
             end
         end
     end

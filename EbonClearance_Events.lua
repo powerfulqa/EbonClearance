@@ -5393,9 +5393,78 @@ local function EC_IsSellable(bag, slot, junkOnly)
     if not (isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass or knownProcPass) then
         return false
     end
+    -- Record which positive signal won, for the session decision log's "why"
+    -- (read immediately by BuildQueue right after this call - single-threaded,
+    -- no reentrancy). Precedence favours the most specific / explicit reason.
+    -- Additive scratch; does not change the return contract or any mirror.
+    do
+        local sig
+        if whitelistPass then
+            sig = (IsInSet(DB.whitelist, itemID)) and "whitelist_char" or "whitelist_account"
+        elseif recipePass then
+            sig = "recipe"
+        elseif knownProcPass then
+            sig = "knownproc"
+        elseif affixRankPass then
+            sig = "affixrank"
+        elseif autoDupePass then
+            sig = "autodupe"
+        elseif isJunk then
+            sig = "junk"
+        else
+            sig = "quality"
+        end
+        EC_compCache.lastSellSignal = sig
+    end
     return true, link, itemID, sellPrice, itemCount
 end
 NS.IsSellable = EC_IsSellable
+
+-- Plain-English "why sold" line for the session decision log, built from the
+-- signal EC_IsSellable just recorded. The history window has room to spell it
+-- out fully (unlike the tooltip), and because the signal comes straight from
+-- EC_IsSellable the explanation can't drift from the real sell logic.
+function EC_compCache.sellReasonForSignal(signal, quality, rule)
+    local rarity = (quality == 1 and L["White"])
+        or (quality == 2 and L["Green"])
+        or (quality == 3 and L["Blue"])
+        or (quality == 4 and L["Epic"])
+        or "?"
+    if signal == "whitelist_char" then
+        return L["On your Sell List - you marked this item to always be sold."]
+    elseif signal == "whitelist_account" then
+        return L["On your account-wide Sell List (shared across all your characters)."]
+    elseif signal == "recipe" then
+        return L["A profession recipe this character has already learned - Sell Known Recipes vendored the duplicate."]
+    elseif signal == "knownproc" then
+        return L["A chance-on-hit item whose proc you've already extracted - sold because 'sell known chance-on-hit procs' is on."]
+    elseif signal == "affixrank" then
+        return L["Its Project Ebonhold affix rank is below your 'sell affixes below rank' threshold."]
+    elseif signal == "autodupe" then
+        return L["You already have this affix - 'sell affixes you already have' vendored the duplicate."]
+    elseif signal == "junk" then
+        return L["Grey (poor) quality with a vendor price - grey junk is always auto-sold."]
+    end
+    -- Quality-rule case: spell out the item-level decision + any bind filter.
+    local bindNote = ""
+    if rule and rule.bindFilter == "boe" then
+        bindNote = L[" (BoE only)"]
+    elseif rule and rule.bindFilter == "bop" then
+        bindNote = L[" (BoP only)"]
+    end
+    if rule and rule.useEquippedILvl then
+        return string.format(
+            L["Matched your %s auto-sell rule: its item level was below what you have equipped in that slot%s."],
+            rarity, bindNote
+        )
+    elseif rule and (rule.maxILvl or 0) > 0 then
+        return string.format(
+            L["Matched your %s auto-sell rule: its item level was at or below your cap of %d%s."],
+            rarity, rule.maxILvl, bindNote
+        )
+    end
+    return string.format(L["Matched your %s auto-sell rule (it sells all items of that rarity)%s."], rarity, bindNote)
+end
 
 -- v2.47.0: does affix protection RELEASE this affix - i.e., is EC willing to
 -- get rid of it rather than keep it? True when ANY of:
@@ -5711,7 +5780,12 @@ local EC_RECENT_DELETED_LOG_MAX = 20
 local EC_recentSoldLog = {}
 local EC_recentDeletedLog = {}
 
-EC_LogRecentSold = function(itemID, count, path, copper)
+-- `reason` (v2.54.x) is the plain-English "why" captured at decision time -
+-- the rule that fired (e.g. "Sell List", "Auto-sell (Green)", "Delete List").
+-- Optional: when omitted it falls back to a sensible default derived from the
+-- path/source tag, so older call sites keep working. This is what /ec history
+-- surfaces so the player can see what was sold/deleted AND why.
+EC_LogRecentSold = function(itemID, count, path, copper, reason)
     if not itemID then
         return
     end
@@ -5725,11 +5799,12 @@ EC_LogRecentSold = function(itemID, count, path, copper)
         count = count or 1,
         path = path or "?",
         copper = copper or 0,
+        reason = reason or (path == "manual" and "Sold by you" or "Auto-sell rule"),
         loggedAt = date("%H:%M:%S"),
     }
 end
 
-EC_LogRecentDeleted = function(itemID, count, source)
+EC_LogRecentDeleted = function(itemID, count, source, reason)
     if not itemID then
         return
     end
@@ -5742,6 +5817,7 @@ EC_LogRecentDeleted = function(itemID, count, source)
         itemName = link or ("item:" .. tostring(itemID)),
         count = count or 1,
         source = source or "?",
+        reason = reason or (source == "auto" and "Auto-delete on pickup" or "Delete List"),
         loggedAt = date("%H:%M:%S"),
     }
 end
@@ -5752,6 +5828,52 @@ NS.recentSoldLog = EC_recentSoldLog
 NS.recentDeletedLog = EC_recentDeletedLog
 NS.recentSoldLogMax = EC_RECENT_SOLD_LOG_MAX
 NS.recentDeletedLogMax = EC_RECENT_DELETED_LOG_MAX
+
+-- Session sell/delete history in a copyable window: what was sold or deleted
+-- this login and WHY (the rule that fired), newest-first. Shared by the
+-- /ec history command and the Main panel's Sold History button. Session-only
+-- - the rings clear on /reload.
+function NS.ShowSessionHistory()
+    local rows = {}
+    local function push(e, action)
+        rows[#rows + 1] = {
+            at = e.loggedAt or "",
+            text = string.format(
+                "[%s] %s %dx %s  |cff888888- %s|r",
+                tostring(e.loggedAt or "?"),
+                action,
+                tonumber(e.count) or 1,
+                tostring(e.itemName),
+                tostring(e.reason or "?")
+            ),
+        }
+    end
+    for _, e in ipairs(EC_recentSoldLog) do
+        push(e, L["Sold"])
+    end
+    for _, e in ipairs(EC_recentDeletedLog) do
+        push(e, L["Deleted"])
+    end
+    -- Newest-first. loggedAt is HH:MM:SS, string-sortable within a session.
+    table.sort(rows, function(a, b)
+        return a.at > b.at
+    end)
+    local body
+    if #rows == 0 then
+        body = L["Nothing sold or deleted yet this session."]
+    else
+        local lines = {}
+        for i = 1, #rows do
+            lines[i] = rows[i].text
+        end
+        body = table.concat(lines, "\n")
+    end
+    if NS.ShowCopyFrame then
+        NS.ShowCopyFrame(L["EbonClearance: Session History"], body)
+    else
+        PrintNice(body)
+    end
+end
 
 -- v2.51.0: watch-list toggle snapshot at PLAYER_LOGIN, after EnsureDB.
 -- The watch list is a curated set of high-diagnostic-value toggles - the
@@ -6146,6 +6268,19 @@ local function BuildQueue(junkOnly)
                     -- bucket without re-querying GetItemInfo at action
                     -- execution.
                     local quality = link and select(3, GetItemInfo(link)) or nil
+                    -- Plain-English "why" for the session decision log, built
+                    -- from the exact signal EC_IsSellable just recorded
+                    -- (EC_compCache.lastSellSignal) so the history explanation
+                    -- can't drift from the real sell logic. Read here, right
+                    -- after the EC_IsSellable call above, before any other
+                    -- EC_IsSellable runs.
+                    local sellReason = EC_compCache.sellReasonForSignal
+                        and EC_compCache.sellReasonForSignal(
+                            EC_compCache.lastSellSignal,
+                            quality,
+                            DB.qualityRules and DB.qualityRules[quality]
+                        )
+                        or nil
                     queue[#queue + 1] = {
                         type = "sell",
                         bag = bag,
@@ -6154,6 +6289,7 @@ local function BuildQueue(junkOnly)
                         count = itemCount,
                         price = sellPrice or 0,
                         quality = quality,
+                        reason = sellReason,
                     }
                     if sellPrice and sellPrice > 0 then
                         goldThisVendoring = goldThisVendoring
@@ -6311,7 +6447,7 @@ local function DoNextAction()
             EC_BumpStatBucket("soldCopperByQuality", action.quality, soldCopper)
         end
         -- v2.51.0: recent-sold ring buffer for /ec bugreport.
-        EC_LogRecentSold(action.itemID, soldCount, "worker", soldCopper)
+        EC_LogRecentSold(action.itemID, soldCount, "worker", soldCopper, action.reason)
     elseif action.type == "delete" then
         EC_compCache.executeBagSlotDelete(action.bag, action.slot, action.itemID, action.count, action.quality, false)
     end
@@ -7709,6 +7845,12 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         if NS.ToggleLootWindow then
             NS.ToggleLootWindow()
         end
+        return
+    end
+
+    if cmd == "history" then
+        EnsureDB()
+        NS.ShowSessionHistory()
         return
     end
 

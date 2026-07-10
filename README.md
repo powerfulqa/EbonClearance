@@ -55,7 +55,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 - **Updates.** "Tell me when an update is available" toggle on the main panel (on by default). EbonClearance learns the newest version from other users in your guild or group and shows one chat line with a clickable copy-link.
 - **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, open/close the Loot Log, Process Next.
 - **Minimap button.** Left: options, Middle: Process Bags, Right: toggle.
-- **Alt+Right-Click any bag item** for a quick-action menu (add to Sell / Keep / Delete, Allow Sell on protected items, and **Sell Info** for a per-item sell-decision trace).
+- **Alt+Right-Click any bag item** for a quick-action menu (add to Sell / Keep / Delete, Allow Sell on protected items, **Sell Info** for a per-item sell-decision trace, and **Sold History** for this session's sell/delete log).
 - **Help / FAQ panel** with a keyword search box - type a term to filter the FAQ to matching entries.
 
 ## Slash Commands
@@ -77,6 +77,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec bugreport` | Generate a comprehensive diagnostic report (Issue Summary at top, recent sold / deleted / silent-refusal ring buffers, toggle diffs, last-event times, cache stats, addon list partitioned into potentially-relevant + other). Opens in a resizable copyable window. |
 | `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell - per-predicate chain trace (also via Alt+Shift+Right-Click, or Alt+Right-Click → Sell Info) |
 | `/ec loot` | Open the Loot Log window (Session / Character / Account views; also a Stats-panel button and a bindable key) |
+| `/ec history` | Show this session's sell / delete history - what was sold or deleted, and the rule that decided it - in a copyable window (session-only, clears on `/reload`) |
 | `/ec rules` | Open a plain-English summary of every active rule + the order EC applies them (also the "Current Rules" button on the Main panel) |
 | `/ec minimap on\|off\|reset` | Show, hide, or re-centre the EC minimap button (use `off` if it clashes with a minimap-replacement / magnifier addon) |
 | `/ec affixdebug on\|off\|status\|dump\|clear` | Record affix-detection events for bug reports; `dump` opens a copyable window with the event log |

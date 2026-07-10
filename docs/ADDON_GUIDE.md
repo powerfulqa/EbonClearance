@@ -519,6 +519,9 @@ Not wired into CI, but enforce in review:
   blacklist > deleteList > whitelist).
 - `/ec bugreport` - diagnostic dump for issue reports.
 - `/ec loot` - open the Loot Log window (`NS.ToggleLootWindow`). v2.46.0.
+- `/ec history` - copyable session sell/delete history from the `NS.recentSoldLog` /
+  `NS.recentDeletedLog` rings (each entry now carries a `reason` set at decision time), merged
+  newest-first. Session-only; no persistence.
 - `/ec rules` - plain-English summary of every active rule + the
   precedence EC uses to decide DELETE / SELL / KEEP. Same surface as
   the "Current Rules" button on the Main panel. Surfaces explicit

@@ -771,6 +771,29 @@ end
 -- skills) don't carry this prefix.
 EC_compCache.AFFIX_SPELL_PREFIX = "engrave this affix"
 
+-- Affix-source resilience: single chokepoint for PE's learned-affix
+-- catalog. Every FUNCTIONAL consumer (the refreshKnownAffixes merge,
+-- playerHasExtractedProc, the autolearn snapshot/detect pair) reads the
+-- catalog through here instead of touching the global directly, so:
+--   * if PE ever renames or moves the catalog, exactly one line changes;
+--   * the affix-fallback simulate switch below can force the spellbook-
+--     only path so the fallback is verifiable in-game.
+-- Returns the learned-affix catalog table, or nil when it's unavailable
+-- (or simulated absent). Diagnostics (/ec captureproc, /ec procdump,
+-- /ec bugreport) intentionally read the raw global instead, so they always
+-- report the TRUE live state regardless of the simulate switch.
+EC_compCache.simulateExtractionAbsent = false
+function EC_compCache.getExtractionCatalog()
+    if EC_compCache.simulateExtractionAbsent then
+        return nil
+    end
+    local svc = _G.ExtractionService
+    if svc and type(svc.learnedAffixes) == "table" then
+        return svc.learnedAffixes
+    end
+    return nil
+end
+
 -- v2.26.0: dirty-check counter for the ExtractionService merge step.
 -- Bumps when the count of `learned==true` records in
 -- _G.ExtractionService.learnedAffixes changes; lets the BAG_UPDATE
@@ -917,9 +940,12 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
     if idx > #spells then
         -- Spellbook walk done. Merge ExtractionService (small, always
         -- synchronous - procIdToDescription cache keeps it cheap).
-        local svc = _G.ExtractionService
-        if svc and type(svc.learnedAffixes) == "table" then
-            for _, r in ipairs(svc.learnedAffixes) do
+        -- Routed through the accessor so the affix-fallback simulate
+        -- switch can drop this merge and prove the spellbook walk above
+        -- stands on its own.
+        local catalog = EC_compCache.getExtractionCatalog()
+        if catalog then
+            for _, r in ipairs(catalog) do
                 if r and r.learned and r.id then
                     local desc = EC_compCache.procIdToDescription[r.id]
                     if desc == nil then
@@ -1062,12 +1088,12 @@ end
 -- PLAYER_LOGIN) and learnedCount going DOWN (un-learn or reset, so
 -- the now-stale entries need to be dropped via a full rebuild).
 function EC_compCache.refreshExtractionIfDirty()
-    local svc = _G.ExtractionService
-    if not svc or type(svc.learnedAffixes) ~= "table" then
+    local catalog = EC_compCache.getExtractionCatalog()
+    if type(catalog) ~= "table" then
         return false
     end
     local learnedCount = 0
-    for _, r in ipairs(svc.learnedAffixes) do
+    for _, r in ipairs(catalog) do
         if r and r.learned then
             learnedCount = learnedCount + 1
         end
@@ -1106,7 +1132,7 @@ function EC_compCache.refreshExtractionIfDirty()
         EC_compCache.knownAffixFamilyRanks = families
     end
     if tip and tip.ClearLines and tip.SetHyperlink and tip.NumLines then
-        for _, r in ipairs(svc.learnedAffixes) do
+        for _, r in ipairs(catalog) do
             if r and r.learned and r.id then
                 local desc = EC_compCache.procIdToDescription[r.id]
                 if desc == nil then
@@ -1516,7 +1542,7 @@ function EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
     if not spellID then
         return false, nil, nil
     end
-    local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+    local catalog = EC_compCache.getExtractionCatalog()
     if type(catalog) ~= "table" then
         return false, spellID, family
     end
@@ -1974,11 +2000,10 @@ function EC_compCache.findLearnedAffixForItem(link)
     if cached ~= nil then
         return cached or nil -- `false` cached "scanned, no match"
     end
-    local svc = _G.ExtractionService
-    if not svc or type(svc.learnedAffixes) ~= "table" then
+    local affixes = EC_compCache.getExtractionCatalog()
+    if type(affixes) ~= "table" then
         return nil
     end
-    local affixes = svc.learnedAffixes
     if #affixes == 0 then
         return nil
     end

@@ -260,6 +260,12 @@ local EC_HELP_ENTRIES = {
         panel = nil,
     },
     {
+        id = "affix-fallback",
+        q = L["What is /ec affixfallback for?"],
+        a = L["It's a safety check for affix protection. EbonClearance normally learns which affixes you've extracted from Project Ebonhold's own data. If a future PE update ever moved that data, the addon can fall back to reading your learned affixes from your spellbook instead. Type /ec affixfallback on to pretend PE's data is gone, then check that your Known/Needed bag highlighting and keep/sell rules still work; /ec affixfallback off puts it back to normal (or just /reload). You never need this in normal play - it's there so affix protection can't quietly break if the game changes underneath it."],
+        panel = nil,
+    },
+    {
         id = "known-vs-needed-affix",
         q = L["What's the difference between 'Known Affix items' and 'Needed Affix items'?"],
         a = L["Both highlight bag items with a random affix, but they tell you different things. Known Affix items (purple) light up when the affix on the item is one you've already extracted at that rank / family - a duplicate you might sell or hand off. Needed Affix items (gold) light up when the affix is one you haven't extracted yet - an at-a-glance extraction target. Both are opt-in and default off; enable them on the Item Highlighting panel. They don't overlap: any given affixed item shows either purple or gold, not both."],

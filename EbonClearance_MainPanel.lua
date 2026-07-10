@@ -931,6 +931,11 @@ local function BuildMainPanel(panel, content)
             run = "spike",
             label = "|cffffff00/ec spike|r  " .. L["Show recent frame hitches EC caused, and which part was busiest"],
         },
+        {
+            prefill = "/ec affixfallback ",
+            label = "|cffffff00/ec affixfallback on||off|r  "
+                .. L["Check affix protection still works from your spellbook if PE's data is gone"],
+        },
         { heading = L["Language"] },
         { label = "|cff66ccff" .. langStatus .. "|r" },
         {

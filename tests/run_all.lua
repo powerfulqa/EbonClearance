@@ -18,6 +18,7 @@ local TESTS = {
     "tests/test_guildshare.lua",
     "tests/test_procshare.lua",
     "tests/test_locale_integrity.lua",
+    "tests/test_affix_resilience.lua",
 }
 
 -- Reuse whichever interpreter is running this file (lua, lua5.1, full path).

@@ -531,6 +531,16 @@ Not wired into CI, but enforce in review:
   Only hitches EC actually contributed to are recorded, so an empty result is itself the answer.
   Session-only; bounded ring; no persistence. Invariants in `tests/test_perf_guardrails.lua`
   Test 115.
+- `/ec affixfallback <on|off|status>` - affix-source resilience check (v2.56.0). Toggles
+  `EC_compCache.simulateExtractionAbsent` and rebuilds the known-affix map, so you can verify
+  in-game that affix protection (Known/Needed highlighting, keep/sell) survives when PE's
+  `_G.ExtractionService` is treated as gone. All FUNCTIONAL reads of the learned-affix catalog go
+  through the single accessor `EC_compCache.getExtractionCatalog()` (Protection.lua) - the one
+  swap point if PE ever renames the global, and the hook the simulate switch drives. The spellbook
+  walk in `refreshKnownAffixes` is the independent primary source; the ExtractionService merge is
+  an additive `if catalog then` step. Diagnostics (`/ec captureproc`, `/ec procdump`,
+  `/ec bugreport`) intentionally read the raw global to report true live state. Invariants in
+  `tests/test_affix_resilience.lua`.
 - `/ec rules` - plain-English summary of every active rule + the
   precedence EC uses to decide DELETE / SELL / KEEP. Same surface as
   the "Current Rules" button on the Main panel. Surfaces explicit

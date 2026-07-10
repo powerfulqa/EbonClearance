@@ -5,6 +5,24 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.56.0
+
+**Affix protection now survives even if Project Ebonhold moves its affix data.**
+
+EbonClearance learns which affixes you've extracted from Project Ebonhold's runtime data (`_G.ExtractionService`). That was a single point of failure: if a future PE update ever renamed or removed it, affix protection (the purple "Known" / gold "Needed" bag highlighting, "keep affixes I have," "sell affixes I already have") would quietly go blank. This release hardens that.
+
+- **Single swap point.** Every functional read of the learned-affix catalog now goes through one accessor, `EC_compCache.getExtractionCatalog()`. If PE ever renames the global, exactly one line changes instead of five scattered reads.
+- **Spellbook fallback, proven.** The known-affix map was already co-sourced from a spellbook walk (your learned "engrave this affix" spells), so it doesn't actually depend on `ExtractionService`. This release makes that guarantee explicit and testable rather than incidental.
+- **New `/ec affixfallback on|off|status`.** Flip it on to make EbonClearance ignore PE's affix data and rebuild its known-affix map from your spellbook alone, so you can confirm with your own eyes that Known/Needed highlighting and keep/sell rules still work. Flip it off (or `/reload`) to return to normal. Session-only; nothing persists.
+- **No change to normal play.** While `ExtractionService` is present (as it is today), behavior is identical. This is insurance, not a new day-to-day feature.
+
+Diagnostics (`/ec captureproc`, `/ec procdump`, `/ec bugreport`) still read the live global directly, so they always report the true state regardless of the simulate switch.
+
+**Tests**: new suite `tests/test_affix_resilience.lua` (8th suite) pins the accessor routing, the simulate switch, and the spellbook-primary invariant. **Docs**: README slash table, in-game Help/FAQ entry, `docs/ADDON_GUIDE.md`, and the click-to-run Slash Commands list on the main panel.
+
+---
+
+
 ### v2.55.1
 
 Patch release.

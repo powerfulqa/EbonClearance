@@ -7123,8 +7123,8 @@ do
         prot:find("function EC_compCache%.playerHasExtractedProc") ~= nil
             and prot:find('equipLoc == "INVTYPE_WEAPON"') ~= nil
             and prot:find('equipLoc == "INVTYPE_2HWEAPON"') ~= nil
-            and prot:find("_G%.ExtractionService and _G%.ExtractionService%.learnedAffixes") ~= nil,
-        "the release gate MUST check equipLoc (only weapons pass PE's extraction system) + walk the _G.ExtractionService.learnedAffixes catalog for the mapped spellID with learned=true. Trinkets / jewelry chance-on-hit items stay under blanket protection.")
+            and prot:find("EC_compCache%.getExtractionCatalog%(%)") ~= nil,
+        "the release gate MUST check equipLoc (only weapons pass PE's extraction system) + walk the learned-affix catalog (via EC_compCache.getExtractionCatalog, the v2.56.0 resilience accessor) for the mapped spellID with learned=true. Trinkets / jewelry chance-on-hit items stay under blanket protection.")
     check("Test 110e: EC_IsSellable computes knownProcPass as a positive sell signal",
         ev:find("local knownProcPass = false") ~= nil
             and ev:find("DB%.sellChanceOnHitKnown") ~= nil
@@ -7184,9 +7184,9 @@ do
         ev:find("local EC_extractionCatalogSnapshot = {}") ~= nil
             and ev:find("local function EC_RefreshExtractionCatalogSnapshot%(%)") ~= nil
             and ev:find("local function EC_FindNewlyLearnedSpell%(%)") ~= nil
-            and ev:find("_G%.ExtractionService and _G%.ExtractionService%.learnedAffixes") ~= nil
+            and ev:find("EC_compCache%.getExtractionCatalog%(%)") ~= nil
             and ev:find("if rec%.learned and not EC_extractionCatalogSnapshot%[rec%.id%] then") ~= nil,
-        "v2.49.1: EC_extractionCatalogSnapshot holds { [spellID] = true } for every learned record at the last event boundary. EC_RefreshExtractionCatalogSnapshot rebuilds from the live _G.ExtractionService.learnedAffixes catalog. EC_FindNewlyLearnedSpell walks the current catalog, returns the single spellID that flipped false->true since the snapshot (or nil if zero-or-multiple). Snapshot MUST refresh AFTER a successful diff so the next event compares against the just-processed state.")
+        "v2.49.1: EC_extractionCatalogSnapshot holds { [spellID] = true } for every learned record at the last event boundary. EC_RefreshExtractionCatalogSnapshot rebuilds from the learned-affix catalog (via EC_compCache.getExtractionCatalog, the v2.56.0 resilience accessor). EC_FindNewlyLearnedSpell walks the current catalog, returns the single spellID that flipped false->true since the snapshot (or nil if zero-or-multiple). Snapshot MUST refresh AFTER a successful diff so the next event compares against the just-processed state.")
     check("Test 111e: EC_TryAutolearnFromLearnedSpell writes + emits + gates correctly",
         ev:find("local function EC_TryAutolearnFromLearnedSpell%(spellID, family, source%)") ~= nil
             and ev:find("if spellID < 700000 or spellID >= 800000 then") ~= nil

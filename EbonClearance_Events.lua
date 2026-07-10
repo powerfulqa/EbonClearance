@@ -1834,7 +1834,7 @@ NS.extractionCatalogSnapshot = EC_extractionCatalogSnapshot
 
 local function EC_RefreshExtractionCatalogSnapshot()
     wipe(EC_extractionCatalogSnapshot)
-    local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+    local catalog = EC_compCache.getExtractionCatalog()
     if type(catalog) ~= "table" then
         return
     end
@@ -1850,7 +1850,7 @@ NS.RefreshExtractionCatalogSnapshot = EC_RefreshExtractionCatalogSnapshot
 -- -> learned=true since the snapshot. Returns nil, nil for zero (event
 -- was unrelated) or multiple (batch update; can't isolate).
 local function EC_FindNewlyLearnedSpell()
-    local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+    local catalog = EC_compCache.getExtractionCatalog()
     if type(catalog) ~= "table" then
         return nil, nil
     end
@@ -7877,7 +7877,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             removedAt = GetTime(),
         }
         -- Look up the spell's name from the PE catalog for the toast.
-        local catalog = _G.ExtractionService and _G.ExtractionService.learnedAffixes
+        local catalog = EC_compCache.getExtractionCatalog()
         local rec
         if type(catalog) == "table" then
             for _, r in pairs(catalog) do
@@ -8056,6 +8056,59 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         -- steady-state footprint) by answering "what caused that stutter?".
         EnsureDB()
         NS.ShowFrameSpikes()
+        return
+    end
+
+    if cmd == "affixfallback" then
+        -- Affix-source resilience check. Forces EC to ignore Project
+        -- Ebonhold's affix data and rebuild its known-affix map from the
+        -- spellbook alone, so the fallback path is verifiable in-game.
+        -- Session-only; cleared on /reload. See getExtractionCatalog in
+        -- EbonClearance_Protection.lua.
+        EnsureDB()
+        local sub = rest and rest:lower() or ""
+        local function countKeys(t)
+            local n = 0
+            if type(t) == "table" then
+                for _ in pairs(t) do
+                    n = n + 1
+                end
+            end
+            return n
+        end
+        if sub == "on" or sub == "off" then
+            EC_compCache.simulateExtractionAbsent = (sub == "on")
+            if EC_compCache.refreshKnownAffixes then
+                EC_compCache.refreshKnownAffixes()
+            end
+            if sub == "on" then
+                PrintNice(
+                    L["|cffffb84dAffix fallback simulation ON.|r EbonClearance is now ignoring Project Ebonhold's affix data and using only your spellbook."]
+                )
+            else
+                PrintNice(L["|cffb6ffb6Affix fallback simulation OFF.|r Back to normal (Project Ebonhold data + your spellbook)."])
+            end
+            PrintNice(
+                L["|cff888888Rebuilding your affix map. Re-run /ec affixfallback in a moment to see the counts settle, and check your bag affix highlighting still works.|r"]
+            )
+            return
+        end
+        local live = (_G.ExtractionService and type(_G.ExtractionService.learnedAffixes) == "table") and "present"
+            or "absent"
+        if EC_compCache.simulateExtractionAbsent then
+            PrintNice(L["|cffffb84dAffix fallback simulation: ON|r (using your spellbook only)."])
+        else
+            PrintNice(L["|cffb6ffb6Affix fallback simulation: OFF|r (normal)."])
+        end
+        PrintNicef(
+            L["Known affixes: %d descriptions / %d families. Project Ebonhold affix data: %s."],
+            countKeys(EC_compCache.knownAffixDescriptions),
+            countKeys(EC_compCache.knownAffixFamilyRanks),
+            live
+        )
+        PrintNice(
+            L["|cff888888/ec affixfallback on simulates PE's affix data being gone; off restores it. The counts should stay similar either way - that's your affix protection surviving on the spellbook alone.|r"]
+        )
         return
     end
 

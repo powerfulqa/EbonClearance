@@ -3067,7 +3067,10 @@ EC_spikeFrame:SetScript("OnUpdate", function(_, elapsed)
         dom, domMs = "Vendor cycle", dVendor
     end
     if dTip > domMs then
-        dom, domMs = "Tooltip scan", dTip
+        -- Last phase checked: nothing reads domMs after this, so only the
+        -- winning label needs updating (leaving domMs here would be a dead
+        -- write - luacheck flags it).
+        dom = "Tooltip scan"
     end
     -- Only record hitches EC actually contributed to. An empty /ec spike
     -- after a stutter storm is itself the answer: EC wasn't busy then.

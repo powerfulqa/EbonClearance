@@ -33,6 +33,7 @@ globals = {
     "EC_IsMerchantAllowed",     -- assigned by module, read by vendor loop
     "ChatEdit_InsertLink",      -- replaced by module to capture shift-click links
     "ContainerFrameItemButton_OnModifiedClick", -- wrapped to add Alt+Right-Click context menu
+    "BankFrameItemButtonGeneric_OnClick",       -- wrapped to add Alt+Right-Click context menu on the main bank bag
     -- Keybinding headers / names (read by Blizzard, set by addon)
     "BINDING_HEADER_EBONCLEARANCE",
     "BINDING_NAME_EBONCLEARANCE_TOGGLE_SETTINGS",

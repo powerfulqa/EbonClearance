@@ -609,6 +609,35 @@ local function EC_InstallBagContextHookOnce()
         end
         return orig(self, button)
     end
+
+    -- Main bank bag (container -1) on a host bag UI: those slot buttons are
+    -- built from a different stock template than bag buttons, so their
+    -- modified clicks do NOT route through ContainerFrameItemButton_
+    -- OnModifiedClick - a plain OnClick handler runs instead. Wrap that too
+    -- so Alt+Right-Click still opens the EC menu (and Alt+Shift the trace)
+    -- on the main bank bag. Guarded by a type check: a no-op on any build
+    -- where the global is absent, so it can never error. Everything except
+    -- the exact Alt+Right / Alt+Shift+Right combos falls through unchanged,
+    -- so normal bank clicks (pick up / deposit) are untouched.
+    if type(BankFrameItemButtonGeneric_OnClick) == "function" then
+        local origBank = BankFrameItemButtonGeneric_OnClick
+        BankFrameItemButtonGeneric_OnClick = function(self, button)
+            if button == "RightButton" and IsAltKeyDown() and not IsShiftKeyDown() and not IsControlKeyDown() then
+                EC_ShowItemContextMenu(self)
+                return
+            end
+            if button == "RightButton" and IsAltKeyDown() and IsShiftKeyDown() and not IsControlKeyDown() then
+                if EC_compCache.bagSlotFromButton and EC_compCache.printSellabilityTrace then
+                    local bag, slot = EC_compCache.bagSlotFromButton(self)
+                    if bag and slot then
+                        EC_compCache.printSellabilityTrace(bag, slot)
+                        return
+                    end
+                end
+            end
+            return origBank(self, button)
+        end
+    end
 end
 
 NS.InstallBagContextHookOnce = EC_InstallBagContextHookOnce

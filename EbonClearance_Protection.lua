@@ -1358,6 +1358,9 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     [869]   = "Dazzling Longsword",         -- armor + anti-stealth
     [7961]  = "Phantom Blade",              -- armor + anti-stealth
     [9639]  = "The Hand of Antu'sul",       -- thunder-AoE + attack slow
+    -- Anvil-verified as non-extractable: a ring whose Equip haste-on-
+    -- attack proc has no PE affix equivalent.
+    [44308] = "Signet of Edward the Odd",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1469,6 +1472,9 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     [10628] = { spellID = 700080, family = "Maiming",          item = "Deathblow" },
     [17705] = { spellID = 700098, family = "Flurry",           item = "Thrash Blade" },
     [17753] = { spellID = 700116, family = "Keeper's Sting",   item = "Verdant Keeper's Aim" },
+    -- Ironfoe's "2 extra attacks" proc extracts to the Flurry affix
+    -- (same extra-swing family as Thrash Blade above).
+    [11684] = { spellID = 700098, family = "Flurry",           item = "Ironfoe" },
     -- Arcanite Champion 12790 ("Heal self for 270-450 and increases
     -- Strength by 120 for 30 sec") deferred: no clean PE catalog match
     -- (Resurgence 700097 is a low-HP trigger, not an on-hit heal+STR

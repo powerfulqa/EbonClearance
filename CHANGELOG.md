@@ -5,6 +5,16 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.55.1
+
+Patch release.
+
+- **Alt+Right-Click now works on the main bank bag under a host bag UI.** The main bank bag's slot buttons are built from a different stock template than regular bag slots, so their clicks didn't route through the handler the EbonClearance menu hooks. Added a guarded wrap of the bank slot click handler so Alt+Right-Click opens the EbonClearance menu (and Alt+Shift+Right-Click prints the sell trace) on bank items too. Regular bag and numbered bank-bag slots were already covered. Border tints and tooltip annotations already worked everywhere.
+- **Two more chance-on-hit proc entries.** Ironfoe's proc is now paired to the Flurry affix (so it is recognised as a known duplicate once you have extracted Flurry), and Signet of Edward the Odd is marked non-extractable (kept protected, never treated as a known proc). Both are additive seed-data changes.
+
+---
+
+
 ### v2.55.0
 
 **Frame-hitch diagnostic: find out if a stutter was EbonClearance, and which part.**

@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.57.1
+
+Patch release. Chance-on-hit proc-pairing seed data (confirmed via `/ec captureproc` + in-game verification):
+
+- **Shortsword of Vengeance** paired to the **Judgement** affix and **Black Duskwood Staff** to **Affliction** - both now recognised as known chance-on-hit procs once you have extracted the matching affix.
+- **Joonho's Mercy** marked non-extractable (its Arcane-blast proc has no matching weapon affix), so it stays protected and is never treated as a sellable known proc.
+- **Arcanite Champion** left for autolearn: it is extractable, but the id its proc reports is the vanilla proc-buff spell rather than the affix id, so autolearn captures the correct pairing when you extract it at the Anvil (a hardcoded guess would only mask that).
+
+Seed-data only; no behaviour change unless the experimental "Sell known chance-on-hit procs" toggle is on.
+
+---
+
+
 ### v2.57.0
 
 **Sold History is now a real window that records your whole session, not just the last 20 actions.**

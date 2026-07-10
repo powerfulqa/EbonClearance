@@ -1387,6 +1387,9 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     -- Anvil-verified as non-extractable: a ring whose Equip haste-on-
     -- attack proc has no PE affix equivalent.
     [44308] = "Signet of Edward the Odd",
+    -- Serv-confirmed non-extractable (2026-07-11): its Arcane-blast proc
+    -- has no matching PE weapon affix.
+    [17054] = "Joonho's Mercy",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1501,11 +1504,16 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     -- Ironfoe's "2 extra attacks" proc extracts to the Flurry affix
     -- (same extra-swing family as Thrash Blade above).
     [11684] = { spellID = 700098, family = "Flurry",           item = "Ironfoe" },
-    -- Arcanite Champion 12790 ("Heal self for 270-450 and increases
-    -- Strength by 120 for 30 sec") deferred: no clean PE catalog match
-    -- (Resurgence 700097 is a low-HP trigger, not an on-hit heal+STR
-    -- proc). Alt+Right-Click Allow Sell handles this item until the
-    -- v2.49.1 autolearn observes the extraction.
+    -- v2.57.1 (captureproc + Serv confirmation): near-verbatim proc-text
+    -- matches against the engrave-affix spellbook.
+    [754]   = { spellID = 700102, family = "Judgement",  item = "Shortsword of Vengeance" },
+    [937]   = { spellID = 700086, family = "Affliction", item = "Black Duskwood Staff" },
+    -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
+    -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
+    -- spell, not the PE affix id EC matches in learnedAffixes (in-game
+    -- /ec sellinfo confirmed a 16916 pairing did not register). Left deferred
+    -- so the v2.49.1 autolearn captures the real affix id when it is extracted
+    -- at the Anvil; hardcoding the wrong id here would only mask that.
 }
 NS.chanceProcConfirmedItems = EC_CHANCE_PROC_CONFIRMED_ITEMS
 

@@ -5,6 +5,22 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.57.0
+
+**Sold History is now a real window that records your whole session, not just the last 20 actions.**
+
+The old `/ec history` reused the bug report's 20-entry "recent" rings, so during a real farming session it only ever showed the last handful of sells/deletes. If you needed to know what happened to something an hour ago, it was already gone. This rebuilds it properly.
+
+- **Full-session logging**: the sell and delete logs now hold up to 5000 entries each (was 20), covering an entire session. If a marathon session ever exceeds that, the oldest trim off but the window shows "N earlier entries trimmed" so you always know nothing was silently dropped.
+- **Interactive window** (replacing the plain text dump), modelled on the Loot Log: movable, resizable, newest-first, with **All / Sold / Deleted** filter buttons and a **search box** (matches item name or the sell/delete reason) so a busy list stays readable. A **Copy** button still dumps the current filtered view for a Discord paste, and **Clear** wipes the session log. It refreshes live while open, so you can watch it during a farm.
+- Same three ways in as before: the **Sold History** button on the main panel, `/ec history`, and Alt+Right-Click any bag item.
+- `/ec bugreport` still shows only the newest 20 of each (a tail slice) so reports stay short - it notes the full list is in `/ec history`.
+
+**New file** `EbonClearance_HistoryWindow.lua`. Session-only throughout: everything clears on `/reload` and nothing is saved. Invariants in `tests/test_perf_guardrails.lua` (Test 116).
+
+---
+
+
 ### v2.56.0
 
 **Affix protection now survives even if Project Ebonhold moves its affix data.**

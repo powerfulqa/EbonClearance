@@ -519,9 +519,18 @@ Not wired into CI, but enforce in review:
   blacklist > deleteList > whitelist).
 - `/ec bugreport` - diagnostic dump for issue reports.
 - `/ec loot` - open the Loot Log window (`NS.ToggleLootWindow`). v2.46.0.
-- `/ec history` - copyable session sell/delete history from the `NS.recentSoldLog` /
-  `NS.recentDeletedLog` rings (each entry now carries a `reason` set at decision time), merged
-  newest-first. Session-only; no persistence.
+- `/ec history` - opens the interactive Sold History window (`NS.ShowHistoryWindow` in
+  `EbonClearance_HistoryWindow.lua`, v2.57.0; `NS.ShowSessionHistory` prefers it and falls back to
+  the old copy-text dump if the module is absent). Reads the full-session `NS.recentSoldLog` /
+  `NS.recentDeletedLog` logs (each entry carries a `reason` set at decision time + a monotonic
+  `seq` for exact newest-first ordering). The logs are capped at 5000 each (was 20) with a trim
+  counter surfaced via `NS.SessionHistoryTrimmed`; on overflow the window shows "N earlier entries
+  trimmed" rather than silently dropping. Window offers All/Sold/Deleted filters, a search box, a
+  Clear button (`NS.ClearSessionHistory`), and a Copy button (dumps the filtered view through
+  `NS.ShowCopyFrame`); it renders the newest `HIST_DISPLAY_MAX` (500) rows and rebuilds on
+  `EC_compCache.historyDirty` while open. `/ec bugreport` still shows only the newest
+  `NS.bugReportRecentMax` (20) of each so reports stay short. Session-only; no persistence.
+  Invariants in `tests/test_perf_guardrails.lua` Test 116.
 - `/ec spike` - copyable session frame-hitch log (`NS.ShowFrameSpikes` over the
   `NS.recentSpikeLog` ring). A cheap always-on watchdog frame reads per-frame `elapsed`; on a
   hitch over the threshold (and under the loading-screen ceiling) it records the ms EC spent in

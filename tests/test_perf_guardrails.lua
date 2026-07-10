@@ -63,6 +63,7 @@ local SOURCE_PATHS = {
     "EbonClearance_ListWidget.lua",
     "EbonClearance_QuickstartPanel.lua",
     "EbonClearance_Events.lua",
+    "EbonClearance_HistoryWindow.lua",
     "EbonClearance_Comms.lua",
     "EbonClearance_GuildShare.lua",
     "EbonClearance_BagDisplay.lua",
@@ -7307,6 +7308,40 @@ do
         src:find('cmd == "spike"', 1, true) ~= nil
             and src:find("NS%.ShowFrameSpikes") ~= nil,
         "The /ec spike command MUST call NS.ShowFrameSpikes to render the recent-hitch ring.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 116 (v2.57.0): session sell/delete logs capture the WHOLE session and
+-- the interactive Sold History window is wired up, replacing the old 20-cap
+-- copy-only /ec history.
+-- ---------------------------------------------------------------------------
+do
+    check("Test 116a: session logs hold the full session (5000-cap, seq-stamped, dirty-flagged)",
+        src:find("EC_RECENT_SOLD_LOG_MAX = 5000", 1, true) ~= nil
+            and src:find("EC_RECENT_DELETED_LOG_MAX = 5000", 1, true) ~= nil
+            and src:find("seq = EC_historySeq", 1, true) ~= nil
+            and src:find("EC_compCache.historyDirty = true", 1, true) ~= nil,
+        "The sell/delete session logs MUST hold the whole session (5000 cap, not the old 20), stamp a monotonic seq on each entry for exact newest-first ordering, and set EC_compCache.historyDirty so the open window refreshes. Regressing the cap loses actions during a farm - the reported bug.")
+    check("Test 116b: trim counter + Clear so nothing is silently lost",
+        src:find("EC_soldLogTrimmed", 1, true) ~= nil
+            and src:find("EC_deletedLogTrimmed", 1, true) ~= nil
+            and src:find("function NS.SessionHistoryTrimmed", 1, true) ~= nil
+            and src:find("function NS.ClearSessionHistory", 1, true) ~= nil,
+        "Overflow past the cap MUST bump a trim counter (surfaced by NS.SessionHistoryTrimmed so the window can show 'N earlier entries trimmed'), and NS.ClearSessionHistory MUST exist for the window's Clear button.")
+    check("Test 116c: /ec bugreport shows only a tail slice of the (now large) logs",
+        src:find("NS.bugReportRecentMax", 1, true) ~= nil
+            and src:find("newest %d of %d - full list in /ec history", 1, true) ~= nil,
+        "Because the logs now hold thousands, /ec bugreport MUST slice only the newest NS.bugReportRecentMax of each so reports stay short, noting the full list is in /ec history.")
+    check("Test 116d: interactive Sold History window wired (NS.ShowHistoryWindow, preferred by NS.ShowSessionHistory)",
+        src:find("function NS.ShowHistoryWindow", 1, true) ~= nil
+            and src:find("if NS.ShowHistoryWindow then", 1, true) ~= nil
+            and src:find("EbonClearanceHistoryWindow", 1, true) ~= nil,
+        "The interactive window (NS.ShowHistoryWindow) MUST exist and NS.ShowSessionHistory MUST prefer it (falling back to the text dump only when the module is absent).")
+    check("Test 116e: window offers All/Sold/Deleted filters + search + Copy",
+        src:find("win.filter", 1, true) ~= nil
+            and src:find("win.search", 1, true) ~= nil
+            and src:find("HIST_DISPLAY_MAX", 1, true) ~= nil,
+        "The window MUST support filtering (win.filter across All/Sold/Deleted), a search field (win.search), and cap rendered rows (HIST_DISPLAY_MAX) with Copy for the full list.")
 end
 
 -- ---------------------------------------------------------------------------

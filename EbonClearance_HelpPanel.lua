@@ -250,7 +250,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "session-history",
         q = L["What did EbonClearance just sell or delete? (/ec history)"],
-        a = L["Opens a copyable list of everything the addon has sold or deleted this session, newest first, each line showing the item, how many, and the rule that decided it (Sell List, Auto-sell by rarity, Junk, Delete List, and so on). It answers 'what did it just do, and why?' at a glance. Three ways in: the |cffb6ffb6Sold History|r button on the main panel, /ec history, or Alt+Right-Click any bag item and pick Sold History. Session-only - the list clears on /reload and is never saved. For the full step-by-step on a specific item still in your bags, use /ec sellinfo instead."],
+        a = L["Opens the Sold History window: everything the addon has sold or deleted this session, newest first, each line showing the item, how many, and the rule that decided it (Sell List, Auto-sell by rarity, Junk, Delete List, and so on). It records the WHOLE session, not just the last few, so nothing is lost during a long farm. Use the All / Sold / Deleted buttons and the search box to filter a busy list, and the Copy button to grab it for a Discord paste. Three ways in: the |cffb6ffb6Sold History|r button on the main panel, /ec history, or Alt+Right-Click any bag item and pick Sold History. Session-only - it clears on /reload and is never saved. For the full step-by-step on a specific item still in your bags, use /ec sellinfo instead."],
         panel = nil,
     },
     {

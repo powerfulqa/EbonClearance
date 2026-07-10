@@ -77,7 +77,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec bugreport` | Generate a comprehensive diagnostic report (Issue Summary at top, recent sold / deleted / silent-refusal ring buffers, toggle diffs, last-event times, cache stats, addon list partitioned into potentially-relevant + other). Opens in a resizable copyable window. |
 | `/ec sellinfo [bag slot]` | Trace why a bag item will or won't sell - per-predicate chain trace (also via Alt+Shift+Right-Click, or Alt+Right-Click → Sell Info) |
 | `/ec loot` | Open the Loot Log window (Session / Character / Account views; also a Stats-panel button and a bindable key) |
-| `/ec history` | Show this session's sell / delete history - what was sold or deleted, and the rule that decided it - in a copyable window (session-only, clears on `/reload`) |
+| `/ec history` | Open the Sold History window: everything sold or deleted this session and the rule that decided it, newest-first, with All / Sold / Deleted filters, a search box, and a Copy button. Records the whole session (not just the last few); session-only, clears on `/reload` |
 | `/ec rules` | Open a plain-English summary of every active rule + the order EC applies them (also the "Current Rules" button on the Main panel) |
 | `/ec minimap on\|off\|reset` | Show, hide, or re-centre the EC minimap button (use `off` if it clashes with a minimap-replacement / magnifier addon) |
 | `/ec affixdebug on\|off\|status\|dump\|clear` | Record affix-detection events for bug reports; `dump` opens a copyable window with the event log |

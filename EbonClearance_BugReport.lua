@@ -674,10 +674,18 @@ local function EC_BuildBugReport()
     add("--- Recent Sold (this session) ---")
     do
         local rs = NS.recentSoldLog or {}
+        local cap = NS.bugReportRecentMax or 20
         if #rs == 0 then
             add("  (none this session)")
         else
-            for i = 1, #rs do
+            -- The full session log can hold thousands now; the report shows
+            -- only the newest `cap` (a tail slice) so it stays short. The full
+            -- list lives in the Sold History window (/ec history).
+            local startI = math.max(1, #rs - cap + 1)
+            if startI > 1 then
+                add(string.format("  (newest %d of %d - full list in /ec history)", #rs - startI + 1, #rs))
+            end
+            for i = startI, #rs do
                 local e = rs[i]
                 add(string.format("  [%s] %d x%d %s (%s, %s) - %s",
                     tostring(e.loggedAt),
@@ -699,10 +707,15 @@ local function EC_BuildBugReport()
     add("--- Recent Deleted (this session) ---")
     do
         local rd = NS.recentDeletedLog or {}
+        local cap = NS.bugReportRecentMax or 20
         if #rd == 0 then
             add("  (none this session)")
         else
-            for i = 1, #rd do
+            local startI = math.max(1, #rd - cap + 1)
+            if startI > 1 then
+                add(string.format("  (newest %d of %d - full list in /ec history)", #rd - startI + 1, #rd))
+            end
+            for i = startI, #rd do
                 local e = rd[i]
                 add(string.format("  [%s] %d x%d %s (%s) - %s",
                     tostring(e.loggedAt),

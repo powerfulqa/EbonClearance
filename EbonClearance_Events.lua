@@ -5888,11 +5888,24 @@ NS.autoMarkLogMax = EC_AUTOMARK_LOG_MAX
 --   * recentDeleted.source = "auto" (auto-delete-on-pickup) or "vendor"
 --                                    (vendor-cycle delete queue action)
 --
--- Ring shifts oldest out on overflow. Session-local, wiped on /reload.
-local EC_RECENT_SOLD_LOG_MAX = 20
-local EC_RECENT_DELETED_LOG_MAX = 20
+-- v2.57.0: these are the FULL session logs behind the Sold History window,
+-- not just a "recent" snapshot. Cap is high (5000 each) so a whole farming
+-- session is captured; on overflow the oldest shift out and a trim counter
+-- records how many, so the window can tell the player "N earlier entries
+-- trimmed" rather than silently dropping them. /ec bugreport still shows only
+-- the last EC_BUGREPORT_RECENT_MAX of each (a tail slice) so reports stay
+-- short. Session-local, wiped on /reload; never persisted.
+local EC_RECENT_SOLD_LOG_MAX = 5000
+local EC_RECENT_DELETED_LOG_MAX = 5000
+local EC_BUGREPORT_RECENT_MAX = 20
 local EC_recentSoldLog = {}
 local EC_recentDeletedLog = {}
+local EC_soldLogTrimmed = 0
+local EC_deletedLogTrimmed = 0
+-- Monotonic insertion sequence stamped on every entry so the Sold History
+-- window can merge the two logs into an exact newest-first order (loggedAt is
+-- only 1 s granular and would tie). Session-local.
+local EC_historySeq = 0
 
 -- `reason` (v2.54.x) is the plain-English "why" captured at decision time -
 -- the rule that fired (e.g. "Sell List", "Auto-sell (Green)", "Delete List").
@@ -5905,8 +5918,10 @@ EC_LogRecentSold = function(itemID, count, path, copper, reason)
     end
     if #EC_recentSoldLog >= EC_RECENT_SOLD_LOG_MAX then
         table.remove(EC_recentSoldLog, 1)
+        EC_soldLogTrimmed = EC_soldLogTrimmed + 1
     end
     local _, link = GetItemInfo(itemID)
+    EC_historySeq = EC_historySeq + 1
     EC_recentSoldLog[#EC_recentSoldLog + 1] = {
         itemID = itemID,
         itemName = link or ("item:" .. tostring(itemID)),
@@ -5915,7 +5930,9 @@ EC_LogRecentSold = function(itemID, count, path, copper, reason)
         copper = copper or 0,
         reason = reason or (path == "manual" and "Sold by you" or "Auto-sell rule"),
         loggedAt = date("%H:%M:%S"),
+        seq = EC_historySeq,
     }
+    EC_compCache.historyDirty = true
 end
 
 EC_LogRecentDeleted = function(itemID, count, source, reason)
@@ -5924,8 +5941,10 @@ EC_LogRecentDeleted = function(itemID, count, source, reason)
     end
     if #EC_recentDeletedLog >= EC_RECENT_DELETED_LOG_MAX then
         table.remove(EC_recentDeletedLog, 1)
+        EC_deletedLogTrimmed = EC_deletedLogTrimmed + 1
     end
     local _, link = GetItemInfo(itemID)
+    EC_historySeq = EC_historySeq + 1
     EC_recentDeletedLog[#EC_recentDeletedLog + 1] = {
         itemID = itemID,
         itemName = link or ("item:" .. tostring(itemID)),
@@ -5933,7 +5952,9 @@ EC_LogRecentDeleted = function(itemID, count, source, reason)
         source = source or "?",
         reason = reason or (source == "auto" and "Auto-delete on pickup" or "Delete List"),
         loggedAt = date("%H:%M:%S"),
+        seq = EC_historySeq,
     }
+    EC_compCache.historyDirty = true
 end
 
 NS.LogRecentSold = EC_LogRecentSold
@@ -5942,12 +5963,37 @@ NS.recentSoldLog = EC_recentSoldLog
 NS.recentDeletedLog = EC_recentDeletedLog
 NS.recentSoldLogMax = EC_RECENT_SOLD_LOG_MAX
 NS.recentDeletedLogMax = EC_RECENT_DELETED_LOG_MAX
+-- How many of each log /ec bugreport dumps (a tail slice) so reports stay
+-- short even though the logs now hold the whole session.
+NS.bugReportRecentMax = EC_BUGREPORT_RECENT_MAX
 
--- Session sell/delete history in a copyable window: what was sold or deleted
--- this login and WHY (the rule that fired), newest-first. Shared by the
--- /ec history command and the Main panel's Sold History button. Session-only
--- - the rings clear on /reload.
+-- Live trim counts for the Sold History window's "N earlier entries trimmed"
+-- note. Returned as (sold, deleted); numbers are value-copied, so this has to
+-- be a function rather than a snapshot field.
+function NS.SessionHistoryTrimmed()
+    return EC_soldLogTrimmed, EC_deletedLogTrimmed
+end
+
+-- Wipe the session sell/delete logs (the Sold History window's Clear button)
+-- and zero the trim counters so the "trimmed" note resets too.
+function NS.ClearSessionHistory()
+    wipe(EC_recentSoldLog)
+    wipe(EC_recentDeletedLog)
+    EC_soldLogTrimmed = 0
+    EC_deletedLogTrimmed = 0
+end
+
+-- Session sell/delete history. Opens the interactive Sold History window
+-- (EbonClearance_HistoryWindow.lua): the whole session, newest-first, with
+-- All / Sold / Deleted + search filters and a Copy button. Falls back to a
+-- plain copyable text dump if that module didn't load. Shared by the
+-- /ec history command, the Main panel's Sold History button, and the Alt+
+-- Right-Click menu. Session-only - the logs clear on /reload.
 function NS.ShowSessionHistory()
+    if NS.ShowHistoryWindow then
+        NS.ShowHistoryWindow()
+        return
+    end
     local rows = {}
     local function push(e, action)
         rows[#rows + 1] = {

@@ -38,6 +38,7 @@ from `Bindings.xml`.
 | [EbonClearance_Events.lua](../EbonClearance_Events.lua) | The single event frame, the `/ec` slash commands, and the residual glue. Adding an event = `RegisterEvent` + a branch here, never a new frame. Also where every Interface Options panel is registered centrally. |
 | [EbonClearance_Comms.lua](../EbonClearance_Comms.lua) | `NS.Comms` addon-to-addon transport + the version-update gossip. |
 | [EbonClearance_GuildShare.lua](../EbonClearance_GuildShare.lua) | Opt-in, anonymous-by-default guild/group stats sharing (a `NS.Comms` consumer). |
+| [EbonClearance_ProcShare.lua](../EbonClearance_ProcShare.lua) | Opt-in, anonymous chance-on-hit proc-pairing sharing across the guild (a `NS.Comms` consumer, v2.53.0). |
 
 ### Interface Options panels (feature UI)
 
@@ -74,6 +75,7 @@ One file per panel (or closely-related pair). All register centrally in
 | [EbonClearance_Tooltip.lua](../EbonClearance_Tooltip.lua) | Bag-item tooltip annotations. Deliberately mirrors `EC_IsSellable` (paired edit; see EC-TRAP). |
 | [EbonClearance_BagContextMenu.lua](../EbonClearance_BagContextMenu.lua) | Alt+Right-Click bag-item quick-action popup. |
 | [EbonClearance_BugReport.lua](../EbonClearance_BugReport.lua) | Diagnostic snapshot builder + display frame (`/ec bugreport`). |
+| [EbonClearance_HistoryWindow.lua](../EbonClearance_HistoryWindow.lua) | The interactive Sold History window (`/ec history`, v2.57.0): full-session sell/delete log with All/Sold/Deleted filters + search, over `NS.recentSoldLog` / `NS.recentDeletedLog`. |
 
 `Bindings.xml` defines keybinds that call the `EbonClearance_*` global handlers.
 
@@ -114,7 +116,7 @@ anything that looks like dead code or a bug.
 From the repo root:
 
 ```
-lua tests/run_all.lua          # all five invariant suites in one shot
+lua tests/run_all.lua          # all eight invariant suites in one shot
 luac -p EbonClearance_*.lua     # syntax check every shipped file (luac5.1 in CI)
 luacheck *.lua                  # 0 warnings expected (runs in CI; see CLAUDE.md)
 ```

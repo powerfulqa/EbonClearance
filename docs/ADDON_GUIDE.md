@@ -120,7 +120,7 @@ them in XML at addon-load time.
 
 ## Architecture
 
-> For the multi-file map (which of the 32 `.lua` files owns what, the
+> For the multi-file map (which of the 34 `.lua` files owns what, the
 > cross-file boundaries, and a "where do I change X?" table), see
 > [ARCHITECTURE.md](ARCHITECTURE.md). The per-file ordering notes below
 > describe the rough layout *within* the larger files (Core, Events, etc.)
@@ -3289,10 +3289,11 @@ refactor.
 Session-local ring buffers + snapshots + timestamps that `/ec bugreport` dumps. Every hook exists so a pasted bug report answers "why didn't X fire?" or "why didn't Y stick?" without a back-and-forth. All lifecycle is session-local (wiped on `/reload`); no SavedVariables persistence.
 
 - **`NS.silentRefusalLog`** (ring, 15 max). `EC_AddItemToList`'s cross-list conflict guard refuses `quiet=true` adds silently - the auto-protect sync path uses `quiet=true`, so a Keep-Add refused because the item's already on Delete List returns `false` with no chat trail. This was the root cause of the v2.50.2 shirt-loss bug. `EC_LogSilentRefusal(itemID, targetList, conflictList, caller)` populates the ring. `caller` is the label the panel passed (e.g. `"Keep List"`, `"Equipment Set"`).
-- **`NS.recentSoldLog`** (ring, 20 max) + **`NS.recentDeletedLog`** (ring, 20 max). `EC_LogRecentSold(itemID, count, path, copper)` + `EC_LogRecentDeleted(itemID, count, source)`. Three hook sites populate them:
+- **`NS.recentSoldLog`** + **`NS.recentDeletedLog`** (v2.57.0: full-session logs, 5000 max each - raised from the old 20 so a whole farm is captured; overflow trims oldest and bumps `EC_soldLogTrimmed` / `EC_deletedLogTrimmed`, surfaced by `NS.SessionHistoryTrimmed()`). `EC_LogRecentSold(itemID, count, path, copper, reason)` + `EC_LogRecentDeleted(itemID, count, source, reason)` (the `reason` arg, v2.54.0, is the plain-English "why"; each entry also carries a monotonic `seq` for exact newest-first ordering and sets `EC_compCache.historyDirty`). Three hook sites populate them:
   - `hooksecurefunc("UseContainerItem", ...)` in the manual-sell attribution block: `path = "manual"`.
   - `DoNextAction`'s `sell` branch in the worker cycle: `path = "worker"`.
   - `EC_compCache.executeBagSlotDelete`'s single call site (both auto-delete and vendor-cycle delete): `source = announce and "auto" or "vendor"`.
+  - Consumed by the **Sold History window** (`EbonClearance_HistoryWindow.lua`, `NS.ShowHistoryWindow`; `NS.ShowSessionHistory` prefers it) and, tail-sliced to the newest `NS.bugReportRecentMax` (20), by `/ec bugreport`. `NS.ClearSessionHistory()` wipes both logs + trim counters.
 - **`NS.CaptureToggleLoginSnapshot()`** + **`NS.ToggleDiffSinceLogin()`**. Watched-toggle snapshot at PLAYER_LOGIN (after `EnsureDB` seeds defaults). Diff at report time surfaces "toggles the user flipped this session" without needing mutation hooks on every settings widget. Watch list is `EC_TOGGLE_WATCH_LIST` (23 high-value toggles: destructive, auto-mark, protection, auto-protect, sell rules, vendor mode, scavenger).
 - **`NS.lastEventAt`** (table) + **`NS.StampEvent(key)`**. Eight stamp sites: `bagUpdate`, `equipmentSetsChanged`, `merchantShow`, `merchantClosed`, `vendorRunStart`, `autoMarkAffix`, `autoMarkResilience`, `autoDeleteScan`. Values start nil; a `(never)` reading in `/ec bugreport`'s Last Event Times section is diagnostic on its own.
 - **`NS.compCache.bindCache` / `itemAffixLookupCache` / `bagSlotAffixData` / `chanceOnHitCache` / `processCache` / `equipmentSetIDs`**. Existing session caches; `/ec bugreport`'s Cache Stats section counts each and breaks out `bindCache` by `boe / bop / any` tag totals so a scan-time regression (e.g. `any` share >> `boe + bop`) shows up as a data anomaly.

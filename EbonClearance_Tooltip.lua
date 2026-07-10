@@ -95,7 +95,7 @@ local EC_tooltipHooked = false
 -- rather than calling it - it needs the WHY (per-outcome labels), not a
 -- yes/no. Do NOT refactor the two into one shared function. See
 -- docs/CODE_REVIEW.md item 6.
-local function EC_AnnotateTooltip(tooltip)
+local function EC_AnnotateTooltipInner(tooltip)
     local DB = NS.DB
     local ADB = NS.ADB
     if not DB or not tooltip or not tooltip.GetItem then
@@ -1010,6 +1010,24 @@ local function EC_AnnotateTooltip(tooltip)
     tooltip:AddLine("|cff666666" .. L["Alt+Right-Click for EbonClearance menu"] .. "|r")
     tooltip.__EC_annotated = true
     tooltip:Show()
+end
+
+-- Frame-spike timing wrapper. Times the annotation body into the shared
+-- tooltip phase counter so /ec spike can attribute a mouseover-storm
+-- stutter to tooltip work. The body above is untouched (and, per the
+-- EC-TRAP note at its head, deliberately mirrors EC_IsSellable - not
+-- merged with it). Falls straight through when the timer is unavailable.
+local function EC_AnnotateTooltip(tooltip)
+    local prof = EC_compCache.spikeProf
+    if not prof then
+        return EC_AnnotateTooltipInner(tooltip)
+    end
+    local t0 = prof()
+    EC_AnnotateTooltipInner(tooltip)
+    local sp = EC_compCache.spikePhase
+    if sp then
+        sp.tooltip = sp.tooltip + (prof() - t0)
+    end
 end
 
 local function EC_ClearTooltipFlag(tooltip)

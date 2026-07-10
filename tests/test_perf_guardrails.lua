@@ -7280,6 +7280,36 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 115: frame-spike diagnostic is a cheap, bounded, session-only ring
+-- that attributes a hitch to an EC phase without adding heavy per-frame work.
+-- ---------------------------------------------------------------------------
+do
+    check("Test 115a: spike phase counters exist and are exposed cross-file",
+        src:find("local EC_spikePhase = { bagupdate = 0, vendor = 0, tooltip = 0 }", 1, true) ~= nil
+            and src:find("EC_compCache%.spikePhase = EC_spikePhase") ~= nil
+            and src:find("local EC_prof = debugprofilestop", 1, true) ~= nil,
+        "The frame-spike diagnostic MUST keep its three cumulative-ms phase counters (bagupdate/vendor/tooltip) and expose them on EC_compCache so the tooltip module (a separate file) can add to the same table. Timing uses debugprofilestop, which is always available on 3.3.5a with no CVar.")
+    check("Test 115b: watchdog is delta-based and the ring is bounded",
+        src:find("if elapsed < EC_SPIKE_THRESHOLD_S or elapsed > EC_SPIKE_CEILING_S then", 1, true) ~= nil
+            and src:find("if #EC_spikeLog > EC_SPIKE_LOG_MAX then", 1, true) ~= nil
+            and src:find("table%.remove%(EC_spikeLog%)") ~= nil,
+        "The watchdog MUST gate on a per-frame elapsed threshold (and ignore loading-screen mega-frames via the ceiling) and the log MUST be a bounded ring (cap EC_SPIKE_LOG_MAX, oldest trimmed). Session-only, never persisted.")
+    check("Test 115c: each phase is timed additively at its hot path",
+        src:find("EC_spikePhase%.bagupdate = EC_spikePhase%.bagupdate %+") ~= nil
+            and src:find("EC_spikePhase%.vendor = EC_spikePhase%.vendor %+") ~= nil
+            and src:find("sp%.tooltip = sp%.tooltip %+") ~= nil,
+        "The bag-update flush, the vendor batch, and the tooltip annotation MUST each accumulate their own elapsed ms into the matching phase counter. Regressing any of these blinds /ec spike to that subsystem.")
+    check("Test 115d: tooltip body kept separate from its timing wrapper (EC-TRAP mirror preserved)",
+        src:find("local function EC_AnnotateTooltipInner", 1, true) ~= nil
+            and src:find("local function EC_AnnotateTooltip%(tooltip%)") ~= nil,
+        "The tooltip timing wrapper MUST wrap the annotation body, not inline timing into it - the body deliberately mirrors EC_IsSellable (EC-TRAP) and must not be merged or restructured.")
+    check("Test 115e: /ec spike command surfaces the ring",
+        src:find('cmd == "spike"', 1, true) ~= nil
+            and src:find("NS%.ShowFrameSpikes") ~= nil,
+        "The /ec spike command MUST call NS.ShowFrameSpikes to render the recent-hitch ring.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 

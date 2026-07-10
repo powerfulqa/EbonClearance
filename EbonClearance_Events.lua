@@ -3014,6 +3014,111 @@ EC_compCache.bagUpdateAccum = 0
 EC_compCache.BAG_UPDATE_DEBOUNCE_S = 0.12 -- 120 ms idle window
 EC_compCache.bagUpdateFrame = CreateFrame("Frame")
 EC_compCache.bagUpdateFrame:Hide()
+
+-- ------------------------------------------------------------------
+-- Frame-spike diagnostic (session-only). A cheap always-on watchdog
+-- watches per-frame time; when a single frame runs long enough to be a
+-- visible hitch, it records how many milliseconds EC spent in each of
+-- its heavy phases that frame (bag-update flush, vendor cycle, tooltip
+-- annotation) and flags the worst offender. Surfaced by /ec spike.
+--
+-- Phase counters are cumulative wall-clock ms from debugprofilestop - a
+-- high-res timer that, unlike CPU profiling, is always available on
+-- 3.3.5a with no CVar. The watchdog only reads deltas, so the counters
+-- climbing over a session is harmless. Everything is in-memory and
+-- bounded; it clears on /reload and is never persisted.
+--
+-- Perf: the watchdog does a few subtractions per frame and allocates a
+-- table only on an actual spike, so it adds no measurable per-frame cost
+-- and touches none of the BAG_UPDATE coalescing state.
+local EC_prof = debugprofilestop
+local EC_SPIKE_THRESHOLD_S = 0.05 -- ~50 ms frame: a visible micro-stutter
+local EC_SPIKE_CEILING_S = 2.0 -- ignore loading-screen / alt-tab mega-frames
+local EC_SPIKE_LOG_MAX = 20
+local EC_SPIKE_EPSILON_MS = 0.1 -- "EC did real work this frame" floor
+local EC_spikeLog = {}
+-- Cumulative ms per phase. Exposed on EC_compCache so the tooltip module
+-- (a separate file) can add to the same counters.
+local EC_spikePhase = { bagupdate = 0, vendor = 0, tooltip = 0 }
+EC_compCache.spikePhase = EC_spikePhase
+EC_compCache.spikeProf = EC_prof
+NS.recentSpikeLog = EC_spikeLog
+NS.recentSpikeLogMax = EC_SPIKE_LOG_MAX
+
+local EC_spikeFrame = CreateFrame("Frame")
+local EC_spikePrevBag, EC_spikePrevVendor, EC_spikePrevTip = 0, 0, 0
+EC_spikeFrame:SetScript("OnUpdate", function(_, elapsed)
+    local p = EC_spikePhase
+    local dBag = p.bagupdate - EC_spikePrevBag
+    local dVendor = p.vendor - EC_spikePrevVendor
+    local dTip = p.tooltip - EC_spikePrevTip
+    EC_spikePrevBag = p.bagupdate
+    EC_spikePrevVendor = p.vendor
+    EC_spikePrevTip = p.tooltip
+    if elapsed < EC_SPIKE_THRESHOLD_S or elapsed > EC_SPIKE_CEILING_S then
+        return
+    end
+    -- Which EC phase ate the most time during this hitch?
+    local dom, domMs = nil, EC_SPIKE_EPSILON_MS
+    if dBag > domMs then
+        dom, domMs = "Bag update", dBag
+    end
+    if dVendor > domMs then
+        dom, domMs = "Vendor cycle", dVendor
+    end
+    if dTip > domMs then
+        dom, domMs = "Tooltip scan", dTip
+    end
+    -- Only record hitches EC actually contributed to. An empty /ec spike
+    -- after a stutter storm is itself the answer: EC wasn't busy then.
+    if not dom then
+        return
+    end
+    table.insert(EC_spikeLog, 1, {
+        ms = elapsed * 1000,
+        dominant = dom,
+        bagMs = dBag,
+        vendorMs = dVendor,
+        tipMs = dTip,
+        fps = (GetFramerate and GetFramerate()) or 0,
+        loggedAt = date("%H:%M:%S"),
+    })
+    if #EC_spikeLog > EC_SPIKE_LOG_MAX then
+        table.remove(EC_spikeLog)
+    end
+end)
+
+-- Copyable list of recent frame hitches (newest-first) and which EC phase
+-- was busiest during each. Backs the /ec spike command. Session-only - the
+-- ring clears on /reload.
+function NS.ShowFrameSpikes()
+    local body
+    if #EC_spikeLog == 0 then
+        body = L["No frame hitches blamed on EbonClearance this session. Either there were none, or EbonClearance wasn't doing heavy work during any slow frame. Clears on /reload."]
+    else
+        local lines = {}
+        for i = 1, #EC_spikeLog do
+            local e = EC_spikeLog[i]
+            lines[i] = string.format(
+                "[%s] %.0f ms hitch - busiest: %s  |cff888888(bag %.0f / vendor %.0f / tooltip %.0f ms, %.0f FPS)|r",
+                tostring(e.loggedAt or "?"),
+                tonumber(e.ms) or 0,
+                tostring(e.dominant or "?"),
+                tonumber(e.bagMs) or 0,
+                tonumber(e.vendorMs) or 0,
+                tonumber(e.tipMs) or 0,
+                tonumber(e.fps) or 0
+            )
+        end
+        body = table.concat(lines, "\n")
+    end
+    if NS.ShowCopyFrame then
+        NS.ShowCopyFrame(L["EbonClearance: Frame Hitches"], body)
+    else
+        PrintNice(body)
+    end
+end
+
 EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     EC_compCache.bagUpdateAccum = EC_compCache.bagUpdateAccum + elapsed
     if EC_compCache.bagUpdateAccum < EC_compCache.BAG_UPDATE_DEBOUNCE_S then
@@ -3021,6 +3126,9 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     end
     self:Hide()
     EC_compCache.bagUpdatePending = false
+    -- Frame-spike timing: the whole settled-burst flush (loot-delta scan
+    -- included) is the "bag update" phase.
+    local _spikeT0 = EC_prof and EC_prof()
     -- Burst settled. Fire the deferred work once.
     if EC_HandleAutoOpenContainers then
         EC_HandleAutoOpenContainers()
@@ -3094,6 +3202,9 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- debounce for the next.
     if EC_compCache.runAutoDeleteGrey then
         EC_compCache.runAutoDeleteGrey()
+    end
+    if _spikeT0 then
+        EC_spikePhase.bagupdate = EC_spikePhase.bagupdate + (EC_prof() - _spikeT0)
     end
 end)
 
@@ -6469,6 +6580,7 @@ worker:SetScript("OnUpdate", function(self, elapsed)
     if self.t >= interval then
         self.t = 0
         local batch = EC_EffectiveBatchSize()
+        local _spikeT0 = EC_prof and EC_prof()
         for _ = 1, batch do
             DoNextAction()
             -- v2.38.2: stop iterating the moment FinishRun fires. The
@@ -6477,6 +6589,9 @@ worker:SetScript("OnUpdate", function(self, elapsed)
             if not EC_compCache.vendorRunning then
                 break
             end
+        end
+        if _spikeT0 then
+            EC_spikePhase.vendor = EC_spikePhase.vendor + (EC_prof() - _spikeT0)
         end
     end
 end)
@@ -7928,6 +8043,16 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                 )
             end
         end
+        return
+    end
+
+    if cmd == "spike" then
+        -- Session frame-hitch diagnostic: the worst recent frames EC
+        -- contributed to and which phase (bag update / vendor / tooltip)
+        -- was busiest during each. Complements /ec perf (which reports
+        -- steady-state footprint) by answering "what caused that stutter?".
+        EnsureDB()
+        NS.ShowFrameSpikes()
         return
     end
 

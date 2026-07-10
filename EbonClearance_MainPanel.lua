@@ -860,6 +860,11 @@ local function BuildMainPanel(panel, content)
                 .. L["See every active rule + the order EC applies them"],
         },
         {
+            run = "history",
+            label = "|cffffff00/ec history|r  "
+                .. L["See what was sold or deleted this session, and why"],
+        },
+        {
             -- v2.44.7: `||` renders as a literal pipe inside a WoW UI font
             -- string. A single `|r` would terminate the |cffffff00 colour
             -- block and the trailing "eset" would render in the default
@@ -922,6 +927,10 @@ local function BuildMainPanel(panel, content)
             label = "|cffffff00/ec processdebug clear|r  " .. L["Wipe Process Bags cache (force fresh tooltip scans)"],
         },
         { run = "perf", label = "|cffffff00/ec perf|r  " .. L["Show EC's memory, CPU, cache and list sizes"] },
+        {
+            run = "spike",
+            label = "|cffffff00/ec spike|r  " .. L["Show recent frame hitches EC caused, and which part was busiest"],
+        },
         { heading = L["Language"] },
         { label = "|cff66ccff" .. langStatus .. "|r" },
         {

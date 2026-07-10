@@ -716,6 +716,30 @@ local function EC_BuildBugReport()
     end
     add("")
 
+    -- Frame-spike ring (session-only): the worst recent frames EC
+    -- contributed to and which phase was busiest during each. Answers
+    -- "the player reports a stutter - was EC the cause, and where?".
+    add("--- Recent Frame Hitches (this session) ---")
+    do
+        local rh = NS.recentSpikeLog or {}
+        if #rh == 0 then
+            add("  (none this session)")
+        else
+            for i = 1, #rh do
+                local e = rh[i]
+                add(string.format("  [%s] %.0f ms - %s (bag %.0f / vendor %.0f / tooltip %.0f ms, %.0f FPS)",
+                    tostring(e.loggedAt),
+                    tonumber(e.ms) or 0,
+                    tostring(e.dominant or "?"),
+                    tonumber(e.bagMs) or 0,
+                    tonumber(e.vendorMs) or 0,
+                    tonumber(e.tipMs) or 0,
+                    tonumber(e.fps) or 0))
+            end
+        end
+    end
+    add("")
+
     -- v2.51.0: watched-toggle diff since PLAYER_LOGIN. Snapshot was
     -- taken right after EnsureDB seeded defaults, so this section only
     -- shows toggles the user actively flipped this session. Empty on
@@ -969,7 +993,7 @@ local function EC_EnsureCopyFrame()
 
     local hint = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-    hint:SetText(L["|cff888888Press Ctrl+A then Ctrl+C to copy this report.|r"])
+    hint:SetText(L["|cff888888Click the text, then Ctrl+C to copy. Safe to leave open while you play.|r"])
 
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -986,6 +1010,12 @@ local function EC_EnsureCopyFrame()
     editBox:SetText("")
     editBox:SetScript("OnEscapePressed", function(s)
         s:ClearFocus()
+    end)
+    -- Select the whole report the moment the user clicks in, so a single
+    -- Ctrl+C copies everything. Focus is only ever taken by this explicit
+    -- click - never on open - so the window can stay up while you play.
+    editBox:SetScript("OnEditFocusGained", function(s)
+        s:HighlightText()
     end)
     scroll:SetScrollChild(editBox)
 
@@ -1021,8 +1051,13 @@ local function EC_ShowCopyFrame(titleText, bodyText, chatHint)
     if f.Raise then
         f:Raise()
     end
-    f.editBox:HighlightText()
-    f.editBox:SetFocus()
+    -- Open WITHOUT taking keyboard focus. A focused multi-line EditBox
+    -- swallows every keypress (movement keys included), which made the
+    -- window impossible to leave open while playing. Focus is now taken
+    -- only when the user deliberately clicks the text to copy (see the
+    -- OnEditFocusGained select-all in EC_EnsureCopyFrame); Escape or a
+    -- click elsewhere releases it back to the game.
+    f.editBox:ClearFocus()
     if chatHint then
         NS.PrintNice(chatHint)
     end

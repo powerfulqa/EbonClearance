@@ -165,7 +165,7 @@ read_globals = {
     -- Misc utilities
     "hooksecurefunc", "wipe", "select", "tinsert",
     "NORMAL_FONT_COLOR", "HIGHLIGHT_FONT_COLOR", "ITEM_QUALITY_COLORS",
-    "GetTime", "date", "time",
+    "GetTime", "date", "time", "debugprofilestop",
     "GetRealmName", "GetCurrentRegion",
 
     -- ------------------------------------------------------------------

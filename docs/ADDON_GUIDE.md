@@ -522,6 +522,15 @@ Not wired into CI, but enforce in review:
 - `/ec history` - copyable session sell/delete history from the `NS.recentSoldLog` /
   `NS.recentDeletedLog` rings (each entry now carries a `reason` set at decision time), merged
   newest-first. Session-only; no persistence.
+- `/ec spike` - copyable session frame-hitch log (`NS.ShowFrameSpikes` over the
+  `NS.recentSpikeLog` ring). A cheap always-on watchdog frame reads per-frame `elapsed`; on a
+  hitch over the threshold (and under the loading-screen ceiling) it records the ms EC spent in
+  each heavy phase that frame and flags the busiest. Phases are timed with `debugprofilestop`
+  into `EC_compCache.spikePhase` (`bagupdate` = the settled BAG_UPDATE flush incl. loot-delta
+  scan, `vendor` = the worker batch, `tooltip` = the annotation wrapper in the tooltip file).
+  Only hitches EC actually contributed to are recorded, so an empty result is itself the answer.
+  Session-only; bounded ring; no persistence. Invariants in `tests/test_perf_guardrails.lua`
+  Test 115.
 - `/ec rules` - plain-English summary of every active rule + the
   precedence EC uses to decide DELETE / SELL / KEEP. Same surface as
   the "Current Rules" button on the Main panel. Surfaces explicit

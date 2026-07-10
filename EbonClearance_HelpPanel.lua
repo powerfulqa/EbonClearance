@@ -254,6 +254,12 @@ local EC_HELP_ENTRIES = {
         panel = nil,
     },
     {
+        id = "frame-spike",
+        q = L["The game stuttered. Was it EbonClearance? (/ec spike)"],
+        a = L["Type /ec spike for a copyable list of recent frame hitches the addon actually contributed to, newest first. Each line shows how long the frame took and which part of the addon was busiest during it (bag update, vendor cycle, or tooltip). If the list is empty right after a stutter, that's the answer too: the addon wasn't doing heavy work during any slow frame. Session-only - it clears on /reload. Use /ec perf for the addon's steady-state memory and CPU instead."],
+        panel = nil,
+    },
+    {
         id = "known-vs-needed-affix",
         q = L["What's the difference between 'Known Affix items' and 'Needed Affix items'?"],
         a = L["Both highlight bag items with a random affix, but they tell you different things. Known Affix items (purple) light up when the affix on the item is one you've already extracted at that rank / family - a duplicate you might sell or hand off. Needed Affix items (gold) light up when the affix is one you haven't extracted yet - an at-a-glance extraction target. Both are opt-in and default off; enable them on the Item Highlighting panel. They don't overlap: any given affixed item shows either purple or gold, not both."],

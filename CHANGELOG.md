@@ -5,6 +5,26 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.55.0
+
+**Frame-hitch diagnostic: find out if a stutter was EbonClearance, and which part.**
+
+`/ec perf` reports steady-state footprint (memory, CPU, cache sizes) but couldn't answer "what caused that specific stutter?". The new `/ec spike` fills that in.
+
+- **What it does**: a cheap always-on watchdog watches per-frame time. When a single frame runs long enough to be a visible hitch, it records how many milliseconds EbonClearance spent in each of its heavy phases that frame - bag-update flush (loot-delta scan included), vendor cycle, tooltip annotation - and flags the busiest.
+- **`/ec spike`** shows the recent hitches, newest-first, e.g. `[19:37:18] 127 ms hitch - busiest: Bag update (bag 36 / vendor 0 / tooltip 0 ms, 2 FPS)`. It only records hitches EbonClearance actually contributed to, so an empty list right after a stutter is itself the answer: the addon wasn't the cause.
+- **Session-only**: an in-memory bounded ring, cleared on `/reload`, never saved. Phases are timed with `debugprofilestop` (a high-res timer that, unlike CPU profiling, is always available and needs no CVar). The watchdog only reads deltas, so its per-frame cost is a handful of subtractions and it allocates only on an actual spike.
+- `/ec bugreport` now includes a "Recent Frame Hitches" section for the same data.
+
+**Copy windows no longer steal your keyboard.** The copyable popups (`/ec spike`, `/ec history`, `/ec bugreport`, Sell Info) used to grab keyboard focus on open, so a multi-line text box swallowed your movement keys and you couldn't play with the window up. They now open unfocused and are safe to leave open. To copy: click the text (it selects everything), then Ctrl+C. Escape or a click elsewhere hands input back to the game.
+
+**Slash list**: `/ec history` (added in v2.54.0) and `/ec spike` now appear in the Main panel's click-to-run Slash Commands list.
+
+**Docs**: README slash table, in-game Help/FAQ entry, `docs/ADDON_GUIDE.md` slash list, and a new perf-guardrail invariant (Test 115) in `tests/test_perf_guardrails.lua`.
+
+---
+
+
 ### v2.54.0
 
 **Sold History: see exactly what EbonClearance sold or deleted this session, and why.**

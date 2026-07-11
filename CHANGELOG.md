@@ -5,6 +5,31 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.57.2
+
+**Safety fix: your item-level cap is now a hard ceiling the affix rules can't override.**
+
+Reported near item-loss (thanks Bizzaro): an ilvl-277 Heroic Epic auto-sold under an Epic cap of 250, because its affix ("Iron Will I") was one already extracted. The "Sell affixes below rank" and "Allow selling affixes you already have" rules were standalone sell signals that ignored the quality rule's ilvl cap, so a high-end item the cap was meant to protect got vendored on the strength of a duplicate affix alone.
+
+- The per-rarity ilvl cap is now a HARD ceiling for every auto-sell path. Above the cap (fixed-cap mode), or above what you have equipped (use-equipped-iLvl mode), an affixed item is KEPT, not sold, even if you own its affix or its rank is below your floor.
+- Only your explicit Sell List or Alt+Right-Click Allow Sell still overrides the cap (user intent wins, as always). When a rarity's rule is disabled or set to sell-all (cap 0), the affix rules behave as before.
+- Applied through one shared gate (`EC_compCache.affixSaleWithinCeiling`) so the vendor decision, the `/ec sellinfo` trace, and the bag tooltip all agree, pinned by a new invariant (Test 117). The trace now spells out "kept - above your sell cap for this rarity" so you see exactly why.
+
+Also: `/ec sellinfo` now prints the addon Version in its header (matching `/ec bugreport`). Help/FAQ updated to describe the cap as a hard ceiling.
+
+**Delete-safety hardening (thanks Serv, in-game testing).** While verifying the cap fix, a worn ring (a saved-equipment-set member and a quest reward with no vendor value) showed a "Will Delete" tag when moved to bags, and could not be added to the Keep List from the menu. Root cause was several gaps in the "auto-mark unsellable affixes" feature and its previews:
+
+- The unsellable-affix auto-mark now protects real gear. It never marks an item that is a saved-set member, currently equipped, a quest item, on your account Sell List, or high item level. On this realm even top-end soulbound gear vendors for nothing, so item level (not vendor value) is the safety signal.
+- The bag tooltip's "Will Delete (unsellable affix)" preview and the real delete logic now share ONE protection gate (`EC_compCache.itemProtectedFromAutoMarkDelete`), so the tooltip can never threaten deletion on an item that would actually be kept. Protected items show "Keep (protected)" instead.
+- Alt+Right-Click always offers the Keep List now. Items with no vendor value (quest rewards) and chance-on-hit / affix-protected items previously hid the Keep row, so you could not protect them from the menu. Keep is always a safe action, so it is always shown.
+- Saved equipment sets are re-synced on every bag scan (not only once at login), so a set you edit mid-session can't slip a member past the guard on a stale cache.
+- Auto-protect equipment sets now defaults ON for new installs, so saved-set items land on the Keep List automatically. Existing settings are untouched. (Set members are protected from deletion regardless of this toggle; it only controls the visible Keep-List stamp and sell protection.)
+
+Pinned by a new invariant (Test 118).
+
+---
+
+
 ### v2.57.1
 
 Patch release. Chance-on-hit proc-pairing seed data (confirmed via `/ec captureproc` + in-game verification):

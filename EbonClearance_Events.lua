@@ -1236,10 +1236,15 @@ local function EnsureDB()
     -- origin tag "set". Solves the dual-spec / off-set problem: items
     -- assigned to your alternate gear set sit in bags between swaps and
     -- are unprotected by autoAddEquipped (which only catches currently-
-    -- equipped slots). Default OFF; opt-in. EQUIPMENT_SETS_CHANGED drives
-    -- live re-syncs when the user adds / modifies / deletes a set.
+    -- equipped slots). v2.57.2: default ON for new installs (Serv request -
+    -- saved-set items should land on the Keep List for safety). Existing saves
+    -- keep whatever the player already set; only a brand-new DB gets the ON
+    -- default. Note the auto-delete gate protects set members regardless of
+    -- this toggle - it only controls the visible Keep-List stamp + sell
+    -- protection. EQUIPMENT_SETS_CHANGED drives live re-syncs when the user
+    -- adds / modifies / deletes a set.
     if type(DB.autoProtectEquipmentSets) ~= "boolean" then
-        DB.autoProtectEquipmentSets = false
+        DB.autoProtectEquipmentSets = true
     end
     if type(DB.whitelistMinQuality) ~= "number" then
         DB.whitelistMinQuality = 1
@@ -4307,6 +4312,35 @@ function EC_compCache.isDowngradeVsEquipped(itemID, lootedILvl, equipLoc)
     return false, "at_or_above"
 end
 
+-- v2.57.2 SAFETY: is an affixed item at or below the iLvl ceiling its rarity's
+-- quality rule sets? The affix sell paths (the affix-rank floor and "Allow
+-- selling affixes you already have") must respect this ceiling, so a high-iLvl
+-- item the user set a cap to protect is NOT sold just because they already own
+-- its affix. Near item-loss report (Bizzaro): an ilvl-277 Epic sold under an
+-- Epic cap of 250 because the affix was a known dupe.
+--
+-- Returns true (affix sale allowed) when the rarity rule is disabled or set to
+-- "sell all" (cap 0) - the affix rules stay standalone there, as before.
+-- Otherwise it applies the SAME iLvl gate qualityPass uses (dynamic equipped-
+-- iLvl comparison, or fixed maxILvl cap). Shared by EC_IsSellable,
+-- describeSellability, and the tooltip so all three agree on the ceiling.
+function EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)
+    local DB = NS.DB
+    local rule = (quality and quality >= 1 and quality <= 4 and DB and DB.qualityRules) and DB.qualityRules[quality]
+    if not (rule and rule.enabled) then
+        return true
+    end
+    if rule.useEquippedILvl then
+        return EC_compCache.isDowngradeVsEquipped(itemID, ilvl, equipLoc) and true or false
+    end
+    local cap = rule.maxILvl or 0
+    if cap == 0 then
+        return true
+    end
+    local hasVisibleILvl = equipLoc and equipLoc ~= "" and ilvl and ilvl > 0
+    return (hasVisibleILvl and ilvl <= cap) and true or false
+end
+
 function EC_compCache.checkBagsForUpgrades()
     if not DB or not DB.autoProtectUpgrades then
         return
@@ -5246,6 +5280,20 @@ local function EC_IsSellable(bag, slot, junkOnly)
         if autoDupePass and DB.keepBoeAffixDupes and EC_compCache.getBindType(bag, slot) ~= "bop" then
             autoDupePass = false
         end
+    end
+    -- v2.57.2 SAFETY: the iLvl cap is a HARD ceiling for the affix sell paths
+    -- too. Above the rarity rule's cap (when that rule is enabled), a known-
+    -- affix dupe or a below-rank affix item is PROTECTED, not sold - the cap
+    -- the user set to keep high gear now binds every auto-sell path, not just
+    -- the quality rule. EC-TRAP: describeSellability + EC_AnnotateTooltip apply
+    -- the identical gate via EC_compCache.affixSaleWithinCeiling; keep the
+    -- three in lockstep or the trace / tooltip disagree with the vendor.
+    if
+        (affixRankPass or autoDupePass)
+        and not EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)
+    then
+        affixRankPass = false
+        autoDupePass = false
     end
     -- Sell Known Recipes: standalone auto-sell signal for profession
     -- recipes the character has already learned. Gated per-quality.
@@ -6248,6 +6296,44 @@ end
 -- gate (deleteListSlotEligible, which re-checks affixDisposable per instance)
 -- only runs when protection is on. It does NOT require the "sell exact-rank
 -- dupes" toggle. Asked for by Broyo.
+-- v2.57.2: item levels at/above this are "real gear" and are never auto-marked
+-- for deletion by the unsellable-affix feature. On Project Ebonhold even top-end
+-- soulbound gear has sellPrice 0, so "no vendor value" alone is NOT a safe
+-- "trash" signal - a high-iLvl drop must be protected. Tunable.
+local EC_AUTOMARK_PROTECT_ILVL = 100
+
+-- v2.57.2 SAFETY: shared "is this item protected from auto-mark deletion?" gate,
+-- called by BOTH runAutoMarkAffixDupes (the real marking) and the tooltip's
+-- "Will Delete (unsellable affix)" preview so the two can't drift (Serv report:
+-- an equipment-set-member ring/shirt showed a false "Will Delete" while the real
+-- logic skipped it). Covers the itemID-keyed protections: equipment-set
+-- membership, the account Sell List, currently-equipped, quest items, and high
+-- item level. (The character Keep List, tomes, and baseline tools are checked by
+-- each caller in its own context.)
+function EC_compCache.itemProtectedFromAutoMarkDelete(id)
+    if not id then
+        return false
+    end
+    if EC_compCache.equipmentSetIDs and EC_compCache.equipmentSetIDs[id] then
+        return true
+    end
+    local ADB = NS.ADB
+    if ADB and ADB.whitelist and NS.IsInSet and NS.IsInSet(ADB.whitelist, id) then
+        return true
+    end
+    if IsEquippedItem and IsEquippedItem(id) then
+        return true
+    end
+    if EC_compCache.isQuestItem and EC_compCache.isQuestItem(id) then
+        return true
+    end
+    local _, _, _, ilvl = GetItemInfo(id)
+    if ilvl and ilvl >= EC_AUTOMARK_PROTECT_ILVL then
+        return true
+    end
+    return false
+end
+
 function EC_compCache.runAutoMarkAffixDupes()
     local DB = NS.DB
     if not EC_IsAddonEnabledForChar() then
@@ -6271,12 +6357,14 @@ function EC_compCache.runAutoMarkAffixDupes()
     local accountKeep = NS.ADB and NS.ADB.whitelist
     -- v2.50.2: honour equipment-set membership as user intent. The cache
     -- is rebuilt on EQUIPMENT_SETS_CHANGED regardless of the auto-protect
-    -- toggle; if we're pre-first-fire (no set-change since login), lazily
-    -- prime it here so the scan sees the same set-members the Anvil UI
-    -- would show. Closes the shirt-loss failure mode where the scan
-    -- would fire between EQUIPMENT_SETS_CHANGED and the (silently-refused)
-    -- Keep-List stamp - see v2.50.2 root-cause in CHANGELOG.
-    if EC_compCache.equipmentSetIDs == nil and EC_compCache.syncEquipmentSets then
+    -- toggle. v2.57.2 SAFETY (Serv): force a FRESH sync on every scan rather
+    -- than only lazy-priming when nil. The lazy-prime left a stale cache the
+    -- one time it mattered - a set member added or edited after login could
+    -- be auto-marked because the cache never refreshed. A full re-sync each
+    -- debounced scan also re-stamps set members onto the Keep List (Serv
+    -- request: saved-set items stay Keep-protected for safety). Bounded work:
+    -- a few sets of ~19 slots on the already-debounced BAG_UPDATE path.
+    if EC_compCache.syncEquipmentSets then
         EC_compCache.syncEquipmentSets(true)
     end
     local setMembers = EC_compCache.equipmentSetIDs
@@ -6290,12 +6378,16 @@ function EC_compCache.runAutoMarkAffixDupes()
                     or (setMembers and setMembers[id])
                 -- Respect every other protection: Keep List, equipped, quest
                 -- items, tomes/recipes, and baseline profession tools are
-                -- never auto-marked.
+                -- never auto-marked. v2.57.2 adds the shared strong guard
+                -- (itemProtectedFromAutoMarkDelete) so high item-level "real
+                -- gear", set members, and quest rewards can never be marked -
+                -- the same gate the tooltip preview uses, so they can't drift.
                 if not protectedByKeep
                     and not IsEquippedItem(id)
                     and not (EC_compCache.isQuestItem and EC_compCache.isQuestItem(id))
                     and not (EC_compCache.itemIsTome and EC_compCache.itemIsTome(bag, slot, id))
                     and not (EC_compCache.baselineProtectedIDs and EC_compCache.baselineProtectedIDs[id])
+                    and not EC_compCache.itemProtectedFromAutoMarkDelete(id)
                 then
                     local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
                     if quality and quality >= 3 then

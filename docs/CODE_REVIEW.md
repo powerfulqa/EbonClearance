@@ -85,6 +85,33 @@ scoped to be a single-session change unless flagged otherwise.
 > Re-evaluate when adding a new sell condition naturally creates
 > pressure to unify, OR when a concrete drift incident demonstrates
 > the paired-edit discipline is breaking down.
+>
+> **Trigger fired (2026-07-11, v2.57.2):** the affix-sale iLvl-ceiling
+> safety fix (near item-loss report: an ilvl-277 Epic sold under a cap
+> of 250 because its affix was a known dupe) was a new sell condition
+> that required the identical edit in THREE surfaces - `EC_IsSellable`,
+> `describeSellability`, and `EC_AnnotateTooltip`. It was implemented as
+> a shared `EC_compCache.affixSaleWithinCeiling` gate all three call
+> (so the decision is unified even though the surrounding formatting is
+> not), and pinned by `test_perf_guardrails.lua` Test 117. This is the
+> "adding a new sell condition creates pressure to unify" signal. The
+> agreed next step (deferred, not yet scoped into a plan): unify the
+> DECISION into one classifier returning `(sellable, reason token,
+> fields)`, with the tooltip / trace keeping their own label formatting
+> keyed off the reason token - which sidesteps the original
+> "labels don't compress" blocker, since only the decision needs to be
+> shared, not the presentation.
+>
+> **Trigger fired again, same patch (2026-07-11, v2.57.2):** the DELETE
+> side has the same shape. The unsellable-affix auto-mark
+> (`runAutoMarkAffixDupes`) and the bag tooltip's "Will Delete (unsellable
+> affix)" preview had drifted - a saved-equipment-set member showed
+> "Will Delete" while the real scan correctly skipped it. Fixed the same
+> way: a shared `EC_compCache.itemProtectedFromAutoMarkDelete` gate both
+> call (set membership, account Sell List, equipped, quest items, high
+> item level), pinned by Test 118. Reinforces the unify-the-decision plan:
+> the eventual classifier should cover the DELETE verdict too, not only
+> the sell verdict.
 
 ---
 

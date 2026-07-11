@@ -309,10 +309,12 @@ local function EC_ShowItemContextMenu(button)
     for i, row in ipairs(EC_CTX_ROWS) do
         local btn = frame.buttons[i]
         local rowHidden = false
-        if row.kind == "list" and procProtected then
-            -- v2.26.0: hide all list rows while protected. User must
-            -- click "Allow Sell" first to unlock the normal
-            -- Sell/Keep/Delete actions on this item.
+        if row.kind == "list" and procProtected and row.setName ~= "blacklist" then
+            -- v2.26.0: hide the Sell / Delete list rows while protected. User
+            -- must click "Allow Sell" first to unlock those on a protected
+            -- item. v2.57.2 (Serv): the Keep List (blacklist) row is EXEMPT -
+            -- adding to Keep is always a safe, protective action, so it's
+            -- always offered (you should never be unable to protect an item).
             rowHidden = true
         elseif row.kind == "list" then
             local t = NS.GetListTable(row.setName)
@@ -329,11 +331,15 @@ local function EC_ShowItemContextMenu(button)
                     frame:Hide()
                 end)
                 btn:Enable()
-            elseif noVendorValue and row.setName ~= "deleteList" then
-                -- Hide whitelist/account-whitelist/blacklist Add rows for
-                -- items the auto-rules can't act on anyway. The Delete
-                -- List row stays visible because that's the actually-
-                -- useful action.
+            elseif noVendorValue and (row.setName == "whitelist" or row.setName == "accountWhitelist") then
+                -- Hide only the SELL-list Add rows for items the auto-rules
+                -- can't sell anyway (no vendor value). The Keep List
+                -- (blacklist) and Delete List rows STAY visible: you must be
+                -- able to PROTECT a no-value item (e.g. a quest-reward token
+                -- with sellPrice 0) from auto-delete, and deleting it is the
+                -- other useful action. v2.57.2 fix (Serv): previously the Keep
+                -- row was hidden here too, so a no-value quest reward could
+                -- ONLY be Delete-Listed - there was no way to protect it.
                 rowHidden = true
             else
                 -- v2.26.0: dropped the "Add to" prefix on add rows -

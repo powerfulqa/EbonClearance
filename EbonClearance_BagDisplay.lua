@@ -1176,6 +1176,12 @@ function EC_compCache.describeSellability(bag, slot)
     -- EC_IsSellable's positive-signal check). Mirror them here so
     -- /ec sellinfo agrees with the merchant cycle's verdict.
     local affixDataForTrace = (quality and quality >= 3) and EC_compCache.bagSlotAffixData(bag, slot) or nil
+    -- v2.57.2: the iLvl cap is a HARD ceiling for the affix sell paths (mirror
+    -- of EC_IsSellable via the shared EC_compCache.affixSaleWithinCeiling gate).
+    -- Above the ceiling, an affix dupe / below-rank affix is kept, not sold, so
+    -- the trace reports "kept - above your iLvl cap" instead of a sell signal.
+    local affixWithinCeiling = (not EC_compCache.affixSaleWithinCeiling)
+        or EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)
     -- v2.48.1 hasSellPrice gate mirror: see EC_IsSellable's matching note.
     -- An unsellable item can't fire the sell path even if the affix
     -- rules would otherwise release it; the v2.47.0 autoMarkAffixDupes
@@ -1187,7 +1193,14 @@ function EC_compCache.describeSellability(bag, slot)
         and affixDataForTrace.rank
         and affixDataForTrace.rank < DB.affixMinSellRank
         or false
-    if affixRankPass then
+    if affixRankPass and not affixWithinCeiling then
+        affixRankPass = false
+        step("affixRankRule", false, string.format(
+            L["rank %d is below your floor of %d, but its item level is above your sell cap for this rarity - kept"],
+            affixDataForTrace.rank,
+            DB.affixMinSellRank
+        ))
+    elseif affixRankPass then
         step("affixRankRule", true, string.format(
             "rank %d is below your 'Sell affixes below rank %d' setting",
             affixDataForTrace.rank,
@@ -1250,10 +1263,20 @@ function EC_compCache.describeSellability(bag, slot)
         -- it as a positive sell signal either. Emit a distinct message
         -- so the player sees WHY the affix-owned item isn't selling.
         autoDupePass = hasSellPrice and ownsAffix
+        -- v2.57.2: hard iLvl ceiling (checked first). An owned dupe above the
+        -- rarity rule's cap is kept, not sold - the cap protects high gear from
+        -- the affix path too.
+        if autoDupePass and not affixWithinCeiling then
+            autoDupePass = false
+            step(
+                "alreadyHaveAffixRule",
+                false,
+                L["you already have this affix, but its item level is above your sell cap for this rarity - kept"]
+            )
         -- v2.47.0: bind-type split mirror (EC_IsSellable's autoDupePass gate).
         -- When "keep BoE dupes" is on, a BoE owned dupe is kept for the auction
         -- house, so it's not a positive sell signal here.
-        if autoDupePass
+        elseif autoDupePass
             and DB.keepBoeAffixDupes
             and EC_compCache.getBindType
             and EC_compCache.getBindType(bag, slot) ~= "bop"
@@ -1662,6 +1685,7 @@ function EC_compCache.printSellabilityTrace(bag, slot)
 
     local lines = {}
     lines[#lines + 1] = string.format(L["=== EbonClearance Sell Info ==="])
+    lines[#lines + 1] = string.format(L["Version: %s"], (NS.GetVersion and NS.GetVersion()) or "unknown")
     lines[#lines + 1] = string.format(L["Character: %s - %s"], playerName, realm)
     lines[#lines + 1] = string.format(L["Date: %s"], timestamp)
     lines[#lines + 1] = string.format(L["Bag / Slot: %d / %d"], bag, slot)

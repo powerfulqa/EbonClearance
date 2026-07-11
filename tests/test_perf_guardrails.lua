@@ -7345,6 +7345,53 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 117 (v2.57.2): the quality-rule iLvl cap is a HARD ceiling for the
+-- affix sell paths (affix-rank floor + "sell affixes you already have"), so a
+-- high-iLvl item a cap is meant to protect is not sold just because the player
+-- owns its affix. Near item-loss report (Bizzaro): an ilvl-277 Epic sold under
+-- an Epic cap of 250. EC_IsSellable, describeSellability and the tooltip must
+-- all apply the SAME shared gate or the trace / tooltip disagree with the vendor.
+-- ---------------------------------------------------------------------------
+do
+    check("Test 117a: shared affix iLvl-ceiling helper exists",
+        src:find("function EC_compCache.affixSaleWithinCeiling", 1, true) ~= nil,
+        "EC_compCache.affixSaleWithinCeiling MUST exist - it's the single gate the three mirrors call so they agree on whether an affixed item is above the rarity rule's iLvl cap.")
+    local n = select(2, src:gsub("affixSaleWithinCeiling", ""))
+    check("Test 117b: all three mirrors reference the ceiling gate",
+        n >= 4,
+        "Expected the definition + EC_IsSellable + describeSellability + the tooltip to reference affixSaleWithinCeiling (>= 4 mentions); found " .. n .. ". A missing mirror means the trace/tooltip/vendor disagree on an above-cap affix dupe.")
+    check("Test 117c: EC_IsSellable suppresses affixRankPass + autoDupePass above the ceiling",
+        src:find("not EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)", 1, true) ~= nil,
+        "EC_IsSellable MUST clear affixRankPass and autoDupePass when the item is above its rarity rule's iLvl ceiling, so the cap protects high gear from the affix path (the Bizzaro near item-loss).")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 118 (v2.57.2): the unsellable-affix auto-mark and its tooltip preview
+-- share ONE protection gate (itemProtectedFromAutoMarkDelete), so a set member,
+-- equipped, quest, account-list, or high-iLvl item can never be auto-marked for
+-- deletion and the tooltip can never falsely threaten it. Serv report: a worn
+-- set-member ring / shirt showed "Will Delete" and a quest-reward ring got
+-- marked. The scan also force-refreshes equipment-set membership each pass so a
+-- stale cache can't leak a set member through.
+-- ---------------------------------------------------------------------------
+do
+    check("Test 118a: shared auto-mark protection gate exists",
+        src:find("function EC_compCache.itemProtectedFromAutoMarkDelete", 1, true) ~= nil,
+        "EC_compCache.itemProtectedFromAutoMarkDelete MUST exist - the single gate runAutoMarkAffixDupes and the tooltip preview both call so they agree on what is protected from auto-mark deletion.")
+    check("Test 118b: the gate protects high item level (real gear)",
+        src:find("EC_AUTOMARK_PROTECT_ILVL", 1, true) ~= nil
+            and src:find("ilvl >= EC_AUTOMARK_PROTECT_ILVL", 1, true) ~= nil,
+        "The gate MUST protect items at/above EC_AUTOMARK_PROTECT_ILVL - on Project Ebonhold even top-end soulbound gear has sellPrice 0, so item level is the safety signal, not vendor value.")
+    local n = select(2, src:gsub("itemProtectedFromAutoMarkDelete", ""))
+    check("Test 118c: both the real scan and the tooltip preview call the shared gate",
+        n >= 3,
+        "Expected the definition + runAutoMarkAffixDupes + the tooltip Will-Delete preview to reference itemProtectedFromAutoMarkDelete (>= 3 mentions); found " .. n .. ". A missing caller means the tooltip and the real delete logic disagree.")
+    check("Test 118d: the scan force-refreshes equipment-set membership each pass",
+        src:find("if EC_compCache.syncEquipmentSets then\n        EC_compCache.syncEquipmentSets(true)", 1, true) ~= nil,
+        "runAutoMarkAffixDupes MUST re-sync equipment sets every scan (not only lazy-prime when nil), or a set member added/edited after login can be auto-marked on a stale cache.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 

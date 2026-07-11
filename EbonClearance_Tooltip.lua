@@ -547,6 +547,19 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- to a list". Branch detection below: rankBelowOnly
                 -- means rankBelow released the protection AND neither
                 -- manualAllow nor autoDupe did.
+                -- v2.57.2: hard iLvl ceiling. Above the rarity rule's cap, an
+                -- owned dupe / below-rank affix is KEPT, not sold, so neither
+                -- releases the affix protection here (the tooltip must not say
+                -- "Will Sell"). Explicit Allow Sell (manualAllow) is unaffected
+                -- - it's the user's per-item override, like a Sell List entry.
+                -- Mirror of EC_IsSellable via EC_compCache.affixSaleWithinCeiling.
+                if
+                    EC_compCache.affixSaleWithinCeiling
+                    and not EC_compCache.affixSaleWithinCeiling(itemQuality, itemILvl, itemEquipLoc, id)
+                then
+                    autoDupe = false
+                    rankBelow = false
+                end
                 local rankBelowOnly = rankBelow and not manualAllow and not autoDupe
                 -- v2.48.1 hasSellPrice gate mirror: if the item has no
                 -- vendor value, the sell path can't actually fire (see
@@ -637,7 +650,17 @@ local function EC_AnnotateTooltipInner(tooltip)
                             .. "|r"
                         statusTag = "willsell"
                     end
-                elseif (manualAllow or autoDupe or (rankBelow and (playerKnows or playerKnowsRank or playerKnowsFamily))) and not canSell then
+                elseif (manualAllow or autoDupe or (rankBelow and (playerKnows or playerKnowsRank or playerKnowsFamily)))
+                    and not canSell
+                    and not IsInSet(DB.blacklist, id)
+                then
+                    -- v2.57.2: Keep List wins. If the item is already on your
+                    -- Keep List it keeps its precise earlier label (Keep / Keep
+                    -- in gear set / etc.) and this unsellable-affix preview is
+                    -- skipped entirely - runAutoMarkAffixDupes never marks a
+                    -- Keep-List item, so the preview must not threaten it. Same
+                    -- "Keep List leaves the earlier label alone" convention used
+                    -- for the sell-side previews above.
                     -- v2.48.1: affix would be released (player wants it
                     -- gone) AND item has no vendor value - the sell
                     -- path can't fire. Two outcomes:
@@ -661,11 +684,35 @@ local function EC_AnnotateTooltipInner(tooltip)
                     -- with no gold gained. Ownership is required for the
                     -- rankBelow branch (autoDupe already requires it;
                     -- manualAllow is explicit user intent, stays exempt).
-                    if DB.autoMarkAffixDupes and DB.enableDeletion and DB.protectAffixedRareItems then
+                    -- v2.57.2: the "Will Delete (unsellable affix)" preview must
+                    -- respect the SAME protections runAutoMarkAffixDupes applies,
+                    -- or the tooltip threatens deletion on an item that will
+                    -- never be marked. Both go through the one shared gate
+                    -- (itemProtectedFromAutoMarkDelete: equipment-set membership,
+                    -- the account Sell List, currently-equipped, quest items, and
+                    -- high item level) so they can't drift. The character Keep
+                    -- List is handled by the not-on-blacklist gate on this elseif
+                    -- (a Keep-List item never reaches here). Serv report: an
+                    -- equipment-set member shirt showed "Will Delete" while it was
+                    -- never on the Delete List.
+                    local autoMarkProtected = EC_compCache.itemProtectedFromAutoMarkDelete
+                        and EC_compCache.itemProtectedFromAutoMarkDelete(id)
+                    if
+                        DB.autoMarkAffixDupes
+                        and DB.enableDeletion
+                        and DB.protectAffixedRareItems
+                        and not autoMarkProtected
+                    then
                         statusLine = "|cff66ccff[EC]|r |cffff8040"
                             .. L["Will Delete (unsellable affix)"]
                             .. "|r"
                         statusTag = "willdelete"
+                    elseif autoMarkProtected then
+                        -- Protected (set member / equipped / quest / high iLvl /
+                        -- account list): it won't sell AND won't be auto-marked.
+                        -- Say "Keep", not the misleading "Won't Sell (no value)".
+                        statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (protected)"] .. "|r"
+                        statusTag = "keep"
                     else
                         statusLine = "|cff66ccff[EC]|r |cffffb84d"
                             .. L["Won't Sell (no value)"]

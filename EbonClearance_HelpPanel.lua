@@ -334,7 +334,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-fixed-vs-equipped-ilvl",
         q = L["Fixed iLvl cap vs. Use equipped iLvl"],
-        a = L["Two ways to decide which items get auto-sold per rarity. 'Fixed iLvl cap': sells anything at or below the number you set. 'Use equipped iLvl': sells anything lower than what you're currently wearing in that slot. Empty slots are skipped in the second mode, so you won't lose gear meant for an empty slot."],
+        a = L["Two ways to decide which items get auto-sold per rarity. 'Fixed iLvl cap': sells anything at or below the number you set. 'Use equipped iLvl': sells anything lower than what you're currently wearing in that slot. Empty slots are skipped in the second mode, so you won't lose gear meant for an empty slot. The cap is a HARD ceiling: nothing auto-sells an item of that rarity above it - not even the affix rules ('Sell affixes below rank' or 'Allow selling affixes you already have'). Only your explicit Sell List or Alt+Right-Click Allow Sell can override it. Set the cap to protect your high-end gear."],
         panel = "EbonClearanceOptionsMerchant",
     },
     {
@@ -394,19 +394,19 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-allow-rank-dupes",
         q = L["Allow exact-rank duplicates"],
-        a = L["Once you've extracted an affix at a specific rank, duplicates of that exact (affix, rank) aren't useful. Turn this on and EbonClearance sells those exact duplicates automatically - no Sell List entry or quality rule required. Different ranks of the same affix family stay protected so you can still collect them. Keep List entries still override (your manual choices win)."],
+        a = L["Once you've extracted an affix at a specific rank, duplicates of that exact (affix, rank) aren't useful. Turn this on and EbonClearance sells those exact duplicates automatically. Two safety limits: it only sells duplicates within your quality-rule item-level cap for that rarity (the cap is a HARD ceiling, so a high-item-level drop stays protected even when it's a duplicate you own), and Keep List / Alt+Right-Click Allow Sell always override. When that rarity's quality rule is off or set to sell-all, there's no cap and any owned duplicate sells. Different ranks of the same affix family stay protected so you can still collect them."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "gate-delete-unsellable-dupes",
         q = L["Auto-mark unsellable affixes for deletion"],
-        a = L["On the Delete Settings panel (off by default). When on (with affix protection), EbonClearance puts soulbound affixed items it would otherwise sell, but that have NO vendor value, onto your Delete List automatically (one chat line each). Two kinds qualify: exact-rank duplicates of an affix you already have, AND any affix below your 'Sell affixes below rank' setting. These are the items that would otherwise be flagged 'Will Sell' yet stick in your bags forever, because the merchant refuses them (no sell price). Heads-up: if you use the rank floor, low-rank affixed drops you can't sell WILL be deleted, not kept - that's the point, but it can surprise you. It never touches a rank you're still collecting (those still show 'Keep'), items that have a vendor price (left for the sell path so you keep the gold), or Keep List / equipped / quest / tome / profession-tool items. They delete at a vendor, or instantly with auto-delete-on-pickup."],
+        a = L["On the Delete Settings panel (off by default). When on (with affix protection), EbonClearance puts soulbound affixed items it would otherwise sell, but that have NO vendor value, onto your Delete List automatically (one chat line each). Two kinds qualify: exact-rank duplicates of an affix you already have, AND any affix below your 'Sell affixes below rank' setting. These are the items that would otherwise be flagged 'Will Sell' yet stick in your bags forever, because the merchant refuses them (no sell price). Heads-up: if you use the rank floor, low-rank affixed drops you can't sell WILL be deleted, not kept - that's the point, but it can surprise you. It never touches a rank you're still collecting (those still show 'Keep'), items that have a vendor price (left for the sell path so you keep the gold), or protected gear: Keep List, currently equipped, quest items, saved equipment-set members, high item-level gear (real gear is never auto-deleted), tomes, and profession tools. They delete at a vendor, or instantly with auto-delete-on-pickup."],
         panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
         id = "gate-affix-rank-floor",
         q = L["Sell affixes below rank N"],
-        a = L["A standalone sell rule for affixed Rare/Epic gear. Set a minimum rank; any affixed item at a lower rank sells automatically - regardless of whether the quality rule for its rarity is enabled, regardless of whether it's on a Sell List. Items at or above the floor stay protected. Useful when low-rank affixes (I, II) saturate your bags and you have no use for them, but you still want the protection to hold for the high-rank drops you might extract. 0 = off (no threshold). Keep List entries still override (your manual choices win)."],
+        a = L["A sell rule for affixed Rare/Epic gear. Set a minimum rank; any affixed item at a lower rank sells automatically. Two safety limits: it only sells items within your quality-rule item-level cap for that rarity (the cap is a HARD ceiling, so a high-item-level drop is protected even if its affix rank is low), and Keep List / Allow Sell always override. When that rarity's quality rule is off or set to sell-all, there's no cap and the floor sells any low-rank affix. Items at or above the floor stay protected. Useful when low-rank affixes (I, II) saturate your bags but you still want the high-rank drops kept for extraction. 0 = off."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
@@ -528,6 +528,12 @@ local EC_HELP_ENTRIES = {
         q = L["Keep (in gear set)"],
         a = L["EbonClearance auto-added this item because it's part of a saved gear set in Blizzard's Equipment Manager. Useful for off-spec gear you carry in your bags."],
         panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "label-keep-protected",
+        q = L["Keep (protected)"],
+        a = L["Shown on an unsellable affixed item that the auto-mark-for-deletion feature will never touch, because it's protected gear: currently equipped, a quest item, a saved equipment-set member, or high item-level gear. It won't be sold and won't be deleted."],
+        panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
         id = "label-keep-auto",
@@ -664,7 +670,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "label-will-delete-unsellable-affix",
         q = L["Will Delete (unsellable affix)"],
-        a = L["Soulbound affixed Rare/Epic item where EC would normally sell the affix (a dupe you own, or a rank below your 'Sell affixes below rank' setting) but the item has no vendor value. Because 'Auto-mark unsellable affixes for deletion' is on, this item will be added to your Delete List on the next bag scan and destroyed at a vendor (or instantly with auto-delete-on-pickup on)."],
+        a = L["Soulbound affixed Rare/Epic item where EC would normally sell the affix (a dupe you own, or a rank below your 'Sell affixes below rank' setting) but the item has no vendor value. Because 'Auto-mark unsellable affixes for deletion' is on, this item will be added to your Delete List on the next bag scan and destroyed at a vendor (or instantly with auto-delete-on-pickup on). Protected gear never shows this and instead shows 'Keep (protected)': Keep List items, currently equipped, quest items, saved equipment-set members, and high item-level gear are always kept."],
         panel = "EbonClearanceOptionsDeletionSettings",
     },
     {

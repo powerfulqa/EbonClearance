@@ -204,6 +204,12 @@ read_globals = {
     "GetNumPartyMembers", "GetNumRaidMembers", "GetFramerate",
     -- Addon-to-addon comms transport
     "SendAddonMessage",
+    -- Chat channels (v2.58.0 realm-wide comms bus rides a hidden chat channel;
+    -- 3.3.5a has no realm-wide SendAddonMessage channel).
+    "GetChannelList", "JoinChannelByName", "ChatFrame_RemoveChannel",
+    "SendChatMessage", "NUM_CHAT_WINDOWS",
+    -- String split util (3.3.5a global)
+    "strsplit",
     -- Bit library (3.3.5a exposes the BitLib `bit` table globally)
     "bit",
 

@@ -1085,7 +1085,6 @@ NS.RegisterLocale("deDE", {
     ["|cffffcc00Turn on 'Share my totals' below to join the realm odometer (anonymous).|r"] = "",
     ["EC users sharing right now:"] = "",
     ["Combined gold vendored:"] = "",
-    ["Combined items sold:"] = "",
     ["Combined items deleted:"] = "",
     ["Combined items processed:"] = "",
     ["Realm's Best Farming Zones"] = "",

@@ -117,6 +117,27 @@ local function MakeLabel(parent, text, x, y)
 end
 NS.MakeLabel = MakeLabel
 
+-- Thousands-separator for large counts (WoW 3.3.5a has no BreakUpLargeNumbers).
+-- Floors to an integer and inserts commas every three digits, e.g.
+-- 2200199 -> "2,200,199". Gold values keep using CopperToColoredText; this is
+-- for plain counts (items sold/deleted/processed, sharer counts).
+local function CommaNumber(n)
+    local s = tostring(math.floor(tonumber(n) or 0))
+    local neg = s:sub(1, 1) == "-"
+    if neg then
+        s = s:sub(2)
+    end
+    while true do
+        local rebuilt = s:gsub("^(%d+)(%d%d%d)", "%1,%2")
+        if rebuilt == s then
+            break
+        end
+        s = rebuilt
+    end
+    return (neg and "-" or "") .. s
+end
+NS.CommaNumber = CommaNumber
+
 -- MakeHelpIcon: small clickable [?] anchored next to a setting widget.
 -- Clicking deep-links into the Help panel via NS.OpenHelpEntry(entryId),
 -- which opens Help, expands the section containing the target entry,

@@ -26,6 +26,7 @@ EbonClearance_ProfilesPanel.lua
 EbonClearance_MainPanel.lua
 EbonClearance_StatsPanel.lua
 EbonClearance_GuildPanel.lua
+EbonClearance_ServerStatsPanel.lua
 EbonClearance_PanelInfra.lua
 EbonClearance_PanelWidgets.lua
 EbonClearance_ListWidget.lua
@@ -33,8 +34,10 @@ EbonClearance_QuickstartPanel.lua
 EbonClearance_Events.lua
 EbonClearance_HistoryWindow.lua
 EbonClearance_Comms.lua
+EbonClearance_RealmComms.lua
 EbonClearance_GuildShare.lua
 EbonClearance_ProcShare.lua
+EbonClearance_ServerShare.lua
 EbonClearance_BagDisplay.lua
 EbonClearance_BugReport.lua
 EbonClearance_Minimap.lua

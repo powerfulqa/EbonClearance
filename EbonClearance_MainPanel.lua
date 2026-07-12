@@ -166,11 +166,15 @@ function NS.RefreshStats()
         return
     end
     local showSession = (view == "character")
+    -- Thousands-separated count (readability for large tallies).
+    local function num(n)
+        return NS.CommaNumber and NS.CommaNumber(n) or tostring(n or 0)
+    end
     local function sessionSuffix(n)
         if not showSession then
             return ""
         end
-        return string.format(L["  |cff888888(session +%s)|r"], tostring(n or 0))
+        return string.format(L["  |cff888888(session +%s)|r"], num(n))
     end
     local function sessionMoneySuffix(c)
         if not showSession then
@@ -182,13 +186,13 @@ function NS.RefreshStats()
         L["Total Money Made: "] .. NS.CopperToColoredText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
     )
     panel.statsSold:SetText(
-        L["Total Items Sold: "] .. tostring(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
+        L["Total Items Sold: "] .. num(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
     )
     panel.statsDeleted:SetText(
-        L["Total Items Deleted: "] .. tostring(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
+        L["Total Items Deleted: "] .. num(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
     )
     panel.statsRepairs:SetText(
-        L["Total Repairs: "] .. tostring(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
+        L["Total Repairs: "] .. num(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
     )
     panel.statsRepairCost:SetText(
         L["Total Repair Cost: "]
@@ -340,10 +344,10 @@ function NS.RefreshStats()
                 -- don't read as a single long number. Matches the Top 5
                 -- row format ("name  x42") for visual consistency.
                 rows[#rows + 1] = string.format(
-                    "  |cff%s%s|r: |cff888888x%d|r  |cff888888-|r  %s",
+                    "  |cff%s%s|r: |cff888888x%s|r  |cff888888-|r  %s",
                     QUALITY_HEX[q] or "ffffff",
                     QUALITY_NAMES[q] or ("Quality " .. q),
-                    cnt,
+                    num(cnt),
                     NS.CopperToColoredText(copper[q] or 0)
                 )
             end
@@ -363,10 +367,10 @@ function NS.RefreshStats()
             if cnt and cnt > 0 then
                 any = true
                 rows[#rows + 1] = string.format(
-                    "  |cff%s%s|r: |cff888888x%d|r",
+                    "  |cff%s%s|r: |cff888888x%s|r",
                     QUALITY_HEX[q] or "ffffff",
                     QUALITY_NAMES[q] or ("Quality " .. q),
-                    cnt
+                    num(cnt)
                 )
             end
         end
@@ -384,10 +388,10 @@ function NS.RefreshStats()
             local rows = { L["|cffffd200Top 5 Most Sold|r"] }
             for i = 1, #top do
                 rows[#rows + 1] = string.format(
-                    "  %d. %s  |cff888888x|r|cffffd100%d|r",
+                    "  %d. %s  |cff888888x|r|cffffd100%s|r",
                     i,
                     ItemLabel(top[i].id),
-                    top[i].count
+                    num(top[i].count)
                 )
             end
             panel.statsMostSold:SetText(table.concat(rows, "\n"))
@@ -402,10 +406,10 @@ function NS.RefreshStats()
             local rows = { L["|cffffd200Top 5 Most Deleted|r"] }
             for i = 1, #top do
                 rows[#rows + 1] = string.format(
-                    "  %d. %s  |cff888888x|r|cffffd100%d|r",
+                    "  %d. %s  |cff888888x|r|cffffd100%s|r",
                     i,
                     ItemLabel(top[i].id),
-                    top[i].count
+                    num(top[i].count)
                 )
             end
             panel.statsMostDeleted:SetText(table.concat(rows, "\n"))
@@ -429,7 +433,7 @@ function NS.RefreshStats()
             local n = counts[k] or 0
             if n > 0 then
                 any = true
-                rows[#rows + 1] = string.format("  %s: %d", labels[k], n)
+                rows[#rows + 1] = string.format("  %s: %s", labels[k], num(n))
             end
         end
         if not any then

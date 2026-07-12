@@ -705,6 +705,19 @@ across `/reload` and login.
   pipeline is testable solo. Fake IDs are chosen to be outside the real
   3.3.5a itemID range to avoid clashing with legitimate items.
 
+### Realm-wide comms + Server Stats odometer (`NS.RealmComms` / `NS.ServerShare`, v2.58.0)
+
+3.3.5a `SendAddonMessage` only reaches GUILD/PARTY/RAID/BATTLEGROUND/WHISPER -
+there is **no realm-wide addon channel**. So realm-wide features use a **hidden
+chat channel** (`"ebonclearance"`), joined + removed from the chat UI, sent via
+`SendChatMessage(..., "CHANNEL", ...)`, received via `CHAT_MSG_CHANNEL`.
+
+- **`NS.RealmComms` ([EbonClearance_RealmComms.lua](../EbonClearance_RealmComms.lua))** is a **sibling** of `NS.Comms`, not an extension - the wire (chat channel), delimiter, and failure model differ, so bolting it onto `NS.Comms` would fork every method. Same `RegisterHandler` / `Send(msgType, payload)` shape (no channel/target - there's one destination). Delimiter is `"|"` escaped as `"||"` (NOT a tab: `SendChatMessage` can mangle control chars), safe because `GuildShare.zoneNameSafe` / `ServerShare.fieldSafe` forbid `"|"` in every field. On receive: unescape, `stripPrefix` (drops server colour/`[HCIV]` tier tags), split, dispatch by msgType (the token IS the filter - no addon prefix on a chat channel). An `OnUpdate` queue paces sends at `SEND_DELAY=0.15s`. **No chunking** (payloads are single messages), **no** `RegisterAddonMessagePrefix`. `RunSelfTest()` (`/ec realmtest`) relies on the channel echoing your own messages, so the whole transport is verifiable solo.
+- **`NS.ServerShare` ([EbonClearance_ServerShare.lua](../EbonClearance_ServerShare.lua))** is the odometer aggregator. It reuses `GuildShare.topZones` but has its **own** compact codec (fields: `t:cop,sold,del,proc | ver: | i: | z:`, 200-byte capped) because the odometer needs items-deleted + items-processed that GuildShare's payload lacks, and a tighter channel cap. **Per-sender keyed store** `NS.compCache.serverPeers[sender] = {d, t}` (session-only, latest-wins, 20min TTL) - NOT GuildShare's additive `mergeReply`, so a re-broadcast never double-counts and distinct live keys ARE the headcount. `GetAggregate()` sums/pools over live entries. **Anti-storm:** on-demand `SREQ` (self-suppressed if the channel was active in the last 90s; 60s cooldown) -> opted-in peers reply `SDAT` **on the channel** (never whisper), jittered, at most once per 30s. Everyone aggregates passively. **Spoof cap:** `saneDecoded` drops absurd totals (`COPPER_CAP`/`COUNT_CAP`); the tally is never saved. **Update checks piggyback:** the version in `SREQ`/`SDAT` feeds `NS.Comms.NotePeerVersion` (exposed for this), reusing the existing nudge unchanged.
+- **Opt-in, default OFF:** a single `shareServerData` flag (share + view the odometer; it shows no names, so there's no name-sharing toggle). The channel is joined **only** when it's on (login flow, staggered 7s after the version probe) - opted-out users pay zero channel-slot cost. **Realm-wide update alerts have NO separate toggle:** the version carried in `SREQ`/`SDAT` feeds the existing `versionAlerts` nudge (via `NotePeerVersion`), so a stats-sharer's normal update alert also covers the realm. This deliberately avoids forcing the always-on `versionAlerts` to auto-join a channel for every user.
+- **Panel:** `EbonClearance_ServerStatsPanel.lua` (frame `EbonClearanceOptionsServer`, "Stats - Server"), mirrors GuildPanel; loads after GuildPanel, registered centrally in Events. Viewing requires `shareServerData` (reciprocity + bounds the sample to sharers).
+- **`/ec servertest`** injects fake sharers (incl. one the spoof cap must drop) so the panel is testable solo. Locked by `tests/test_servershare.lua`.
+
 ## Localization (`NS.L`, v2.43.0)
 
 Hand-rolled i18n, no AceLocale. `EbonClearance_Locale.lua` loads **second**

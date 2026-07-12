@@ -17,6 +17,7 @@ local TESTS = {
     "tests/test_comms_version.lua",
     "tests/test_guildshare.lua",
     "tests/test_procshare.lua",
+    "tests/test_servershare.lua",
     "tests/test_locale_integrity.lua",
     "tests/test_affix_resilience.lua",
 }

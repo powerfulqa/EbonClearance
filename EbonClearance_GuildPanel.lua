@@ -70,6 +70,11 @@ local function makeRow(parent, anchor, yOff)
     return row
 end
 
+-- Thousands-separated count (readability for large tallies).
+local function num(n)
+    return NS.CommaNumber and NS.CommaNumber(n) or tostring(n or 0)
+end
+
 repaintGuildPanel = function()
     local panel = GuildPanel
     -- Guard: row pools are built during the build pass; bail early if
@@ -164,9 +169,9 @@ repaintGuildPanel = function()
             sharedByVal = L["all anonymous"]
         end
 
-        totRows.members.right:SetText(tostring(agg.memberCount or 0))
+        totRows.members.right:SetText(num(agg.memberCount or 0))
         totRows.gold.right:SetText(copperStr)
-        totRows.items.right:SetText(tostring(agg.totalItems or 0))
+        totRows.items.right:SetText(num(agg.totalItems or 0))
         totRows.bestGPH.right:SetText(bestGPHStr)
         totRows.sharedBy.right:SetText(sharedByVal)
 
@@ -197,7 +202,7 @@ repaintGuildPanel = function()
         for q = 0, 7 do
             local cnt = agg.quality and agg.quality[q]
             if cnt and cnt > 0 then
-                local label = (QUALITY_NAMES[q] or tostring(q)) .. " " .. cnt
+                local label = (QUALITY_NAMES[q] or tostring(q)) .. " " .. num(cnt)
                 local colored = NS.ColorTextByQuality
                     and NS.ColorTextByQuality(q, label)
                     or label
@@ -235,7 +240,7 @@ repaintGuildPanel = function()
                 local e = entries[i]
                 row.left:SetText(e.name)
                 row.right:SetText(
-                    "|cffffd100" .. e.count .. L["|r sold (from "] .. e.contributors .. ")"
+                    "|cffffd100" .. num(e.count) .. L["|r sold (from "] .. e.contributors .. ")"
                 )
                 row.itemID = e.id
                 row:Show()

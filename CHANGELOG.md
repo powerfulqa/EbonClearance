@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.58.0
+
+**New: a realm-wide "Stats - Server" odometer, plus realm-wide update checks. Both opt-in, off by default.**
+
+- **Stats - Server (collective odometer).** A new panel showing the combined, anonymous totals of every EbonClearance user online and sharing right now: gold vendored, items sold, items deleted, items processed (disenchant / mill / prospect), the realm's busiest farming zones and most-sold items, and a live count of how many users are sharing. It's a community "look what we cleared together" tally, not a leaderboard and not an all-time record - the numbers reflect who's online at that moment. Never shows names. Turn on **"Share my totals with the realm"** to contribute (anonymously) and see it.
+- **Realm-wide update alerts (no new toggle).** Sharing your totals puts you on the realm channel, so the *existing* update-alert (the version-check toggle on the main page) now also hears about a newer EbonClearance from anyone on the realm, not just your guild or group. There's no separate realm-update switch, and update checks never force a channel join on their own.
+- **How it works (and the one cost).** WoW 3.3.5a has no realm-wide addon channel, so these ride a **hidden chat channel** (joined only while one of the toggles is on, and hidden from your chat tabs). That uses one of your 10 chat-channel slots while active. Traffic is minimal and self-limiting: nothing is sent unless someone opens the panel, requests cancel each other out when the channel's been active recently, replies are spread out, and each client answers at most once per few minutes.
+- **Privacy + safety.** Everything is anonymous (only pooled totals, never names). It's a public channel, so a per-contributor sanity cap ignores obviously-faked numbers and the tally is never saved (a troll's number vanishes when they log off). Off by default.
+
+**Also:** large numbers now use thousands separators for readability - item counts across every Stats panel (Personal / Guild / Server), e.g. `2,200,199` instead of `2200199`, and gold amounts everywhere gold is shown (tooltips, chat, stats, bug report), e.g. `802,579g` instead of `802579g`. Silver/copper are unchanged.
+
+New account-wide schema field (`shareServerData`), additive and downgrade-safe. New files: `EbonClearance_RealmComms.lua`, `EbonClearance_ServerShare.lua`, `EbonClearance_ServerStatsPanel.lua`. Locked by `tests/test_servershare.lua`.
+
 ### v2.57.2
 
 **Safety fix: your item-level cap is now a hard ceiling the affix rules can't override.**

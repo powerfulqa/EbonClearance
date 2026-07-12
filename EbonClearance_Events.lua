@@ -626,6 +626,16 @@ local function EnsureDB()
     if EbonClearanceDB.shareChanceProcs == nil then
         EbonClearanceDB.shareChanceProcs = false
     end
+    -- v2.58.0: realm-wide sharing (opt-in, default OFF). shareServerData feeds
+    -- the anonymous "Stats - Server" odometer AND is what lets you see it (it
+    -- shows no names, so there is no name-sharing toggle). Turning it on is also
+    -- what joins the hidden realm channel; a channel slot is never used
+    -- otherwise. Realm-wide version alerts ride that same channel (the existing
+    -- versionAlerts nudge hears realm versions when you're sharing), so there is
+    -- no separate realm-update toggle.
+    if EbonClearanceDB.shareServerData == nil then
+        EbonClearanceDB.shareServerData = false
+    end
     -- Language override (default false = follow the client's GetLocale()).
     -- Account-level. A locale code ("frFR" / "deDE" / ...) forces that
     -- language regardless of the client; false / "auto" follows the client.
@@ -2297,7 +2307,11 @@ local function CopperToColoredText(copper)
     local silver = math.floor((copper % 10000) / 100)
     local cop = copper % 100
 
-    local g = string.format("|cffF8D943%dg|r", gold)
+    -- v2.58.0: comma-separate the gold amount for readability (e.g. 802,579g);
+    -- silver/copper are always 0-99 so they never need it. NS.CommaNumber loads
+    -- before this file, but guard defensively in case load order changes.
+    local goldText = (NS.CommaNumber and NS.CommaNumber(gold)) or tostring(gold)
+    local g = string.format("|cffF8D943%sg|r", goldText)
     local s = string.format("|cffC0C0C0%ds|r", silver)
     local c = string.format("|cffB87333%dc|r", cop)
     return string.format("%s %s %s", g, s, c)
@@ -6111,6 +6125,8 @@ local EC_TOGGLE_WATCH_LIST = {
     "summonGreedy", "muteGreedy", "autoLootCycle",
     -- sharing (v2.53.0)
     "shareGuildData", "shareGuildName", "shareChanceProcs",
+    -- realm-wide sharing (v2.58.0)
+    "shareServerData",
 }
 local EC_toggleLoginSnapshot = nil
 local function EC_CaptureToggleLoginSnapshot()
@@ -7157,6 +7173,7 @@ InterfaceOptions_AddCategory(_G["EbonClearanceOptionsCharacter"]) -- Item Highli
 -- panels adjacent above Sell List.
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsStats"]) -- Stats - Personal
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsGuild"]) -- Stats - Guild
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsServer"]) -- Stats - Server (v2.58.0)
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsWhitelist"]) -- Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsAccountWhitelist"]) -- Account Sell List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsBlacklist"]) -- Keep List
@@ -7746,6 +7763,31 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             PrintNicef(L["Injected %d simulated proc pairing(s) into ADB.chanceProcConfirmedItems. Run /ec bugreport to see the merge ring."], n)
         else
             PrintNice(L["|cffff4444ProcShare module not loaded.|r"])
+        end
+        return
+    end
+
+    if cmd == "servertest" then
+        -- v2.58.0: solo diagnostic for the Server Stats odometer. Injects fake
+        -- realm sharers (including a spoofed one the sanity cap must drop) so
+        -- the panel + live user-count can be exercised on one account.
+        if NS.ServerShare then
+            local n = NS.ServerShare.InjectTestPeers()
+            PrintNicef(L["Injected %d simulated realm sharer(s). Open the Server panel to see the odometer (the spoofed one should be ignored)."], n)
+        else
+            PrintNice(L["|cffff4444Server-share module not loaded.|r"])
+        end
+        return
+    end
+
+    if cmd == "realmtest" then
+        -- v2.58.0: solo diagnostic for the realm channel transport. Chat
+        -- channels echo your own messages, so this verifies join/hide/send/
+        -- receive with no second player.
+        if NS.RealmComms then
+            NS.RealmComms.RunSelfTest()
+        else
+            PrintNice(L["|cffff4444Realm comms module not loaded.|r"])
         end
         return
     end
@@ -8636,6 +8678,20 @@ f:SetScript("OnEvent", function(self, event, ...)
                     and NS.ProcShare and NS.ProcShare.RequestNow
                 then
                     NS.ProcShare.RequestNow()
+                end
+            end)
+            -- v2.58.0: realm-wide bus join 7s after login (one second after
+            -- the proc pull so the three settle staggered). Only joins when the
+            -- player shares server stats, so a channel slot is never consumed
+            -- otherwise. The join also fires one self-suppressing request so the
+            -- odometer has data when the panel is first opened - and the version
+            -- it carries lets the existing versionAlerts nudge hear the realm.
+            NS.Delay(7, function()
+                if EbonClearanceDB and EbonClearanceDB.shareServerData
+                    and NS.RealmComms and NS.ServerShare and NS.ServerShare.RequestNow
+                then
+                    NS.RealmComms.Join()
+                    NS.ServerShare.RequestNow()
                 end
             end)
         end

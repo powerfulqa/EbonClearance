@@ -200,6 +200,11 @@ local function considerPeerVersion(verStr, sender)
     end
 end
 
+-- Exposed so the realm-wide share (NS.ServerShare) can feed peer versions it
+-- overhears on the realm channel into the same nudge/spoof-cap/once-per-session
+-- logic, reusing the release path unchanged. Still gated by versionAlerts inside.
+Comms.NotePeerVersion = considerPeerVersion
+
 -- A VERQ carries the sender's version (learn it directly) AND asks us to
 -- reply: whisper our version straight back to the requester.
 Comms.RegisterHandler("VERQ", function(payload, sender, channel)

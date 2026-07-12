@@ -122,6 +122,12 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsGuild",
     },
     {
+        id = "server-stats",
+        q = L["What is the Stats - Server panel?"],
+        a = L["Stats - Server is a live, anonymous 'odometer' for the whole realm: the combined gold vendored, items sold, items deleted, and items processed by everyone running EbonClearance who is online and sharing right now, plus the realm's busiest farming zones and most-sold items, and a count of how many users are sharing. It never shows names and is not a ranking - just community totals for fun. It is off by default; turn on 'Share my totals with the realm' to contribute (anonymously) and see it. Because a realm has no addon-message channel, this uses a hidden chat channel, which takes one of your 10 chat-channel slots while it is switched on. The numbers reflect who is online and sharing at that moment, not an all-time server record, so they rise and fall as people log in and out. Sharing also puts you on the realm channel, so your normal update alerts (the version-check toggle on the main page) will then tell you about a newer EbonClearance seen anywhere on the realm, not just your guild or group."],
+        panel = "EbonClearanceOptionsServer",
+    },
+    {
         id = "what-are-profiles",
         q = L["What are Profiles? (and how are they different from Quickstart?)"],
         a = L["Profiles are named snapshots of your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r. Save your current lists as a profile, then later swap to a different one in a single click. Quickstart presets are different: they configure the addon's |cffffd870behaviour|r (speed, auto-sell rules, protections) but never touch your lists. The two systems are complementary - profiles for lists, Quickstart for settings. Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>."],

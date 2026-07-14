@@ -5,6 +5,20 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.0
+
+**Performance: bag bursts now cost one bag scan instead of up to nine. Plus a Loot Log button on the main page.**
+
+The headline is invisible but big. When loot lands, EbonClearance runs its follow-up work (auto-open, upgrade detection, auto-delete on pickup, PvP/affix auto-marks, the Loot Log tally, grey auto-delete). Each of those used to walk your bags independently - up to nine full scans per loot burst, which is where the "Bag update" frame hitches during AOE farming came from. Now:
+
+- **One shared bag snapshot per burst.** The burst handler reads your bags once and every follow-up feature works from that single snapshot. Measured on a live AOE farm with all auto-features on: the addon's share of a slow frame dropped from ~50-75ms to ~10-20ms.
+- **Container detection is cached.** Deciding "is this item openable?" needed a tooltip inspection per bag slot on every burst; the answer is now remembered per item. Locked junkboxes are deliberately never cached as "not openable", so they still auto-open after you pick the lock.
+- **Safety unchanged.** Every destructive path (auto-delete, auto-mark) re-checks the live bag slot before acting, so the snapshot can never delete or mark the wrong thing. All the one-per-burst and ordering rules are preserved and locked by a new test invariant (Test 119).
+
+**Also: Loot Log button on the main settings page.** Sits under Sold History and opens the same Loot Log window as the Stats panel button / `/ec loot`, so both session windows are reachable from the front page.
+
+No schema change, downgrade-safe. Verified in game: AOE farm soak with auto-delete/auto-mark/auto-open all active, lockbox auto-open after lockpicking, Loot Log and Sold History tracking, upgrade auto-keep.
+
 ### v2.58.3
 
 **Fix: the Scavenger's new "Beep. Configuration loaded..." resummon bubble now stays muted. Plus comms hardening from the audit's second batch.**

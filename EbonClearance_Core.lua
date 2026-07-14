@@ -176,6 +176,14 @@ local EC_compCache = {
     -- scanned. Stable property per itemID. Filled lazily by the
     -- can* helpers below.
     processCache = {},
+    -- v2.59.0 openable-container cache. Maps itemID to "openable" (tooltip
+    -- shows ITEM_OPENABLE) or "never" (tooltip shows neither ITEM_OPENABLE
+    -- nor LOCKED). Both states are stable per itemID. A LOCKED result is
+    -- deliberately NOT cached: a junkbox flips from LOCKED to openable when
+    -- lockpicked (same itemID), so the auto-open driver must re-scan those
+    -- each time (ITEM_LOCK_CHANGED re-fires the debounce for exactly that
+    -- transition). Filled lazily by EC_IsOpenable in EbonClearance_Events.lua.
+    openableCache = {},
     -- v2.10.0 resummon-print debounce. v2.9.2 added the "Greedy Scavenger
     -- resummoned." chat line on every successful CallCompanion in the
     -- recovery path, plus a 2 s post-call cooldown to avoid back-to-back

@@ -1799,6 +1799,57 @@ local function EC_BuildBagSnapshot()
     return snap
 end
 
+-- v2.59.0: shared per-flush bag snapshot. The settled BAG_UPDATE flush used
+-- to fan out into 5-9 independent full bag walks (auto-open, upgrade scan,
+-- auto-delete/auto-mark scans, loot delta, grey delete) - each re-deriving
+-- GetContainerItemID / GetContainerItemInfo for the same ~100 slots. The
+-- flush now builds this ONCE and every scanner iterates `entries` instead
+-- of walking bags; `counts` ({itemID = total}) feeds the loot-delta diff.
+--
+-- Validity is the FRAME it was built in (`at == GetTime()`; GetTime is
+-- frame-constant on 3.3.5a): currentFlushSnapshot() returns nil on any
+-- later frame, so an error mid-flush can never leave a stale snapshot
+-- influencing a scanner called outside the flush. Staleness WITHIN the
+-- flush (the auto-delete-on-pickup scan can synchronously destroy one
+-- low-rarity item mid-chain) is handled at the consumer: every scanner
+-- that runs after that point re-verifies the live slot
+-- (GetContainerItemID(bag, slot) == entry.itemID) before scanning a
+-- tooltip or acting destructively.
+function EC_compCache.buildBagFlushSnapshot()
+    local entries = {}
+    local counts = {}
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag) or 0
+        for slot = 1, slots do
+            local itemID = GetContainerItemID(bag, slot)
+            if itemID then
+                local _, count, locked, quality = GetContainerItemInfo(bag, slot)
+                entries[#entries + 1] = {
+                    bag = bag,
+                    slot = slot,
+                    itemID = itemID,
+                    count = count or 1,
+                    locked = locked or false,
+                    -- May be nil / -1 for uncached items; consumers treat
+                    -- "unknown" as "check the slow path", never as "skip".
+                    quality = quality,
+                }
+                counts[itemID] = (counts[itemID] or 0) + (count or 1)
+            end
+        end
+    end
+    return { entries = entries, counts = counts, at = GetTime() }
+end
+
+-- The flush's shared snapshot, or nil when not inside a flush frame.
+function EC_compCache.currentFlushSnapshot()
+    local snap = EC_compCache.flushSnapshot
+    if snap and snap.at == GetTime() then
+        return snap
+    end
+    return nil
+end
+
 -- v2.49.0: equipped snapshot for the unequip guard on EC_ScanLootDelta.
 -- Reported by Serv: unequipping a worn item counts it as loot because
 -- the item moves from an equipment slot to a bag slot, showing as a
@@ -1993,7 +2044,12 @@ local function EC_ScanLootDelta()
     if CursorHasItem and CursorHasItem() then
         return
     end
-    local snap = EC_BuildBagSnapshot()
+    -- v2.59.0: reuse the shared flush snapshot's {itemID = count} map when
+    -- inside a flush (saves a second full bag walk); standalone calls keep
+    -- building their own. The shared map is never mutated after build, so
+    -- retaining it as the next baseline (bottom of this function) is safe.
+    local sharedSnap = EC_compCache.currentFlushSnapshot()
+    local snap = sharedSnap and sharedSnap.counts or EC_BuildBagSnapshot()
     -- While a transactional window is open, or on the very first scan, just
     -- re-baseline without crediting any delta as loot.
     if not EC_lootSnapshotReady or EC_LootTransactionWindowOpen() then
@@ -3161,6 +3217,10 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Frame-spike timing: the whole settled-burst flush (loot-delta scan
     -- included) is the "bag update" phase.
     local _spikeT0 = EC_prof and EC_prof()
+    -- v2.59.0: build the shared bag snapshot ONCE for the whole chain
+    -- below. Scanners pick it up via EC_compCache.currentFlushSnapshot()
+    -- (same-frame validity), so their call shapes stay unchanged.
+    EC_compCache.flushSnapshot = EC_compCache.buildBagFlushSnapshot()
     -- Burst settled. Fire the deferred work once.
     if EC_HandleAutoOpenContainers then
         EC_HandleAutoOpenContainers()
@@ -3235,6 +3295,9 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     if EC_compCache.runAutoDeleteGrey then
         EC_compCache.runAutoDeleteGrey()
     end
+    -- Drop the shared snapshot reference; the frame stamp already stops
+    -- cross-frame reuse, this just lets the tables GC promptly.
+    EC_compCache.flushSnapshot = nil
     if _spikeT0 then
         EC_spikePhase.bagupdate = EC_spikePhase.bagupdate + (EC_prof() - _spikeT0)
     end
@@ -3247,26 +3310,53 @@ end)
 -- junkboxes / lockpickable containers; we exclude those because the user
 -- needs a key or lockpicking skill to open them.
 local function EC_IsOpenable(bag, slot)
+    -- v2.59.0: per-itemID cache. "never" skips the slot with zero API calls;
+    -- "openable" skips the tooltip scan but still honours the live locked
+    -- flag below. A LOCKED tooltip result is never cached (see the
+    -- openableCache note in EbonClearance_Core.lua - lockboxes flip to
+    -- openable when picked, same itemID).
+    local itemID = GetContainerItemID(bag, slot)
+    if not itemID then
+        return false
+    end
+    local cached = EC_compCache.openableCache[itemID]
+    if cached == "never" then
+        return false
+    end
     local _, itemCount, locked = GetContainerItemInfo(bag, slot)
     if not itemCount or itemCount <= 0 or locked then
         return false
+    end
+    if cached == "openable" then
+        return true
     end
     -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
     EC_compCache.scanBagItem(bag, slot)
     -- Cap iterations: tooltips can technically grow long; 30 lines is more
     -- than any container we care about will produce.
+    local sawAnyLine = false
     for i = 1, 30 do
         local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
         if not line then
             break
         end
         local txt = line:GetText()
+        if txt and txt ~= "" then
+            sawAnyLine = true
+        end
         if txt == ITEM_OPENABLE then
+            EC_compCache.openableCache[itemID] = "openable"
             return true
         end
         if txt == LOCKED then
             return false
         end
+    end
+    -- Only negative-cache when the tooltip actually rendered: an uncached
+    -- item (client data still warming up) produces an empty tooltip, and
+    -- caching "never" from that would permanently skip a real container.
+    if sawAnyLine then
+        EC_compCache.openableCache[itemID] = "never"
     end
     return false
 end
@@ -3304,15 +3394,11 @@ function EC_HandleAutoOpenContainers()
         if not EC_compCache.combatDeferredAnnounced then
             EC_compCache.combatDeferredAnnounced = true
             local hasOpenable = false
-            for bag = 0, 4 do
-                local slots = GetContainerNumSlots(bag) or 0
-                for slot = 1, slots do
-                    if EC_IsOpenable(bag, slot) then
-                        hasOpenable = true
-                        break
-                    end
-                end
-                if hasOpenable then
+            local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+            for i = 1, #snap.entries do
+                local e = snap.entries[i]
+                if EC_IsOpenable(e.bag, e.slot) then
+                    hasOpenable = true
                     break
                 end
             end
@@ -3328,21 +3414,24 @@ function EC_HandleAutoOpenContainers()
     if not EC_IsAddonEnabledForChar() then
         return
     end
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            if EC_IsOpenable(bag, slot) then
-                EC_autoOpenInFlight = true
-                UseContainerItem(bag, slot)
-                -- 0.4 s gives the prior open's cast room to finish before we
-                -- trigger the next one. Tunable; lower would feel snappier
-                -- but risks interrupting the previous use.
-                EC_Delay(0.4, function()
-                    EC_autoOpenInFlight = false
-                    EC_HandleAutoOpenContainers()
-                end)
-                return
-            end
+    -- v2.59.0: iterate the shared flush snapshot (or a fresh one when
+    -- called outside the flush, e.g. from PLAYER_REGEN_ENABLED or the
+    -- post-open EC_Delay retry). EC_IsOpenable re-reads the live slot, so
+    -- a snapshot entry that has moved just resolves to "not openable".
+    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    for i = 1, #snap.entries do
+        local e = snap.entries[i]
+        if EC_IsOpenable(e.bag, e.slot) then
+            EC_autoOpenInFlight = true
+            UseContainerItem(e.bag, e.slot)
+            -- 0.4 s gives the prior open's cast room to finish before we
+            -- trigger the next one. Tunable; lower would feel snappier
+            -- but risks interrupting the previous use.
+            EC_Delay(0.4, function()
+                EC_autoOpenInFlight = false
+                EC_HandleAutoOpenContainers()
+            end)
+            return
         end
     end
 end
@@ -4434,10 +4523,14 @@ function EC_compCache.checkBagsForUpgrades()
             end
         end
     end
-    for bag = 0, 4 do
-        local n = GetContainerNumSlots(bag) or 0
-        for slot = 1, n do
-            local itemID = GetContainerItemID(bag, slot)
+    -- v2.59.0: iterate the shared flush snapshot (or a fresh one when
+    -- called outside the flush, e.g. the Protection panel toggle). The
+    -- upgradeProcessed memo and every action below are itemID-keyed list
+    -- writes, so snapshot iteration needs no live slot re-verify here.
+    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    for i = 1, #snap.entries do
+        do -- scoping block keeps the old two-level loop body untouched
+            local itemID = snap.entries[i].itemID
             if itemID and not EC_compCache.upgradeProcessed[itemID] then
                 EC_compCache.upgradeProcessed[itemID] = true
                 -- v2.44.0: skip items the player's class can't use. A
@@ -5834,12 +5927,17 @@ function EC_compCache.runAutoDeleteOnPickup()
     if GetCursorInfo() then
         return
     end
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            local id, count, quality = EC_compCache.deleteListSlotEligible(bag, slot)
+    -- v2.59.0: iterate the shared flush snapshot; only slots whose
+    -- snapshotted itemID is on the Delete List reach the eligibility gate,
+    -- so unlisted slots cost one table lookup each. deleteListSlotEligible
+    -- re-reads the live slot itself, so a moved/changed slot returns nil.
+    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    for i = 1, #snap.entries do
+        local e = snap.entries[i]
+        if IsInSet(DB.deleteList, e.itemID) then
+            local id, count, quality = EC_compCache.deleteListSlotEligible(e.bag, e.slot)
             if id then
-                EC_compCache.executeBagSlotDelete(bag, slot, id, count, quality, true)
+                EC_compCache.executeBagSlotDelete(e.bag, e.slot, id, count, quality, true)
                 return
             end
         end
@@ -5893,27 +5991,33 @@ function EC_compCache.runAutoDeleteGrey()
     local accountKeep = NS.ADB and NS.ADB.whitelist
     local blacklistAuto = DB.blacklistAuto
     local deleteList = DB.deleteList
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            local id = GetContainerItemID(bag, slot)
-            if id then
-                local _, _, quality, _, _, itemType, _, _, _, _, sellPrice = GetItemInfo(id)
-                if quality == 0
-                    and sellPrice
-                    and sellPrice > 0
-                    and itemType ~= "Quest"
-                    and not IsEquippedItem(id)
-                    and not (keepList and keepList[id])
-                    and not (accountKeep and accountKeep[id])
-                    and not (blacklistAuto and blacklistAuto[id])
-                    and not (deleteList and deleteList[id])
-                then
-                    local _, count, locked = GetContainerItemInfo(bag, slot)
-                    if not locked and count and count > 0 then
-                        EC_compCache.executeBagSlotDelete(bag, slot, id, count, quality, true)
-                        return -- one delete per BAG_UPDATE burst
-                    end
+    -- v2.59.0: iterate the shared flush snapshot. The snapshot quality
+    -- (GetContainerItemInfo's 4th return) pre-gates the GetItemInfo call:
+    -- entries KNOWN to be quality 1+ are skipped outright; nil / -1
+    -- (uncached) entries fall through to the authoritative GetItemInfo
+    -- check below, never to a skip. This scan runs AFTER the pickup-delete
+    -- scan (which can synchronously destroy one item), so the live slot is
+    -- re-verified against the snapshotted itemID before acting.
+    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    for i = 1, #snap.entries do
+        local e = snap.entries[i]
+        local id = e.itemID
+        if (e.quality == nil or e.quality < 1) and GetContainerItemID(e.bag, e.slot) == id then
+            local _, _, quality, _, _, itemType, _, _, _, _, sellPrice = GetItemInfo(id)
+            if quality == 0
+                and sellPrice
+                and sellPrice > 0
+                and itemType ~= "Quest"
+                and not IsEquippedItem(id)
+                and not (keepList and keepList[id])
+                and not (accountKeep and accountKeep[id])
+                and not (blacklistAuto and blacklistAuto[id])
+                and not (deleteList and deleteList[id])
+            then
+                local _, count, locked = GetContainerItemInfo(e.bag, e.slot)
+                if not locked and count and count > 0 then
+                    EC_compCache.executeBagSlotDelete(e.bag, e.slot, id, count, quality, true)
+                    return -- one delete per BAG_UPDATE burst
                 end
             end
         end
@@ -6250,15 +6354,21 @@ function EC_compCache.runAutoMarkResilience()
     end
     local keepList = DB.blacklist
     local accountKeep = NS.ADB and NS.ADB.whitelist
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            local id = GetContainerItemID(bag, slot)
-            if id and not deleteList[id] then
+    -- v2.59.0: iterate the shared flush snapshot. Runs after the pickup-
+    -- delete scan (which can synchronously empty one slot mid-flush), so
+    -- the live slot is re-verified against the snapshotted itemID before
+    -- the tooltip scan - itemHasResilience caches by itemID, and scanning
+    -- a changed slot would poison that cache.
+    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    for i = 1, #snap.entries do
+        do -- scoping block keeps the old two-level loop body untouched
+            local e = snap.entries[i]
+            local id = e.itemID
+            if id and not deleteList[id] and GetContainerItemID(e.bag, e.slot) == id then
                 local protectedByKeep = (keepList and keepList[id])
                     or (accountKeep and accountKeep[id])
                 if not protectedByKeep then
-                    if EC_compCache.itemHasResilience(bag, slot, id) then
+                    if EC_compCache.itemHasResilience(e.bag, e.slot, id) then
                         -- v2.44.0 iter: only mark UNSELLABLE Resilience
                         -- gear (sellPrice 0 / nil). The original
                         -- feedback (Murlocked: "delete pvp item with
@@ -6396,11 +6506,23 @@ function EC_compCache.runAutoMarkAffixDupes()
         EC_compCache.syncEquipmentSets(true)
     end
     local setMembers = EC_compCache.equipmentSetIDs
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            local id = GetContainerItemID(bag, slot)
-            if id and not deleteList[id] then
+    -- v2.59.0: iterate the shared flush snapshot. Snapshot-quality pre-gate:
+    -- PE affixes exist only on Rare (3) / Epic (4), so entries KNOWN to be
+    -- sub-rare skip every protection lookup and tooltip scan below; nil /
+    -- -1 (uncached) entries fall through to the authoritative GetItemInfo
+    -- quality check, never to a skip. Runs after the pickup-delete scan, so
+    -- the live slot is re-verified against the snapshotted itemID before
+    -- the per-slot tooltip work (tome / affix / bind scans cache by item).
+    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    for i = 1, #snap.entries do
+        do -- scoping block keeps the old two-level loop body untouched
+            local e = snap.entries[i]
+            local id = e.itemID
+            if id
+                and not deleteList[id]
+                and (e.quality == nil or e.quality < 0 or e.quality >= 3)
+                and GetContainerItemID(e.bag, e.slot) == id
+            then
                 local protectedByKeep = (keepList and keepList[id])
                     or (accountKeep and accountKeep[id])
                     or (setMembers and setMembers[id])
@@ -6413,13 +6535,13 @@ function EC_compCache.runAutoMarkAffixDupes()
                 if not protectedByKeep
                     and not IsEquippedItem(id)
                     and not (EC_compCache.isQuestItem and EC_compCache.isQuestItem(id))
-                    and not (EC_compCache.itemIsTome and EC_compCache.itemIsTome(bag, slot, id))
+                    and not (EC_compCache.itemIsTome and EC_compCache.itemIsTome(e.bag, e.slot, id))
                     and not (EC_compCache.baselineProtectedIDs and EC_compCache.baselineProtectedIDs[id])
                     and not EC_compCache.itemProtectedFromAutoMarkDelete(id)
                 then
                     local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
                     if quality and quality >= 3 then
-                        local affix = EC_compCache.bagSlotAffixData(bag, slot)
+                        local affix = EC_compCache.bagSlotAffixData(e.bag, e.slot)
                         -- Mark any affix EC would otherwise SELL (a dupe you
                         -- own, or a rank below your "Sell affixes below rank"
                         -- floor - the shared affixDisposable check) that is
@@ -6455,7 +6577,7 @@ function EC_compCache.runAutoMarkAffixDupes()
                             if rankBelowOnly then -- luacheck: ignore 542
                                 -- Skip; item stays for extraction.
                             else
-                            local soulbound = EC_compCache.getBindType(bag, slot) == "bop"
+                            local soulbound = EC_compCache.getBindType(e.bag, e.slot) == "bop"
                             local noValue = not (sellPrice and sellPrice > 0)
                             if soulbound and noValue then
                                 deleteList[id] = true

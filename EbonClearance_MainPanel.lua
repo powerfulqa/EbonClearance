@@ -706,10 +706,32 @@ local function BuildMainPanel(panel, content)
     EC_compCache.setPanelWidth(historyHint, 180)
     historyHint:SetText(L["|cff888888What was sold or deleted this session, and why. Clears on /reload.|r"])
 
+    -- Loot Log button. Same opener as the Stats - Personal panel's button
+    -- (NS.ToggleLootWindow, also reachable via /ec loot); placed here so
+    -- the two session windows (Sold History + Loot Log) sit together.
+    local lootLogBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    lootLogBtn:SetSize(140, 26)
+    lootLogBtn:SetPoint("TOPLEFT", historyBtn, "BOTTOMLEFT", 0, -8)
+    lootLogBtn:SetText(L["Loot Log"])
+    lootLogBtn:SetScript("OnClick", function()
+        if NS.ToggleLootWindow then
+            NS.ToggleLootWindow()
+        end
+        PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    local lootLogHint = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    lootLogHint:SetPoint("LEFT", lootLogBtn, "RIGHT", 10, 0)
+    lootLogHint:SetJustifyH("LEFT")
+    if lootLogHint.SetWordWrap then
+        lootLogHint:SetWordWrap(true)
+    end
+    EC_compCache.setPanelWidth(lootLogHint, 180)
+    lootLogHint:SetText(L["|cff888888Everything looted this session, plus your account-wide totals.|r"])
+
     -- Tip on its own line, in grey, so it reads as a hint rather than
     -- another sentence in the main description block.
     local mainTip = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    mainTip:SetPoint("TOPLEFT", historyBtn, "BOTTOMLEFT", 0, -14)
+    mainTip:SetPoint("TOPLEFT", lootLogBtn, "BOTTOMLEFT", 0, -14)
     EC_compCache.setPanelWidth(mainTip, 16)
     mainTip:SetJustifyH("LEFT")
     mainTip:SetJustifyV("TOP")

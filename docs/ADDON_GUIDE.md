@@ -1532,6 +1532,39 @@ Two adjacent rules in the same vein:
    `bagSlotAffixData` follows this pattern via
    `EC_compCache.affixDataCache`.
 
+### The flush chain shares ONE bag snapshot (v2.59.0+)
+
+Coalescing (above) bounded how often the flush fires; v2.59.0 bounds
+what each flush costs. The debounce flush builds
+`EC_compCache.buildBagFlushSnapshot()` once (per-slot entries + an
+`{itemID = count}` map) and every scanner in the chain iterates it via
+`EC_compCache.currentFlushSnapshot() or buildBagFlushSnapshot()`
+instead of walking bags itself. Locked by Test 119. The load-bearing
+details:
+
+- **Validity is the frame it was built in** (`snap.at == GetTime()`;
+  GetTime is frame-constant). An error mid-flush can therefore never
+  leak a stale snapshot into a later frame; standalone callers just
+  build a fresh one.
+- **Scanners that run AFTER `runAutoDeleteOnPickup` re-verify the live
+  slot** (`GetContainerItemID(e.bag, e.slot) == id`) before tooltip
+  work or destructive action - the pickup scan can synchronously
+  destroy one no-popup item mid-chain, and the itemID-keyed caches
+  (resilience / tome / affix / bind) must not be poisoned by scanning
+  an emptied slot.
+- **Snapshot quality is a pre-gate, never a verdict.** It comes from
+  `GetContainerItemInfo` and can be nil / -1 for uncached items;
+  consumers may SKIP on a known-out-of-range quality but must fall
+  through to the authoritative `GetItemInfo` check when unknown.
+- **`EC_IsOpenable` caches per itemID** ("openable" / "never") but a
+  LOCKED tooltip result stays uncached (a lockpicked junkbox flips to
+  openable under the same itemID) and "never" is only cached from a
+  tooltip that actually rendered lines (client cache warmup renders
+  empty tooltips).
+- Do not add a new bag-walking scanner to the flush; give it the
+  snapshot and, if it acts destructively or scans tooltips, the live
+  re-verify.
+
 ### Bind-type detection shares `EC_scanTooltip` (v2.10.0+)
 
 The per-rarity `bindFilter` rule reads bind type via the same hidden

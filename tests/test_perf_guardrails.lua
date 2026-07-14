@@ -6362,8 +6362,10 @@ do
                 body:find("deleteListSlotEligible") ~= nil,
                 "must share delete policy with BuildQueue, not duplicate it")
         end
+        -- Window widened v2.59.0: the shared flush-snapshot build + comment
+        -- sit above the scan calls inside the same OnUpdate body.
         local dbStart = s:find('EC_compCache%.bagUpdateFrame:SetScript%("OnUpdate"')
-        local dbBody = dbStart and s:sub(dbStart, dbStart + 2600) or ""
+        local dbBody = dbStart and s:sub(dbStart, dbStart + 3600) or ""
         check("Test 88aa: auto-delete runs from the BAG_UPDATE debounce frame",
             dbBody:find("runAutoDeleteOnPickup") ~= nil,
             "the scan must be called from the 120ms debounce OnUpdate, not the raw BAG_UPDATE branch (coalescing)")
@@ -6454,7 +6456,9 @@ do
     check(
         "Test 102e: scan requires disposable affix + soulbound + no vendor value, skips protected",
         markBody:find("EC_compCache%.affixDisposable%(affix%)") ~= nil
-            and markBody:find('EC_compCache%.getBindType%(bag, slot%) == "bop"') ~= nil
+            -- v2.59.0: the scan iterates the shared flush snapshot, so the
+            -- bind check reads the snapshot entry's coordinates.
+            and markBody:find('EC_compCache%.getBindType%(e%.bag, e%.slot%) == "bop"') ~= nil
             and markBody:find("sellPrice") ~= nil
             and markBody:find("IsEquippedItem") ~= nil
             and markBody:find("isQuestItem") ~= nil
@@ -7389,6 +7393,45 @@ do
     check("Test 118d: the scan force-refreshes equipment-set membership each pass",
         src:find("if EC_compCache.syncEquipmentSets then\n        EC_compCache.syncEquipmentSets(true)", 1, true) ~= nil,
         "runAutoMarkAffixDupes MUST re-sync equipment sets every scan (not only lazy-prime when nil), or a set member added/edited after login can be auto-marked on a stale cache.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 119 (v2.59.0): shared per-flush bag snapshot.
+-- ---------------------------------------------------------------------------
+-- The settled BAG_UPDATE flush builds ONE bag snapshot and every scanner in
+-- the chain iterates it instead of walking bags independently. Invariants:
+-- the snapshot is built inside the flush and validity is the frame it was
+-- built in (`at == GetTime()`), so a mid-flush error can never leak a stale
+-- snapshot into a later frame; scanners running AFTER the pickup-delete
+-- scan (which can synchronously empty a slot) re-verify the live slot
+-- before tooltip work or destructive action; the openable cache never
+-- stores the transient LOCKED state (lockpicked boxes must re-scan).
+do
+    check("Test 119a: buildBagFlushSnapshot exists and stamps the build frame",
+        src:find("function EC_compCache%.buildBagFlushSnapshot%(%)") ~= nil
+            and src:find("counts = counts, at = GetTime()", 1, true) ~= nil,
+        "the shared snapshot must exist and carry the GetTime() frame stamp its validity check relies on.")
+    check("Test 119b: currentFlushSnapshot validates the frame stamp",
+        src:find("snap and snap%.at == GetTime%(%)") ~= nil,
+        "currentFlushSnapshot must only return a snapshot built THIS frame; anything looser lets an error mid-flush leave a stale snapshot influencing a scanner on a later frame.")
+    check("Test 119c: the flush builds the shared snapshot once",
+        src:find("EC_compCache.flushSnapshot = EC_compCache.buildBagFlushSnapshot()", 1, true) ~= nil,
+        "the debounce flush must build the snapshot before firing the scan chain - that is the whole point of v2.59.0.")
+    local _, consumers = src:gsub(
+        "EC_compCache%.currentFlushSnapshot%(%) or EC_compCache%.buildBagFlushSnapshot%(%)", "")
+    check("Test 119d: scanners consume the shared snapshot with a standalone fallback",
+        consumers >= 6,
+        "expected >= 6 scanners (auto-open x2, upgrades, pickup-delete, resilience, affix-dupes, grey) using `currentFlushSnapshot() or buildBagFlushSnapshot()`; found " .. consumers .. ". A scanner reverting to its own nested bag walk reintroduces the multi-walk cost.")
+    local _, verifies = src:gsub("GetContainerItemID%(e%.bag, e%.slot%) == id", "")
+    check("Test 119e: post-pickup-delete scanners live-verify the slot before acting",
+        verifies >= 3,
+        "resilience / affix-dupes / grey-delete run after the pickup-delete scan can synchronously empty a slot; each must re-verify GetContainerItemID(e.bag, e.slot) == id before tooltip scans or destructive action, or an itemID-keyed cache can be poisoned by an emptied slot. Found " .. verifies .. " of 3.")
+    check("Test 119f: openable cache never stores the LOCKED state",
+        src:find('EC_compCache%.openableCache%[itemID%] = "openable"') ~= nil
+            and src:find("if sawAnyLine then") ~= nil
+            and src:find('= "never"') ~= nil
+            and src:find('txt == LOCKED then%s+return false') ~= nil,
+        "EC_IsOpenable may cache 'openable' and (only after a rendered tooltip) 'never', but a LOCKED result must stay uncached - a lockpicked junkbox flips to openable under the same itemID.")
 end
 
 -- ---------------------------------------------------------------------------

@@ -626,15 +626,32 @@ local function EnsureDB()
     if EbonClearanceDB.shareChanceProcs == nil then
         EbonClearanceDB.shareChanceProcs = false
     end
-    -- v2.58.0: realm-wide sharing (opt-in, default OFF). shareServerData feeds
-    -- the anonymous "Stats - Server" odometer AND is what lets you see it (it
-    -- shows no names, so there is no name-sharing toggle). Turning it on is also
-    -- what joins the hidden realm channel; a channel slot is never used
-    -- otherwise. Realm-wide version alerts ride that same channel (the existing
-    -- versionAlerts nudge hears realm versions when you're sharing), so there is
-    -- no separate realm-update toggle.
+    -- v2.58.0 introduced this as opt-in default OFF. v2.59.1 flips the default
+    -- to ON, plus a one-time migration bump for existing users so the change
+    -- reaches every session, not just fresh installs.
+    --
+    -- shareServerData feeds the anonymous "Stats - Server" odometer AND is what
+    -- lets you see it (it shows no names, so there is no name-sharing toggle).
+    -- Turning it on is also what joins the hidden realm channel; a channel slot
+    -- is never used otherwise. Realm-wide version alerts ride that same channel
+    -- (the existing versionAlerts nudge hears realm versions when you're
+    -- sharing), so there is no separate realm-update toggle.
+    --
+    -- shareServerDataDefaultBumped is the one-shot migration marker. Once set
+    -- (either via the fresh-install seed below OR via the v2.59.1 one-time
+    -- bump), the shareServerData value is never touched by EnsureDB again -
+    -- the user can turn it off in the panel afterwards and it stays off.
     if EbonClearanceDB.shareServerData == nil then
-        EbonClearanceDB.shareServerData = false
+        -- Fresh install (or first login after v2.59.1 for a character that
+        -- never saw v2.58.0). Seed ON.
+        EbonClearanceDB.shareServerData = true
+        EbonClearanceDB.shareServerDataDefaultBumped = true
+    elseif EbonClearanceDB.shareServerDataDefaultBumped ~= true then
+        -- Existing user with the v2.58.0 default-off seed still stored.
+        -- One-time bump to true, then set the marker so future logins do not
+        -- override any subsequent user choice.
+        EbonClearanceDB.shareServerData = true
+        EbonClearanceDB.shareServerDataDefaultBumped = true
     end
     -- Language override (default false = follow the client's GetLocale()).
     -- Account-level. A locale code ("frFR" / "deDE" / ...) forces that

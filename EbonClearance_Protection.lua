@@ -1390,6 +1390,21 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     -- Serv-confirmed non-extractable (2026-07-11): its Arcane-blast proc
     -- has no matching PE weapon affix.
     [17054] = "Joonho's Mercy",
+    -- v2.59.1 (Serv Anvil verification, 2026-07-14): five more items
+    -- whose captureproc dump made them look extractable, but the Anvil
+    -- refuses. The shadowy-bolt phrasing on Raging Deathbringer matches
+    -- Affliction visually but PE has not registered this specific item;
+    -- the drain-life phrasing on Skullforge Reaver / Reclaimed
+    -- Shadowstrike likewise looks like Vampirism but doesn't extract;
+    -- Sceptre of Smiting's poison-nova has no PE equivalent; Hand of
+    -- Edward the Odd's Haste Rating stat proc has no matching PE affix
+    -- family (mirrors its ring sibling Signet of Edward the Odd at
+    -- 44308 above).
+    [2243]  = "Hand of Edward the Odd",
+    [13361] = "Skullforge Reaver",
+    [19908] = "Sceptre of Smiting",
+    [49302] = "Reclaimed Shadowstrike",
+    [49500] = "Raging Deathbringer",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1508,6 +1523,14 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     -- matches against the engrave-affix spellbook.
     [754]   = { spellID = 700102, family = "Judgement",  item = "Shortsword of Vengeance" },
     [937]   = { spellID = 700086, family = "Affliction", item = "Black Duskwood Staff" },
+    -- v2.59.1 (captureproc + Serv Anvil verification, 2026-07-14): two
+    -- items whose "Sends a shadowy bolt" / literal "Frost Arrow" proc
+    -- text was Anvil-confirmed to extract to Affliction / Frost Arrow.
+    -- Four other items from the same captureproc dump looked like they
+    -- would match but the Anvil refused extraction; they went into
+    -- EC_CHANCE_PROC_NEVER_EXTRACTABLE instead (see that map).
+    [2163]  = { spellID = 700086, family = "Affliction",  item = "Shadowblade" },
+    [2824]  = { spellID = 700115, family = "Frost Arrow", item = "Hurricane" },
     -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
     -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
     -- spell, not the PE affix id EC matches in learnedAffixes (in-game

@@ -137,7 +137,8 @@ ServerPanel:SetScript("OnShow", function(self)
             content,
             L["A live, anonymous tally of what EbonClearance users across the realm"
                 .. " have cleared together - totals only, never names or rankings."
-                .. " Turn on Share my totals to join in and see it."],
+                .. " Sharing is on by default so you can see it and contribute."
+                .. " Uncheck below if you'd rather stay out."],
             16,
             -44
         )

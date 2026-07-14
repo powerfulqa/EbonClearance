@@ -5,6 +5,53 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.1
+
+**Two chance-on-hit pairings pinned, five items marked non-extractable, and Stats - Server sharing flipped to ON by default.**
+
+## Stats - Server sharing now defaults to ON
+
+v2.58.0 shipped `shareServerData` as opt-in default OFF; v2.59.1 flips it to ON. The rationale: the odometer only exists as a live shared count, and the design comment always said "off by default keeps opted-out users at zero cost." Empirically, that also meant most users never saw the panel populate. Turning it on by default surfaces the community tally to every user AND grows the sample size / sharer headcount.
+
+**Migration behaviour (`EbonClearance_Events.lua`, `EnsureDB`):**
+
+- **Fresh install / new character:** `shareServerData` is seeded `true`. A `shareServerDataDefaultBumped = true` marker is also stored.
+- **Existing user with v2.58.0 default-off value:** `EnsureDB` sees `shareServerData == false` AND `shareServerDataDefaultBumped == nil`, so it flips `shareServerData` to `true` **once** and sets the marker.
+- **After the migration:** if the user then unchecks "Share my totals with the realm" in the Stats - Server panel, the value goes back to `false` and stays there (the marker prevents `EnsureDB` from re-flipping it).
+
+Everything downstream is unchanged - the anonymity guarantees, the hidden-channel join gate, the 20-minute per-sender aggregate TTL, the `ver:` piggyback that feeds `NotePeerVersion` for realm-wide update alerts. Only the seed value moved.
+
+Also updated: the Stats - Server panel description ("Sharing is on by default so you can see it and contribute. Uncheck below if you'd rather stay out."), the Help FAQ entry `server-stats`, the README bullet, and the `docs/ADDON_GUIDE.md` v2.58.0 section.
+
+## Chance-on-hit seed updates
+
+Ground-truth from a fresh `/ec captureproc` dump, cross-referenced against the spellbook's `Allows you to engrave this affix` tooltips AND tested at the Anvil.
+
+**Confirmed extractable (added to `EC_CHANCE_PROC_CONFIRMED_ITEMS`):**
+
+- **Shadowblade (2163)** to **Affliction (700086)** - "Sends a shadowy bolt" phrasing, same family as the already-pinned Black Duskwood Staff (937).
+- **Hurricane (2824)** to **Frost Arrow (700115)** - the affix name is literal in the proc text.
+
+**Confirmed non-extractable (added to `EC_CHANCE_PROC_NEVER_EXTRACTABLE`):**
+
+The proc text on each of these looked like it would match a known PE affix family, but the Anvil UI refuses extraction, meaning PE has not registered the specific item's proc even though the visual is familiar.
+
+- **Sceptre of Smiting (19908)** - poison-nova has no matching PE affix.
+- **Skullforge Reaver (13361)** - drain-life phrasing looks like Vampirism but Anvil refuses.
+- **Reclaimed Shadowstrike (49302)** - "Steals life" phrasing likewise refuses.
+- **Raging Deathbringer (49500)** - "Sends a shadowy bolt" phrasing looks like Affliction but refuses.
+- **Hand of Edward the Odd (2243)** - Haste-Rating stat proc; no matching PE affix family. Mirrors the same character's ring **Signet of Edward the Odd (44308)** already marked non-extractable.
+
+**Deferred:**
+
+- **Zulian Slicer (19901)** - Serv can extract it but "already know" the affix from a prior session; the proc text ("Slices for X Nature damage") has no unique identifier that matches any spellbook tooltip. Left un-pinned; the v2.49.1 autolearn would catch it on a fresh extraction, but that opportunity is gone for this character.
+- **Shiny Shard of the Scale (49488)** - a set bonus, not a chance-on-hit weapon proc. The weapon-only gate in `chanceProcSpellID` correctly ignores it.
+
+Data-only patch. No schema change, no behaviour change to already-pinned items. Downgrade-safe to v2.59.0.
+
+---
+
+
 ### v2.59.0
 
 **Performance: bag bursts now cost one bag scan instead of up to nine. Plus a Loot Log button on the main page.**

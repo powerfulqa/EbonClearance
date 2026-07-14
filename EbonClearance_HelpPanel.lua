@@ -266,6 +266,12 @@ local EC_HELP_ENTRIES = {
         panel = nil,
     },
     {
+        id = "bubble-mute-diag",
+        q = L["A Scavenger speech bubble got past the mute. (/ec bubbles)"],
+        a = L["Type /ec bubbles for a copyable report of what the mute recorded from chat and which bubble texts it saw on screen, each marked HIDDEN or MISS. Run it within a minute of seeing the stray bubble and paste the report when filing a bug - it shows exactly why the bubble slipped through. Session-only - it clears on /reload."],
+        panel = nil,
+    },
+    {
         id = "affix-fallback",
         q = L["What is /ec affixfallback for?"],
         a = L["It's a safety check for affix protection. EbonClearance normally learns which affixes you've extracted from Project Ebonhold's own data. If a future PE update ever moved that data, the addon can fall back to reading your learned affixes from your spellbook instead. Type /ec affixfallback on to pretend PE's data is gone, then check that your Known/Needed bag highlighting and keep/sell rules still work; /ec affixfallback off puts it back to normal (or just /reload). You never need this in normal play - it's there so affix protection can't quietly break if the game changes underneath it."],

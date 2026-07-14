@@ -52,14 +52,27 @@ function Comms.RegisterHandler(msgType, fn)
     handlers[msgType] = fn
 end
 
+-- Throttle key per (message type, destination) so unrelated message types to
+-- the same peer never share a bucket (e.g. a version reply must not
+-- throttle-drop a guild-data reply to the same player).
+local function throttleKey(msgType, channel, target)
+    return (channel == "WHISPER") and (msgType .. ":WHISPER:" .. tostring(target))
+        or (msgType .. ":" .. channel)
+end
+
+-- True when Send with the same (msgType, destination) would go out rather
+-- than be throttle-dropped. Reply handlers whose payload is expensive to
+-- build (GuildShare / ProcShare aggregation) check this FIRST - otherwise a
+-- request storm makes every opted-in client pay the full payload build per
+-- request while the throttle silently discards the reply.
+function Comms.CanSend(msgType, channel, target)
+    local last = lastSendAt[throttleKey(msgType, channel, target)]
+    return not (last and (GetTime() - last) < SEND_THROTTLE_S)
+end
+
 function Comms.Send(msgType, payload, channel, target)
     local now = GetTime()
-    -- Throttle per (message type, destination) so unrelated message types to
-    -- the same peer never share a bucket (e.g. a version reply must not
-    -- throttle-drop a guild-data reply to the same player).
-    local key = (channel == "WHISPER")
-        and (msgType .. ":WHISPER:" .. tostring(target))
-        or (msgType .. ":" .. channel)
+    local key = throttleKey(msgType, channel, target)
     if lastSendAt[key] and (now - lastSendAt[key]) < SEND_THROTTLE_S then
         return
     end

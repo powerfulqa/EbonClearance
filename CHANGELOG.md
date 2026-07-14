@@ -5,6 +5,25 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.58.3
+
+**Fix: the Scavenger's new "Beep. Configuration loaded..." resummon bubble now stays muted. Plus comms hardening from the audit's second batch.**
+
+The bot recently started confirming its loot-filter settings in a speech bubble on every resummon, and that bubble escaped the mute twice over:
+
+- The bubble's text is rendered differently from its chat line (the embedded player name carries formatting), so the exact-text match missed it. Bubble matching now normalises both sides (colour codes, links, punctuation, spacing) before comparing.
+- Muted bubbles on this server outlive the mute's 8-second tracking window, so the hidden bubble could pop back mid-life. A killed bubble now stays hidden for as long as it shows the text it was muted for, and only returns when the game reuses that bubble frame for someone else's speech - so muting the Scavenger can never swallow other players' or mobs' bubbles.
+- New diagnostic: **/ec bubbles** shows what the mute recorded from chat vs the bubble texts seen on screen (HIDDEN / MISS per line, copyable). If a bubble ever slips through again, run it within a minute and paste the report. Session-only.
+
+Also in this release (audit batch 2 - hardening, no behaviour change):
+
+- **Realm channel safety:** the hidden-channel transport re-checks its channel number right before every send and on every received message. Previously, leaving another chat channel could renumber the slots and either post raw server-stats data into a public channel or make the transport go deaf until relog.
+- **Reply-storm protection:** guild stats and proc-pairing replies now check the send throttle BEFORE building the reply payload, so a misbehaving client spamming requests can't burn CPU on every opted-in guildmate.
+- **Bag borders:** the affix highlight scan now only runs on Rare/Epic items and only when a Known/Needed Affix highlight is actually enabled - greys and consumables no longer pay a tooltip scan on bag open.
+- **Login safety:** if the character name isn't available at the earliest addon-load moment, settings bind to a temporary namespace instead of persisting an orphan "Unknown" character entry in saved variables.
+
+No new settings, no schema change, downgrade-safe. Verified in game: resummon bubble muted across its full lifetime, other bubbles unaffected, /ec realmtest, guild/server stats, bag border tints.
+
 ### v2.58.2
 
 **Performance patch: less repeated work on loading screens, bag bursts, and idle windows. No behaviour change.**

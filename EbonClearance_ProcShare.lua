@@ -196,6 +196,12 @@ NS.Comms.RegisterHandler("PREQ", function(_, sender, _)
         return
     end
     if sender and sender ~= playerName() then
+        -- Throttle check BEFORE encodePayload(): same shape as GuildShare's
+        -- GREQ handler - don't pay the payload build for a reply the Send
+        -- throttle would silently drop anyway.
+        if NS.Comms.CanSend and not NS.Comms.CanSend("PDAT", "WHISPER", sender) then
+            return
+        end
         local ADB = NS.ADB or {}
         local payload = ProcShare.encodePayload(ADB.chanceProcConfirmedItems or {})
         if payload and payload ~= "pairs:" then

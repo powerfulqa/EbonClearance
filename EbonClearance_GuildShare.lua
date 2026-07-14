@@ -304,6 +304,14 @@ NS.Comms.RegisterHandler("GREQ", function(_, sender, _)
         return
     end
     if sender and sender ~= playerName() then
+        -- Throttle check BEFORE localPayload(): the payload build (sort +
+        -- GetItemInfo loop + zone sort) is the expensive part, and Lua
+        -- evaluates arguments before Send can drop the reply. Without this
+        -- a request storm burns CPU on every opted-in client. (The CanSend
+        -- guard is optional so the isolation test's stub Comms still works.)
+        if NS.Comms.CanSend and not NS.Comms.CanSend("GDAT", "WHISPER", sender) then
+            return
+        end
         NS.Comms.Send("GDAT", localPayload(), "WHISPER", sender)
     end
 end)

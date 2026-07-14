@@ -1379,6 +1379,28 @@ If you ever split these into truly independent flags, audit
 on the Scavenger-name path) and the bubble-kill OnUpdate's guard
 accordingly.
 
+### Bubble mute: normalized keys + killed-key persistence (v2.58.3)
+
+Two load-bearing choices in the `EC_bubbleFrame` cluster
+(`EbonClearance_Companion.lua`):
+
+- **Matching uses `EC_GreedyKey` normalization** (codes stripped,
+  lowercased, punctuation dropped, whitespace collapsed) on BOTH the
+  chat-filter side and the bubble-walker side. The client renders the
+  same line differently in chat vs bubbles (coloured player names, link
+  wrappers), so exact string equality misses lines like the bot's
+  "Beep. Configuration loaded from <name>'s preferences..." resummon
+  message. Do not "simplify" back to raw text comparison.
+- **A killed bubble stays hidden by its `__EC_killedKey`, not by the
+  8 s tracking TTL.** Bubble frames outlive the TTL on this server; if
+  suppression were re-derived from the live tracked set alone, the
+  killed bubble would resurface mid-life when the TTL prunes the entry
+  (surfaced during v2.58.3 play-testing: the bubble died instantly,
+  then reappeared ~8 s in). A
+  killed frame is restored only when its text CHANGES to something
+  untracked - the genuine frame-recycle case. `/ec bubbles` prints the
+  tracked-vs-seen rings when debugging a bubble that escapes the mute.
+
 ### Cross-list conflicts are refused at input time, not just resolved post-hoc
 
 `EC_ScanListConflicts` and `EC_ApplyCleanResolution` (driven by `/ec clean`)

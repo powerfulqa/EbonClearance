@@ -656,7 +656,17 @@ local function EnsureDB()
         EbonClearanceDB.chars = {}
     end
     local charKey = EC_DBCharKey()
-    if not EbonClearanceDB.chars[charKey] then
+    -- Guard: at a very early ADDON_LOADED, UnitName("player") /
+    -- GetRealmName() can still be nil, making the key "Unknown-...". Never
+    -- persist a partition under that key (it would be an orphan namespace
+    -- in SavedVariables, one per fresh account); bind a transient in-memory
+    -- namespace instead. The PLAYER_LOGIN EnsureDB re-run resolves the real
+    -- key and rebinds to the persisted partition, so nothing written before
+    -- login can land on an orphan.
+    local charNSIsTransient = charKey:find("^Unknown%-") ~= nil
+    if charNSIsTransient then
+        EC_compCache.unknownCharNS = EC_compCache.unknownCharNS or {}
+    elseif not EbonClearanceDB.chars[charKey] then
         local charNS = {}
         for k in pairs(PER_CHAR_FIELDS) do
             if EbonClearanceDB[k] ~= nil then
@@ -694,7 +704,7 @@ local function EnsureDB()
     -- Gate via `_migratedV2` so the cleanup runs exactly once per
     -- character; otherwise a subsequent /reload would re-drop entries
     -- the live paths just re-added.
-    local charNS = EbonClearanceDB.chars[charKey]
+    local charNS = charNSIsTransient and EC_compCache.unknownCharNS or EbonClearanceDB.chars[charKey]
     if not charNS._migratedV2 then
         local legacyAuto = EbonClearanceDB.blacklistAuto
         if type(legacyAuto) == "table" then
@@ -718,7 +728,7 @@ local function EnsureDB()
     -- DB is a metatable proxy so existing call sites (`DB.foo`) keep
     -- working unchanged. Per-character fields route to chars[charKey];
     -- everything else stays on the top-level (account-wide) table.
-    DB = EC_DBBuildProxy(EbonClearanceDB.chars[charKey])
+    DB = EC_DBBuildProxy(charNS)
     -- Mirror the live DB binding onto the namespace so split files can
     -- read NS.DB inline at call time. Same proxy; both names alias it.
     -- EnsureAccountDB() below does the same for ADB. See
@@ -8238,6 +8248,18 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         -- steady-state footprint) by answering "what caused that stutter?".
         EnsureDB()
         NS.ShowFrameSpikes()
+        return
+    end
+
+    if cmd == "bubbles" then
+        -- Bubble-mute diagnostic: what the chat filter tracked vs what the
+        -- bubble walker read off screen, with match verdicts. For debugging
+        -- a Scavenger bubble that escapes the mute (e.g. a new server-side
+        -- bot line whose chat text differs from its bubble text).
+        EnsureDB()
+        if NS.ShowBubbleDiag then
+            NS.ShowBubbleDiag()
+        end
         return
     end
 

@@ -89,6 +89,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec autolearnpeek` | Dump the chance-on-hit autolearn state (author + autolearn + ambiguous). |
 | `/ec perf` | Show EbonClearance's memory, CPU, cache and list sizes |
 | `/ec spike` | Show recent frame hitches EbonClearance contributed to and which phase (bag update / vendor / tooltip) was busiest during each, in a copyable window (session-only, clears on `/reload`) |
+| `/ec bubbles` | Diagnostic: show what the Scavenger bubble mute tracked from chat vs the bubble texts seen on screen, with match verdicts, in a copyable window (session-only, clears on `/reload`) |
 | `/ec affixfallback on\|off\|status` | Diagnostic: force EbonClearance to ignore Project Ebonhold's affix data and read learned affixes from your spellbook only, to verify affix protection survives if that data source ever changes (session-only, clears on `/reload`) |
 | `/ec commtest` | Diagnostic: check that addon messages are delivered on this server and preview the update nudge (works solo) |
 | `/ec guildtest` | Diagnostic: preview the Stats - Guild panel with simulated members (works solo) |

@@ -152,18 +152,28 @@ function EC_compCache.bagSlotWillSellCategory(bag, slot)
     -- verdict computes. Precedence: `affixneeded` wins over `affix` in
     -- edge cases (should not happen since they're complementary, but
     -- guards against future logic drift).
-    local affixData = EC_compCache.bagSlotAffixData and EC_compCache.bagSlotAffixData(bag, slot)
     local hasKnownAffix = false
     local hasNeededAffix = false
-    if affixData then
-        local knowsIt = EC_compCache.playerOwnsAffix and EC_compCache.playerOwnsAffix(affixData) or false
-        local knownCat = DB.sellBorderCategories and DB.sellBorderCategories.affix
-        local neededCat = DB.sellBorderCategories and DB.sellBorderCategories.affixneeded
-        if knowsIt and knownCat and knownCat.enabled then
-            hasKnownAffix = true
-        end
-        if (not knowsIt) and neededCat and neededCat.enabled then
-            hasNeededAffix = true
+    local knownCat = DB.sellBorderCategories and DB.sellBorderCategories.affix
+    local neededCat = DB.sellBorderCategories and DB.sellBorderCategories.affixneeded
+    if (knownCat and knownCat.enabled) or (neededCat and neededCat.enabled) then
+        -- PE affixes only exist on Rare (3) / Epic (4), and the affix scan on
+        -- a cold cache is a real tooltip walk. Gate on quality first (4th
+        -- return of GetContainerItemInfo, cheap) and on at least one affix
+        -- category being enabled - mirrors the quality >= 3 gate the tooltip
+        -- path (EbonClearance_Tooltip.lua) already applies to the same scan.
+        local _, _, _, slotQuality = GetContainerItemInfo(bag, slot)
+        if slotQuality and slotQuality >= 3 then
+            local affixData = EC_compCache.bagSlotAffixData and EC_compCache.bagSlotAffixData(bag, slot)
+            if affixData then
+                local knowsIt = EC_compCache.playerOwnsAffix and EC_compCache.playerOwnsAffix(affixData) or false
+                if knowsIt and knownCat and knownCat.enabled then
+                    hasKnownAffix = true
+                end
+                if (not knowsIt) and neededCat and neededCat.enabled then
+                    hasNeededAffix = true
+                end
+            end
         end
     end
     -- Everything below this point requires the item to be sellable per

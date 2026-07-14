@@ -134,10 +134,13 @@ frame:RegisterEvent("CHAT_MSG_CHANNEL")
 -- CHAT_MSG_CHANNEL args: text(1), author(2), lang(3), channelName(4), _(5),
 -- _(6), _(7), channelNumber(8). We key off channelNumber (arg8), matching the
 -- sibling addon's proven arg layout on this server.
-frame:SetScript("OnEvent", function(self, event, text, sender, _, _, _, _, _, chanNum)
+frame:SetScript("OnEvent", function(self, event, text, sender, _, chanString, _, _, _, chanNum)
     -- Once our index is known, a different channel number is a cheap skip that
-    -- filters out all General/Trade/etc. traffic before any string work.
-    if channelIndex and chanNum and chanNum ~= channelIndex then
+    -- filters out all General/Trade/etc. traffic before any string work. But
+    -- channel indices RENUMBER when a lower-numbered channel is left, so a
+    -- number mismatch alone must not make us deaf: if the channel-name string
+    -- (arg4) is ours, fall through and re-learn the new index below.
+    if channelIndex and chanNum and chanNum ~= channelIndex and not isOurChannel(chanString) then
         return
     end
     if type(text) ~= "string" then
@@ -150,7 +153,12 @@ frame:SetScript("OnEvent", function(self, event, text, sender, _, _, _, _, _, ch
         return -- not one of ours (the msgType token is the discriminator)
     end
     -- Learn / refresh our channel index from a message that matched a handler.
+    -- On a renumber, re-hide too (the channel can resurface in chat tabs
+    -- under its new number).
     if type(chanNum) == "number" and chanNum > 0 then
+        if channelIndex and channelIndex ~= chanNum then
+            hideChannelFromChat()
+        end
         channelIndex = chanNum
     end
     -- Rejoin the payload's own "|" section delimiters (parts 2..n).
@@ -165,6 +173,20 @@ frame:SetScript("OnUpdate", function()
     local now = GetTime()
     if now < nextSendTime then
         return
+    end
+    -- Re-validate the cached index right before sending. Channel indices
+    -- renumber when a lower-numbered channel is left; pcall only catches an
+    -- INVALID index, not a successful send to whatever channel now owns the
+    -- old slot - which would post the raw payload into General/Trade for
+    -- everyone. One GetChannelName per queued send is cheap insurance.
+    if channelIndex and channelIndex > 0 and GetChannelName then
+        local _, liveName = GetChannelName(channelIndex)
+        if not isOurChannel(liveName) then
+            channelIndex = findChannel()
+            if channelIndex then
+                hideChannelFromChat()
+            end
+        end
     end
     local wire = table.remove(sendQueue, 1)
     -- Index fast-path, name fallback; both guarded (a stale index errors).

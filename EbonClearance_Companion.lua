@@ -43,6 +43,28 @@ local GetTime = GetTime
 local EC_greedyMessages = {}
 local EC_greedyFiltersInstalled = false
 
+-- /ec bubbles diagnostic rings (session-only, never persisted). One records
+-- what the chat filter tracked for bubble-matching; the other records the
+-- sentence-length texts the bubble walker actually read off screen and
+-- whether each matched. When a bubble escapes the mute, diffing the two
+-- shows exactly why (line never tracked vs text divergence) instead of
+-- guessing at chat formatting. Declared here, above EC_TrackGreedySpeech,
+-- so the push helper is a resolved upvalue at its call sites.
+NS.recentGreedyTracked = {}
+NS.recentBubbleSeen = {}
+local EC_BUBBLE_RING_MAX = 15
+local function EC_PushBubbleRing(ring, key, matched)
+    local top = ring[1]
+    if top and top.key == key and top.matched == matched then
+        top.at = GetTime() -- refresh the repeat instead of flooding the ring
+        return
+    end
+    table.insert(ring, 1, { key = key, matched = matched, at = GetTime() })
+    if #ring > EC_BUBBLE_RING_MAX then
+        table.remove(ring)
+    end
+end
+
 local function EC_StripCodes(s)
     if type(s) ~= "string" then
         return nil
@@ -61,18 +83,40 @@ local function EC_IsGreedyAuthor(author)
     return author:lower() == NS.PET_NAME_LC
 end
 
+-- Canonical matching key: codes stripped, lowercased, punctuation dropped,
+-- whitespace collapsed. The CHAT text and the BUBBLE text for the same line
+-- can differ in embedded formatting (coloured player names, link wrappers,
+-- brackets - the client renders bubbles differently from chat lines), so
+-- exact string equality misses those lines. Reducing both sides to plain
+-- letters, digits, and single spaces makes the match format-blind. Root
+-- cause of the resummon "Beep. Configuration loaded from <name>'s
+-- preferences..." bubble escaping the mute while its chat line was hidden.
+local function EC_GreedyKey(s)
+    s = EC_StripCodes(s)
+    if not s or s == "" then
+        return nil
+    end
+    s = s:lower()
+    s = s:gsub("[^%w%s]", "")
+    s = s:gsub("%s+", " ")
+    if s == "" then
+        return nil
+    end
+    return s
+end
+
 local function EC_TrackGreedySpeech(msg)
-    msg = EC_StripCodes(msg)
-    if not msg or msg == "" then
+    local key = EC_GreedyKey(msg)
+    if not key then
         return
     end
-    msg = msg:lower()
+    EC_PushBubbleRing(NS.recentGreedyTracked, key)
     -- Store the time of speech rather than a boolean; the bubble OnUpdate
     -- prunes entries older than 8 s each tick (chat bubbles in 3.3.5 are
     -- visible for ~5-7 s, so an 8 s TTL covers a bubble's lifetime). The
-    -- truthy value still satisfies the existing
-    -- `if EC_greedyMessages[clean] then` match in the bubble walker.
-    EC_greedyMessages[msg] = GetTime()
+    -- truthy value still satisfies the existing table-membership match in
+    -- the bubble walker.
+    EC_greedyMessages[key] = GetTime()
 end
 
 local function EC_GreedyEventFilter(self, _event, msg, author)
@@ -193,21 +237,82 @@ NS.InstallGreedyMuteOnce = EC_InstallGreedyMuteOnce
 local EC_bubbleFrame = CreateFrame("Frame")
 local EC_killedBubbles = setmetatable({}, { __mode = "k" })
 
-local function EC_KillBubbleFrame(frame)
-    if not frame or frame.__EC_killed then
+-- Decide whether a previously-killed bubble frame must STAY hidden. Two
+-- reasons to stay hidden: (a) the frame still shows the exact text it was
+-- killed for (frame.__EC_killedKey) - the client keeps a bubble's text for
+-- its whole life, which on this server outlives the 8 s tracking TTL, so
+-- the TTL alone must never un-hide a killed bubble mid-life; (b) the frame
+-- now shows a DIFFERENT tracked live Greedy line (recycled for the pet's
+-- next sentence) - re-key and keep hiding. Only a text change to something
+-- untracked means the frame was recycled for another speaker and has to
+-- come back, or bubble-mute users slowly lose everyone's bubbles.
+local function EC_BubbleShouldStayHidden(frame)
+    if not (frame and frame.GetNumRegions) then
+        return false
+    end
+    local now = GetTime()
+    local numRegions = frame:GetNumRegions() or 0
+    local regions = numRegions > 0 and { frame:GetRegions() } or nil
+    for j = 1, numRegions do
+        local region = regions[j]
+        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+            local key = EC_GreedyKey(region:GetText())
+            if key then
+                if frame.__EC_killedKey and key == frame.__EC_killedKey then
+                    return true
+                end
+                local t = EC_greedyMessages[key]
+                if t and (now - t) <= 8 then
+                    frame.__EC_killedKey = key
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function EC_RestoreBubbleFrame(frame)
+    EC_killedBubbles[frame] = nil
+    frame.__EC_killedKey = nil
+    frame:SetAlpha(1)
+    frame:EnableMouse(frame.__EC_prevMouse == true)
+end
+
+local function EC_KillBubbleFrame(frame, key)
+    if not frame then
         return
     end
-    frame.__EC_killed = true
     EC_killedBubbles[frame] = true
-
+    if key then
+        frame.__EC_killedKey = key
+    end
+    if frame.__EC_prevMouse == nil then
+        frame.__EC_prevMouse = (frame.IsMouseEnabled and frame:IsMouseEnabled()) == true
+    end
     frame:SetAlpha(0)
     frame:EnableMouse(false)
     frame:Hide()
 
+    -- Install the OnShow guard once per frame. __EC_killed marks "hook
+    -- installed", NOT "suppressed" (HookScript cannot be removed); the
+    -- suppression decision is re-derived from the current text every show,
+    -- so a recycled frame carrying a different bubble restores itself.
+    if frame.__EC_killed then
+        return
+    end
+    frame.__EC_killed = true
     if frame.HookScript then
         frame:HookScript("OnShow", function(self)
-            self:SetAlpha(0)
-            self:Hide()
+            if not EC_killedBubbles[self] then
+                return
+            end
+            if EC_BubbleShouldStayHidden(self) then
+                self:SetAlpha(0)
+                self:Hide()
+            else
+                EC_RestoreBubbleFrame(self)
+            end
         end)
     end
 end
@@ -254,8 +359,14 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
 
     for bubble in pairs(EC_killedBubbles) do
         if bubble and bubble.IsShown and bubble:IsShown() then
-            bubble:SetAlpha(0)
-            bubble:Hide()
+            if EC_BubbleShouldStayHidden(bubble) then
+                bubble:SetAlpha(0)
+                bubble:Hide()
+            else
+                -- Recycled frame now showing a DIFFERENT, untracked text
+                -- (someone else's bubble): give it back.
+                EC_RestoreBubbleFrame(bubble)
+            end
         end
     end
 
@@ -281,9 +392,16 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
                 if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                     local text = region:GetText()
                     if text then
-                        local clean = EC_StripCodes(text):lower()
-                        if EC_greedyMessages[clean] then
-                            EC_KillBubbleFrame(child)
+                        local key = EC_GreedyKey(text)
+                        local matched = key and EC_greedyMessages[key] ~= nil
+                        -- Ring only sentence-length texts: the walk also sees
+                        -- nameplate names and other short world FontStrings,
+                        -- which would flood the diagnostic with noise.
+                        if key and #key >= 25 then
+                            EC_PushBubbleRing(NS.recentBubbleSeen, key, matched == true)
+                        end
+                        if matched then
+                            EC_KillBubbleFrame(child, key)
                             break
                         end
                     end
@@ -305,6 +423,51 @@ local function GreedyScavengerChatFilter(self, _event, _msg, author)
         return true
     end
     return false
+end
+
+-- Copyable diagnostic for the Greedy bubble mute (backs /ec bubbles).
+-- Session-only. Shows the mute flags, what the chat filter tracked, and the
+-- sentence-length bubble texts the walker examined with match verdicts,
+-- newest first. A MISS row whose text differs from a tracked row is a
+-- formatting divergence; an escaped bubble with NO tracked row at all means
+-- the chat filter never saw (or never matched) the line.
+function NS.ShowBubbleDiag()
+    local DB = NS.DB
+    local now = GetTime()
+    local liveCount = 0
+    for _ in pairs(EC_greedyMessages) do
+        liveCount = liveCount + 1
+    end
+    local lines = {}
+    lines[#lines + 1] = string.format(
+        "Bubble mute diagnostic (matcher: normalized keys). muteGreedy=%s hideGreedyBubbles=%s live-tracked=%d",
+        tostring(DB and DB.muteGreedy == true),
+        tostring(DB and DB.hideGreedyBubbles == true),
+        liveCount
+    )
+    lines[#lines + 1] = "-- Tracked by chat filter (newest first) --"
+    if #NS.recentGreedyTracked == 0 then
+        lines[#lines + 1] = "  (nothing tracked this session)"
+    end
+    for i = 1, #NS.recentGreedyTracked do
+        local e = NS.recentGreedyTracked[i]
+        lines[#lines + 1] = string.format("  %.0fs ago: %s", now - (e.at or now), tostring(e.key))
+    end
+    lines[#lines + 1] = "-- Bubble texts examined on screen (newest first) --"
+    if #NS.recentBubbleSeen == 0 then
+        lines[#lines + 1] = "  (none examined - no live tracked speech while bubbles were up)"
+    end
+    for i = 1, #NS.recentBubbleSeen do
+        local e = NS.recentBubbleSeen[i]
+        lines[#lines + 1] =
+            string.format("  [%s] %.0fs ago: %s", e.matched and "HIDDEN" or "MISS", now - (e.at or now), tostring(e.key))
+    end
+    local body = table.concat(lines, "\n")
+    if NS.ShowCopyFrame then
+        NS.ShowCopyFrame("EbonClearance: Bubble Mute Diagnostic", body)
+    elseif NS.PrintNice then
+        NS.PrintNice(body)
+    end
 end
 
 -- EC-TRAP: second of two intentional chat-filter systems (see

@@ -3327,11 +3327,18 @@ end)
 -- junkboxes / lockpickable containers; we exclude those because the user
 -- needs a key or lockpicking skill to open them.
 local function EC_IsOpenable(bag, slot)
-    -- v2.59.0: per-itemID cache. "never" skips the slot with zero API calls;
-    -- "openable" skips the tooltip scan but still honours the live locked
-    -- flag below. A LOCKED tooltip result is never cached (see the
-    -- openableCache note in EbonClearance_Core.lua - lockboxes flip to
-    -- openable when picked, same itemID).
+    -- v2.59.0: per-itemID cache. "never" skips the slot with zero API calls.
+    -- v2.59.3 fix (Serv report, lockbox auto-open loop): we NO LONGER cache
+    -- "openable" per-itemID. Bug scenario: rogue Pick Lock unlocks lockbox
+    -- A of itemID X, cache stamps X="openable", another still-locked
+    -- lockbox of itemID X in bags then skipped the tooltip re-scan and
+    -- relied on GetContainerItemInfo's `locked` field. That field is
+    -- unreliable for never-picked lockboxes in 3.3.5a - it flips true only
+    -- when the item is mid-cast / mid-swap, not "requires unlock". So the
+    -- still-locked box passed the openable check, UseContainerItem fired,
+    -- server refused, 0.4s retry loop spammed the "item is locked" chat
+    -- error. The tooltip LOCKED line is the only reliable per-instance
+    -- signal, so always do the tooltip scan.
     local itemID = GetContainerItemID(bag, slot)
     if not itemID then
         return false
@@ -3343,9 +3350,6 @@ local function EC_IsOpenable(bag, slot)
     local _, itemCount, locked = GetContainerItemInfo(bag, slot)
     if not itemCount or itemCount <= 0 or locked then
         return false
-    end
-    if cached == "openable" then
-        return true
     end
     -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
     EC_compCache.scanBagItem(bag, slot)
@@ -3361,12 +3365,19 @@ local function EC_IsOpenable(bag, slot)
         if txt and txt ~= "" then
             sawAnyLine = true
         end
-        if txt == ITEM_OPENABLE then
-            EC_compCache.openableCache[itemID] = "openable"
-            return true
-        end
         if txt == LOCKED then
+            -- Do NOT return before checking for ITEM_OPENABLE elsewhere in
+            -- the tooltip - keep scanning. But: a "Locked" line is
+            -- definitive: this instance is not openable right now. Never
+            -- cache "openable" for the itemID either (a different instance
+            -- of same itemID could be locked - the cache would poison the
+            -- next call). Just return false.
             return false
+        end
+        if txt == ITEM_OPENABLE then
+            -- Deliberately NOT caching "openable" per the v2.59.3 fix
+            -- comment above.
+            return true
         end
     end
     -- Only negative-cache when the tooltip actually rendered: an uncached

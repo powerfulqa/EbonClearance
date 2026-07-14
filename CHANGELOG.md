@@ -5,6 +5,25 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.3
+
+**Bug fix: Process Bags Lockpick + Auto-Open loop when multiple same-type lockboxes are in bags.**
+
+Reported by Serv. When a rogue picked lockbox A of itemID X, the auto-open driver correctly opened A. But another still-locked lockbox of the same itemID X in bags caused the auto-open driver to loop, spamming "item is locked" chat errors every 0.4 seconds.
+
+**Root cause**: v2.59.0's `openableCache` (in `EbonClearance_Core.lua`) mapped itemID -> `"openable"` after `EC_IsOpenable` in `EbonClearance_Events.lua` first saw an `ITEM_OPENABLE` tooltip line for that itemID. On subsequent calls for the same itemID, the code skipped the tooltip re-scan and only trusted `GetContainerItemInfo(bag, slot)`'s `locked` field to gate whether `UseContainerItem` was safe to fire.
+
+That trust was misplaced. In 3.3.5a, `GetContainerItemInfo.locked` returns `true` only when the item is actively being manipulated (mid-cast, mid-swap), NOT when the item is a lockbox that requires unlocking. A never-picked lockbox of an itemID cached as openable therefore returned `locked = false`, passed the openable check, `UseContainerItem` fired, the server refused with "item is locked", and the 0.4s auto-open retry loop hit the same path again.
+
+**Fix**: `EC_IsOpenable` no longer caches `"openable"`. The tooltip scan (which reliably sees the `LOCKED` line for still-locked instances) runs on every call for a potentially-openable slot. The `"never"` half of the cache stays (skipping the re-scan on Hearthstones, potions, non-container gear is where the real perf win lives - most bag slots take that path).
+
+Test 119f updated to lock the new behaviour (assert that no `= "openable"` write exists in `EC_IsOpenable`).
+
+Downgrade-safe to v2.59.2. No schema change.
+
+---
+
+
 ### v2.59.2
 
 **Two more items marked non-extractable from a fresh captureproc + Anvil verification.**

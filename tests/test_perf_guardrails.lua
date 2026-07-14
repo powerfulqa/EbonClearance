@@ -7426,12 +7426,12 @@ do
     check("Test 119e: post-pickup-delete scanners live-verify the slot before acting",
         verifies >= 3,
         "resilience / affix-dupes / grey-delete run after the pickup-delete scan can synchronously empty a slot; each must re-verify GetContainerItemID(e.bag, e.slot) == id before tooltip scans or destructive action, or an itemID-keyed cache can be poisoned by an emptied slot. Found " .. verifies .. " of 3.")
-    check("Test 119f: openable cache never stores the LOCKED state",
-        src:find('EC_compCache%.openableCache%[itemID%] = "openable"') ~= nil
+    check("Test 119f: openable cache stores only 'never' - openable/LOCKED are NEVER cached (v2.59.3 correction)",
+        src:find('EC_compCache%.openableCache%[itemID%] = "openable"') == nil
             and src:find("if sawAnyLine then") ~= nil
-            and src:find('= "never"') ~= nil
-            and src:find('txt == LOCKED then%s+return false') ~= nil,
-        "EC_IsOpenable may cache 'openable' and (only after a rendered tooltip) 'never', but a LOCKED result must stay uncached - a lockpicked junkbox flips to openable under the same itemID.")
+            and src:find('EC_compCache%.openableCache%[itemID%] = "never"') ~= nil
+            and src:find("txt == LOCKED") ~= nil,
+        "v2.59.3 fix (Serv lockbox loop): EC_IsOpenable caches ONLY 'never' (stable per itemID for non-container items). Caching 'openable' was a footgun - GetContainerItemInfo's `locked` field is unreliable for never-picked lockboxes in 3.3.5a, so a still-locked instance of an itemID cached as openable (from a picked instance) would pass the openable check, UseContainerItem would fire, and the server would spam 'item is locked' errors in a 0.4s retry loop. Only the LOCKED tooltip line is per-instance-reliable, so we always tooltip-scan potentially-openable items.")
 end
 
 -- ---------------------------------------------------------------------------

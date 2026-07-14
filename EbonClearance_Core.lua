@@ -176,13 +176,18 @@ local EC_compCache = {
     -- scanned. Stable property per itemID. Filled lazily by the
     -- can* helpers below.
     processCache = {},
-    -- v2.59.0 openable-container cache. Maps itemID to "openable" (tooltip
-    -- shows ITEM_OPENABLE) or "never" (tooltip shows neither ITEM_OPENABLE
-    -- nor LOCKED). Both states are stable per itemID. A LOCKED result is
-    -- deliberately NOT cached: a junkbox flips from LOCKED to openable when
-    -- lockpicked (same itemID), so the auto-open driver must re-scan those
-    -- each time (ITEM_LOCK_CHANGED re-fires the debounce for exactly that
-    -- transition). Filled lazily by EC_IsOpenable in EbonClearance_Events.lua.
+    -- v2.59.0 openable-container cache, corrected in v2.59.3. Maps itemID
+    -- to "never" (tooltip shows neither ITEM_OPENABLE nor LOCKED - e.g.
+    -- Hearthstones, potions, non-container gear). "never" IS stable per
+    -- itemID and short-circuits the auto-open scan with zero API calls.
+    -- The "openable" state is DELIBERATELY NOT cached: multiple instances
+    -- of the same lockbox itemID can be in different lock states, and
+    -- GetContainerItemInfo's `locked` field is unreliable for never-picked
+    -- lockboxes in 3.3.5a - it flips true only when the item is mid-cast
+    -- (Pick Lock actively targeting THIS slot). Caching "openable" caused
+    -- an auto-open loop when a picked box poisoned the cache for still-
+    -- locked instances of the same itemID (Serv report, v2.59.3). Filled
+    -- lazily by EC_IsOpenable in EbonClearance_Events.lua.
     openableCache = {},
     -- v2.10.0 resummon-print debounce. v2.9.2 added the "Greedy Scavenger
     -- resummoned." chat line on every successful CallCompanion in the

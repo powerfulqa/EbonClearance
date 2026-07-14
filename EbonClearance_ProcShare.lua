@@ -201,6 +201,12 @@ NS.Comms.RegisterHandler("PREQ", function(_, sender, _)
         if payload and payload ~= "pairs:" then
             NS.Comms.Send("PDAT", payload, "WHISPER", sender)
             -- Log the outgoing send with a synthetic entry (no per-pair detail).
+            -- The requester's name is kept HERE on purpose: /ec bugreport prints
+            -- the merge ring and the maintainer wants to see WHO asked for data
+            -- when debugging share issues. The anonymity contract covers the
+            -- INCOMING path (data contributors are never named in ADB or the
+            -- ring); the outgoing requester is diagnostic metadata, not shared
+            -- data.
             logMerge(0, 0, "outgoing", "PDAT sent to " .. tostring(sender), "out")
         end
     end

@@ -4511,7 +4511,7 @@ do
     check("Test 100d: BuildQueue skips refused slots before EC_IsSellable runs",
         ev:find("local refusedID = EC_vendorRefusedThisRun%[EC_refusalKey%(bag, slot%)%]") ~= nil
             and ev:find("local skipForRefusal = refusedID and refusedID == GetContainerItemID%(bag, slot%)") ~= nil
-            and ev:find("if not skipForRefusal then\n%s*sellable, link, itemID, sellPrice, itemCount = EC_IsSellable") ~= nil,
+            and ev:find("if not skipForRefusal then\n%s*sellable, link, itemID, sellPrice, itemCount, quality = EC_IsSellable") ~= nil,
         "the pre-check MUST run before EC_IsSellable (which does an expensive tooltip scan + multiple API hits). The order matters: a worst-case bags-full-of-identical-refused-items scenario would otherwise pay the full sellability cost for every duplicate every cycle. The itemID equality (not just key presence) is the contract that lets a different item rolling into the slot get a fresh try.")
 end
 

@@ -5,6 +5,20 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.58.2
+
+**Performance patch: less repeated work on loading screens, bag bursts, and idle windows. No behaviour change.**
+
+An audit pass over the whole addon; this release ships the safe subset. Nothing looks or acts different in game - it just does less redundant work:
+
+- **Loading screens:** the saved-variables migration sweep ran again on every zone change, instance door, and taxi arrival. It now runs once at login, where it belongs.
+- **Stats - Guild / Stats - Server:** incoming share replies repainted those panels (full aggregate + sort) even while the options window was closed. Repaints now only happen while the panel is actually visible; opening it still shows everything merged so far.
+- **Bag tooltips:** hovering an affixed Rare/Epic built the affix-debug payload (string work included) even with `/ec affixdebug` off. It's now skipped entirely unless debugging is on.
+- **Sold History window:** an open-but-idle window re-filtered and re-sorted the full session log every 2 seconds. It now rebuilds only when the log actually changed.
+- **Vendor cycle:** each queued sell re-queried item data the sell check had already fetched, and the affix-protection gate fetched the same affix record twice. Both now reuse the first lookup (`EC_IsSellable` returns quality alongside its existing values; Test 100d updated in lockstep).
+
+No new settings, no schema change, downgrade-safe. Verified in game: loading screens, vendor cycle with per-rarity stat attribution, affix tooltip verdicts with debug off/on, live Sold History updates, and guild/server stats after closed-panel replies.
+
 ### v2.58.1
 
 **UI fix: "Sell affixes below rank" slider now labels its max as VI (6), matching the actual range.**

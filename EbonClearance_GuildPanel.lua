@@ -576,7 +576,10 @@ end)
 -- the displayed data updates live as replies land.
 NS.RefreshGuildPanel = function()
     local panel = _G["EbonClearanceOptionsGuild"]
-    if not panel or not panel.inited then
+    -- IsShown gate: GDAT/PDAT replies keep arriving after the panel is
+    -- closed; skip the aggregate + repaint offscreen. The OnShow refresh
+    -- repaints from the merged pool when the panel is next opened.
+    if not panel or not panel.inited or not panel:IsShown() then
         return
     end
     repaintGuildPanel()

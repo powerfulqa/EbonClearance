@@ -264,7 +264,10 @@ end)
 -- EbonClearance_ServerShare.lua as replies land.
 NS.RefreshServerStatsPanel = function()
     local panel = _G["EbonClearanceOptionsServer"]
-    if not panel or not panel.inited then
+    -- IsShown gate: replies keep arriving for a while after the panel is
+    -- closed; the aggregate + sort + repaint is wasted offscreen work, and
+    -- the OnShow refresh repaints from the merged pool anyway.
+    if not panel or not panel.inited or not panel:IsShown() then
         return
     end
     repaintServerPanel()

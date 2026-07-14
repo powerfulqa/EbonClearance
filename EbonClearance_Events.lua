@@ -5110,7 +5110,7 @@ end
 
 -- Shared sell predicate. Used by BuildQueue to build the vendor queue and by
 -- EC_PreviewSellable to drive the minimap mouse-over preview. Returns:
---   sellable (bool), link, sellPrice, itemCount.
+--   sellable (bool), link, itemID, sellPrice, itemCount, quality.
 -- `junkOnly` restricts matches to quality-0 items (used when the current
 -- merchant mode disallows the whitelist/quality threshold).
 --
@@ -5405,7 +5405,9 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- existing sell / delete rules. Different ranks of the same
     -- affix stay protected so the player can still collect all four.
     if (whitelistPass or qualityPass) and DB.protectAffixedRareItems and quality and quality >= 3 then
-        local affix = EC_compCache.bagSlotAffixData(bag, slot)
+        -- affixForRank above was fetched under the same quality >= 3 gate,
+        -- so reuse it instead of a second bagSlotAffixData round-trip.
+        local affix = affixForRank
         if affix then
             -- v2.27.0: affix-keyed Allow Sell. Marking via Alt+Right-
             -- Click stores the affix description (not the itemID) so
@@ -5592,7 +5594,7 @@ local function EC_IsSellable(bag, slot, junkOnly)
         end
         EC_compCache.lastSellSignal = sig
     end
-    return true, link, itemID, sellPrice, itemCount
+    return true, link, itemID, sellPrice, itemCount, quality
 end
 NS.IsSellable = EC_IsSellable
 
@@ -6526,16 +6528,16 @@ local function BuildQueue(junkOnly)
                 -- new item gets a fair try.
                 local refusedID = EC_vendorRefusedThisRun[EC_refusalKey(bag, slot)]
                 local skipForRefusal = refusedID and refusedID == GetContainerItemID(bag, slot)
-                local sellable, link, itemID, sellPrice, itemCount
+                local sellable, link, itemID, sellPrice, itemCount, quality
                 if not skipForRefusal then
-                    sellable, link, itemID, sellPrice, itemCount = EC_IsSellable(bag, slot, junkOnly)
+                    sellable, link, itemID, sellPrice, itemCount, quality = EC_IsSellable(bag, slot, junkOnly)
                 end
                 if sellable then
-                    -- v2.37.0: capture rarity at queue-build time so the
-                    -- worker path can attribute the sell to a quality
-                    -- bucket without re-querying GetItemInfo at action
-                    -- execution.
-                    local quality = link and select(3, GetItemInfo(link)) or nil
+                    -- v2.37.0: rarity is captured at queue-build time so the
+                    -- worker path can attribute the sell to a quality bucket
+                    -- without re-querying GetItemInfo at action execution;
+                    -- EC_IsSellable already computed it, so it rides along on
+                    -- the return tuple instead of a second GetItemInfo here.
                     -- Plain-English "why" for the session decision log, built
                     -- from the exact signal EC_IsSellable just recorded
                     -- (EC_compCache.lastSellSignal) so the history explanation
@@ -8611,7 +8613,14 @@ f:SetScript("OnEvent", function(self, event, ...)
         -- wipe the user's data on next logout. WoW serialises whatever
         -- EbonClearanceDB points to natively; we don't need to nudge it.
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
-        EnsureDB()
+        -- EnsureDB is load-bearing at PLAYER_LOGIN (the real character key is
+        -- available there; ADDON_LOADED already ran it once for early reads).
+        -- PLAYER_ENTERING_WORLD re-fires on every loading screen (zone change,
+        -- instance, taxi) and nothing in the DB shape can change between
+        -- those, so skip the full migration sweep + proxy rebuild there.
+        if event == "PLAYER_LOGIN" then
+            EnsureDB()
+        end
         if NS.InstallGreedyMuteOnce then
             NS.InstallGreedyMuteOnce()
         end

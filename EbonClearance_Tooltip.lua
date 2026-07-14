@@ -495,7 +495,10 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- character mismatches between item titles and spell
                 -- names are visible. Fires per tooltip hover; gated
                 -- on the same ADB.affixDebugEnabled flag.
-                if EC_compCache.AffixDebugDump then
+                -- Check the flag here too, not just inside AffixDebugDump:
+                -- building the payload table + the two normalise passes on
+                -- every affixed hover is wasted work when debug is off.
+                if EC_compCache.AffixDebugDump and ADB and ADB.affixDebugEnabled then
                     EC_compCache.AffixDebugDump("tooltip.affix.lookup", {
                         itemID = id,
                         rawName = affix.name,

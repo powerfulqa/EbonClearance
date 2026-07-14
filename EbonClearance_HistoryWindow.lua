@@ -409,10 +409,21 @@ local function historyEnsureWindow()
         if EC_compCache.historyDirty and self._histTick >= 1.0 then
             self._histTick = 0
             EC_compCache.historyDirty = false
+            local sold, deleted = NS.recentSoldLog, NS.recentDeletedLog
+            self._histLastToken = (sold and #sold or 0) + (deleted and #deleted or 0)
             historyRefresh(self)
         elseif self._histTick >= 2.0 then
             self._histTick = 0
-            historyRefresh(self)
+            -- Safety-net rebuild only when the logs actually grew or shrank
+            -- since the last render; the dirty flag above covers the normal
+            -- path, so rebuilding (filter + sort of both full logs) every 2 s
+            -- unconditionally was wasted work on an idle window.
+            local sold, deleted = NS.recentSoldLog, NS.recentDeletedLog
+            local token = (sold and #sold or 0) + (deleted and #deleted or 0)
+            if token ~= self._histLastToken then
+                self._histLastToken = token
+                historyRefresh(self)
+            end
         end
     end)
 

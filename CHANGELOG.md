@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.58.1
+
+**UI fix: "Sell affixes below rank" slider now labels its max as VI (6), matching the actual range.**
+
+Reported by Serv. v2.52.0 widened the slider range from 0-5 to 0-6 for Project Ebonhold's rank VI affix scaling, but the right-hand tick label under the slider still hardcoded `"5"`. Slider drag could reach 6 (and the setting saved correctly), but the visible max marker lied.
+
+One-line fix in `EbonClearance_ProtectionPanel.lua`: `rankHigh:SetText("6")` (was `"5"`). Slider range, save/load, and Roman-numeral parsing were already correct - this was cosmetic only.
+
+Text-only. No behaviour change. Downgrade-safe.
+
+---
+
+
 ### v2.58.0
 
 **New: a realm-wide "Stats - Server" odometer, plus realm-wide update checks. Both opt-in, off by default.**

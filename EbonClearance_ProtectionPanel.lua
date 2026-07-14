@@ -397,7 +397,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end
         local rankHigh = _G["EbonClearanceAffixMinSellRankSliderHigh"]
         if rankHigh then
-            rankHigh:SetText("5")
+            -- v2.52.0 widened the slider to 6 but the High label stayed
+            -- at "5" - reported by Serv. Match the slider's actual max.
+            rankHigh:SetText("6")
         end
         self.rankSlider = rankSlider
         if NS.AddHelpIcon then

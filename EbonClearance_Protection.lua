@@ -1405,6 +1405,15 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     [19908] = "Sceptre of Smiting",
     [49302] = "Reclaimed Shadowstrike",
     [49500] = "Raging Deathbringer",
+    -- v2.59.2 (Serv Anvil verification, 2026-07-14): two more items.
+    -- The Untamed Blade's on-hit "Increases Strength by 300 for 8 sec"
+    -- is a stat-buff proc with no matching PE weapon affix (Iron Will
+    -- is a passive % Strength buff, not an on-hit proc). Gutgore
+    -- Ripper's combo proc reads like Affliction ("Sends a shadowy
+    -- bolt") stacked with Frailty ("lowering all stats"), but PE has
+    -- not registered this specific combo item for extraction.
+    [17071] = "Gutgore Ripper",
+    [19334] = "The Untamed Blade",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 

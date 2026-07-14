@@ -5,6 +5,20 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.2
+
+**Two more items marked non-extractable from a fresh captureproc + Anvil verification.**
+
+Added to `EC_CHANCE_PROC_NEVER_EXTRACTABLE`:
+
+- **The Untamed Blade (19334)** - on-hit "Increases Strength by 300 for 8 sec" is a stat-buff proc with no matching PE weapon affix. Iron Will is a passive percentage Strength buff, not an on-hit proc; Ferocity is AP-stacking on crit, different mechanic. Mirrors the Hand of Edward the Odd stat-proc pattern already pinned in v2.59.1.
+- **Gutgore Ripper (17071)** - combo proc reads like Affliction ("Sends a shadowy bolt") stacked with Frailty ("lowering all stats"), but PE has not registered this specific combo item for extraction.
+
+Data-only patch. No schema change. Downgrade-safe to v2.59.1.
+
+---
+
+
 ### v2.59.1
 
 **Two chance-on-hit pairings pinned, five items marked non-extractable, and Stats - Server sharing flipped to ON by default.**

@@ -1012,7 +1012,6 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             if spellName and bag and slot then
                 local itemID = GetContainerItemID and GetContainerItemID(bag, slot)
                 local itemLink = GetContainerItemLink and GetContainerItemLink(bag, slot)
-                local _, count = GetContainerItemInfo and GetContainerItemInfo(bag, slot) or nil, nil
                 -- Match perCast semantics from buildProcessSummary so
                 -- the log reads "5 [Peacebloom] Milled" rather than
                 -- "1 [Peacebloom]" (Milling consumes 5 per cast).

@@ -6169,6 +6169,48 @@ NS.recentSoldLog = EC_recentSoldLog
 NS.recentDeletedLog = EC_recentDeletedLog
 NS.recentSoldLogMax = EC_RECENT_SOLD_LOG_MAX
 NS.recentDeletedLogMax = EC_RECENT_DELETED_LOG_MAX
+
+-- v2.59.4: Process Bags cast log. Session ring buffer of successful
+-- Disenchant / Milling / Prospecting / Pick Lock / Convert casts, one
+-- entry per successful spell resolution. Captured pre-cast on the
+-- panel's PostClick (so the item info is still valid) and committed
+-- on UNIT_SPELLCAST_SUCCEEDED matching the pending spell name. Fills
+-- the visibility gap in /ec bugreport ("what did I DE this session?")
+-- that led to Serv's v2.59.3 worry about accidentally disenchanting a
+-- needed affix. Session-local; wiped on /reload.
+local EC_RECENT_PROCESSED_LOG_MAX = 200
+local EC_recentProcessedLog = {}
+local EC_processedLogTrimmed = 0
+-- Pending capture between PostClick and UNIT_SPELLCAST_SUCCEEDED.
+-- Populated by the panel just before the cast fires (bag/slot/itemID
+-- are still valid; the /cast has not yet resolved), consumed by the
+-- spellcast handler that matches the same spell name.
+EC_compCache.pendingProcessCast = nil
+
+function NS.LogRecentProcessed(entry)
+    if not entry or not entry.itemID then
+        return
+    end
+    if #EC_recentProcessedLog >= EC_RECENT_PROCESSED_LOG_MAX then
+        table.remove(EC_recentProcessedLog, 1)
+        EC_processedLogTrimmed = EC_processedLogTrimmed + 1
+    end
+    local _, link = GetItemInfo(entry.itemID)
+    EC_recentProcessedLog[#EC_recentProcessedLog + 1] = {
+        itemID = entry.itemID,
+        itemName = entry.itemName or link or ("item:" .. tostring(entry.itemID)),
+        mode = entry.mode or "?",
+        spellName = entry.spellName or "?",
+        count = tonumber(entry.count) or 1,
+        loggedAt = date("%H:%M:%S"),
+    }
+end
+
+NS.recentProcessedLog = EC_recentProcessedLog
+NS.recentProcessedLogMax = EC_RECENT_PROCESSED_LOG_MAX
+function NS.SessionProcessedTrimmed()
+    return EC_processedLogTrimmed
+end
 -- How many of each log /ec bugreport dumps (a tail slice) so reports stay
 -- short even though the logs now hold the whole session.
 NS.bugReportRecentMax = EC_BUGREPORT_RECENT_MAX
@@ -9067,6 +9109,21 @@ f:SetScript("OnEvent", function(self, event, ...)
         if DB and spellName and EC_compCache.PROF_LOOT_SPELLS[spellName] and spellName ~= "Opening" then
             -- v2.38.1: helper writes to DB + ADB.accountStats.
             EC_BumpStatBucket("processCastCounts", spellName, 1)
+        end
+        -- v2.59.4: consume pendingProcessCast if the successful spell
+        -- matches what the Process Bags panel captured just before the
+        -- macrotext ran. Log to NS.recentProcessedLog and clear the
+        -- pending struct. If the spell doesn't match, leave pending
+        -- alone (a bumped Auto Attack, self-heal, etc. shouldn't
+        -- consume the DE/Mill/Prospect/Pick Lock capture).
+        do
+            local pending = EC_compCache.pendingProcessCast
+            if pending and spellName and pending.spellName == spellName then
+                if NS.LogRecentProcessed then
+                    NS.LogRecentProcessed(pending)
+                end
+                EC_compCache.pendingProcessCast = nil
+            end
         end
         -- v2.25.0: Pick Lock completion - BAG_UPDATE doesn't fire for a
         -- lockbox's lock-state change (slot contents unchanged), and

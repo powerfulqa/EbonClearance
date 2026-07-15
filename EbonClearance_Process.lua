@@ -362,19 +362,27 @@ function EC_compCache.buildProcessSummary()
                                 local affixKey = affix.description
                                     and EC_compCache.normaliseAffixDesc(affix.description)
                                 local manualAllow = affixKey and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
-                                local descKnown = EC_compCache.playerHasAffixDescription(affix.description)
-                                -- v2.45.0: family-name fallback for
-                                -- unranked PE affixes (transferred
-                                -- procs). Item-side and spell-side
-                                -- description text disagree on these,
-                                -- so descKnown often misses. Family
-                                -- name match catches it.
-                                local familyKnown = (not descKnown)
-                                    and (not affix.rank)
-                                    and affix.name
-                                    and EC_compCache.playerHasAffixFamily
-                                    and EC_compCache.playerHasAffixFamily(affix.name)
-                                local autoDupe = DB.affixAllowExactDupes and (descKnown or familyKnown)
+                                -- v2.59.4 fix (Serv report - Epic set items
+                                -- with known ranked affixes were WILL SELL
+                                -- at the vendor but hidden from Process
+                                -- Bags DE): route ownership through the
+                                -- shared EC_compCache.playerOwnsAffix
+                                -- helper (Protection.lua) so this gate
+                                -- checks description OR rank OR family in
+                                -- lockstep with EC_IsSellable's dupe gate.
+                                -- Pre-fix, this branch only checked
+                                -- description + unranked-family, missing
+                                -- the ranked case that v2.35.1 added to
+                                -- Tooltip.lua and EC_IsSellable. Result
+                                -- was a mirror-drift: sell path released
+                                -- via playerHasAffixRank, Process Bags DE
+                                -- did not, so the item was more
+                                -- restrictively protected here than at
+                                -- the vendor.
+                                local ownsAffix = EC_compCache.playerOwnsAffix
+                                    and EC_compCache.playerOwnsAffix(affix)
+                                    or false
+                                local autoDupe = DB.affixAllowExactDupes and ownsAffix
                                 -- v2.44.0: rank-floor opt-out. Mirrors
                                 -- the sell-path + delete-path so an
                                 -- affixed item below the user's

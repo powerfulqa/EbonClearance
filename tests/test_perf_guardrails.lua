@@ -4451,10 +4451,10 @@ do
         ev:find("playerHasAffixFamily%(affixForRank%.name%)") ~= nil
             and ev:find("autoDupePass = %(descKnown or rankKnown or familyKnown%)") ~= nil,
         "the autoDupePass positive sell signal (separate from the affix-protection release) must also honour familyKnown so the v2.44.0 'Allow selling affixes you already have' toggle treats unranked extracted affixes as sellable. Without this, the toggle effectively does nothing for transferred-proc weapons.")
-    check("Test 99i: Process Bags affix-guard uses family-name fallback",
-        proc:find("local familyKnown") ~= nil
-            and proc:find("playerHasAffixFamily%(affix%.name%)") ~= nil,
-        "Process Bags' affix-guard runs the same affix logic on items the player might Disenchant. Without the family-name fallback, unranked extracted affixes block disenchant even when the player has them learned - inconsistent with the sell-path behaviour.")
+    check("Test 99i: Process Bags affix-guard routes through EC_compCache.playerOwnsAffix (v2.59.4 correction)",
+        proc:find("EC_compCache%.playerOwnsAffix%(affix%)") ~= nil
+            and proc:find("local ownsAffix") ~= nil,
+        "v2.59.4 fix (Serv report - Epic set items with known ranked affixes were WILL SELL at the vendor but hidden from Process Bags DE): the DE gate now routes ownership through the shared EC_compCache.playerOwnsAffix helper, checking description OR rank OR family in one place. Pre-fix, this branch only had inline description + unranked-family checks - missing the ranked case that Tooltip.lua and EC_IsSellable both had since v2.35.1. Mirror drift caused sell path to release but Process Bags DE to keep the item hidden.")
     check("Test 99j: tooltip playerKnowsFamily branch + autoDupe release + Keep (affix known) label",
         tt:find("local playerKnowsFamily") ~= nil
             and tt:find("playerKnows or playerKnowsRank or playerKnowsFamily") ~= nil,

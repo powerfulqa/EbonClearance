@@ -729,6 +729,36 @@ local function EC_BuildBugReport()
     end
     add("")
 
+    -- v2.59.4: Process Bags cast log. Fills the visibility gap in the
+    -- previous ring buffers - Recent Sold covered vendor sells, Recent
+    -- Deleted covered auto-delete + vendor-cycle deletes, but the
+    -- Disenchant / Milling / Prospecting / Pick Lock / Convert casts
+    -- had no per-item trace. Answers "what did I DE this session, did
+    -- it include something I needed?" without back-and-forth.
+    add("--- Recent Processed (this session) ---")
+    do
+        local rp = NS.recentProcessedLog or {}
+        local cap = NS.bugReportRecentMax or 20
+        if #rp == 0 then
+            add("  (none this session)")
+        else
+            local startI = math.max(1, #rp - cap + 1)
+            if startI > 1 then
+                add(string.format("  (newest %d of %d)", #rp - startI + 1, #rp))
+            end
+            for i = startI, #rp do
+                local e = rp[i]
+                add(string.format("  [%s] %d x%d %s (%s)",
+                    tostring(e.loggedAt),
+                    tonumber(e.itemID) or 0,
+                    tonumber(e.count) or 1,
+                    tostring(e.itemName),
+                    tostring(e.mode or e.spellName or "?")))
+            end
+        end
+    end
+    add("")
+
     -- Frame-spike ring (session-only): the worst recent frames EC
     -- contributed to and which phase was busiest during each. Answers
     -- "the player reports a stutter - was EC the cause, and where?".

@@ -5,6 +5,41 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.4
+
+**Two changes: `/ec bugreport` gains a Recent Processed section, and Process Bags DE now agrees with the sell path on ranked owned-affix items.**
+
+## Process Bags DE parity fix
+
+Reported by Serv. Epic set items with known ranked affixes (`Nightslayer Pants of Relentless Crits V`, `Salamander Scale Pants of Relentless Crits V`, `Sabatons of Might of Relentless Crits V`, etc.) traced as `WILL SELL` at the vendor via `autoDupePass` (the "you already own this affix at this rank" positive sell signal), but were silently hidden from the Process Bags Disenchant section. Same item, same ownership, two different verdicts.
+
+Root cause was a mirror-drift. The sell path (`EC_IsSellable` in `EbonClearance_Events.lua`) and the tooltip (`EC_AnnotateTooltip` in `EbonClearance_Tooltip.lua`) both route ownership through the shared `EC_compCache.playerOwnsAffix` helper, which checks **description OR rank OR family**. Process Bags DE (`EbonClearance_Process.lua:365-377`) had an inline check that only covered **description + unranked-family** - missing the ranked case that v2.35.1 added to the tooltip and v2.44.0 added to the sell path. Result: items owned via `playerHasAffixRank(name, rank)` released from sell but stayed protected in Process Bags.
+
+Fix: route Process Bags' DE gate through the same `EC_compCache.playerOwnsAffix` helper. Now the sell path, tooltip, and Process Bags DE all use identical ownership semantics. Test 99i updated to lock the new predicate.
+
+Downgrade-safe: a rank-known owned Epic that pre-v2.59.4 was hidden from Process Bags DE is still WILL SELL at the vendor - just no more surprise that it doesn't DE.
+
+## Recent Processed ring buffer
+
+Requested by Serv after wondering whether Process Bags might have disenchanted an affix they needed - the existing `Recent Sold` and `Recent Deleted` rings only cover vendor sales and delete-list deletions, so profession-spell casts driven by Process Bags left no per-item trace. This release fills the gap.
+
+**How it works:**
+
+Requested by Serv after wondering whether Process Bags might have disenchanted an affix they needed - the existing `Recent Sold` and `Recent Deleted` rings only cover vendor sales and delete-list deletions, so profession-spell casts driven by Process Bags left no per-item trace. This release fills the gap.
+
+**How it works:**
+
+- **Capture point** (`EbonClearance_ProcessBagsPanel.lua` PostClick): when the Process Next button fires, the panel snapshots the armed row's item info (`itemID`, `itemLink`, `mode`, `spellName`, `perCast`) into `EC_compCache.pendingProcessCast`. The `PostClick` fires while the item is still in the bag (the cast bar has started but not resolved) - `UNIT_SPELLCAST_SUCCEEDED` would arrive too late (item already consumed).
+- **Commit point** (`EbonClearance_Events.lua` `UNIT_SPELLCAST_SUCCEEDED` handler): when the successful spell's name matches the pending capture, log to `NS.recentProcessedLog` and clear the pending struct. A non-matching cast (auto-attack, self-heal, etc) leaves pending alone so the next matching cast still commits.
+- **Ring buffer**: `NS.recentProcessedLog`, 200-entry cap, session-only, wiped on `/reload`. Same shape as `NS.recentSoldLog` / `NS.recentDeletedLog`.
+- **`/ec bugreport` section**: `--- Recent Processed (this session) ---` after Recent Deleted. Shows `[HH:MM:SS] itemID xN [itemName] (mode)` per row - e.g. `[13:24:37] 2447 x5 [Peacebloom] (Mill)`.
+- **Convert mode** (Crystallized / Motes v2.44.9) has no `/cast` component, so `UNIT_SPELLCAST_SUCCEEDED` never fires for a bare `/use`. Convert casts are not logged today - the `spellName` gate skips the capture. That's an acceptable gap because Convert is 1-click deterministic (10 lower-tier -> 1 Eternal / Primal) and there's no misfire risk.
+
+No behaviour change to the Process Bags flow itself. Additive schema (no new SavedVariables field). Downgrade-safe to v2.59.3.
+
+---
+
+
 ### v2.59.3
 
 **Bug fix: Process Bags Lockpick + Auto-Open loop when multiple same-type lockboxes are in bags.**

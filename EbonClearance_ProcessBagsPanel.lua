@@ -998,6 +998,48 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             if spellName and EC_compCache.startProcessCastCooldown then
                 EC_compCache.startProcessCastCooldown(spellName, PROCESS_BUTTON_FLOOR_SECONDS)
             end
+            -- v2.59.4: capture the armed row's item info BEFORE the cast
+            -- resolves. UNIT_SPELLCAST_SUCCEEDED fires later (once the
+            -- cast bar completes) and by then the item may have been
+            -- consumed / the panel re-armed. Store in the shared cache
+            -- so the spellcast handler can log to NS.recentProcessedLog
+            -- if the spell matches. spellName can be nil for Convert
+            -- (Crystallized/Motes have no /cast component); nothing to
+            -- consume in that case since UNIT_SPELLCAST_SUCCEEDED never
+            -- fires for a bare /use.
+            local bag = EC_compCache.armedBag
+            local slot = EC_compCache.armedSlot
+            if spellName and bag and slot then
+                local itemID = GetContainerItemID and GetContainerItemID(bag, slot)
+                local itemLink = GetContainerItemLink and GetContainerItemLink(bag, slot)
+                local _, count = GetContainerItemInfo and GetContainerItemInfo(bag, slot) or nil, nil
+                -- Match perCast semantics from buildProcessSummary so
+                -- the log reads "5 [Peacebloom] Milled" rather than
+                -- "1 [Peacebloom]" (Milling consumes 5 per cast).
+                local perCast = 1
+                local mode
+                local list = EC_compCache.buildProcessSummary and EC_compCache.buildProcessSummary()
+                if list then
+                    for i = 1, #list do
+                        local e = list[i]
+                        if e.bag == bag and e.slot == slot then
+                            perCast = tonumber(e.perCast) or 1
+                            mode = e.mode
+                            break
+                        end
+                    end
+                end
+                EC_compCache.pendingProcessCast = {
+                    itemID = itemID,
+                    itemName = itemLink or (itemID and ("item:" .. tostring(itemID))) or "?",
+                    spellName = spellName,
+                    mode = mode,
+                    count = perCast,
+                    bag = bag,
+                    slot = slot,
+                    startedAt = GetTime and GetTime() or 0,
+                }
+            end
         end)
 
         -- Skip arrow: advances the armed cast target to the next list

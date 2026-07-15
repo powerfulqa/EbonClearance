@@ -33,6 +33,14 @@ local JITTER = 8 -- reply after random(0, JITTER)s so replies spread out
 local COPPER_CAP = 1e12 -- ~100,000,000 gold
 local COUNT_CAP = 1e8
 
+-- v2.59.5 (Serv report): receiver-side city filter. Pre-v2.59.5 peers still
+-- send city entries; drop them at decode so no city ever enters the realm
+-- aggregate. Nil-safe against the test stub (returns false when the helper
+-- isn't present, keeping encode/decode roundtrip tests passing untouched).
+local function isCityZone(name)
+    return NS.compCache and NS.compCache.isCityZone and NS.compCache.isCityZone(name)
+end
+
 local function playerName()
     return UnitName("player")
 end
@@ -133,7 +141,7 @@ function ServerShare.decodePayload(str)
         elseif prefix == "z" then
             for entry in body:gmatch("[^;]+") do
                 local name, copper = entry:match("^(.-)=(%d+)$")
-                if name and name ~= "" then
+                if name and name ~= "" and not isCityZone(name) then
                     out.zones[#out.zones + 1] = { name = name, copper = tonumber(copper) or 0 }
                 end
             end

@@ -13,6 +13,16 @@ local MAX_ZONES = 5
 local MAX_ITEMS = 3
 local MAX_PAYLOAD = 240 -- stay safely under the ~255-byte addon-message limit
 
+-- v2.59.5 (Serv report): receiver-side city filter. Pre-v2.59.5 peers still
+-- have city entries (Dalaran / Stormwind / etc.) in their DB.copperByZone
+-- and send them unchanged, so the aggregate can pick up city entries even
+-- after our own sender/scrub cleanup lands. Nil-safe against the test stub
+-- which wires NS.compCache = {} without the isCityZone helper - the guard
+-- makes it a no-op there so encode/decode invariants keep passing.
+local function isCityZone(name)
+    return NS.compCache and NS.compCache.isCityZone and NS.compCache.isCityZone(name)
+end
+
 -- Return an array of {name, copper} for the top n zones, highest copper first.
 function GuildShare.topZones(copperByZone, n)
     local arr = {}
@@ -135,7 +145,7 @@ function GuildShare.decodePayload(str)
         elseif prefix == "zones" then
             for entry in body:gmatch("[^;]+") do
                 local name, copper = entry:match("^(.-)=(%d+)$")
-                if name and name ~= "" then
+                if name and name ~= "" and not isCityZone(name) then
                     out.zones[#out.zones + 1] = { name = name, copper = tonumber(copper) or 0 }
                 end
             end
@@ -276,6 +286,15 @@ end
 
 -- Broadcast a request and reset the aggregate for a fresh snapshot. Throttled
 -- so spam-clicking Refresh cannot flood the guild channel.
+--
+-- v2.59.5 (Serv report): also seed the local player's own contribution into
+-- the freshly-reset aggregate when opted in. Pre-fix, the GREQ handler
+-- self-skipped (never whispered a reply back to ourselves), so the local
+-- aggregate only ever showed OTHER guildmates - the player who opened the
+-- panel didn't count toward their own view. That was surprising: sharing
+-- should be reciprocal, so what you contribute shows up in what you see.
+-- Mirrors ServerShare.RequestNow's self-include (same comment, different
+-- transport).
 function GuildShare.RequestNow()
     local now = GetTime()
     if (now - lastReqAt) < GREQ_THROTTLE_S then
@@ -283,6 +302,12 @@ function GuildShare.RequestNow()
     end
     lastReqAt = now
     NS.compCache.guildAgg = GuildShare.newAggregate()
+    -- Seed self into the aggregate via the same merge path a real GDAT
+    -- would take. Gate on shareGuildData so opting-out still means "not
+    -- visible to yourself either" - avoids a partial-share footgun.
+    if EbonClearanceDB and EbonClearanceDB.shareGuildData then
+        GuildShare.mergeReply(GuildShare.GetAggregate(), GuildShare.decodePayload(localPayload()))
+    end
     if GetGuildInfo("player") then
         NS.Comms.Send("GREQ", "", "GUILD")
     end

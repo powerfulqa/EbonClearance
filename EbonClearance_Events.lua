@@ -145,6 +145,32 @@ local STATE = {
 -- bindCache, etc.) live next to the declaration in Core.
 local EC_compCache = NS.compCache
 
+-- v2.59.5 (Serv report): city zones don't count as farming areas. A player
+-- vendoring mailboxed items in Dalaran / Stormwind / Orgrimmar is not
+-- farming there, so their sale copper should not pollute the "Top Zones"
+-- leaderboard the Stats / Stats-Guild / Stats-Server panels render. Names
+-- match GetRealZoneText output on English-locale clients (Project
+-- Ebonhold's audience). Consumed by EC_compCache.attributeCopperToZone
+-- (skip the per-zone bucket write) and by two one-shot EnsureDB /
+-- EnsureAccountDB scrubs that strip historical city keys from
+-- DB.copperByZone and ADB.accountStats.copperByZone. Wallet totalCopper
+-- is bumped separately and stays accurate.
+local EC_CITY_ZONES = {
+    ["Stormwind City"] = true,
+    ["Ironforge"] = true,
+    ["Darnassus"] = true,
+    ["The Exodar"] = true,
+    ["Orgrimmar"] = true,
+    ["Thunder Bluff"] = true,
+    ["Undercity"] = true,
+    ["Silvermoon City"] = true,
+    ["Shattrath City"] = true,
+    ["Dalaran"] = true,
+}
+function EC_compCache.isCityZone(zone)
+    return type(zone) == "string" and EC_CITY_ZONES[zone] == true
+end
+
 -- Open the named Interface Options sub-panel. The double
 -- InterfaceOptionsFrame_OpenToCategory call is the 3.3.5a quirk fix: the
 -- first call only registers the category, the second actually focuses it.
@@ -551,6 +577,16 @@ local function EnsureAccountDB()
     if type(AS.copperByZone) ~= "table" then
         AS.copperByZone = {}
     end
+    -- v2.59.5 (Serv report): one-shot scrub of city-zone entries from
+    -- the account-wide bucket. Idempotent across characters (only the
+    -- first character to log in after the upgrade actually removes
+    -- anything; subsequent characters see a clean table and no-op).
+    if not ADB.cityZonesScrubbed then
+        for zone in pairs(EC_CITY_ZONES) do
+            AS.copperByZone[zone] = nil
+        end
+        ADB.cityZonesScrubbed = true
+    end
     -- Session loot tracker, account-wide running total. Keyed by itemID ->
     -- total quantity looted across all characters since install. Aggregate
     -- only (one integer per distinct item), so it stays bounded. The live
@@ -823,6 +859,16 @@ local function EnsureDB()
     -- can render a "Top Zones" rollup matching the wallet totals.
     if type(DB.copperByZone) ~= "table" then
         DB.copperByZone = {}
+    end
+    -- v2.59.5 (Serv report): one-shot scrub of city-zone entries from
+    -- the per-character bucket. Mailbox-vendoring in cities had been
+    -- polluting the Top Zones list. Gated by a marker so it only runs
+    -- once per character DB.
+    if not DB.cityZonesScrubbed then
+        for zone in pairs(EC_CITY_ZONES) do
+            DB.copperByZone[zone] = nil
+        end
+        DB.cityZonesScrubbed = true
     end
 
     if type(DB.repairGear) ~= "boolean" then
@@ -5092,6 +5138,13 @@ function EC_compCache.attributeCopperToZone(copper)
     local zone = GetRealZoneText and GetRealZoneText() or nil
     if not zone or zone == "" then
         zone = "Unknown"
+    end
+    -- v2.59.5 (Serv report): drop city sales. Vendoring mailboxed items
+    -- in Dalaran / Stormwind / etc. is not farming and would otherwise
+    -- pollute the Top Zones leaderboard. Wallet totalCopper is bumped
+    -- separately by the caller, so wallet views stay accurate.
+    if EC_CITY_ZONES[zone] then
+        return
     end
     -- v2.38.1: helper writes to DB AND ADB.accountStats for the
     -- account-view aggregate.

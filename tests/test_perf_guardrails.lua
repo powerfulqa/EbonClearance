@@ -7435,8 +7435,48 @@ do
 end
 
 -- ---------------------------------------------------------------------------
--- Result.
+-- Test 120: city-zone filter (v2.59.5, Serv report).
 -- ---------------------------------------------------------------------------
+-- Serv reported that mailboxed items vendored in Dalaran / Stormwind / etc.
+-- were showing up on the Top Zones leaderboard as if the player had farmed
+-- gold there, which distorted the "best farming zone" comparison. Fix: an
+-- EC_CITY_ZONES set drives (a) an attribution-time skip in
+-- attributeCopperToZone so future writes never land in a city bucket, and
+-- (b) one-shot EnsureDB / EnsureAccountDB scrubs that strip existing city
+-- keys out of the historical DB.copperByZone / ADB.accountStats.copperByZone
+-- data. Wallet totalCopper is bumped separately, so accurate wallet totals
+-- are untouched by the filter.
+do
+    check("Test 120a: EC_CITY_ZONES covers all 10 WotLK cities",
+        src:find('local EC_CITY_ZONES', 1, true) ~= nil
+            and src:find('["Stormwind City"] = true', 1, true) ~= nil
+            and src:find('["Ironforge"] = true', 1, true) ~= nil
+            and src:find('["Darnassus"] = true', 1, true) ~= nil
+            and src:find('["The Exodar"] = true', 1, true) ~= nil
+            and src:find('["Orgrimmar"] = true', 1, true) ~= nil
+            and src:find('["Thunder Bluff"] = true', 1, true) ~= nil
+            and src:find('["Undercity"] = true', 1, true) ~= nil
+            and src:find('["Silvermoon City"] = true', 1, true) ~= nil
+            and src:find('["Shattrath City"] = true', 1, true) ~= nil
+            and src:find('["Dalaran"] = true', 1, true) ~= nil,
+        "the EC_CITY_ZONES set must enumerate every WotLK city so the attribution filter and the scrub cover all mailboxed-vendoring hubs. Missing an entry means that city's sales continue polluting the Top Zones leaderboard.")
+    check("Test 120b: EC_compCache.isCityZone helper exists",
+        src:find("function EC_compCache%.isCityZone%(zone%)") ~= nil,
+        "callers outside Events.lua that want to query the city set (e.g. future display-time filters in GuildShare / ServerShare / StatsPanel) MUST route through EC_compCache.isCityZone rather than duplicating a hardcoded list. Removing the helper is a mirror-drift trap.")
+    check("Test 120c: attributeCopperToZone skips city buckets before the bucket write",
+        src:find("if EC_CITY_ZONES%[zone%] then%s*return%s*end%s*.-EC_BumpStatBucket%(\"copperByZone\"") ~= nil,
+        "the city guard MUST early-return before EC_BumpStatBucket. Without it a mail-box vendor sale in Dalaran writes to DB.copperByZone['Dalaran'] and re-pollutes the leaderboard on the very next login.")
+    check("Test 120d: EnsureDB one-shot city scrub gated on DB.cityZonesScrubbed",
+        src:find("if not DB%.cityZonesScrubbed then") ~= nil
+            and src:find("DB%.copperByZone%[zone%] = nil") ~= nil
+            and src:find("DB%.cityZonesScrubbed = true") ~= nil,
+        "existing polluted city entries in DB.copperByZone must be removed via a one-shot marker-gated loop in EnsureDB. Otherwise users who upgrade to v2.59.5 still see Dalaran / Stormwind at the top of the leaderboard despite the runtime filter blocking new writes.")
+    check("Test 120e: EnsureAccountDB one-shot city scrub gated on ADB.cityZonesScrubbed",
+        src:find("if not ADB%.cityZonesScrubbed then") ~= nil
+            and src:find("AS%.copperByZone%[zone%] = nil") ~= nil
+            and src:find("ADB%.cityZonesScrubbed = true") ~= nil,
+        "the account-wide bucket needs its own marker + scrub. Idempotent across characters (first character clears it, subsequent characters no-op) but if the ADB scrub is missing the account view keeps showing city pollution even after the per-character DB is clean.")
+end
 
 -- ---------------------------------------------------------------------------
 -- Result.

@@ -110,6 +110,12 @@ local EC_HELP_ENTRIES = {
         panel = "EbonClearanceOptionsStats",
     },
     {
+        id = "stats-city-filter",
+        q = L["Why don't my sales in cities count on the Top Zones list?"],
+        a = L["Selling mailboxed items in a capital city (Dalaran, Stormwind, Orgrimmar, Ironforge, Darnassus, The Exodar, Thunder Bluff, Undercity, Silvermoon, Shattrath) isn't farming, so those coppers no longer land on the Top Zones leaderboard. Your total gold earned is unaffected - only the per-zone breakdown skips cities. Sub-town hubs with mailboxes (Booty Bay, Ratchet, Everlook, etc.) still count because their surrounding zones are farmable."],
+        panel = "EbonClearanceOptionsStats",
+    },
+    {
         id = "session-loot",
         q = L["What is the Loot Log window?"],
         a = L["A window that lists what you've looted and how much. It counts what you actually loot - your own loot, the auto-loot cycle, and the Greedy Scavenger's haul - and ignores items you buy from a vendor, take from the mailbox, withdraw from the bank, or receive from quests. Open it with the |cffb6ffb6Loot Log|r button on the main settings page or the Stats panel, by typing /ec loot, or with a key you bind under Key Bindings > EbonClearance. Each row shows how many you looted, that stack's vendor value (quantity x sell price), and that value's share of your total looted gold - so you can see which drops actually earn and which are dead weight (a worthless drop shows a grey dash and 0%, the cue to filter or auto-delete it). Sort by Name, Count, or Gold (click again to flip the order) - Count and Gold differ when a high-volume drop is low-value. Use Show: to filter by rarity, and drag the bottom-right corner to resize. |cffb6ffb6Right-click a row to hide that item|r - hidden items drop out of the list AND the totals, so the remaining shares rebase (handy when a high-volume filler like cloth is skewing the percentages); the |cffb6ffb6Unhide All|r button restores them. Hold |cffb6ffb6Alt|r and hover a row for a plain-English read on what EbonClearance will do with that item. Three views: |cffb6ffb6Session|r (looted since login; resets on /reload or Reset Session Stats), |cffb6ffb6Character|r (this character's lifetime), and |cffb6ffb6Account|r (a running total across all your characters). Counts are tallied per item, so the window stays light no matter how long you farm. Clear wipes whichever view you're looking at."],

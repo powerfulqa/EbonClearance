@@ -213,6 +213,24 @@ ok("Events registers server panel centrally",
     events:find('InterfaceOptions_AddCategory(_G["EbonClearanceOptionsServer"])', 1, true) ~= nil)
 ok("Events seeds shareServerData default", events:find("EbonClearanceDB.shareServerData == nil", 1, true) ~= nil)
 
+-- v2.59.5: receiver-side city filter. Pre-v2.59.5 peers still send city
+-- entries; decode must drop them so no city enters the realm aggregate.
+-- Stub isCityZone with a minimal set (encode/decode roundtrip above ran
+-- with the nil-safe guard = false, i.e. filter disabled, cleanly).
+NS.compCache.isCityZone = function(name) return name == "Dalaran" or name == "Orgrimmar" end
+local dCity = ss.decodePayload(ss.encodePayload(
+    { cop = 10000, sold = 1, del = 0, proc = 0 },
+    { { name = "Dalaran", copper = 5000 }, { name = "Icecrown", copper = 3000 }, { name = "Orgrimmar", copper = 2000 } },
+    {},
+    "v2.59.5"
+))
+eq("realm decode drops Dalaran", (function() for _, z in ipairs(dCity.zones) do if z.name == "Dalaran" then return "PRESENT" end end return "DROPPED" end)(), "DROPPED")
+eq("realm decode drops Orgrimmar", (function() for _, z in ipairs(dCity.zones) do if z.name == "Orgrimmar" then return "PRESENT" end end return "DROPPED" end)(), "DROPPED")
+eq("realm decode keeps Icecrown", (function() for _, z in ipairs(dCity.zones) do if z.name == "Icecrown" then return "PRESENT" end end return "DROPPED" end)(), "PRESENT")
+ok("ServerShare decode has isCityZone guard on zones parse",
+    share:find('prefix == "z"', 1, true) ~= nil
+        and share:find("not isCityZone(name)", 1, true) ~= nil)
+
 print()
 if fails > 0 then io.stderr:write("RESULT: " .. fails .. " test(s) failed\n"); os.exit(1) end
 print("RESULT: all tests passed")

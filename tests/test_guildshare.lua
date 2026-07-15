@@ -164,6 +164,13 @@ ok("registers GREQ", share:find('"GREQ"', 1, true) ~= nil)
 ok("registers GDAT", share:find('"GDAT"', 1, true) ~= nil)
 ok("zone cap constant present", share:find("MAX_ZONES", 1, true) ~= nil)
 ok("no 4.0 group event", not share:find("GROUP_ROSTER_UPDATE", 1, true))
+-- v2.59.5: RequestNow must include the local player in the freshly-reset
+-- aggregate. Pre-fix the GREQ self-skip meant the viewer's own totals never
+-- entered the panel they were looking at. Matches ServerShare's RequestNow
+-- self-include pattern (same rationale, different transport).
+ok("RequestNow seeds self into aggregate when opted in",
+    share:find("function GuildShare.RequestNow", 1, true) ~= nil
+        and share:find("GuildShare.mergeReply(GuildShare.GetAggregate(), GuildShare.decodePayload(localPayload()))", 1, true) ~= nil)
 local panel = readCode("EbonClearance_GuildPanel.lua")
 ok("panel reads aggregate", panel:find("GetAggregate", 1, true) ~= nil)
 ok("panel opt-in writes shareGuildData", panel:find("shareGuildData", 1, true) ~= nil)
@@ -173,6 +180,23 @@ ok("panel opt-in writes shareGuildData", panel:find("shareGuildData", 1, true) ~
 ok("panel does not self-register", panel:find("InterfaceOptions_AddCategory", 1, true) == nil)
 local events = readCode("EbonClearance_Events.lua")
 ok("Events.lua registers guild panel centrally", events:find('InterfaceOptions_AddCategory(_G["EbonClearanceOptionsGuild"])', 1, true) ~= nil)
+
+-- v2.59.5: receiver-side city filter. A pre-v2.59.5 peer still has city
+-- entries in DB.copperByZone and sends them unchanged, so decode must
+-- drop city-named zones before they enter the aggregate. Stub isCityZone
+-- with a minimal set; the filter is nil-safe (guarded by an `and` chain)
+-- so encode/decode above have run cleanly without it.
+NS.compCache.isCityZone = function(name) return name == "Dalaran" or name == "Stormwind City" end
+local dCity = gs.decodePayload(gs.encodePayload(
+    { { name = "Dalaran", copper = 5000 }, { name = "Icecrown", copper = 3000 }, { name = "Stormwind City", copper = 2000 } },
+    { totalCopper = 10000, itemsSold = 1, bestGPH = 100 }
+))
+eq("city Dalaran dropped at decode", (function() for _, z in ipairs(dCity.zones) do if z.name == "Dalaran" then return "PRESENT" end end return "DROPPED" end)(), "DROPPED")
+eq("city Stormwind City dropped at decode", (function() for _, z in ipairs(dCity.zones) do if z.name == "Stormwind City" then return "PRESENT" end end return "DROPPED" end)(), "DROPPED")
+eq("non-city Icecrown kept at decode", (function() for _, z in ipairs(dCity.zones) do if z.name == "Icecrown" then return "PRESENT" end end return "DROPPED" end)(), "PRESENT")
+ok("decode has isCityZone guard on zones parse",
+    share:find("prefix == \"zones\"", 1, true) ~= nil
+        and share:find("not isCityZone(name)", 1, true) ~= nil)
 
 print()
 if fails > 0 then io.stderr:write("RESULT: " .. fails .. " test(s) failed\n"); os.exit(1) end

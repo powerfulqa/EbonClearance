@@ -5,6 +5,51 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.5
+
+**Stats: cities dropped from Top Zones, viewer now included in the Stats - Guild panel, duplicate Refresh button removed.**
+
+Three small stats fixes.
+
+## Bug fix: the viewer's own totals now appear in the panel
+
+Opening the Stats - Guild panel showed pooled totals from opted-in guildmates but NOT the viewing player's own totals - even when they were opted in to share. Opening your own panel felt like watching from outside the room.
+
+**Root cause**: `GuildShare.RequestNow` broadcast a `GREQ` request; each opted-in peer whispered a `GDAT` reply back; the local aggregate merged those replies. But the `GREQ` handler had a self-skip (`sender ~= playerName()`) so the local player never whispered a reply to themselves. Their own data never entered their own aggregate.
+
+**Fix**: `RequestNow` now seeds the local player's payload into the freshly-reset aggregate via the exact same `mergeReply(decodePayload(localPayload()))` path a real `GDAT` would take. Gated on `shareGuildData` so opt-out means "not visible to yourself either" (no partial-share footgun).
+
+This matches what ServerShare's `RequestNow` (`EbonClearance_ServerShare.lua:288-293`) has always done - the comment there says "Always include ourselves when sharing, so the panel shows our own totals even if nobody else is around." GuildShare was the odd one out; parity restored.
+
+New static test asserts the seed pattern.
+
+## UI cleanup: bottom "Refresh" button removed
+
+The Stats - Guild panel had two Refresh buttons that read as duplicates: `Refresh from guild` (the ProcShare button that refreshes chance-on-hit knowledge, v2.53.0) sat close to the plain `Refresh` at the bottom (which triggered `GuildShare.RequestNow` for the stats aggregate). Both had refresh in the label; the pairing was confusing.
+
+The bottom button is now removed. The panel already fires `RequestNow` on every OnShow at `EbonClearance_GuildPanel.lua` (see the closing block of `initPanel`), so opening the panel or closing/re-opening it does the same job. The `Refresh from guild` button (for the ProcShare chance-on-hit knowledge) stays because it's a separate feature with its own throttle and merge path.
+
+No schema change. Downgrade-safe. If you were relying on the exclusion behaviour (viewer's data hidden from viewer's aggregate) - unlikely - toggle `shareGuildData` off and the panel returns to empty.
+
+## City sales removed from Top Zones
+
+You can't farm in Dalaran, Stormwind City, or any other capital - vendoring mailboxed items in a city isn't farming, but those coppers were still landing on the Top Zones leaderboard as if the player had farmed there. That distorted the "best farming zone" comparison.
+
+**Fix, three parts:**
+
+1. **Attribution filter.** `EC_compCache.attributeCopperToZone` (the single choke point every sell path routes through) now checks `EC_CITY_ZONES` and skips the per-zone bucket write when the current zone is a WotLK city. The wallet `totalCopper` is bumped separately by the caller, so wallet views are untouched - only the "which zone did this gold come from" attribution changes.
+2. **One-shot scrub of historical data.** Two migration markers (`DB.cityZonesScrubbed` per character, `ADB.cityZonesScrubbed` account-wide) run once each and strip city keys out of `DB.copperByZone` + `ADB.accountStats.copperByZone`. Existing Dalaran / Stormwind entries disappear on next login. Idempotent.
+3. **Receiver-side filter for Stats - Guild and Stats - Server.** Pre-v2.59.5 peers still send their own polluted zone entries. `GuildShare.decodePayload` and `ServerShare.decodePayload` now drop any city-named zone at decode time so the pooled Guild / Server aggregates stay clean even during the rollout period.
+
+The city set covers the ten capitals: Stormwind, Ironforge, Darnassus, The Exodar, Orgrimmar, Thunder Bluff, Undercity, Silvermoon, Shattrath, and Dalaran. Sub-town hubs with mailboxes (Booty Bay, Ratchet, Everlook, etc.) stay unfiltered because their surrounding zones are genuinely farmable (STV / Barrens / Winterspring). `EC_compCache.isCityZone(zone)` is exposed so any future display-time filter can route through the same list.
+
+Locale note: names match `GetRealZoneText()` output on English-locale clients. Non-English locales still write to their localised city names; the filter would need per-locale tables to catch those and isn't wired yet (this is Project Ebonhold's audience, so scope kept tight).
+
+Test 120 in `test_perf_guardrails.lua` locks the city set + helper + attribution guard + both scrub markers.
+
+---
+
+
 ### v2.59.4
 
 **Two changes: `/ec bugreport` gains a Recent Processed section, and Process Bags DE now agrees with the sell path on ranked owned-affix items.**

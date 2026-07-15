@@ -529,31 +529,22 @@ GuildPanel:SetScript("OnShow", function(self)
         itemEmptyRow.right:SetText("")
         buildSelf._itemEmptyRow = itemEmptyRow
 
-        -- Refresh button. Fires a broadcast request then plays the
-        -- standard checkbox click sound.
-        local refreshBtn = CreateFrame(
-            "Button", nil, content, "UIPanelButtonTemplate"
-        )
-        refreshBtn:SetSize(110, 24)
-        -- Anchor below the last item row (row 5 always holds position).
-        refreshBtn:SetPoint(
-            "TOPLEFT", buildSelf._itemRows[5], "BOTTOMLEFT", 0, -12
-        )
-        refreshBtn:SetText(L["Refresh"])
-        refreshBtn:SetScript("OnClick", function()
-            if NS.GuildShare and NS.GuildShare.RequestNow then
-                NS.GuildShare.RequestNow()
-            end
-            PlaySound("igMainMenuOptionCheckBoxOn")
-        end)
+        -- v2.59.5 (Serv report): the bottom "Refresh" button (plain
+        -- GuildShare.RequestNow) has been removed. The panel already
+        -- fires RequestNow on every OnShow further down, and the
+        -- "Refresh from guild" button above (ProcShare) sat close
+        -- enough to read as a duplicate. Users can trigger a
+        -- guild-stats refresh by closing and re-opening the panel.
 
         -- Populate whatever the aggregate already holds at build time
         -- (may have data from earlier in the session).
         repaintGuildPanel()
 
-        -- Size the scroll content to fit the last widget.
+        -- Size the scroll content to fit the last widget - the last
+        -- item row now anchors the bottom since the Refresh button is
+        -- gone.
         if NS.FitScrollContent then
-            NS.FitScrollContent(content, refreshBtn)
+            NS.FitScrollContent(content, buildSelf._itemRows[5])
         end
     end, true)
 

@@ -7479,6 +7479,120 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 121: Quickstart "(default)" labels must match the actual fresh-install
+-- default that snapshotAnswersFromDB would produce (v2.59.6, Qvintus report).
+-- ---------------------------------------------------------------------------
+-- Qvintus reported Q13 tagged "No" as "(default)" while a fresh install
+-- actually seeds DB.enableDeletion = true and thus selects "Yes". Root cause
+-- was mirror drift between the panel label and the EnsureDB seed. New players
+-- who trust the "(default)" tag can end up misconfigured (Q13's case:
+-- believing EC won't delete anything when it actually will). This is a churn
+-- risk the label bug had all to itself; the test below prevents it from
+-- coming back.
+--
+-- Strategy:
+--   1. Parse EbonClearance_QuickstartPanel.lua for every makeRadioGroup call.
+--      For each call, capture the questionKey (3rd arg) and any option whose
+--      label contains "default" (matches both "(default)" and
+--      "(safest, default)").
+--   2. Hand-authored EXPECTED_DEFAULTS holds what snapshotAnswersFromDB
+--      SHOULD return for each labeled question on a fresh install. Cross-
+--      derived from EnsureDB seeds in Events.lua + the snapshotAnswersFromDB
+--      body in QuickstartPanel. Updating a "(default)" label / EnsureDB seed
+--      requires updating this map.
+--   3. Assert the parsed label agrees with the golden.
+--   4. Assert exactly one "(default)"-tagged option per question.
+--   5. Every entry in EXPECTED must have a live label (catches label removal).
+--   6. Cross-check the specific EnsureDB seed lines the golden depends on so
+--      DB-side drift also trips the test (not just label drift).
+do
+    -- Read QuickstartPanel in isolation for parsing.
+    local qpf = io.open("EbonClearance_QuickstartPanel.lua", "rb")
+    local qpSrc = qpf and qpf:read("*a") or ""
+    if qpf then qpf:close() end
+
+    local labeled = {} -- questionKey -> value marked "(default)"
+    local counts = {} -- questionKey -> number of "(default)"-marked options
+    for callBody in qpSrc:gmatch("makeRadioGroup(%b())") do
+        local qid = callBody:match(',%s*"([^"]+)"%s*,')
+        if qid then
+            for line in callBody:gmatch("[^\n]+") do
+                local value = line:match('value%s*=%s*"([^"]+)"')
+                if value and line:find("default", 1, true) then
+                    if line:find("label%s*=%s*L%[") then
+                        labeled[qid] = value
+                        counts[qid] = (counts[qid] or 0) + 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- Golden: what snapshotAnswersFromDB produces on a fresh install for each
+    -- question that carries a "(default)" label. When a "(default)" label is
+    -- added, moved, or removed - or when the EnsureDB seed for one of these
+    -- fields changes - update BOTH this map AND the label so they stay
+    -- honest with the player.
+    local EXPECTED = {
+        -- Q8b affixRankFloor. Fresh install: DB.affixMinSellRank = 0
+        -- -> snapshotAnswersFromDB: rank <= 0 -> "off".
+        affixRankFloor = "off",
+        -- Q9b sellRecipes. Fresh install: DB.sellKnownRecipes = false
+        -- -> snapshotAnswersFromDB: not DB.sellKnownRecipes -> "no".
+        sellRecipes = "no",
+        -- Q13 delete. Fresh install: DB.enableDeletion = true
+        -- -> snapshotAnswersFromDB: DB.enableDeletion and "yes" or "no" -> "yes".
+        -- (This is the Qvintus bug: pre-fix the label wrongly tagged "no".)
+        delete = "yes",
+        -- Q13b deleteMode. Fresh install: DB.autoDeleteGreyOnLoot = false,
+        -- DB.autoDeleteOnPickup = false
+        -- -> snapshotAnswersFromDB: both branches skipped -> "vendorOnly".
+        deleteMode = "vendorOnly",
+    }
+
+    for qid, val in pairs(labeled) do
+        check("Test 121." .. qid .. ": '(default)' label matches fresh-install snapshotAnswersFromDB",
+            EXPECTED[qid] == val,
+            "Quickstart question '" .. qid .. "' labels value='" .. val
+                .. "' as '(default)' but the fresh-install DB would produce '"
+                .. tostring(EXPECTED[qid])
+                .. "'. Either the label points to the wrong option (Qvintus's Q13 bug), OR EnsureDB's seed changed and the golden EXPECTED / label / seed are now out of sync. Reconcile all three.")
+    end
+
+    for qid, n in pairs(counts) do
+        check("Test 121." .. qid .. ".unique: exactly one '(default)' label",
+            n == 1,
+            "Quickstart question '" .. qid .. "' has " .. n
+                .. " options tagged '(default)'; exactly one option must be marked so a new player sees a single unambiguous recommendation.")
+    end
+
+    for qid in pairs(EXPECTED) do
+        check("Test 121." .. qid .. ".present: golden entry has a live label",
+            labeled[qid] ~= nil,
+            "EXPECTED map lists Q '" .. qid
+                .. "' but no option in that radio group carries a '(default)' tag anymore. Either re-add the label OR remove this entry from EXPECTED.")
+    end
+
+    -- Cross-check the EnsureDB seeds the golden depends on. If someone flips
+    -- a seed value, this fires and forces re-derivation of EXPECTED + label.
+    check("Test 121: EnsureDB seeds DB.enableDeletion = true (backs Q13 delete='yes')",
+        src:find("DB%.enableDeletion = true", 1, false) ~= nil,
+        "EnsureDB no longer seeds DB.enableDeletion = true. If intentional, update Q13 label + EXPECTED.delete in this test.")
+    check("Test 121: EnsureDB seeds DB.sellKnownRecipes = false (backs Q9b sellRecipes='no')",
+        src:find("DB%.sellKnownRecipes = false", 1, false) ~= nil,
+        "EnsureDB no longer seeds DB.sellKnownRecipes = false. If intentional, update Q9b label + EXPECTED.sellRecipes.")
+    check("Test 121: EnsureDB seeds DB.affixMinSellRank = 0 (backs Q8b affixRankFloor='off')",
+        src:find("DB%.affixMinSellRank = 0", 1, false) ~= nil,
+        "EnsureDB no longer seeds DB.affixMinSellRank = 0. If intentional, update Q8b label + EXPECTED.affixRankFloor.")
+    check("Test 121: EnsureDB seeds DB.autoDeleteOnPickup = false (backs Q13b deleteMode='vendorOnly')",
+        src:find("DB%.autoDeleteOnPickup = false", 1, false) ~= nil,
+        "EnsureDB no longer seeds DB.autoDeleteOnPickup = false. If intentional, update Q13b label + EXPECTED.deleteMode.")
+    check("Test 121: EnsureDB seeds DB.autoDeleteGreyOnLoot = false (backs Q13b deleteMode='vendorOnly')",
+        src:find("DB%.autoDeleteGreyOnLoot = false", 1, false) ~= nil,
+        "EnsureDB no longer seeds DB.autoDeleteGreyOnLoot = false. If intentional, update Q13b label + EXPECTED.deleteMode.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

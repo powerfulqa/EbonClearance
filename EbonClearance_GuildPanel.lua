@@ -197,22 +197,58 @@ repaintGuildPanel = function()
     end
 
     -- ---- Quality breakdown ----
-    if panel._qualityFS then
-        local parts = {}
+    -- v2.59.6 (Qvintus report): each rarity is its own makeRow so the
+    -- rarity label and its count align two-column with the Totals block
+    -- above and the Most-Sold Items block below. Rows compact around
+    -- visible rarities (missing rarities do not leave a gap) by re-
+    -- anchoring each visible row to the previous visible row at refresh
+    -- time; the "Guild's Most-Sold Items" header re-anchors to the last
+    -- visible row (or the empty-state row) so the block closes cleanly.
+    if panel._qualityRows then
+        local prev = panel._qualHeader
+        local yOff = -8
+        local visibleCount = 0
         for q = 0, 7 do
             local cnt = agg.quality and agg.quality[q]
             if cnt and cnt > 0 then
-                local label = (QUALITY_NAMES[q] or tostring(q)) .. " " .. num(cnt)
-                local colored = NS.ColorTextByQuality
-                    and NS.ColorTextByQuality(q, label)
-                    or label
-                parts[#parts + 1] = colored
+                visibleCount = visibleCount + 1
+                local row = panel._qualityRows[visibleCount]
+                if row then
+                    local name = QUALITY_NAMES[q] or tostring(q)
+                    local nameStr = NS.ColorTextByQuality
+                        and NS.ColorTextByQuality(q, name)
+                        or name
+                    local cntStr = NS.ColorTextByQuality
+                        and NS.ColorTextByQuality(q, num(cnt))
+                        or num(cnt)
+                    row.left:SetText(nameStr)
+                    row.right:SetText(cntStr)
+                    row:ClearAllPoints()
+                    row:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, yOff)
+                    row:Show()
+                    prev = row
+                    yOff = -2
+                end
             end
         end
-        if #parts > 0 then
-            panel._qualityFS:SetText(table.concat(parts, "  "))
+        for i = visibleCount + 1, #panel._qualityRows do
+            panel._qualityRows[i]:Hide()
+        end
+        if visibleCount == 0 then
+            panel._qualityEmptyRow:ClearAllPoints()
+            panel._qualityEmptyRow:SetPoint(
+                "TOPLEFT", panel._qualHeader, "BOTTOMLEFT", 0, -8
+            )
+            panel._qualityEmptyRow:Show()
+            prev = panel._qualityEmptyRow
         else
-            panel._qualityFS:SetText(L["None shared yet."])
+            panel._qualityEmptyRow:Hide()
+        end
+        if panel._itemsHeader then
+            panel._itemsHeader:ClearAllPoints()
+            panel._itemsHeader:SetPoint(
+                "TOPLEFT", prev, "BOTTOMLEFT", 0, -16
+            )
         end
     end
 
@@ -467,6 +503,12 @@ GuildPanel:SetScript("OnShow", function(self)
         buildSelf._totalsEmptyRow = totalsEmptyRow
 
         -- ---- Guild Sold by Quality ----
+        -- v2.59.6 (Qvintus report): rendered as makeRow rows (rarity on
+        -- the left, count right-aligned at VALUE_X) so this block aligns
+        -- with the Totals block above and the Most-Sold Items block below.
+        -- Pre-fix this was a single FontString-with-newlines, which sat
+        -- flush-left and read as visually disconnected from the two-
+        -- column siblings framing it.
         local qualHeader = content:CreateFontString(
             nil, "ARTWORK", "GameFontNormalLarge"
         )
@@ -474,28 +516,38 @@ GuildPanel:SetScript("OnShow", function(self)
             "TOPLEFT", totRows.sharedBy, "BOTTOMLEFT", 0, -16
         )
         qualHeader:SetText(L["Guild Sold by Quality"])
+        buildSelf._qualHeader = qualHeader
 
-        local qualityFS = content:CreateFontString(
-            nil, "ARTWORK", "GameFontHighlight"
-        )
-        qualityFS:SetPoint("TOPLEFT", qualHeader, "BOTTOMLEFT", 0, -8)
-        EC_compCache.setPanelWidth(qualityFS, 16)
-        qualityFS:SetJustifyH("LEFT")
-        qualityFS:SetJustifyV("TOP")
-        if qualityFS.SetWordWrap then
-            qualityFS:SetWordWrap(true)
+        buildSelf._qualityRows = {}
+        local qPrev = qualHeader
+        local qYOff = -8
+        for i = 1, 8 do
+            local row = makeRow(content, qPrev, qYOff)
+            row.left:SetText("")
+            row.right:SetText("")
+            row:Hide()
+            buildSelf._qualityRows[i] = row
+            qPrev = row
+            qYOff = -2
         end
-        qualityFS:SetText(L["None shared yet."])
-        buildSelf._qualityFS = qualityFS
+        local qualEmptyRow = makeRow(content, qualHeader, -8)
+        qualEmptyRow.left:SetText(L["None shared yet."])
+        qualEmptyRow.right:SetText("")
+        qualEmptyRow:Hide()
+        buildSelf._qualityEmptyRow = qualEmptyRow
 
         -- ---- Guild's Most-Sold Items ----
+        -- Anchor placeholder: refresh dynamically re-anchors this header
+        -- to the last visible quality row (or the empty-state row) so the
+        -- quality block compacts around the visible rarities.
         local itemsHeader = content:CreateFontString(
             nil, "ARTWORK", "GameFontNormalLarge"
         )
         itemsHeader:SetPoint(
-            "TOPLEFT", qualityFS, "BOTTOMLEFT", 0, -16
+            "TOPLEFT", qualHeader, "BOTTOMLEFT", 0, -16
         )
         itemsHeader:SetText(L["Guild's Most-Sold Items"])
+        buildSelf._itemsHeader = itemsHeader
 
         -- Pre-create a fixed pool of 5 item rows + 1 empty-state row.
         buildSelf._itemRows = {}

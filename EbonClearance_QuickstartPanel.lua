@@ -1341,8 +1341,8 @@ local function buildPanel(self, content)
             "delete",
             L["Q13. Allow EC to delete Delete-List items at vendors?"],
             {
-                { value = "no", label = L["No - don't delete anything automatically (default)"] },
-                { value = "yes", label = L["Yes - delete them when I'm at a vendor"] },
+                { value = "no", label = L["No - don't delete anything automatically"] },
+                { value = "yes", label = L["Yes - delete them when I'm at a vendor (default)"] },
             },
             refresh
         )

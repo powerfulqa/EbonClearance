@@ -5,6 +5,38 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.6
+
+**Two fixes: Quickstart Q13 "(default)" label + Stats - Guild "Sold by Quality" wrap.**
+
+Both from Qvintus in Discord.
+
+## Quickstart Q13: "(default)" tag pointing at the wrong option
+
+Quickstart Q13 "Allow EC to delete Delete-List items at vendors?" tagged **No** as `(default)`, but a fresh install actually seeds `DB.enableDeletion = true` and the **Yes** option is what gets selected. A new player who trusts the tag would assume EC won't delete anything and get surprised when items disappear.
+
+Fix: swap the `(default)` tag from the No option to the Yes option in [EbonClearance_QuickstartPanel.lua](EbonClearance_QuickstartPanel.lua). Locale template keys in [EbonClearance_Locale_frFR.lua](EbonClearance_Locale_frFR.lua) / [EbonClearance_Locale_deDE.lua](EbonClearance_Locale_deDE.lua) updated to match.
+
+**New Test 121 in `test_perf_guardrails.lua`** prevents this class of regression. For every Quickstart radio option labeled `(default)`, the test parses `makeRadioGroup` calls + a hand-authored golden map + the relevant EnsureDB seeds and asserts:
+
+- The labeled option's value matches what `snapshotAnswersFromDB` would produce on a fresh install.
+- Exactly one option per question carries `(default)` (no ambiguity for new players).
+- Every entry in the golden map has a live label (catches label removal).
+- The specific EnsureDB seed lines the golden depends on still hold the assumed values (catches DB-side drift).
+
+Locks four questions today: `affixRankFloor` (Q8b), `sellRecipes` (Q9b), `delete` (Q13), `deleteMode` (Q13b). Any drift between the panel label, the EnsureDB seed, and the golden map fails the gate before shipping.
+
+## Stats - Guild: "Sold by Quality" now aligns with the surrounding blocks
+
+The Guild "Sold by Quality" section had two problems. First, it was rendered as a single word-wrapped FontString with pairs joined by two spaces (`Poor 42,073  Common 158,185  Uncommon 8,090  Rare 8,131  Epic 1,551`); when the last pair fell right at the wrap point, WoW's word-wrap broke between the rarity name and its count, so "Epic" ended up on one row and "1,551" on the next. Second, even after switching to one row per rarity, the block still sat flush-left while the Totals block above and the Most-Sold Items block below are both two-column (label on the left, value right-aligned at a shared value column) - the quality section read as visually disconnected from its neighbours.
+
+Fix: each rarity is its own `makeRow` two-column row, colored per quality. The rarity name sits in the left column and the count aligns at the same value column as `Combined gold` / `Combined items sold` / etc. The block compacts around visible rarities (missing rarities do not leave a gap): each visible row re-anchors to the previous visible row at refresh time, and the "Guild's Most-Sold Items" header re-anchors below the last visible row so the block closes cleanly.
+
+No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.59.5
 
 **Stats: cities dropped from Top Zones, viewer now included in the Stats - Guild panel, duplicate Refresh button removed.**

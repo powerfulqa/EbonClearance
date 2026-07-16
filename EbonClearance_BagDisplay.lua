@@ -1536,8 +1536,26 @@ function EC_compCache.describeSellability(bag, slot)
                 knownFamily = family
             end
         end
+        -- v2.59.7: separately from the sell-known gate above, look up
+        -- the proc family for DISPLAY purposes so /ec sellinfo can name
+        -- the spell (e.g. "Flurry", "Incineration") even when the item
+        -- is being kept. Uses the seed catalog + autolearned pairings;
+        -- no catalog scan, so it's cheap to call unconditionally.
+        local displayFamily = knownFamily
+        if not displayFamily and itemID then
+            if NS.chanceProcConfirmedItems and NS.chanceProcConfirmedItems[itemID] then
+                displayFamily = NS.chanceProcConfirmedItems[itemID].family
+            elseif ADB and ADB.chanceProcConfirmedItems and ADB.chanceProcConfirmedItems[itemID] then
+                displayFamily = ADB.chanceProcConfirmedItems[itemID].family
+            end
+        end
         if ADB and ADB.allowedItems and ADB.allowedItems[itemID] then
-            step("chanceOnHitProtection", true, L["chance-on-hit proc, but you Allow-Sold this one"])
+            if displayFamily then
+                step("chanceOnHitProtection", true,
+                    string.format(L["chance-on-hit proc (%s), but you Allow-Sold this one"], displayFamily))
+            else
+                step("chanceOnHitProtection", true, L["chance-on-hit proc, but you Allow-Sold this one"])
+            end
         elseif knownProcRelease then
             step(
                 "chanceOnHitProtection",
@@ -1550,7 +1568,12 @@ function EC_compCache.describeSellability(bag, slot)
             affixRankPass = false
             autoDupePass = false
             recipePass = false
-            step("chanceOnHitProtection", false, L["Kept - has a chance-on-hit proc. Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
+            if displayFamily then
+                step("chanceOnHitProtection", false,
+                    string.format(L["Kept - has a chance-on-hit proc (%s). Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."], displayFamily))
+            else
+                step("chanceOnHitProtection", false, L["Kept - has a chance-on-hit proc. Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
+            end
         end
     else
         step("chanceOnHitProtection", true, L["n/a"])

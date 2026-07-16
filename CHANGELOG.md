@@ -5,6 +5,42 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.7
+
+**Four new Anvil-verified chance-on-hit pairings + /ec sellinfo now names the proc.**
+
+## Seed catalog additions
+
+Four weapons whose proc text is a near-verbatim match against the engrave-affix spellbook, all Anvil-confirmed as extractable:
+
+- **Flurry Axe** (871) - Flurry (700098). Same "extra attack" family as Thrash Blade + Ironfoe.
+- **Teebu's Blazing Longsword** (1728) - Incineration (700087). Same "blast target dealing Fire damage" family as Alcor's Sunrazor.
+- **Skeletal Club** (2256) - Affliction (700086). Same "shadowy bolt" family as Black Duskwood Staff + Shadowblade.
+- **Strike of the Hydra** (6909) - Dissolution (700089). Opens the Dissolution family, distinctive "Corrosive acid + armor reduce" wording.
+
+These join the existing seed catalog in [EbonClearance_Protection.lua](EbonClearance_Protection.lua#L1505), so a fresh install recognises them without needing autolearn to observe an extraction. Any account already running EC that had autolearned some of these gets the seed as a duplicate-safe write (seed and autolearn agree; the pair already existed in `ADB.chanceProcConfirmedItems`).
+
+## /ec sellinfo now names the chance-on-hit proc
+
+When a bag item is kept because of chance-on-hit protection, the trace step now names the proc when EC knows it. Pre-fix:
+
+```
+chanceOnHitProtection = Kept - has a chance-on-hit proc. Tip: turn off ...
+```
+
+Post-fix, for an item with a mapped pairing:
+
+```
+chanceOnHitProtection = Kept - has a chance-on-hit proc (Flurry). Tip: turn off ...
+```
+
+Same enrichment applies to the "Allow-Sold" branch. The family name comes from the seed catalog first, then the autolearned `ADB.chanceProcConfirmedItems`, then nil (in which case the old un-enriched message is used). Cheap lookup - no catalog scan - so it runs unconditionally regardless of the `sellChanceOnHitKnown` experimental toggle. Two new localisation keys registered as empty templates in the frFR / deDE locale files.
+
+No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.59.6
 
 **Two fixes: Quickstart Q13 "(default)" label + Stats - Guild "Sold by Quality" wrap.**

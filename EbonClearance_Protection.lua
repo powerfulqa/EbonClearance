@@ -1540,6 +1540,20 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     -- EC_CHANCE_PROC_NEVER_EXTRACTABLE instead (see that map).
     [2163]  = { spellID = 700086, family = "Affliction",  item = "Shadowblade" },
     [2824]  = { spellID = 700115, family = "Frost Arrow", item = "Hurricane" },
+    -- v2.59.7 (captureproc + Anvil verification, 2026-07-16): four
+    -- weapons whose proc text is a near-verbatim match against the
+    -- engrave-affix spellbook. Flurry Axe follows the Thrash Blade /
+    -- Ironfoe "extra attack" pattern; Skeletal Club follows the Black
+    -- Duskwood Staff / Shadowblade "shadowy bolt" pattern; Strike of
+    -- the Hydra opens the Dissolution family with distinctive
+    -- "Corrosive acid" + armor-reduce wording (Hands Only on the
+    -- affix, matches the weapon's proc). Teebu's Blazing Longsword
+    -- follows the Alcor's Sunrazor "blasts a target dealing Fire
+    -- damage" pattern for Incineration.
+    [871]   = { spellID = 700098, family = "Flurry",       item = "Flurry Axe" },
+    [1728]  = { spellID = 700087, family = "Incineration", item = "Teebu's Blazing Longsword" },
+    [2256]  = { spellID = 700086, family = "Affliction",   item = "Skeletal Club" },
+    [6909]  = { spellID = 700089, family = "Dissolution",  item = "Strike of the Hydra" },
     -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
     -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
     -- spell, not the PE affix id EC matches in learnedAffixes (in-game

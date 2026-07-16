@@ -7593,6 +7593,76 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 122: checkbox label FontStrings must use reactive width, not bare
+-- SetWidth(<literal>) (v2.59.8, Serv report).
+-- ---------------------------------------------------------------------------
+-- Serv reported the Delete Settings panel doesn't rescale on Interface
+-- Options resize: labels like "Auto-delete these items the moment they enter
+-- your bags" were being clipped at "...your ba..." because every checkbox
+-- text used a bare SetWidth(420) that overflowed the ~360px default panel
+-- and never re-measured on resize. The reactive-panel-layout invariant
+-- (docs/ADDON_GUIDE.md) requires any widget that snapshots a horizontal
+-- extent to route through EC_compCache.setPanelWidth / registerWidth. This
+-- test pins the invariant: for every `_G[<name> .. "Text"]` lookup on a
+-- checkbox in an EC panel file, the following block must NOT contain a bare
+-- `<text>:SetWidth(<numeric literal>)` call. setPanelWidth() and
+-- registerWidth() calls are exempt (they ARE the reactive pattern).
+--
+-- Scans every EbonClearance_*Panel.lua file individually and the shared
+-- PanelWidgets helper. Fails with a source location so the offending site
+-- is easy to find.
+do
+    local PANEL_FILES = {
+        "EbonClearance_KeepDeletePanels.lua",
+        "EbonClearance_MerchantPanel.lua",
+        "EbonClearance_ScavengerPanel.lua",
+        "EbonClearance_PanelWidgets.lua",
+        "EbonClearance_MainPanel.lua",
+        "EbonClearance_ProtectionPanel.lua",
+        "EbonClearance_ItemHighlightingPanel.lua",
+        "EbonClearance_SellListPanels.lua",
+        "EbonClearance_ProfilesPanel.lua",
+        "EbonClearance_QuickstartPanel.lua",
+        "EbonClearance_GuildPanel.lua",
+        "EbonClearance_ServerStatsPanel.lua",
+        "EbonClearance_StatsPanel.lua",
+        "EbonClearance_ProcessBagsPanel.lua",
+    }
+    local violations = {}
+    for _, path in ipairs(PANEL_FILES) do
+        local f = io.open(path, "rb")
+        if f then
+            local content = f:read("*a")
+            f:close()
+            local lineNo = 0
+            -- Track the variable name used to reference a checkbox Text.
+            -- Pattern: `local <var> = _G[<something> .. "Text"]`. When we
+            -- see a subsequent `<var>:SetWidth(<digits>)` line, that's a
+            -- checkbox-label bare-SetWidth violation.
+            local textVars = {}
+            for line in (content .. "\n"):gmatch("([^\n]*)\n") do
+                lineNo = lineNo + 1
+                local stripped = line:match("^%s*(.-)%s*$") or ""
+                if stripped:sub(1, 2) ~= "--" then
+                    local var = line:match("local%s+([%w_]+)%s*=%s*_G%[.-Text[\"']?%s*%]")
+                    if var then
+                        textVars[var] = lineNo
+                    end
+                    for var, _ in pairs(textVars) do
+                        if line:find(var .. ":SetWidth%(%d+%)", 1, false) then
+                            violations[#violations + 1] = path .. ":" .. lineNo .. " -> " .. stripped
+                        end
+                    end
+                end
+            end
+        end
+    end
+    check("Test 122: no bare SetWidth(<literal>) on checkbox label FontStrings",
+        #violations == 0,
+        "Found " .. #violations .. " checkbox label FontStrings using bare SetWidth(<literal>). Every such site must use EC_compCache.setPanelWidth(text, <inset>) so the label reacts to Interface Options frame resize (SetWordWrap(true) recommended). Offenders:\n  " .. table.concat(violations, "\n  "))
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

@@ -200,8 +200,14 @@ MerchantPanel:SetScript("OnShow", function(self)
         local rt = _G[repairCB:GetName() .. "Text"]
         if rt then
             rt:SetText(L["Repair gear while selling"])
-            rt:SetWidth(420)
+            -- v2.59.8: reactive width matches the shared NS.AddCheckbox
+            -- helper. The help-icon below uses GetStringWidth, not the
+            -- frame width, so [?] anchoring is unaffected.
+            EC_compCache.setPanelWidth(rt, 42)
             rt:SetJustifyH("LEFT")
+            if rt.SetWordWrap then
+                rt:SetWordWrap(true)
+            end
         end
         repairCB:SetScript("OnClick", function()
             DB.repairGear = repairCB:GetChecked() and true or false

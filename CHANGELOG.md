@@ -5,6 +5,36 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.8
+
+**Delete Settings + other checkbox labels now scale with the Interface Options window + lock the invariant.**
+
+Opening Interface Options -> EbonClearance -> Delete Settings, the checkbox labels ("Auto-delete these items the moment they enter your bags", etc.) were clipped mid-word ("...your ba...") and never re-measured when the panel was resized.
+
+**Root cause**: every checkbox label FontString on the Delete Settings panel (and elsewhere) used a bare `SetWidth(420)`. The default Interface Options panel is ~360px wide, so 420 always overflowed and the label extended past the right edge. Because the width was a build-time literal, resizing the window didn't help - the widget stayed frozen at 420. The reactive-panel-layout invariant (`docs/ADDON_GUIDE.md`) requires any width snapshot to route through `EC_compCache.setPanelWidth` / `registerWidth` so the width tracks Interface Options resize.
+
+**Fix**: eight sites converted from `SetWidth(420)` to `EC_compCache.setPanelWidth(text, 42)` (matching the adjacent note-FontString pattern: 26px indent past the checkbox anchor + 16px right margin) plus `SetWordWrap(true)` so long labels wrap onto multiple lines instead of clipping:
+
+- Six checkbox labels on the Delete Settings panel: master switch, auto-delete-on-pickup, auto-delete grey on loot, auto-mark Resilience, auto-mark unsellable affixes, announce-in-chat.
+- The shared `NS.AddCheckbox` helper in `EbonClearance_PanelWidgets.lua`. Fixing this one propagates to every panel that uses the helper (Guild, Server Stats, Main, Merchant, Scavenger).
+- Two direct-usage sites: `Repair gear while selling` on the Merchant panel and `Summon Greedy Scavenger after selling` on the Scavenger panel. Their help-icon `[?]` anchoring uses `GetStringWidth` (actual text pixel width), not the frame width, so the icons still sit right after the label text.
+
+**New Test 122 in `test_perf_guardrails.lua`** locks the invariant. Every EC panel file is scanned; for each `local <var> = _G[<name> .. "Text"]` (a checkbox label lookup), the test checks that the surrounding block does NOT contain a bare `<var>:SetWidth(<numeric literal>)` call. Any regression fails the gate with a source location. Setting a reactive width via `EC_compCache.setPanelWidth` remains the allowed pattern.
+
+## Delete Settings panel now scrolls
+
+Follow-on from the reactive-width fix above. With labels wrapping onto multiple lines on a narrow Interface Options window, the panel's total content extended past the bottom of the visible area and overlapped the Okay/Cancel buttons.
+
+Fix: wrap the Delete Settings panel in a scroll frame (`initPanel(self, refresh, build, true)`), the same pattern the Protection / Merchant / Item Highlighting / Quickstart panels already use. All child widgets now anchor into the scrollable content region; `NS.FitScrollContent(content, announceNote)` sizes the scroll extent to the last row. Overflow is handled by the scroll bar instead of clipping.
+
+## Two more chance-on-hit pairings (Anvil-verified)
+
+- **Shard of Azzinoth** (32471) - **Azzinoth** (700108). Near-verbatim match against the Azzinoth affix spellbook tooltip ("Calls forth an Ember of Azzinoth to protect you in battle for a short period of time."). Anvil accepts.
+- **Deathbringer's Will** (50363) - **NEVER_EXTRACTABLE**. Trinket with an Equip-line stat-buff proc ("awaken the powers of the races of Northrend"). PE weapon-affix families don't apply to trinkets; Anvil refuses. Any "of X" affix on a given drop is a stat-family random affix, not a chance-on-hit family.
+
+---
+
+
 ### v2.59.7
 
 **Four new Anvil-verified chance-on-hit pairings + /ec sellinfo now names the proc.**

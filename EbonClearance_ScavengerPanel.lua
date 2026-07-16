@@ -73,8 +73,13 @@ ScavengerPanel:SetScript("OnShow", function(self)
         local st = _G[sumCB:GetName() .. "Text"]
         if st then
             st:SetText(L["Summon |cffff7f7fGreedy Scavenger|r after selling"])
-            st:SetWidth(420)
+            -- v2.59.8: reactive width. Help-icon anchoring further down
+            -- uses GetStringWidth, not the frame width.
+            EC_compCache.setPanelWidth(st, 42)
             st:SetJustifyH("LEFT")
+            if st.SetWordWrap then
+                st:SetWordWrap(true)
+            end
         end
         sumCB:SetScript("OnClick", function()
             DB.summonGreedy = sumCB:GetChecked() and true or false

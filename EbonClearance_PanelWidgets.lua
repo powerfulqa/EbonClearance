@@ -203,8 +203,17 @@ local function AddCheckbox(parent, name, anchor, labelText, getter, setter, yOff
     local t = _G[name .. "Text"]
     if t then
         t:SetText(labelText)
-        t:SetWidth(420)
+        -- v2.59.8 (Serv report): reactive width for the checkbox label.
+        -- Pre-fix a bare SetWidth(420) overflowed the ~360px default
+        -- Interface Options panel width and froze at build time. The 42
+        -- inset matches the sibling note-FontString pattern (26 indent
+        -- past the checkbox anchor + 16 right margin). SetWordWrap on
+        -- so long labels wrap instead of clipping.
+        EC_compCache.setPanelWidth(t, 42)
         t:SetJustifyH("LEFT")
+        if t.SetWordWrap then
+            t:SetWordWrap(true)
+        end
     end
 
     cb:SetScript("OnClick", function()

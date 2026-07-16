@@ -1414,6 +1414,13 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     -- not registered this specific combo item for extraction.
     [17071] = "Gutgore Ripper",
     [19334] = "The Untamed Blade",
+    -- v2.59.8 (captureproc + Serv Anvil verification, 2026-07-17):
+    -- Deathbringer's Will is a trinket with an Equip-line stat-buff
+    -- proc ("awaken the powers of the races of Northrend"). PE weapon-
+    -- only affix families don't apply and the Anvil refuses extraction
+    -- for non-weapon slots. The "of Armor Rend III" suffix on a given
+    -- drop is a stat-family random affix, not a chance-on-hit family.
+    [50363] = "Deathbringer's Will",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1554,6 +1561,12 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     [1728]  = { spellID = 700087, family = "Incineration", item = "Teebu's Blazing Longsword" },
     [2256]  = { spellID = 700086, family = "Affliction",   item = "Skeletal Club" },
     [6909]  = { spellID = 700089, family = "Dissolution",  item = "Strike of the Hydra" },
+    -- v2.59.8 (captureproc + Serv Anvil verification, 2026-07-17):
+    -- Shard of Azzinoth's proc text is a near-verbatim match against
+    -- the Azzinoth affix spellbook tooltip ("Calls forth an Ember of
+    -- Azzinoth to protect you in battle for a short period of time.")
+    -- and the Anvil accepts it. Same Azzinoth (700108) family.
+    [32471] = { spellID = 700108, family = "Azzinoth",     item = "Shard of Azzinoth" },
     -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
     -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
     -- spell, not the PE affix id EC matches in learnedAffixes (in-game

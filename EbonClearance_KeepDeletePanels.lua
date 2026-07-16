@@ -108,7 +108,16 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
     EC_compCache.initPanel(self, function(self)
         -- Settings are DB-backed; nothing to refresh on re-show. Following
         -- the panel-refresh contract (empty refresh callback is fine).
-    end, function(self)
+    end, function(_, content)
+        -- v2.59.8 (Serv report): the panel is now scroll-wrapped so
+        -- wrapped checkbox labels (v2.59.8's reactive-width fix) can't
+        -- overflow the panel bottom past the Okay/Cancel buttons.
+        -- Bind `self` to the scroll region so every child widget
+        -- below hangs off the scrollable content instead of the raw
+        -- panel - none of the OnClick closures in this build capture
+        -- `self`, verified before the rename. First arg ignored (`_`)
+        -- because the raw panel is no longer the parent for children.
+        local self = content
         local heading = NS.MakeHeader(self, L["Delete Settings"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-the-lists")
 
@@ -123,8 +132,16 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
         local dt = _G[delCB:GetName() .. "Text"]
         if dt then
             dt:SetText(L["Allow items to be deleted"])
-            dt:SetWidth(420)
+            -- v2.59.8 (Serv report): reactive width. Pre-fix a bare
+            -- SetWidth(420) always overflowed the ~360px panel, cutting
+            -- off long labels. Same treatment (setPanelWidth + word-wrap)
+            -- as the adjacent note FontStrings, so labels rewrap on
+            -- Interface Options resize instead of clipping.
+            EC_compCache.setPanelWidth(dt, 42)
             dt:SetJustifyH("LEFT")
+            if dt.SetWordWrap then
+                dt:SetWordWrap(true)
+            end
         end
         local delNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         delNote:SetPoint("TOPLEFT", delCB, "BOTTOMLEFT", 26, -2)
@@ -181,8 +198,11 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
         local autoText = _G[autoCB:GetName() .. "Text"]
         if autoText then
             autoText:SetText(L["Auto-delete these items the moment they enter your bags"])
-            autoText:SetWidth(420)
+            EC_compCache.setPanelWidth(autoText, 42)
             autoText:SetJustifyH("LEFT")
+            if autoText.SetWordWrap then
+                autoText:SetWordWrap(true)
+            end
         end
         local autoNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         autoNote:SetPoint("TOPLEFT", autoCB, "BOTTOMLEFT", 26, -2)
@@ -208,8 +228,11 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
         local greyText = _G[greyCB:GetName() .. "Text"]
         if greyText then
             greyText:SetText(L["Auto-delete grey items on loot"])
-            greyText:SetWidth(420)
+            EC_compCache.setPanelWidth(greyText, 42)
             greyText:SetJustifyH("LEFT")
+            if greyText.SetWordWrap then
+                greyText:SetWordWrap(true)
+            end
         end
         local greyNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         greyNote:SetPoint("TOPLEFT", greyCB, "BOTTOMLEFT", 26, -2)
@@ -238,8 +261,11 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
         local resilienceText = _G[resilienceCB:GetName() .. "Text"]
         if resilienceText then
             resilienceText:SetText(L["Auto-mark PvP gear (Resilience) for deletion"])
-            resilienceText:SetWidth(420)
+            EC_compCache.setPanelWidth(resilienceText, 42)
             resilienceText:SetJustifyH("LEFT")
+            if resilienceText.SetWordWrap then
+                resilienceText:SetWordWrap(true)
+            end
         end
         local resilienceNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         resilienceNote:SetPoint("TOPLEFT", resilienceCB, "BOTTOMLEFT", 26, -2)
@@ -268,8 +294,11 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
         local affixDupeText = _G[affixDupeCB:GetName() .. "Text"]
         if affixDupeText then
             affixDupeText:SetText(L["Auto-mark unsellable affixes for deletion"])
-            affixDupeText:SetWidth(420)
+            EC_compCache.setPanelWidth(affixDupeText, 42)
             affixDupeText:SetJustifyH("LEFT")
+            if affixDupeText.SetWordWrap then
+                affixDupeText:SetWordWrap(true)
+            end
         end
         local affixDupeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         affixDupeNote:SetPoint("TOPLEFT", affixDupeCB, "BOTTOMLEFT", 26, -2)
@@ -297,8 +326,11 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
         local announceText = _G[announceCB:GetName() .. "Text"]
         if announceText then
             announceText:SetText(L["Announce auto-deletions in chat"])
-            announceText:SetWidth(420)
+            EC_compCache.setPanelWidth(announceText, 42)
             announceText:SetJustifyH("LEFT")
+            if announceText.SetWordWrap then
+                announceText:SetWordWrap(true)
+            end
         end
         local announceNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         announceNote:SetPoint("TOPLEFT", announceCB, "BOTTOMLEFT", 26, -2)
@@ -421,7 +453,12 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
                 EC_compCache.bagUpdateFrame:Show()
             end
         end)
-    end)
+
+        -- v2.59.8: size the scroll content to the last widget so the
+        -- scroll bar knows the full extent. Announced last-widget is
+        -- announceNote (the "Announce auto-deletions in chat" note).
+        NS.FitScrollContent(content, announceNote)
+    end, true)
 end)
 
 local BlacklistPanel = CreateFrame("Frame", "EbonClearanceOptionsBlacklist", InterfaceOptionsFramePanelContainer)

@@ -4499,6 +4499,55 @@ function EC_compCache.isDowngradeVsEquipped(itemID, lootedILvl, equipLoc)
     return false, "at_or_above"
 end
 
+-- v2.59.9: mirror of checkBagsForUpgrades' Keep-Upgrade stamp condition.
+-- Returns true iff the item's iLvl is STRICTLY GREATER than the lowest
+-- populated equipped iLvl across the item's candidate slots. Empty slots
+-- are SKIPPED (an empty ring-2 slot doesn't disqualify a ring-in-bags from
+-- being an upgrade over the populated ring-1). Feeds the affix-sale veto
+-- so autoDupePass / affixRankPass never sell an item the auto-upgrade sweep
+-- would have stamped, regardless of the Keep List entry's state - Serv
+-- report: engraving a known-dupe affix onto an upgrade ring flipped its
+-- verdict to SELL because the Keep-Upgrade Keep List entry became stale
+-- post-engrave. This check is Keep-List-independent so it survives that
+-- class of staleness. Different from isDowngradeVsEquipped: THAT bails on
+-- empty slots (conservatively keeps items that could fill the empty slot);
+-- THIS treats empty slots as non-participating in the "is this an upgrade"
+-- question (mirroring how checkBagsForUpgrades decides what to stamp).
+function EC_compCache.isUpgradeVsEquipped(itemID, ilvl, equipLoc)
+    if not itemID or not ilvl or ilvl <= 0 then
+        return false
+    end
+    if not equipLoc or equipLoc == "" then
+        return false
+    end
+    local slots = EC_compCache.INVTYPE_SLOTS[equipLoc]
+    if not slots then
+        return false
+    end
+    -- 2H narrowing mirror: if MH is 2H, offhand slot 17 is locked empty
+    -- and shouldn't be treated as a fillable candidate. Same rule
+    -- isDowngradeVsEquipped uses above; keep in lockstep or a 1H upgrade
+    -- past a 2H would be missed.
+    if equipLoc == "INVTYPE_WEAPON"
+        or equipLoc == "INVTYPE_SHIELD"
+        or equipLoc == "INVTYPE_HOLDABLE"
+        or equipLoc == "INVTYPE_WEAPONOFFHAND"
+    then
+        local mhLink = GetInventoryItemLink and GetInventoryItemLink("player", 16)
+        if mhLink then
+            local _, _, _, _, _, _, _, _, mhEquipLoc = GetItemInfo(mhLink)
+            if mhEquipLoc == "INVTYPE_2HWEAPON" then
+                slots = { 16 }
+            end
+        end
+    end
+    local lowestEquipped = EC_compCache.getLowestEquippedILvl(slots)
+    if not lowestEquipped then
+        return false
+    end
+    return ilvl > lowestEquipped
+end
+
 -- v2.57.2 SAFETY: is an affixed item at or below the iLvl ceiling its rarity's
 -- quality rule sets? The affix sell paths (the affix-rank floor and "Allow
 -- selling affixes you already have") must respect this ceiling, so a high-iLvl
@@ -4511,8 +4560,20 @@ end
 -- Otherwise it applies the SAME iLvl gate qualityPass uses (dynamic equipped-
 -- iLvl comparison, or fixed maxILvl cap). Shared by EC_IsSellable,
 -- describeSellability, and the tooltip so all three agree on the ceiling.
+--
+-- v2.59.9: also vetoes the sale unconditionally when the item is an iLvl
+-- upgrade over equipped AND autoProtectUpgrades is on. Runs BEFORE the
+-- rule-enabled early-return so it applies even when the rarity rule is
+-- disabled - the "don't auto-sell my upgrades" invariant is not a
+-- rarity-rule-conditional invariant.
 function EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)
     local DB = NS.DB
+    if DB and DB.autoProtectUpgrades
+        and EC_compCache.isUpgradeVsEquipped
+        and EC_compCache.isUpgradeVsEquipped(itemID, ilvl, equipLoc)
+    then
+        return false
+    end
     local rule = (quality and quality >= 1 and quality <= 4 and DB and DB.qualityRules) and DB.qualityRules[quality]
     if not (rule and rule.enabled) then
         return true

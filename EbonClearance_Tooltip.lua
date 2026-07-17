@@ -722,6 +722,21 @@ local function EC_AnnotateTooltipInner(tooltip)
                             .. "|r"
                         statusTag = "wontsell"
                     end
+                elseif IsInSet(DB.blacklist, id) then -- luacheck: ignore 542
+                    -- v2.59.9 (Serv report): Keep List wins over the affix
+                    -- known/needed label. Pre-fix Ashen Band of Endless
+                    -- Vengeance (sellPrice=0, on Keep List via
+                    -- autoAddEquipped, affix Relentless Crits III already
+                    -- owned) showed "Keep (affix rank known)" because the
+                    -- affix branch overwrote the earlier "Keep (equipped)"
+                    -- verdict set at the top of this function. The sibling
+                    -- branch at line 656 (canSell=true path) already has
+                    -- an `and not IsInSet(DB.blacklist, id)` guard; parity
+                    -- here fixes the canSell=false path where the affix
+                    -- branch had no such guard. Same behaviour Band of the
+                    -- Bone Colossus already had via the destinationLabel
+                    -- Keep-List-wins short-circuit in the canSell=true
+                    -- branch above.
                 elseif playerKnows or playerKnowsRank or playerKnowsFamily then
                     -- The player has this exact (family, rank) - either
                     -- via description-text match (the v2.23.0 path) or

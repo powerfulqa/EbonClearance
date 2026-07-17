@@ -1412,7 +1412,24 @@ function EC_compCache.describeSellability(bag, slot)
 
     local blacklisted = DB and IsInSet(DB.blacklist, itemID) or false
     if blacklisted then
-        step("keepListVeto", false, L["Kept - on Keep List"])
+        -- v2.59.9 (Serv report): name the auto-tag reason so the player
+        -- can tell at a glance why the item is on the Keep List (equipped
+        -- at some point, part of an Equipment Manager set, iLvl upgrade,
+        -- or manually added). Two identical-looking "Kept - on Keep List"
+        -- lines across two rings gave no signal about which knob to touch
+        -- to release the entry.
+        local autoTag = DB and DB.blacklistAuto and DB.blacklistAuto[itemID]
+        if autoTag == "equipped" then
+            step("keepListVeto", false, L["Kept - on Keep List (auto-tagged: equipped)"])
+        elseif autoTag == "set" then
+            step("keepListVeto", false, L["Kept - on Keep List (auto-tagged: in a gear set)"])
+        elseif autoTag == "upgrade" then
+            step("keepListVeto", false, L["Kept - on Keep List (auto-tagged: iLvl upgrade)"])
+        elseif autoTag then
+            step("keepListVeto", false, L["Kept - on Keep List (auto-tagged)"])
+        else
+            step("keepListVeto", false, L["Kept - on Keep List (manually added)"])
+        end
     else
         step("keepListVeto", true, L["not on Keep List"])
     end

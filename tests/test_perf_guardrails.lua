@@ -7367,6 +7367,24 @@ do
     check("Test 117c: EC_IsSellable suppresses affixRankPass + autoDupePass above the ceiling",
         src:find("not EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)", 1, true) ~= nil,
         "EC_IsSellable MUST clear affixRankPass and autoDupePass when the item is above its rarity rule's iLvl ceiling, so the cap protects high gear from the affix path (the Bizzaro near item-loss).")
+    -- v2.59.9 (Serv report): the ceiling gate must also veto affix-sales
+    -- when the item is an iLvl UPGRADE over equipped and autoProtectUpgrades
+    -- is on, regardless of the rarity rule's cap mode. Root cause of the
+    -- report: engraving a known-dupe affix onto an upgrade ring flipped its
+    -- verdict from Keep to Sell because the Keep-Upgrade Keep List entry
+    -- had become stale post-engrave. This helper is Keep-List-independent
+    -- so the invariant survives that class of staleness.
+    check("Test 117d: isUpgradeVsEquipped helper exists (v2.59.9)",
+        src:find("function EC_compCache.isUpgradeVsEquipped", 1, true) ~= nil,
+        "EC_compCache.isUpgradeVsEquipped MUST exist as the shared 'is this an iLvl upgrade over currently equipped' predicate consumed by affixSaleWithinCeiling; removing it means the autoDupe veto below loses its Keep-List-independent safety net.")
+    check("Test 117e: affixSaleWithinCeiling vetoes when autoProtectUpgrades + isUpgradeVsEquipped",
+        src:find("DB.autoProtectUpgrades", 1, true) ~= nil
+            and src:find("EC_compCache.isUpgradeVsEquipped(itemID, ilvl, equipLoc)", 1, true) ~= nil,
+        "affixSaleWithinCeiling MUST early-return false when DB.autoProtectUpgrades is on AND EC_compCache.isUpgradeVsEquipped(itemID, ilvl, equipLoc) returns true. Without this, an engrave / itemID-change scenario that loses the Keep-Upgrade Keep List entry lets autoDupePass / affixRankPass sell the upgrade.")
+    check("Test 117f: isUpgradeVsEquipped uses getLowestEquippedILvl (mirrors checkBagsForUpgrades' stamp condition)",
+        src:find("function EC_compCache.isUpgradeVsEquipped") ~= nil
+            and src:find("EC_compCache%.getLowestEquippedILvl%(slots%)") ~= nil,
+        "isUpgradeVsEquipped must consume the same getLowestEquippedILvl helper checkBagsForUpgrades uses to stamp Keep-Upgrade entries, so the veto fires on exactly the same items the auto-tag would stamp. Any drift here reintroduces the mirror-drift class of bug this test guards against.")
 end
 
 -- ---------------------------------------------------------------------------

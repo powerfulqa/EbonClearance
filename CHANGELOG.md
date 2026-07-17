@@ -5,6 +5,44 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.9
+
+**Owned-affix auto-sell no longer supersedes an iLvl upgrade.**
+
+Reported by Serv. Scenario: a bare ring in bags whose iLvl was above the currently equipped rings was correctly tagged Keep-Upgrade. Engraving an affix the player already owned onto that ring at the PE Anvil flipped its verdict to WILL SELL - the "you own this affix, sell the dupe" positive signal (`autoDupePass`) fired despite the ring still being an iLvl upgrade over the equipped rings. A weapon-side control test held Keep through engrave (weapons often have chance-on-hit lines that provide a second layer of protection; rings don't).
+
+**Root cause**: `autoDupePass` (and its sibling `affixRankPass`) route through a single choke point (`EC_compCache.affixSaleWithinCeiling`) that already respects the rarity rule's iLvl cap AND the dynamic-equipped-iLvl mode when the rule is enabled in that mode. But when the rule is disabled OR set to a fixed-cap the item happens to fall under, the upgrade check is bypassed. The Keep-Upgrade protection normally covers this via the Keep List veto downstream, but the Keep List entry is itemID-keyed - if anything invalidates the entry (post-engrave itemID change, tag-sweep staleness, etc.), the veto stops firing and autoDupe wins.
+
+**Fix**: `affixSaleWithinCeiling` now vetoes the sale unconditionally when the item is an iLvl upgrade over equipped AND `DB.autoProtectUpgrades` is on, regardless of the rarity rule's cap mode. The new `EC_compCache.isUpgradeVsEquipped(itemID, ilvl, equipLoc)` helper is a strict mirror of `checkBagsForUpgrades`' stamp condition (same `getLowestEquippedILvl` predicate, same 2H-narrowing rule, empty slots skipped so a ring-vs-empty-ring-2 case is still considered an upgrade if the populated ring-1 has lower iLvl). Because the single choke point covers `EC_IsSellable`, `describeSellability`, and `EC_AnnotateTooltip`, all three surfaces stay in lockstep without per-site edits. The invariant: "don't auto-sell my upgrades" now holds regardless of Keep List entry state.
+
+Behavior for users who don't run `autoProtectUpgrades`: unchanged. Behavior for users who do run it: the safety net now doubles up. An owned-affix drop that also happens to be an iLvl upgrade over equipped stays as a Keep-Upgrade candidate through engraves / itemID changes / any Keep List entry mutation.
+
+Test 117d / 117e / 117f in `test_perf_guardrails.lua` lock the helper's existence, the veto site, and the shared-predicate contract.
+
+## /ec sellinfo Keep List step now names the auto-tag reason
+
+Related follow-up. Two Kept rings on a `/ec sellinfo` trace used to both read as `Keep List - Kept - on Keep List` with no signal about why each was on the list. The step now appends the auto-tag reason so you can tell at a glance which toggle governs that entry:
+
+- `Kept - on Keep List (auto-tagged: equipped)` - `autoAddEquipped` stamped it when you wore it.
+- `Kept - on Keep List (auto-tagged: in a gear set)` - `autoProtectEquipmentSets` stamped it because the item is in an Equipment Manager set.
+- `Kept - on Keep List (auto-tagged: iLvl upgrade)` - `autoProtectUpgrades` stamped it because its iLvl was above equipped.
+- `Kept - on Keep List (manually added)` - no auto-tag; you added it via Alt+Right-Click or the Keep List panel.
+
+Five new locale template keys registered in `_frFR` / `_deDE`.
+
+## Tooltip: Keep List verdict now wins over "Keep (affix rank known)"
+
+Follow-up from the trace pair above. The Ashen Band tooltip showed `[EC] Keep (affix rank known)` while its sibling Band of the Bone Colossus (both on the Keep List with the same `equipped` auto-tag) showed `[EC] Keep (equipped)`. Different verdicts for the same reason.
+
+Root cause: the tooltip's affix-processing block has an `elseif playerKnows...` branch that overwrote the earlier `Keep (equipped)` / `Keep (in gear set)` verdict when the player owned the item's affix. The sibling `elseif` inside the same block for the sellable-item path already had a Keep-List-wins short-circuit (via `destinationLabel`); the unsellable-item path (sellPrice = 0) had no equivalent guard.
+
+Fix: add the same `IsInSet(DB.blacklist, id)` guard to the affix-known / affix-needed elseif so a Keep-List item keeps its origin-aware verdict (`Keep (equipped)` / `Keep (in gear set)` / `Keep (upgrade)`) regardless of whether the player owns the affix on it. Aligns the tooltip with the trace and with the sellable-item sibling behaviour.
+
+No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.59.8
 
 **Delete Settings + other checkbox labels now scale with the Interface Options window + lock the invariant.**

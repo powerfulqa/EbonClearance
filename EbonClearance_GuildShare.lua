@@ -153,7 +153,14 @@ function GuildShare.decodePayload(str)
             for entry in body:gmatch("[^;]+") do
                 local id, name, cnt = entry:match("^(%d+)~(.-)=(%d+)$")
                 if id and name and name ~= "" then
-                    out.items[#out.items + 1] = { id = tonumber(id), name = name, count = tonumber(cnt) or 0 }
+                    local nid = tonumber(id)
+                    out.items[#out.items + 1] = { id = nid, name = name, count = tonumber(cnt) or 0 }
+                    -- v2.59.12: warm WoW's item cache on decode so the
+                    -- Stats-Guild panel's first render resolves the
+                    -- receiver-locale name via GetItemInfo instead of
+                    -- falling back to the payload-locale name. Same
+                    -- rationale as ServerShare.decodePayload.
+                    if nid and GetItemInfo then GetItemInfo(nid) end
                 end
             end
         end

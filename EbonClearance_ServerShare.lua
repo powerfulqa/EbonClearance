@@ -135,7 +135,20 @@ function ServerShare.decodePayload(str)
             for entry in body:gmatch("[^;]+") do
                 local id, name, cnt = entry:match("^(%d+)~(.-)=(%d+)$")
                 if id and name and name ~= "" then
-                    out.items[#out.items + 1] = { id = tonumber(id), name = name, count = tonumber(cnt) or 0 }
+                    local nid = tonumber(id)
+                    out.items[#out.items + 1] = { id = nid, name = name, count = tonumber(cnt) or 0 }
+                    -- v2.59.12 (Serv report - "Morceaux de vetements de
+                    -- fourrure" persisted on first panel open before
+                    -- self-correcting on re-open): warm WoW's item
+                    -- cache the moment the payload arrives. GetItemInfo
+                    -- on a cold cache returns nil AND triggers an async
+                    -- fetch; by the time the user opens the Stats-Server
+                    -- / Stats-Guild panel later, the cache is warm and
+                    -- the receiver-locale display resolves on first
+                    -- render instead of the payload-locale fallback.
+                    -- Return value discarded - this call is purely
+                    -- side-effect (cache warmup).
+                    if nid and GetItemInfo then GetItemInfo(nid) end
                 end
             end
         elseif prefix == "z" then

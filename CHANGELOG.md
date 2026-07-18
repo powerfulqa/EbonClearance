@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.12
+
+**Item cache warming on payload decode so first-render name resolution catches localized entries.**
+
+Follow-up to v2.59.11. Report: after v2.59.11 shipped, "Morceaux de vetements de fourrure" (French Fur Clothing Scraps) still appeared on the Stats-Server panel on FIRST open, then self-corrected to "Fur Clothing Scraps" (English) after close-and-reopen.
+
+Root cause: WoW's `GetItemInfo(itemID)` is asynchronous on a cold cache - the first call returns nil AND triggers a background fetch, and subsequent calls return the resolved data. v2.59.11's fix at panel-render time correctly preferred the receiver-locale name via `GetItemInfo`, but hit the cold-cache case on that first render and fell back to the payload's French name. Close-and-reopen worked because the background fetch had completed by then.
+
+Fix: warm the item cache at payload DECODE time - call `GetItemInfo(id)` (return value discarded, purely side-effect) for each item as its `SDAT` / `GDAT` payload arrives. This triggers WoW's async load immediately when the data comes in, so by the time the user later opens the Stats-Server / Stats-Guild panel, the cache is warm and the first render resolves the receiver-locale name without any close-and-reopen dance.
+
+Applied to both `ServerShare.decodePayload` and `GuildShare.decodePayload`. No visible cost - `GetItemInfo` on an already-cached item is O(1); on a cold item it enqueues a background fetch and returns immediately.
+
+No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.59.11
 
 **Locale drift on the realm-wide aggregates: cities AND items now render in the receiver's locale.**

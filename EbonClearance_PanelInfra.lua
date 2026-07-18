@@ -93,6 +93,23 @@ function EC_compCache.registerWidth(widget, xOffset)
     list[#list + 1] = { w = widget, x = xOffset or 0 }
 end
 
+-- v2.59.10: remove a widget from the reactive-width registry. Callers
+-- that follow NS.AddCheckbox / setPanelWidth with a manual LEFT+RIGHT
+-- anchor pair (e.g. MakeQualityRow's rowLabel) MUST deregister so the
+-- registry's per-resize SetWidth doesn't fight the anchor-derived width.
+-- No-op when the widget was never registered.
+function EC_compCache.deregisterWidth(widget)
+    if not widget then
+        return
+    end
+    local list = EC_compCache.widthRegistry.widgets
+    for i = #list, 1, -1 do
+        if list[i].w == widget then
+            table.remove(list, i)
+        end
+    end
+end
+
 function EC_compCache.registerScrollFit(content, last, padding)
     if not content or not last then
         return

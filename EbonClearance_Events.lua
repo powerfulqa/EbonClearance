@@ -577,16 +577,16 @@ local function EnsureAccountDB()
     if type(AS.copperByZone) ~= "table" then
         AS.copperByZone = {}
     end
-    -- v2.59.5 (Serv report): one-shot scrub of city-zone entries from
-    -- the account-wide bucket. Idempotent across characters (only the
-    -- first character to log in after the upgrade actually removes
-    -- anything; subsequent characters see a clean table and no-op).
-    if not ADB.cityZonesScrubbed then
-        for zone in pairs(EC_CITY_ZONES) do
-            AS.copperByZone[zone] = nil
-        end
-        ADB.cityZonesScrubbed = true
+    -- v2.59.5 (Serv report): scrub city-zone entries from the account-
+    -- wide bucket.
+    -- v2.59.10 (bug-hunt): removed the one-shot marker gate, same
+    -- rationale as the DB scrub above - self-heal a downgrade -> upgrade
+    -- cycle that would leave the marker true while re-poisoning the
+    -- account bucket via the intermediate version.
+    for zone in pairs(EC_CITY_ZONES) do
+        AS.copperByZone[zone] = nil
     end
+    ADB.cityZonesScrubbed = true
     -- Session loot tracker, account-wide running total. Keyed by itemID ->
     -- total quantity looted across all characters since install. Aggregate
     -- only (one integer per distinct item), so it stays bounded. The live
@@ -860,16 +860,19 @@ local function EnsureDB()
     if type(DB.copperByZone) ~= "table" then
         DB.copperByZone = {}
     end
-    -- v2.59.5 (Serv report): one-shot scrub of city-zone entries from
-    -- the per-character bucket. Mailbox-vendoring in cities had been
-    -- polluting the Top Zones list. Gated by a marker so it only runs
-    -- once per character DB.
-    if not DB.cityZonesScrubbed then
-        for zone in pairs(EC_CITY_ZONES) do
-            DB.copperByZone[zone] = nil
-        end
-        DB.cityZonesScrubbed = true
+    -- v2.59.5 (Serv report): scrub city-zone entries from the per-
+    -- character bucket. Mailbox-vendoring in cities had polluted the
+    -- Top Zones list.
+    -- v2.59.10 (bug-hunt): removed the one-shot marker gate. Downgrade
+    -- -> upgrade cycles could leave the marker true while re-poisoning
+    -- copperByZone via the intermediate version's un-filtered
+    -- attribution. Running the scrub every EnsureDB is 10 table lookups
+    -- and any-city-key removal - trivial overhead - and self-heals the
+    -- edge case. DB.cityZonesScrubbed stays as a legacy tombstone.
+    for zone in pairs(EC_CITY_ZONES) do
+        DB.copperByZone[zone] = nil
     end
+    DB.cityZonesScrubbed = true
 
     if type(DB.repairGear) ~= "boolean" then
         DB.repairGear = true
@@ -4403,6 +4406,13 @@ end
 -- NOT use this - it treats an empty candidate slot as "don't auto-sell"
 -- (returns early), which is a different rule.
 function EC_compCache.getLowestEquippedILvl(slots)
+    -- v2.59.10 (bug-hunt): defensive nil-guard. Every current caller
+    -- guards, but Lua 5.1 crashes on `ipairs(nil)` and a future caller
+    -- passing nil (e.g. equipLoc that doesn't map to INVTYPE_SLOTS)
+    -- would take down the sell path. Return nil consistently.
+    if not slots then
+        return nil
+    end
     local lowest = nil
     for _, sid in ipairs(slots) do
         local eq = EC_compCache.getEquippedILvl(sid)
@@ -4634,6 +4644,22 @@ function EC_compCache.checkBagsForUpgrades()
                 else
                     local _, _, _, iLvl, _, _, _, _, equipLoc = GetItemInfo(itemID)
                     local slots = equipLoc and EC_compCache.INVTYPE_SLOTS[equipLoc]
+                    -- v2.59.10 (bug-hunt): 2H narrowing mirror. See the
+                    -- addition path below + isDowngradeVsEquipped +
+                    -- isUpgradeVsEquipped for the shared rationale.
+                    if slots and (equipLoc == "INVTYPE_WEAPON"
+                        or equipLoc == "INVTYPE_SHIELD"
+                        or equipLoc == "INVTYPE_HOLDABLE"
+                        or equipLoc == "INVTYPE_WEAPONOFFHAND")
+                    then
+                        local mhLink = GetInventoryItemLink and GetInventoryItemLink("player", 16)
+                        if mhLink then
+                            local _, _, _, _, _, _, _, _, mhEquipLoc = GetItemInfo(mhLink)
+                            if mhEquipLoc == "INVTYPE_2HWEAPON" then
+                                slots = { 16 }
+                            end
+                        end
+                    end
                     if iLvl and iLvl > 0 and slots then
                         local lowestEquipped = EC_compCache.getLowestEquippedILvl(slots)
                         -- Remove only when a slot is actually populated and
@@ -4683,6 +4709,30 @@ function EC_compCache.checkBagsForUpgrades()
                 elseif not (DB.blacklist and DB.blacklist[itemID]) then
                     local _, _, _, iLvl, _, _, _, _, equipLoc = GetItemInfo(itemID)
                     local slots = equipLoc and EC_compCache.INVTYPE_SLOTS[equipLoc]
+                    -- v2.59.10 (bug-hunt): 2H narrowing mirror. Same rule
+                    -- isDowngradeVsEquipped + isUpgradeVsEquipped use:
+                    -- when the player wields a 2H, offhand slot 17 is
+                    -- LOCKED empty and shouldn't be treated as a fillable
+                    -- candidate slot. Without this narrowing, an
+                    -- INVTYPE_SHIELD / HOLDABLE / WEAPONOFFHAND / 1H-
+                    -- INVTYPE_WEAPON in bags gets its upgrade check against
+                    -- slot 17's empty iLvl (0) which mass-stamps every
+                    -- offhand item as an upgrade. Pre-v2.59.10 the drift
+                    -- was safe (over-protect side of the affix-sale veto)
+                    -- but caused inconsistency between the three predicates.
+                    if slots and (equipLoc == "INVTYPE_WEAPON"
+                        or equipLoc == "INVTYPE_SHIELD"
+                        or equipLoc == "INVTYPE_HOLDABLE"
+                        or equipLoc == "INVTYPE_WEAPONOFFHAND")
+                    then
+                        local mhLink = GetInventoryItemLink and GetInventoryItemLink("player", 16)
+                        if mhLink then
+                            local _, _, _, _, _, _, _, _, mhEquipLoc = GetItemInfo(mhLink)
+                            if mhEquipLoc == "INVTYPE_2HWEAPON" then
+                                slots = { 16 }
+                            end
+                        end
+                    end
                     if iLvl and iLvl > 0 and slots then
                         -- For multi-slot equipLocs (rings, trinkets,
                         -- 1H weapons), compute the LOWEST iLvl among
@@ -5790,7 +5840,17 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- (EbonClearance_BagDisplay.lua) and EC_AnnotateTooltip's tome-veto
     -- branch (EbonClearance_Tooltip.lua) - all three MUST use the same
     -- condition shape or the trace / tooltip disagree with the vendor.
+    -- v2.59.10 (bug-hunt finding): also release on whitelistPass (Sell
+    -- List entry). The tooltip's tome branch has always guarded on
+    -- `not onSellList`; pre-v2.59.10 EC_IsSellable only released via the
+    -- `qualityPass`-gate short-circuit which failed the both-signals-set
+    -- case (item on Sell List AND matches a rarity rule). Failing input:
+    -- Rare pattern on Sell List, Rare rule enabled with maxILvl=0,
+    -- protectAllTomes on - tooltip said WILL SELL, vendor+trace said
+    -- won't sell. Now all three release for whitelistPass alone AND
+    -- whitelistPass+qualityPass.
     if qualityPass
+        and not whitelistPass
         and not recipePass
         and (DB.protectAllTomes or DB.protectUnlearnedTomes)
         and EC_compCache.itemIsTome(bag, slot, itemID)

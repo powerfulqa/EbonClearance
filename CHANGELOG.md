@@ -5,6 +5,66 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.10
+
+**Bug-hunt sweep across the recently-changed surface. One critical trace/vendor divergence + one high-severity affix mirror gap + two medium regressions + a batch of defensive tightening.**
+
+Ran four parallel review passes over the v2.59.5-v2.59.9 change surface plus the three-way `EC_IsSellable` / `describeSellability` / `EC_AnnotateTooltip` mirror contract. Findings and fixes below.
+
+## Critical: /ec sellinfo missed `knownProcPass` in its positive-signal summary
+
+The trace's final `positiveSignal` line at [EbonClearance_BagDisplay.lua](EbonClearance_BagDisplay.lua) had six signals (`isJunk / qualityPass / whitelistPass / affixRankPass / autoDupePass / recipePass`) but was missing the seventh, `knownProcPass` (the "you have this chance-on-hit proc extracted + sellChanceOnHitKnown toggle is on" positive signal added in v2.49.0). Failing input: a Rare weapon with an extracted chance-on-hit proc, `sellChanceOnHitKnown` on, and no other positive signal (Rare rule off / above cap, not on Sell List, no affix). Vendor sells, tooltip promises WILL SELL, `/ec sellinfo` printed `won't sell - no rule matched`. Trace lied.
+
+Fix: compute `knownProcPass` as a local at the top of describeSellability's summary section (strict mirror of the EC_IsSellable block at Events.lua:5615-5631), and include it in `positiveSignal`. Test 123a + 123b lock the presence + the compute gates.
+
+## High: `describeSellability`'s autoDupe ownership chain was only 2-layer
+
+`EC_IsSellable` and `EC_AnnotateTooltip` both use the canonical 3-layer ownership check (description-text / family+rank / family-only) via `EC_compCache.playerOwnsAffix`. The trace re-implemented only the first two layers (`ownsAffix = descKnown or rankKnown`). Failing input: an item with an unranked PE affix whose family the player has learned via spellbook-name match (the v2.45.0 fallback). EC_IsSellable + tooltip agreed WILL SELL; trace summary said `won't sell - protected`.
+
+Fix: add the `familyKnown` third layer to the trace's ownership chain, matching the shape at Events.lua:5514-5532 and Tooltip.lua:484-490. Test 123c locks the 3-layer contract.
+
+## Medium: `NS.AddCheckbox`-registered label re-anchored in `MakeQualityRow` fought the width registry on resize
+
+`MakeQualityRow` in Merchant Settings calls `NS.AddCheckbox`, which (post-v2.59.8) registers the label FontString in `widthRegistry` so it re-widths on Interface Options resize. Immediately after, `MakeQualityRow` re-anchors that same label with a LEFT+RIGHT anchor pair - the anchors become the width source; a per-resize `SetWidth` fights them. Only site in the codebase that combines AddCheckbox + LEFT+RIGHT re-anchor.
+
+Fix: new `EC_compCache.deregisterWidth(widget)` helper in [EbonClearance_PanelInfra.lua](EbonClearance_PanelInfra.lua). `MakeQualityRow` calls it after the re-anchor so anchor-derived sizing wins cleanly. Test 123d + 123e lock the API + call site.
+
+## Medium: tome-veto Sell-List release was only on the tooltip; EC_IsSellable + trace disagreed
+
+The tooltip's tome branch has always guarded on `and not onSellList` so a Sell-Listed tome/recipe releases the veto. `EC_IsSellable` and the trace only narrowed to `qualityPass` alone (v2.51.2 intent) - the both-signals-set case (Sell List entry AND rarity rule match) still hit the veto. Failing input: Pattern: Mooncloth Leggings on Sell List, Rare rule enabled at maxILvl=0, `protectAllTomes` on. Tooltip said WILL SELL. Vendor + trace said won't sell.
+
+Fix: explicit `and not whitelistPass` release in both EC_IsSellable and describeSellability's tome-veto guard so all three surfaces match the tooltip's release. Test 110o updated to lock the new shape.
+
+## /ec sellinfo chance-on-hit trace body now agrees with the tooltip in every case
+
+Two Serv-reported cases motivated a refactor of the chance-on-hit-protection step in `describeSellability`:
+
+1. **Axe of the Deep Woods** (id 811, Wilds proc extracted, `sellChanceOnHitKnown` on): tooltip correctly said `Will Sell (chance-on-hit proc known)`; trace's summary correctly said `WILL SELL` (post-v2.59.10 `knownProcPass` fix); but the trace BODY said `Chance-on-hit protection - n/a`. Root cause: the block's outer gate was `(qualityPass or affixRankPass or autoDupePass or recipePass)` - `knownProcPass` alone wasn't enough to enter, so the "sell released via known proc" branch never fired for that case.
+2. **Destiny** (id 647, stat-buff proc not extractable): tooltip said `Keep (chance-on-hit proc)` unconditionally; trace body said `n/a` (misleading - the proc IS the reason the item stays).
+
+Fix: widen the outer gate to include `knownProcPass`, and add a separate `elseif hasChanceOnHitLine` branch for the "proc present, no active sell rule" case (`chance-on-hit proc (Family) present; no sell rule fired`). Now every path through the block matches the tooltip's framing:
+
+- Item has proc + Allow-Sold → `chance-on-hit proc (Family), but you Allow-Sold this one`
+- Item has proc + `knownProcRelease` → `chance-on-hit proc known (Family), 'Sell known chance-on-hit procs' is on`
+- Item has proc + other signal fires + not released → `Kept - has a chance-on-hit proc (Family). Tip: ...`
+- Item has proc + no active sell rule → `chance-on-hit proc (Family) present; no sell rule fired`
+- Item has no proc / protection off → `n/a`
+
+Two new locale template keys. Test 109c updated to lock the new gate shape.
+
+## Defensive tightening
+
+- **City-scrub self-heal**: dropped the one-shot marker gate on `DB.cityZonesScrubbed` / `ADB.cityZonesScrubbed`. Pre-v2.59.10 a downgrade → upgrade cycle (`v2.59.5+ → v2.59.4 → v2.59.5+`) could re-pollute the bucket via the un-filtered intermediate version but leave the marker true, so the scrub never re-ran. Now the scrub runs every `EnsureDB` (10 lookups, trivial). The marker field is retained as a tombstone. Test 120d / 120e updated.
+- **2H narrowing mirror**: `checkBagsForUpgrades`' addition and removal paths now apply the same 2H-narrowing rule `isDowngradeVsEquipped` / `isUpgradeVsEquipped` use (when MH is a 2H, offhand slot 17 is locked empty and shouldn't be treated as a fillable candidate). Pre-v2.59.10 the drift was safe (over-protect side) but the three predicates disagreed on the same input.
+- **`getLowestEquippedILvl(nil)` nil-guard**: Lua 5.1 crashes on `ipairs(nil)`. Every current caller guards, but a future caller passing nil (equipLoc not in INVTYPE_SLOTS) would take down the sell path. Now returns nil consistently.
+- **Test 122 regex widening**: the reactive-width invariant checker previously required `_G[` to sit immediately after `=` in a `local <var> = _G[...]` assignment. Widened to catch `local <var> = <expr> and _G[...]` variants so a future SetWidth on such a variable can't slip past.
+- **Stale "420 px" comments** in MerchantPanel and ScavengerPanel updated to describe the current reactive-width behavior (post-v2.59.8).
+
+No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.59.9
 
 **Owned-affix auto-sell no longer supersedes an iLvl upgrade.**

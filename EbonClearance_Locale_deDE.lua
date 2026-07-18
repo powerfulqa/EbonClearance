@@ -754,6 +754,8 @@ NS.RegisterLocale("deDE", {
     ["n/a (no sell rule wants this item)"] = "",
     ["chance-on-hit proc, but you Allow-Sold this one"] = "",
     ["chance-on-hit proc (%s), but you Allow-Sold this one"] = "",
+    ["chance-on-hit proc present; no sell rule fired"] = "",
+    ["chance-on-hit proc (%s) present; no sell rule fired"] = "",
     ["Kept - has a chance-on-hit proc. Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."] = "",
     ["Kept - has a chance-on-hit proc (%s). Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."] = "",
     ["tome/recipe, but you Allow-Sold this one"] = "",

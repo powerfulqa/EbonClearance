@@ -3455,17 +3455,18 @@ do
                 "the tome veto must HARD-veto (return false) so Sell List membership doesn't bypass it; Allow Sell is the only bypass"
             )
             check(
-                "EC_IsSellable tome block gates on qualityPass alone (v2.51.2: whitelistPass releases the tome veto)",
+                "EC_IsSellable tome block gates on qualityPass AND explicitly releases on whitelistPass (v2.51.2 intent + v2.59.10 fix)",
                 -- v2.51.2 (Serv report, Pattern: Mooncloth Leggings): the
-                -- tome veto used to fire on `(qualityPass or whitelistPass)`
-                -- but that was inconsistent with the v2.20.1 chance-on-hit
-                -- narrowing (chance-on-hit veto explicitly exempts
-                -- whitelistPass). Sell List entries now release the tome
-                -- veto too, matching the affix + chance-on-hit family.
-                -- Allow Sell (ADB.allowedItems) is still a per-item override.
-                eventsSrc:find("if qualityPass\n%s+and not recipePass\n%s+and %(DB%.protectAllTomes") ~= nil
+                -- tome veto used to fire on `(qualityPass or whitelistPass)`.
+                -- v2.59.10 (bug-hunt): the intent was "whitelistPass releases
+                -- the veto" but the pre-fix condition only gated on
+                -- qualityPass, which fell into the both-signals-set case
+                -- (Sell List + rarity rule) and still vetoed. Now the
+                -- condition explicitly excludes whitelistPass, matching
+                -- the tooltip's long-standing `and not onSellList` guard.
+                eventsSrc:find("if qualityPass\n%s+and not whitelistPass\n%s+and not recipePass\n%s+and %(DB%.protectAllTomes") ~= nil
                     and eventsSrc:find("%(qualityPass or whitelistPass%).-and %(DB%.protectAllTomes") == nil,
-                "the tome gate must gate on qualityPass alone; whitelistPass entries release the veto"
+                "the tome gate must gate on qualityPass AND include `and not whitelistPass` so a Sell List entry releases the veto even when a rarity rule also matches"
             )
         end
     end
@@ -6986,12 +6987,12 @@ do
             fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Known Affix items %(purple%)"%]') ~= nil
                 and fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Random affix items %(purple%)"%]') == nil,
             "v2.51.3 (Serv request): prep-rename before the v2.52.0 companion 'Needed Affix items' tint lands. The affix row in SELL_BORDER_CATEGORIES now reads 'Known Affix items (purple)' so the panel reads as a natural pair with the incoming Needed Affix row. Locale template keys migrated in both frFR and deDE. Behavior unchanged (still fires on any bag item carrying a random affix).")
-        check("Test 110o: v2.51.2 tome-protection veto narrowed to qualityPass only (Sell List releases)",
-            ev:find("if qualityPass\n        and not recipePass\n        and %(DB%.protectAllTomes") ~= nil
-                and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not recipePass\n        and DB\n        and %(DB%.protectAllTomes") ~= nil
+        check("Test 110o: v2.51.2 + v2.59.10 tome-protection veto explicitly releases on whitelistPass across all three parity sites",
+            ev:find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and %(DB%.protectAllTomes") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and DB\n        and %(DB%.protectAllTomes") ~= nil
                 and fileSrc("EbonClearance_Tooltip.lua"):find("and not onSellList") ~= nil
                 and fileSrc("EbonClearance_Tooltip.lua"):find("local onSellList = IsInSet%(DB%.whitelist, id%)") ~= nil,
-            "v2.51.2 fix (Serv report, Pattern: Mooncloth Leggings id=14497): tome-protection HARD veto used to fire on `(qualityPass or whitelistPass)` which was inconsistent with the v2.20.1 chance-on-hit narrowing (chance-on-hit veto fires on quality/rank/dupe/recipe but NOT whitelistPass). A player who added a learnt recipe to Sell List with 'Protect all tomes' on saw the item quietly refuse to sell. Now: all three parity sites (EC_IsSellable, describeSellability trace, EC_AnnotateTooltip) narrow to qualityPass-only. Adding to Sell List becomes explicit-enough intent. Allow Sell escape hatch stays for players not using lists. Auto-rule quality sweep still protected.")
+            "v2.51.2 intent + v2.59.10 completion (Serv report, Pattern: Mooncloth Leggings id=14497): the tome-protection HARD veto used to fire on `(qualityPass or whitelistPass)` which was inconsistent with the chance-on-hit narrowing. v2.51.2 narrowed to `qualityPass` alone but forgot the both-signals case (Sell List + rarity rule = still vetoed). v2.59.10 (bug-hunt): explicit `and not whitelistPass` release in EC_IsSellable + describeSellability so all three surfaces match the tooltip's `and not onSellList` guard exactly.")
         check("Test 110n: v2.51.1 Quickstart Q13b deleteMode question wired end-to-end",
             fileSrc("EbonClearance_QuickstartPanel.lua"):find("deleteMode = %{") ~= nil
                 and fileSrc("EbonClearance_QuickstartPanel.lua"):find("vendorOnly = function%(DB%)") ~= nil
@@ -7042,10 +7043,10 @@ do
     check("Test 109b: EC_IsSellable chance-on-hit block clears all four auto-rule pass signals when firing",
         ev:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
         "the block MUST clear all four pass signals (not just qualityPass) so the recheck at the end of EC_IsSellable correctly rejects the item. Clearing only qualityPass leaves the other three signals set - the recheck ORs across all of them and returns true.")
-    check("Test 109c: BagDisplay trace mirror widened + clears the same four signals",
-        bd:find("%(qualityPass or affixRankPass or autoDupePass or recipePass%)%s+and DB%s+and DB%.protectChanceOnHitItems") ~= nil
+    check("Test 109c: BagDisplay trace chance-on-hit gate covers all five positive signals + clears the four rule signals",
+        bd:find("hasChanceOnHitLine and %(qualityPass or affixRankPass or autoDupePass or recipePass or knownProcPass%)") ~= nil
             and bd:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
-        "the /ec sellinfo trace MUST agree with EC_IsSellable's verdict. If the trace still only gates on qualityPass, the trace lies about the actual outcome (was reporting 'chanceOnHitProtection - n/a' for items that SHOULD have shown as protected).")
+        "the /ec sellinfo trace MUST agree with EC_IsSellable's verdict. v2.59.10 widened the gate to include knownProcPass so an item whose only positive signal is a known-proc release enters the block and gets the 'chance-on-hit proc known (Family), sell released' explanation. The four rule signals still get cleared when the protection actually vetoes (else branch below).")
     -- v2.48.1 companion bug (also reported by Serv against Sentinel's Blade
     -- of Iron Will II): affixRankPass and autoDupePass fired for items with
     -- sellPrice = 0. Vendor refuses, item wedges, tooltip lies. Gate both on
@@ -7484,16 +7485,16 @@ do
     check("Test 120c: attributeCopperToZone skips city buckets before the bucket write",
         src:find("if EC_CITY_ZONES%[zone%] then%s*return%s*end%s*.-EC_BumpStatBucket%(\"copperByZone\"") ~= nil,
         "the city guard MUST early-return before EC_BumpStatBucket. Without it a mail-box vendor sale in Dalaran writes to DB.copperByZone['Dalaran'] and re-pollutes the leaderboard on the very next login.")
-    check("Test 120d: EnsureDB one-shot city scrub gated on DB.cityZonesScrubbed",
-        src:find("if not DB%.cityZonesScrubbed then") ~= nil
-            and src:find("DB%.copperByZone%[zone%] = nil") ~= nil
-            and src:find("DB%.cityZonesScrubbed = true") ~= nil,
-        "existing polluted city entries in DB.copperByZone must be removed via a one-shot marker-gated loop in EnsureDB. Otherwise users who upgrade to v2.59.5 still see Dalaran / Stormwind at the top of the leaderboard despite the runtime filter blocking new writes.")
-    check("Test 120e: EnsureAccountDB one-shot city scrub gated on ADB.cityZonesScrubbed",
-        src:find("if not ADB%.cityZonesScrubbed then") ~= nil
-            and src:find("AS%.copperByZone%[zone%] = nil") ~= nil
-            and src:find("ADB%.cityZonesScrubbed = true") ~= nil,
-        "the account-wide bucket needs its own marker + scrub. Idempotent across characters (first character clears it, subsequent characters no-op) but if the ADB scrub is missing the account view keeps showing city pollution even after the per-character DB is clean.")
+    check("Test 120d: EnsureDB city scrub runs every login (v2.59.10 removed the one-shot gate)",
+        src:find("DB%.copperByZone%[zone%] = nil") ~= nil
+            and src:find("DB%.cityZonesScrubbed = true") ~= nil
+            and src:find("if not DB%.cityZonesScrubbed then") == nil,
+        "the DB scrub MUST run every EnsureDB so a downgrade -> upgrade cycle (v2.59.10+ -> v2.59.4 -> v2.59.10+) that re-polluted the bucket via the un-filtered intermediate version self-heals. The DB.cityZonesScrubbed field is retained as a tombstone but no longer gates the loop.")
+    check("Test 120e: EnsureAccountDB city scrub runs every login (v2.59.10 removed the one-shot gate)",
+        src:find("AS%.copperByZone%[zone%] = nil") ~= nil
+            and src:find("ADB%.cityZonesScrubbed = true") ~= nil
+            and src:find("if not ADB%.cityZonesScrubbed then") == nil,
+        "same rationale as Test 120d: the account bucket also scrubs on every EnsureAccountDB, not gated. Idempotent when nothing needs clearing.")
 end
 
 -- ---------------------------------------------------------------------------
@@ -7662,7 +7663,14 @@ do
                 lineNo = lineNo + 1
                 local stripped = line:match("^%s*(.-)%s*$") or ""
                 if stripped:sub(1, 2) ~= "--" then
-                    local var = line:match("local%s+([%w_]+)%s*=%s*_G%[.-Text[\"']?%s*%]")
+                    -- v2.59.10 (bug-hunt): widened. The pre-fix pattern
+                    -- required `_G[` to sit immediately after `=`, so a
+                    -- variant like `local qText = qcb and _G[...]` was
+                    -- silently ignored - a future SetWidth on such a var
+                    -- would slip past the invariant. Now match any
+                    -- `_G[...Text[...]]` fragment on the RHS of a
+                    -- `local <var> = ...` assignment.
+                    local var = line:match("local%s+([%w_]+)%s*=.-_G%[.-Text[\"']?%s*%]")
                     if var then
                         textVars[var] = lineNo
                     end
@@ -7675,6 +7683,50 @@ do
             end
         end
     end
+    -- ---------------------------------------------------------------------------
+    -- Test 123 (v2.59.10 bug-hunt): mirror parity between EC_IsSellable and
+    -- describeSellability's positive-signal summary. Pre-v2.59.10 the trace's
+    -- summary was missing knownProcPass; the autoDupe ownership chain was
+    -- only 2-layer (missing familyKnown); and the deregisterWidth API +
+    -- MakeQualityRow call site both had to exist together. Each check locks
+    -- a specific mirror-drift class.
+    -- ---------------------------------------------------------------------------
+    do
+        local function fileSrc(path)
+            local fh = io.open(path, "rb")
+            if not fh then return "" end
+            local s = fh:read("*a") or ""
+            fh:close()
+            return s
+        end
+        local bdSrc = fileSrc("EbonClearance_BagDisplay.lua")
+        check("Test 123a: describeSellability positiveSignal includes knownProcPass",
+            bdSrc:find("local positiveSignal =") ~= nil
+                and bdSrc:find("or recipePass or knownProcPass", 1, true) ~= nil,
+            "The `positiveSignal` local at the end of describeSellability MUST include knownProcPass so the /ec sellinfo summary matches EC_IsSellable's exit recheck at Events.lua:5816. Pre-v2.59.10 a Rare weapon with an extracted chance-on-hit proc + sellChanceOnHitKnown ON + no other positive signal made the trace print 'won't sell - no rule matched' while the vendor sold + tooltip promised the sale.")
+        check("Test 123b: describeSellability computes knownProcPass locally with the same gates as EC_IsSellable",
+            bdSrc:find("local knownProcPass = false") ~= nil
+                and bdSrc:find("DB%.sellChanceOnHitKnown") ~= nil
+                and bdSrc:find("DB%.protectChanceOnHitItems") ~= nil
+                and bdSrc:find("EC_compCache%.itemHasChanceOnHit") ~= nil
+                and bdSrc:find("EC_compCache%.playerHasExtractedProc") ~= nil,
+            "describeSellability MUST compute knownProcPass with the same gates EC_IsSellable uses (hasSellPrice, sellChanceOnHitKnown, protectChanceOnHitItems, itemHasChanceOnHit, chanceProcLine, playerHasExtractedProc). Any drift here means the trace can lie about the vendor's actual decision.")
+        check("Test 123c: describeSellability autoDupe ownership chain is 3-layer (descKnown / rankKnown / familyKnown)",
+            bdSrc:find("local familyKnown = %(not descKnown%)") ~= nil
+                and bdSrc:find("EC_compCache%.playerHasAffixFamily%(affixDataForTrace%.name%)") ~= nil
+                and bdSrc:find("local ownsAffix = %(descKnown or rankKnown or familyKnown%)") ~= nil,
+            "describeSellability's autoDupePass MUST use the 3-layer ownership chain (description text / family+rank / family-only) to match EC_IsSellable at Events.lua:5514-5532 and EC_AnnotateTooltip at Tooltip.lua:484-490. The v2.45.0 family-only fallback catches unranked PE affixes whose spell-side text doesn't match the item-side text; without it the trace disagrees with vendor+tooltip.")
+
+        local piSrc = fileSrc("EbonClearance_PanelInfra.lua")
+        check("Test 123d: EC_compCache.deregisterWidth exists (v2.59.10)",
+            piSrc:find("function EC_compCache.deregisterWidth", 1, true) ~= nil,
+            "The reactive-width registry needs a deregister API for callers that follow NS.AddCheckbox / setPanelWidth with a manual LEFT+RIGHT anchor pair (the anchors become the width source; a per-resize SetWidth would fight them).")
+        local mpSrc = fileSrc("EbonClearance_MerchantPanel.lua")
+        check("Test 123e: MakeQualityRow deregisters rowLabel after LEFT+RIGHT re-anchor",
+            mpSrc:find("EC_compCache%.deregisterWidth%(rowLabel%)") ~= nil,
+            "The rarity-row label in MakeQualityRow gets manually re-anchored with LEFT+RIGHT after NS.AddCheckbox registered it in widthRegistry. Without deregisterWidth the per-resize SetWidth fights the anchor pair. This is currently the only site in the codebase that combines AddCheckbox + LEFT+RIGHT re-anchor.")
+    end
+
     check("Test 122: no bare SetWidth(<literal>) on checkbox label FontStrings",
         #violations == 0,
         "Found " .. #violations .. " checkbox label FontStrings using bare SetWidth(<literal>). Every such site must use EC_compCache.setPanelWidth(text, <inset>) so the label reacts to Interface Options frame resize (SetWordWrap(true) recommended). Offenders:\n  " .. table.concat(violations, "\n  "))

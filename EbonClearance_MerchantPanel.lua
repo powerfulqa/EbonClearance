@@ -215,9 +215,11 @@ MerchantPanel:SetScript("OnShow", function(self)
         end)
         self.repairCB = repairCB
         if rt then
-            -- Same trick as Scavenger: text frame is 420 wide for wrap
-            -- support but the label only takes ~150px. Anchor LEFT-to-LEFT
-            -- using GetStringWidth so the [?] sits right after the label.
+            -- Same trick as Scavenger: text frame is reactive-width
+            -- (v2.59.8, was 420) for wrap support but the label only
+            -- takes ~150px. Anchor LEFT-to-LEFT using GetStringWidth so
+            -- the [?] sits right after the label - content-derived, so
+            -- the icon tracks resize / wrap correctly.
             local strW = (rt.GetStringWidth and rt:GetStringWidth()) or 0
             NS.AddHelpIcon(content, rt, "LEFT", "LEFT", strW + 6, 0, "gate-repair")
         end
@@ -536,14 +538,21 @@ MerchantPanel:SetScript("OnShow", function(self)
             -- control beside it.
             local ilvlHelp = NS.AddHelpIcon(content, useEqText, "RIGHT", "LEFT", -2, 0, "gate-fixed-vs-equipped-ilvl")
 
-            -- Re-anchor the rarity-row checkbox's auto-label so its right edge
-            -- is bounded by the "Use equipped iLvl" text's left edge. The
-            -- shared AddCheckbox helper applies a fixed 420 px label width
-            -- which fits the wider Main / Keep Settings panels but
-            -- overruns the right-anchored max-iLvl input on this row at
-            -- narrow panel widths. Anchoring instead of fixed-width lets the
-            -- rarity name truncate cleanly rather than visually colliding
-            -- with the iLvl controls.
+            -- Re-anchor the rarity-row checkbox's auto-label so its right
+            -- edge is bounded by the "Use equipped iLvl" text's left edge.
+            -- The row-specific LEFT+RIGHT anchor pair fits the max-iLvl
+            -- input + Use-Equipped controls better than a fixed or
+            -- reactive width would; the rarity name truncates cleanly
+            -- rather than visually colliding with the iLvl controls.
+            -- v2.59.10 (bug-hunt finding): NS.AddCheckbox now registers
+            -- the label in the reactive-width registry (v2.59.8) so the
+            -- reactive-panel-layout invariant applies to it on every
+            -- Interface Options resize. This row's LEFT+RIGHT anchor
+            -- pair below is the actual width source; a per-resize
+            -- SetWidth would fight it. Deregister the label from the
+            -- registry after we set the anchor pair so anchor-derived
+            -- sizing wins cleanly. Only site in the codebase that
+            -- combines AddCheckbox + LEFT+RIGHT re-anchor.
             local rowLabel = _G[cb:GetName() .. "Text"]
             if rowLabel then
                 rowLabel:ClearAllPoints()
@@ -555,6 +564,9 @@ MerchantPanel:SetScript("OnShow", function(self)
                 end
                 if rowLabel.SetNonSpaceWrap then
                     rowLabel:SetNonSpaceWrap(false)
+                end
+                if EC_compCache.deregisterWidth then
+                    EC_compCache.deregisterWidth(rowLabel)
                 end
             end
 

@@ -1267,7 +1267,19 @@ function EC_compCache.describeSellability(bag, slot)
             and affixDataForTrace.rank
             and EC_compCache.playerHasAffixRank
             and EC_compCache.playerHasAffixRank(affixDataForTrace.name, affixDataForTrace.rank)
-        local ownsAffix = (descKnown or rankKnown) and true or false
+        -- v2.59.10: the third layer (family-name-only, for unranked PE
+        -- affixes) matches EC_IsSellable's ownership check + the tooltip's
+        -- affix-known path. Pre-fix the trace summary said "won't sell -
+        -- protected" for an unranked-family owned dupe while the vendor
+        -- + tooltip agreed WILL SELL. Aligns with the canonical 3-layer
+        -- helper EC_compCache.playerOwnsAffix.
+        local familyKnown = (not descKnown)
+            and (not rankKnown)
+            and (not affixDataForTrace.rank)
+            and affixDataForTrace.name
+            and EC_compCache.playerHasAffixFamily
+            and EC_compCache.playerHasAffixFamily(affixDataForTrace.name)
+        local ownsAffix = (descKnown or rankKnown or familyKnown) and true or false
         -- v2.48.1 hasSellPrice gate mirror: EC_IsSellable's autoDupePass
         -- won't fire without a sell price, so the trace must not report
         -- it as a positive sell signal either. Emit a distinct message
@@ -1527,18 +1539,62 @@ function EC_compCache.describeSellability(bag, slot)
         end
     end
 
+    -- v2.59.10 (bug-hunt): compute knownProcPass BEFORE the chance-on-hit
+    -- block below so the block's outer gate can include it. Strict mirror
+    -- of the EC_IsSellable block at Events.lua:5615-5631 (same gates:
+    -- hasSellPrice, sellChanceOnHitKnown, protectChanceOnHitItems,
+    -- itemHasChanceOnHit, procLine present, playerHasExtractedProc).
+    -- Reused by the positiveSignal summary further down.
+    local knownProcPass = false
+    if hasSellPrice
+        and DB
+        and DB.sellChanceOnHitKnown
+        and DB.protectChanceOnHitItems
+        and EC_compCache.itemHasChanceOnHit
+        and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+    then
+        local procLine = EC_compCache.chanceProcLine
+            and EC_compCache.chanceProcLine(bag, slot, itemID)
+        if procLine
+            and EC_compCache.playerHasExtractedProc
+            and EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
+        then
+            knownProcPass = true
+        end
+    end
+
     -- v2.48.2 widening: mirror the EC_IsSellable widening so /ec sellinfo
     -- agrees with the merchant cycle. Pre-v2.48.2 the trace only fired
     -- the gate on qualityPass and reported "n/a" for items that were
     -- being sold via affixRankPass / autoDupePass / recipePass instead -
     -- a lie about the actual verdict when the item had a proc.
-    if
-        (qualityPass or affixRankPass or autoDupePass or recipePass)
-        and DB
+    -- v2.59.10 (bug-hunt): further widened to include knownProcPass in
+    -- the outer gate + added a separate "elseif hasChanceOnHitLine"
+    -- branch so an item with a chance-on-hit line whose only positive
+    -- signal is knownProcPass gets the "known proc, sell released"
+    -- explanation (Serv report: Axe of the Deep Woods on knownProcPass
+    -- alone), and an item with a chance-on-hit line whose sell path is
+    -- idle gets a "proc present, no active sell rule" note instead of
+    -- the misleading "n/a" (Serv report: Destiny after Sell List
+    -- removal, tooltip said Keep (chance-on-hit proc) while trace body
+    -- said n/a).
+    local hasChanceOnHitLine = DB
         and DB.protectChanceOnHitItems
         and EC_compCache.itemHasChanceOnHit
         and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
-    then
+    -- v2.59.7: look up the proc family for DISPLAY purposes so the
+    -- trace can name the spell (e.g. "Flurry", "Wilds") in every branch
+    -- below. Uses the seed catalog + autolearned pairings; no catalog
+    -- scan, so it's cheap to call unconditionally.
+    local displayFamily
+    if hasChanceOnHitLine and itemID then
+        if NS.chanceProcConfirmedItems and NS.chanceProcConfirmedItems[itemID] then
+            displayFamily = NS.chanceProcConfirmedItems[itemID].family
+        elseif ADB and ADB.chanceProcConfirmedItems and ADB.chanceProcConfirmedItems[itemID] then
+            displayFamily = ADB.chanceProcConfirmedItems[itemID].family
+        end
+    end
+    if hasChanceOnHitLine and (qualityPass or affixRankPass or autoDupePass or recipePass or knownProcPass) then
         -- v2.49.0 mirror: check whether the player has extracted the
         -- proc AND the experimental toggle is on. If yes, the item is
         -- eligible for auto-sell despite the chance-on-hit protection.
@@ -1553,19 +1609,7 @@ function EC_compCache.describeSellability(bag, slot)
                 knownFamily = family
             end
         end
-        -- v2.59.7: separately from the sell-known gate above, look up
-        -- the proc family for DISPLAY purposes so /ec sellinfo can name
-        -- the spell (e.g. "Flurry", "Incineration") even when the item
-        -- is being kept. Uses the seed catalog + autolearned pairings;
-        -- no catalog scan, so it's cheap to call unconditionally.
-        local displayFamily = knownFamily
-        if not displayFamily and itemID then
-            if NS.chanceProcConfirmedItems and NS.chanceProcConfirmedItems[itemID] then
-                displayFamily = NS.chanceProcConfirmedItems[itemID].family
-            elseif ADB and ADB.chanceProcConfirmedItems and ADB.chanceProcConfirmedItems[itemID] then
-                displayFamily = ADB.chanceProcConfirmedItems[itemID].family
-            end
-        end
+        if not displayFamily then displayFamily = knownFamily end
         if ADB and ADB.allowedItems and ADB.allowedItems[itemID] then
             if displayFamily then
                 step("chanceOnHitProtection", true,
@@ -1578,7 +1622,7 @@ function EC_compCache.describeSellability(bag, slot)
                 "chanceOnHitProtection",
                 true,
                 string.format(L["chance-on-hit proc known (%s), 'Sell known chance-on-hit procs' is on"],
-                    knownFamily or "?")
+                    knownFamily or displayFamily or "?")
             )
         else
             qualityPass = false
@@ -1592,6 +1636,20 @@ function EC_compCache.describeSellability(bag, slot)
                 step("chanceOnHitProtection", false, L["Kept - has a chance-on-hit proc. Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
             end
         end
+    elseif hasChanceOnHitLine then
+        -- v2.59.10 (Serv report - Destiny): the item has a chance-on-hit
+        -- line and protectChanceOnHitItems is on, but no positive sell
+        -- signal fires (nothing wants to sell it right now). Tooltip
+        -- labels the item Keep (chance-on-hit proc) unconditionally; the
+        -- trace body used to say "n/a" here, which read as "chance-on-
+        -- hit doesn't apply" - misleading against the tooltip. Report
+        -- the passive state instead so the two surfaces agree.
+        if displayFamily then
+            step("chanceOnHitProtection", true,
+                string.format(L["chance-on-hit proc (%s) present; no sell rule fired"], displayFamily))
+        else
+            step("chanceOnHitProtection", true, L["chance-on-hit proc present; no sell rule fired"])
+        end
     else
         step("chanceOnHitProtection", true, L["n/a"])
     end
@@ -1604,10 +1662,14 @@ function EC_compCache.describeSellability(bag, slot)
     -- (Alt+Right-Click) still exists as a per-item override.
     -- EC-TRAP: this predicate MUST match EC_IsSellable's tome-veto
     -- block AND EC_AnnotateTooltip's tome branch - all three parity
-    -- sites use `qualityPass and not recipePass and (protectAllTomes
-    -- or protectUnlearnedTomes)`.
+    -- sites use `qualityPass and not whitelistPass and not recipePass
+    -- and (protectAllTomes or protectUnlearnedTomes)`. v2.59.10 (bug-
+    -- hunt): the `not whitelistPass` release was previously missing
+    -- here + in EC_IsSellable, causing the trace to diverge from the
+    -- tooltip (which had the release) for the both-signals-set case.
     local tomeProtected = false
     if qualityPass
+        and not whitelistPass
         and not recipePass
         and DB
         and (DB.protectAllTomes or DB.protectUnlearnedTomes)
@@ -1630,7 +1692,16 @@ function EC_compCache.describeSellability(bag, slot)
         end
     end
 
-    local positiveSignal = isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass
+    -- v2.59.10: knownProcPass is now computed earlier (before the
+    -- chance-on-hit protection block above) so both surfaces can consume
+    -- it. It's included here in the positive-signal summary so the trace
+    -- agrees with EC_IsSellable's exit recheck (Events.lua:~5816) and
+    -- the tooltip's "Will Sell (chance-on-hit proc known)" label. Pre-
+    -- fix a Rare weapon with an extracted chance-on-hit proc,
+    -- sellChanceOnHitKnown ON, and no other positive signal had /ec
+    -- sellinfo print "won't sell - no rule matched" while the vendor
+    -- sold it and the tooltip promised the sale - the trace lied.
+    local positiveSignal = isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass or recipePass or knownProcPass
     local vetoed = equipped or blacklisted or affixProtected or tomeProtected
     local wouldSell = positiveSignal and not vetoed and not locked
 

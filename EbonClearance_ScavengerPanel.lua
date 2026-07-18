@@ -93,12 +93,14 @@ ScavengerPanel:SetScript("OnShow", function(self)
         end)
         self.sumCB = sumCB
         if st then
-            -- AddCheckbox sets the text FontString frame width to 420px so
-            -- long labels can wrap. For short labels like this one
-            -- (~170px), anchoring [?] to text:RIGHT puts the icon past the
-            -- visible text and off the right of the panel. Anchor LEFT-to-
-            -- LEFT using GetStringWidth (the actual rendered text width)
-            -- so the icon sits right after the visible label, clickable.
+            -- AddCheckbox sets the text FontString frame to a reactive
+            -- width (v2.59.8, was 420px) so long labels can wrap. For
+            -- short labels like this one (~170px), anchoring [?] to
+            -- text:RIGHT would put the icon past the visible text.
+            -- Anchor LEFT-to-LEFT using GetStringWidth (the actual
+            -- rendered text width) so the icon sits right after the
+            -- visible label. Content-derived, so the icon tracks
+            -- resize / wrap correctly.
             local strW = (st.GetStringWidth and st:GetStringWidth()) or 0
             NS.AddHelpIcon(content, st, "LEFT", "LEFT", strW + 6, 0, "scav-summon")
         end
@@ -174,8 +176,9 @@ ScavengerPanel:SetScript("OnShow", function(self)
         local cycleCBText = _G[cycleCB:GetName() .. "Text"]
         if cycleCBText then
             -- See the matching AddHelpIcon for sumCB above: AddCheckbox's
-            -- 420px text-frame width makes text:RIGHT unreachable for short
-            -- labels. Anchor LEFT-to-LEFT past GetStringWidth instead.
+            -- reactive-width text FontString (v2.59.8, was 420px) makes
+            -- text:RIGHT unreachable for short labels. Anchor LEFT-to-
+            -- LEFT past GetStringWidth instead.
             local strW = (cycleCBText.GetStringWidth and cycleCBText:GetStringWidth()) or 0
             NS.AddHelpIcon(content, cycleCBText, "LEFT", "LEFT", strW + 6, 0, "scav-autoloot-cycle")
         end

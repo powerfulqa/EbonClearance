@@ -5,6 +5,35 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.59.11
+
+**Locale drift on the realm-wide aggregates: cities AND items now render in the receiver's locale.**
+
+Two Serv reports from the Stats-Server panel that trace to the same root cause: aggregation pools across every locale on the realm, so a `frFR` client's payload contains French zone names AND French item names, which an `enUS` receiver used to display verbatim.
+
+## Cities: `EC_CITY_ZONES` now covers localized names
+
+Report: "Fossoyeuse" (French Undercity) appeared on the "Realm's Best Farming Zones" leaderboard.
+
+Root cause: `EC_CITY_ZONES` was enumerated in English only. A `frFR` client farming in Undercity writes "Fossoyeuse" into their `copperByZone` bucket and sends it in `SDAT`. An `enUS` receiver decoded the payload, didn't recognize the localized name as a city, and let it land on the aggregate.
+
+Fix: `EC_CITY_ZONES` now flattens from `EC_CITY_ZONES_BY_LOCALE` covering the ten WotLK capitals across `enUS`/`enGB`, `deDE`, `frFR`, and `esES`/`esMX`. The receiver-side decode filters in `GuildShare` / `ServerShare` route through `EC_compCache.isCityZone` which does an O(1) lookup, so the added entries have no measurable cost. The one-shot EnsureDB / EnsureAccountDB scrubs (run every login post-v2.59.10) also pick up any existing localized city entries in the bucket. Additional locales (`ruRU`, `koKR`, `zhCN`, `zhTW`) can be added when a specific localized city name shows up in the wild - the table structure makes adding a new locale a five-line change.
+
+## Items: display name resolved via local `GetItemInfo`
+
+Report: "Etoffe runique" (French Runecloth) and "Etoffe de tisse-neant" (French Netherweave Cloth) appeared on the "Realm's Most-Sold Items" leaderboard.
+
+Root cause different from the city case: the item aggregate IS keyed by `itemID` (ServerShare.lua:216 + GuildPanel `_itemRows` merge), so different-locale variants of the same item correctly collapse into one entry. But the DISPLAYED name was captured from whichever client's payload arrived first - an `enUS` receiver saw the French name whenever a `frFR` client had seeded the entry.
+
+Fix: resolve the item name at DISPLAY time via local `GetItemInfo(itemID)`, which returns the item's name in the RECEIVER's locale. Fall back to the payload name only when the item cache is cold (rare on a Top-5-sold leaderboard). Applied to both the `Realm's Most-Sold Items` list (Stats-Server) and `Guild's Most-Sold Items` list (Stats-Guild). Uncached items resolve on the next refresh once WoW's item cache warms up.
+
+Test 120a updated to lock the shipped locale set + call out the "Fossoyeuse" regression by name.
+
+No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.59.10
 
 **Bug-hunt sweep across the recently-changed surface. One critical trace/vendor divergence + one high-severity affix mirror gap + two medium regressions + a batch of defensive tightening.**

@@ -7466,19 +7466,34 @@ end
 -- data. Wallet totalCopper is bumped separately, so accurate wallet totals
 -- are untouched by the filter.
 do
-    check("Test 120a: EC_CITY_ZONES covers all 10 WotLK cities",
-        src:find('local EC_CITY_ZONES', 1, true) ~= nil
-            and src:find('["Stormwind City"] = true', 1, true) ~= nil
-            and src:find('["Ironforge"] = true', 1, true) ~= nil
-            and src:find('["Darnassus"] = true', 1, true) ~= nil
-            and src:find('["The Exodar"] = true', 1, true) ~= nil
-            and src:find('["Orgrimmar"] = true', 1, true) ~= nil
-            and src:find('["Thunder Bluff"] = true', 1, true) ~= nil
-            and src:find('["Undercity"] = true', 1, true) ~= nil
-            and src:find('["Silvermoon City"] = true', 1, true) ~= nil
-            and src:find('["Shattrath City"] = true', 1, true) ~= nil
-            and src:find('["Dalaran"] = true', 1, true) ~= nil,
-        "the EC_CITY_ZONES set must enumerate every WotLK city so the attribution filter and the scrub cover all mailboxed-vendoring hubs. Missing an entry means that city's sales continue polluting the Top Zones leaderboard.")
+    check("Test 120a: EC_CITY_ZONES covers all 10 WotLK cities across enUS + deDE + frFR + esES",
+        src:find('local EC_CITY_ZONES_BY_LOCALE', 1, true) ~= nil
+            -- enUS
+            and src:find('"Stormwind City"', 1, true) ~= nil
+            and src:find('"Ironforge"', 1, true) ~= nil
+            and src:find('"Darnassus"', 1, true) ~= nil
+            and src:find('"The Exodar"', 1, true) ~= nil
+            and src:find('"Orgrimmar"', 1, true) ~= nil
+            and src:find('"Thunder Bluff"', 1, true) ~= nil
+            and src:find('"Undercity"', 1, true) ~= nil
+            and src:find('"Silvermoon City"', 1, true) ~= nil
+            and src:find('"Shattrath City"', 1, true) ~= nil
+            and src:find('"Dalaran"', 1, true) ~= nil
+            -- deDE
+            and src:find('"Sturmwind"', 1, true) ~= nil
+            and src:find('"Eisenschmiede"', 1, true) ~= nil
+            and src:find('"Unterstadt"', 1, true) ~= nil
+            and src:find('"Silbermond"', 1, true) ~= nil
+            -- frFR (the reported "Fossoyeuse" case)
+            and src:find('"Hurlevent"', 1, true) ~= nil
+            and src:find('"Forgefer"', 1, true) ~= nil
+            and src:find('"Fossoyeuse"', 1, true) ~= nil
+            and src:find('"Lune-d\'argent"', 1, true) ~= nil
+            -- esES
+            and src:find('"Ventormenta"', 1, true) ~= nil
+            and src:find('"Forjaz"', 1, true) ~= nil
+            and src:find('"Lunargenta"', 1, true) ~= nil,
+        "the EC_CITY_ZONES_BY_LOCALE table must enumerate every WotLK city across the shipped locales (enUS/enGB, deDE, frFR, esES/esMX). Realm-wide aggregation pools across ALL clients' locales, so a French client sending 'Fossoyeuse' as their Undercity attribution needs to be recognized by an English receiver as a city entry. Additional locales (ruRU / koKR / zhCN / zhTW) can be added when specific localized names appear in the wild.")
     check("Test 120b: EC_compCache.isCityZone helper exists",
         src:find("function EC_compCache%.isCityZone%(zone%)") ~= nil,
         "callers outside Events.lua that want to query the city set (e.g. future display-time filters in GuildShare / ServerShare / StatsPanel) MUST route through EC_compCache.isCityZone rather than duplicating a hardcoded list. Removing the helper is a mirror-drift trap.")

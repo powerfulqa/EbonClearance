@@ -99,12 +99,24 @@ repaintServerPanel = function()
     end
 
     -- Item rows (agg.items is already a sorted top-5 array).
+    -- v2.59.11 (Serv report - "Etoffe runique" / "Etoffe de tisse-neant"
+    -- appeared on the Most-Sold Items leaderboard): the item aggregate
+    -- is keyed by itemID (ServerShare.lua:216), so localized names for
+    -- the SAME item ID collapse into one entry correctly. But the
+    -- DISPLAYED name was captured from whichever client's payload
+    -- arrived first, so an enUS receiver saw the French name if a frFR
+    -- client seeded the entry. Fix: resolve the name locally via
+    -- GetItemInfo (returns the receiver-locale name); fall back to the
+    -- payload name only when the item cache is cold (uncached items
+    -- rarely appear on a Top-5-sold leaderboard, so the fallback is
+    -- extremely rare in practice).
     local items = agg.items or {}
     for i = 1, 5 do
         local row = panel._itemRows[i]
         local e = items[i]
         if e then
-            row.left:SetText(e.name or tostring(e.id))
+            local localName = e.id and GetItemInfo(e.id) or nil
+            row.left:SetText(localName or e.name or tostring(e.id))
             row.right:SetText("|cffffd100" .. num(e.count or 0) .. L["|r sold"])
             row.itemID = e.id
             row:Show()

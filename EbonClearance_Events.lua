@@ -148,25 +148,55 @@ local EC_compCache = NS.compCache
 -- v2.59.5 (Serv report): city zones don't count as farming areas. A player
 -- vendoring mailboxed items in Dalaran / Stormwind / Orgrimmar is not
 -- farming there, so their sale copper should not pollute the "Top Zones"
--- leaderboard the Stats / Stats-Guild / Stats-Server panels render. Names
--- match GetRealZoneText output on English-locale clients (Project
--- Ebonhold's audience). Consumed by EC_compCache.attributeCopperToZone
--- (skip the per-zone bucket write) and by two one-shot EnsureDB /
--- EnsureAccountDB scrubs that strip historical city keys from
--- DB.copperByZone and ADB.accountStats.copperByZone. Wallet totalCopper
--- is bumped separately and stays accurate.
-local EC_CITY_ZONES = {
-    ["Stormwind City"] = true,
-    ["Ironforge"] = true,
-    ["Darnassus"] = true,
-    ["The Exodar"] = true,
-    ["Orgrimmar"] = true,
-    ["Thunder Bluff"] = true,
-    ["Undercity"] = true,
-    ["Silvermoon City"] = true,
-    ["Shattrath City"] = true,
-    ["Dalaran"] = true,
+-- leaderboard the Stats / Stats-Guild / Stats-Server panels render.
+-- Consumed by EC_compCache.attributeCopperToZone (sender-side skip),
+-- the receiver-side decode filters in GuildShare / ServerShare (drop
+-- city entries from peer payloads), and the EnsureDB / EnsureAccountDB
+-- scrubs that strip historical city keys from DB.copperByZone and
+-- ADB.accountStats.copperByZone. Wallet totalCopper is bumped
+-- separately and stays accurate.
+--
+-- v2.59.11 (Serv report - "Fossoyeuse" appeared in Realm's Best Farming
+-- Zones): the pre-fix set was enUS only. Realm-wide aggregation pools
+-- from EVERY locale on the realm, so a frFR client writes "Fossoyeuse"
+-- (French Undercity) into their bucket and sends it in SDAT. Our
+-- English-locale receiver didn't recognize the localized name and let
+-- it land on the leaderboard. Now the set covers the ten WotLK capitals
+-- across enUS/enGB, deDE, frFR, and esES/esMX. Additional locales
+-- (ruRU, koKR, zhCN/zhTW) can be added when reported - keeping the
+-- table small until a specific locale's names show up in the wild.
+local EC_CITY_ZONES_BY_LOCALE = {
+    -- enUS / enGB (Project Ebonhold's primary audience)
+    enUS = {
+        "Stormwind City", "Ironforge", "Darnassus", "The Exodar",
+        "Orgrimmar", "Thunder Bluff", "Undercity", "Silvermoon City",
+        "Shattrath City", "Dalaran",
+    },
+    -- deDE
+    deDE = {
+        "Sturmwind", "Eisenschmiede", "Darnassus", "Die Exodar",
+        "Orgrimmar", "Donnerfels", "Unterstadt", "Silbermond",
+        "Shattrath", "Dalaran",
+    },
+    -- frFR
+    frFR = {
+        "Hurlevent", "Forgefer", "Darnassus", "L'Exodar",
+        "Orgrimmar", "Les Pitons du Tonnerre", "Fossoyeuse", "Lune-d'argent",
+        "Shattrath", "Dalaran",
+    },
+    -- esES / esMX
+    esES = {
+        "Ventormenta", "Forjaz", "Darnassus", "El Exodar",
+        "Orgrimmar", "Cima del Trueno", "Entra\195\177as", "Lunargenta",
+        "Shattrath", "Dalaran",
+    },
 }
+local EC_CITY_ZONES = {}
+for _, names in pairs(EC_CITY_ZONES_BY_LOCALE) do
+    for _, name in ipairs(names) do
+        EC_CITY_ZONES[name] = true
+    end
+end
 function EC_compCache.isCityZone(zone)
     return type(zone) == "string" and EC_CITY_ZONES[zone] == true
 end

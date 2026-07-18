@@ -274,7 +274,13 @@ repaintGuildPanel = function()
             local row = panel._itemRows[i]
             if i <= limit then
                 local e = entries[i]
-                row.left:SetText(e.name)
+                -- v2.59.11 (Serv report): resolve the item name via the
+                -- receiver's locale (GetItemInfo) so a payload seeded by
+                -- a different-locale guildmate displays in the local
+                -- locale. Fall back to the payload name when uncached.
+                -- Same rationale as ServerStatsPanel.lua's item rows.
+                local localName = e.id and GetItemInfo(e.id) or nil
+                row.left:SetText(localName or e.name or tostring(e.id))
                 row.right:SetText(
                     "|cffffd100" .. num(e.count) .. L["|r sold (from "] .. e.contributors .. ")"
                 )

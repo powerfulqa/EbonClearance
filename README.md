@@ -1,7 +1,7 @@
 # EbonClearance
 
 [![Download Latest](https://img.shields.io/github/v/release/powerfulqa/EbonClearance?style=for-the-badge&label=Download&color=orange)](https://github.com/powerfulqa/EbonClearance/releases/latest/download/EbonClearance.zip)
-[![Downloads (this release)](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Fpowerfulqa%2FEbonClearance%2Freleases%2Flatest&query=%24.assets%5B0%5D.download_count&style=for-the-badge&label=Downloads%20(this%20release)&color=blue)](https://github.com/powerfulqa/EbonClearance/releases/latest)
+[![Downloads (this release)](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpowerfulqa%2FEbonClearance%2Fbadge-data%2Flatest.json&style=for-the-badge&color=blue)](https://github.com/powerfulqa/EbonClearance/releases/latest)
 [![Downloads (lifetime)](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpowerfulqa%2FEbonClearance%2Fbadge-data%2Fdownloads.json&style=for-the-badge&color=blue)](https://github.com/powerfulqa/EbonClearance/releases)
 [![Licence](https://img.shields.io/badge/Licence-Source--Available-blue?style=for-the-badge)](LICENSE)
 

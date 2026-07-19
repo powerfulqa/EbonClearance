@@ -26,22 +26,32 @@ jobs:
         run: |
           TOTAL=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[].assets[].download_count' | awk '{s+=$1} END {print s+0}')
           VERSION=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.tag_name')
+          # v2.60.1 (Serv report): the "Downloads (this release)" README badge
+          # originally used shields.io dynamic/json against api.github.com but
+          # rendered "invalid" - shields.io's shared GitHub-token pool couldn't
+          # reach the API. Self-host the current-release count here alongside
+          # totals, mirroring the lifetime + version pattern.
+          LATEST=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '[.assets[].download_count] | add // 0')
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Downloads: $TOTAL   Latest version: $VERSION"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Downloads: $TOTAL   This release: $LATEST   Latest version: $VERSION"
 
       - name: Update JSON if changed
-        # Self-hosted shields endpoints on the badge-data branch. Both the
-        # Download (version) and Downloads (count) badges read these static
-        # JSON files, so neither depends on shields.io's shared GitHub token
-        # pool (which intermittently fails with "unable to select next GitHub
-        # token from pool"). Updated on each release + every 6h.
+        # Self-hosted shields endpoints on the badge-data branch. The Download
+        # (version), Downloads (lifetime), and Downloads (this release) badges
+        # all read these static JSON files, so none depend on shields.io's
+        # shared GitHub token pool (which intermittently fails with "unable
+        # to select next GitHub token from pool"). Updated on each release +
+        # every 6h.
         env:
           TOTAL: ${{ steps.data.outputs.total }}
           VERSION: ${{ steps.data.outputs.version }}
+          LATEST: ${{ steps.data.outputs.latest }}
         run: |
           DL="{\"schemaVersion\":1,\"label\":\"Downloads\",\"message\":\"$TOTAL\",\"color\":\"blue\"}"
           VER="{\"schemaVersion\":1,\"label\":\"Download\",\"message\":\"$VERSION\",\"color\":\"orange\"}"
+          LT="{\"schemaVersion\":1,\"label\":\"Downloads (this release)\",\"message\":\"$LATEST\",\"color\":\"blue\"}"
           changed=0
           if [ ! -f downloads.json ] || [ "$(cat downloads.json)" != "$DL" ]; then
             echo "$DL" > downloads.json
@@ -51,12 +61,16 @@ jobs:
             echo "$VER" > version.json
             changed=1
           fi
+          if [ ! -f latest.json ] || [ "$(cat latest.json)" != "$LT" ]; then
+            echo "$LT" > latest.json
+            changed=1
+          fi
           if [ "$changed" = "0" ]; then
-            echo "No change (downloads=$TOTAL, version=$VERSION); skipping commit."
+            echo "No change (downloads=$TOTAL, latest=$LATEST, version=$VERSION); skipping commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add downloads.json version.json
-          git commit -m "Update badge data (downloads=$TOTAL, version=$VERSION)"
+          git add downloads.json version.json latest.json
+          git commit -m "Update badge data (downloads=$TOTAL, latest=$LATEST, version=$VERSION)"
           git push origin badge-data

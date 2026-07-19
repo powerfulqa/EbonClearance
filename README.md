@@ -1,7 +1,7 @@
 # EbonClearance
 
-[![Download Latest](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/powerfulqa/EbonClearance/badge-data/version.json&style=for-the-badge&cacheSeconds=3600)](https://github.com/powerfulqa/EbonClearance/releases/latest/download/EbonClearance.zip)
-[![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/powerfulqa/EbonClearance/badge-data/downloads.json&style=for-the-badge&cacheSeconds=3600)](https://github.com/powerfulqa/EbonClearance/releases)
+[![Download Latest](https://img.shields.io/github/v/release/powerfulqa/EbonClearance?style=for-the-badge&label=Download&color=orange)](https://github.com/powerfulqa/EbonClearance/releases/latest/download/EbonClearance.zip)
+[![Downloads](https://img.shields.io/github/downloads/powerfulqa/EbonClearance/total?style=for-the-badge&label=Downloads&color=blue)](https://github.com/powerfulqa/EbonClearance/releases)
 [![Licence](https://img.shields.io/badge/Licence-Source--Available-blue?style=for-the-badge)](LICENSE)
 
 **Full bags, every quest hub, every farm session. EbonClearance handles the chore.**
@@ -112,7 +112,7 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 
 - [docs/TRANSLATING.md](docs/TRANSLATING.md) is the guide for translating the addon into your language (French and German templates ship ready to fill in).
 
-A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 34 `.lua` files after the v2.32.0 file-split, the v2.36.0 Help / Stats panel splits, the v2.38.0 Quickstart panel, the v2.39.0 `EbonClearance_Comms.lua` addition, the v2.40.0 guild-share files, the v2.43.0 localization files, the v2.53.0 `EbonClearance_ProcShare.lua` addition, and the v2.57.0 `EbonClearance_HistoryWindow.lua` addition; the entry hub is `EbonClearance_Events.lua`.)
+A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 37 `.lua` files after the v2.32.0 file-split, the v2.36.0 Help / Stats panel splits, the v2.38.0 Quickstart panel, the v2.39.0 `EbonClearance_Comms.lua` addition, the v2.40.0 guild-share files, the v2.43.0 localization files, the v2.53.0 `EbonClearance_ProcShare.lua` addition, the v2.57.0 `EbonClearance_HistoryWindow.lua` addition, and the v2.58.0 realm-wide sharing files (`EbonClearance_RealmComms.lua`, `EbonClearance_ServerShare.lua`, `EbonClearance_ServerStatsPanel.lua`); the entry hub is `EbonClearance_Events.lua`.)
 
 ## Thanks
 

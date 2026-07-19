@@ -116,9 +116,16 @@ A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([s
 
 ## Thanks
 
-Feature ideas and bug reports from the Project Ebonhold community shape the addon. Recent suggestions:
+Feature ideas and bug reports from the Project Ebonhold community shape the addon. Selected community-driven changes:
 
 - **Auto-delete on pickup** - suggested by Sanavesa.
+- **Auto-mark PvP gear (Resilience) for deletion** - requested by Murlocked, for cleaning up bag-clutter after farming.
+- **Class-restriction self-heal on the Keep-Upgrade sweep** (Druids no longer accumulate bows, Mages no longer accumulate relics) - reported by Murlocked.
+- **Auto-mark unsellable affix dupes for deletion** - requested by Broyo.
+- **Announce auto-delete / auto-mark in chat** toggle - requested by ayres.
+- **2H-narrowing on the upgrade / downgrade predicates** (1H weapons and offhands compare correctly against an equipped 2H instead of misfiring on the locked-empty offhand slot) - reported by "Perfect Bidoof" and Zukii.
+- **Hard iLvl ceiling on the affix-sell paths** (a rare high-iLvl item can't sneak past a rarity cap just because its affix is a known dupe) - near item-loss report from Bizzaro.
+- **Quickstart Q13 default label fix + Stats-Guild "Sold by Quality" alignment** - reported by Qvintus.
 
 ## Changelog
 

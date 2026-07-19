@@ -1234,8 +1234,28 @@ function EC_compCache.describeSellability(bag, slot)
                     ownsForRank = EC_compCache.playerHasAffixRank(affixDataForTrace.name, affixDataForTrace.rank)
                 end
                 if ownsForRank then
+                    -- v2.60.0 (Serv report - Wrap of the Everliving Tree
+                    -- of Fortified by Pain IV): tip must acknowledge the
+                    -- toggle's CURRENT state + the itemProtectedFromAuto
+                    -- MarkDelete safety gate (v2.57.2: iLvl >= 100 real
+                    -- gear + set members + equipped + quest items are
+                    -- excluded from auto-mark). Pre-fix the tip always
+                    -- said "turn on the toggle" even when it was already
+                    -- on and the item was blocked by the iLvl gate.
+                    local autoMarkOn = DB and DB.autoMarkAffixDupes and DB.enableDeletion
+                    local protectedFromAutoMark = itemID
+                        and EC_compCache.itemProtectedFromAutoMarkDelete
+                        and EC_compCache.itemProtectedFromAutoMarkDelete(itemID)
+                    local tipMsg
+                    if not autoMarkOn then
+                        tipMsg = L["rank %d below floor of %d, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"]
+                    elseif protectedFromAutoMark then
+                        tipMsg = L["rank %d below floor of %d, but item has no vendor value; auto-mark is on but this item is protected as real gear (iLvl >= 200), a gear-set member, or equipped. Add to Delete List manually if you want it gone."]
+                    else
+                        tipMsg = L["rank %d below floor of %d, but item has no vendor value; auto-mark is on so this item will be marked for deletion on the next bag update"]
+                    end
                     step("affixRankRule", false, string.format(
-                        L["rank %d below floor of %d, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"],
+                        tipMsg,
                         affixDataForTrace.rank,
                         DB.affixMinSellRank
                     ))
@@ -1313,11 +1333,25 @@ function EC_compCache.describeSellability(bag, slot)
                     or L["you already have this affix at this rank"]
             )
         elseif ownsAffix and not hasSellPrice then
-            step(
-                "alreadyHaveAffixRule",
-                false,
-                L["you own this affix, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"]
-            )
+            -- v2.60.0 (Serv report - Wrap of the Everliving Tree of
+            -- Fortified by Pain IV): same tip-freshness fix as the
+            -- affixRankRule branch above. Toggle-off => "turn it on";
+            -- toggle-on + protected => explain the protection instead
+            -- of the stale "turn it on" advice; toggle-on + eligible
+            -- => "will mark on next scan".
+            local autoMarkOn = DB and DB.autoMarkAffixDupes and DB.enableDeletion
+            local protectedFromAutoMark = itemID
+                and EC_compCache.itemProtectedFromAutoMarkDelete
+                and EC_compCache.itemProtectedFromAutoMarkDelete(itemID)
+            local tipMsg
+            if not autoMarkOn then
+                tipMsg = L["you own this affix, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"]
+            elseif protectedFromAutoMark then
+                tipMsg = L["you own this affix, but item has no vendor value; auto-mark is on but this item is protected as real gear (iLvl >= 200), a gear-set member, or equipped. Add to Delete List manually if you want it gone."]
+            else
+                tipMsg = L["you own this affix, but item has no vendor value; auto-mark is on so this item will be marked for deletion on the next bag update"]
+            end
+            step("alreadyHaveAffixRule", false, tipMsg)
         end
     end
 
@@ -1582,6 +1616,14 @@ function EC_compCache.describeSellability(bag, slot)
         and DB.protectChanceOnHitItems
         and EC_compCache.itemHasChanceOnHit
         and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+    -- v2.60.0 iter 2 (Serv follow-up): chance-on-hit protection only
+    -- applies to items the PE Anvil can actually extract from - weapons.
+    -- A trinket / ring / neck with a proc line has no extraction future,
+    -- so blocking its sell path serves no purpose. Compute once for the
+    -- three trace branches below.
+    local isWeaponForChanceOnHit = itemID
+        and EC_compCache.isExtractableWeaponSlot
+        and EC_compCache.isExtractableWeaponSlot(itemID)
     -- v2.59.7: look up the proc family for DISPLAY purposes so the
     -- trace can name the spell (e.g. "Flurry", "Wilds") in every branch
     -- below. Uses the seed catalog + autolearned pairings; no catalog
@@ -1594,7 +1636,7 @@ function EC_compCache.describeSellability(bag, slot)
             displayFamily = ADB.chanceProcConfirmedItems[itemID].family
         end
     end
-    if hasChanceOnHitLine and (qualityPass or affixRankPass or autoDupePass or recipePass or knownProcPass) then
+    if hasChanceOnHitLine and isWeaponForChanceOnHit and (qualityPass or affixRankPass or autoDupePass or recipePass or knownProcPass) then
         -- v2.49.0 mirror: check whether the player has extracted the
         -- proc AND the experimental toggle is on. If yes, the item is
         -- eligible for auto-sell despite the chance-on-hit protection.
@@ -1636,7 +1678,15 @@ function EC_compCache.describeSellability(bag, slot)
                 step("chanceOnHitProtection", false, L["Kept - has a chance-on-hit proc. Tip: turn off 'Protect Chance-on-Hit Items' in Keep Settings, or Alt+Right-Click -> Allow Sell to override for this item."])
             end
         end
-    elseif hasChanceOnHitLine then
+    elseif hasChanceOnHitLine and isWeaponForChanceOnHit then
+        -- v2.60.0 iter 3 (Serv follow-up - Jouster's Fury): non-weapon
+        -- chance-on-hit items are treated as if they had no proc line
+        -- at all. The chance-on-hit-protection concept was built for
+        -- extractable weapons; a player looking at a trinket doesn't
+        -- care that it has a proc line, since nothing about the
+        -- procness affects the item's fate here. Fall through to the
+        -- terminal "n/a" branch by requiring isWeaponForChanceOnHit on
+        -- this elseif too.
         -- v2.59.10 (Serv report - Destiny): the item has a chance-on-hit
         -- line and protectChanceOnHitItems is on, but no positive sell
         -- signal fires (nothing wants to sell it right now). Tooltip

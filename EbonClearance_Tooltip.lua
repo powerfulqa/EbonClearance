@@ -698,8 +698,10 @@ local function EC_AnnotateTooltipInner(tooltip)
                     -- (a Keep-List item never reaches here). Serv report: an
                     -- equipment-set member shirt showed "Will Delete" while it was
                     -- never on the Delete List.
-                    local autoMarkProtected = EC_compCache.itemProtectedFromAutoMarkDelete
-                        and EC_compCache.itemProtectedFromAutoMarkDelete(id)
+                    local autoMarkProtected, protectReason
+                    if EC_compCache.itemProtectedFromAutoMarkDelete then
+                        autoMarkProtected, protectReason = EC_compCache.itemProtectedFromAutoMarkDelete(id)
+                    end
                     if
                         DB.autoMarkAffixDupes
                         and DB.enableDeletion
@@ -711,10 +713,27 @@ local function EC_AnnotateTooltipInner(tooltip)
                             .. "|r"
                         statusTag = "willdelete"
                     elseif autoMarkProtected then
-                        -- Protected (set member / equipped / quest / high iLvl /
-                        -- account list): it won't sell AND won't be auto-marked.
-                        -- Say "Keep", not the misleading "Won't Sell (no value)".
-                        statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (protected)"] .. "|r"
+                        -- v2.60.0 (Serv follow-up): specific reason in the
+                        -- label instead of the bland "Keep (protected)".
+                        -- itemProtectedFromAutoMarkDelete returns the
+                        -- canonical reason token ("set" / "equipped" /
+                        -- "quest" / "sellList" / "highIlvl") which maps
+                        -- to a localized label below.
+                        local reasonLabel
+                        if protectReason == "set" then
+                            reasonLabel = L["Keep (in a gear set)"]
+                        elseif protectReason == "equipped" then
+                            reasonLabel = L["Keep (currently equipped)"]
+                        elseif protectReason == "quest" then
+                            reasonLabel = L["Keep (quest item)"]
+                        elseif protectReason == "sellList" then
+                            reasonLabel = L["Keep (on Account Sell List)"]
+                        elseif protectReason == "highIlvl" then
+                            reasonLabel = L["Keep (real gear, iLvl >= 200)"]
+                        else
+                            reasonLabel = L["Keep (protected)"]
+                        end
+                        statusLine = "|cff66ccff[EC]|r |cffffb84d" .. reasonLabel .. "|r"
                         statusTag = "keep"
                     else
                         statusLine = "|cff66ccff[EC]|r |cffffb84d"
@@ -797,7 +816,16 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- the item will fall through to the quality-rule sweep and the
     -- label is plain "Allowed - Sell". Keep List membership wins
     -- everything else; we don't override the Kept label.
-    if DB.protectChanceOnHitItems and EC_compCache.liveTooltipHasChanceOnHit(tooltip, id) then
+    -- v2.60.0 iter 2 (Serv follow-up): non-weapons with chance-on-hit
+    -- lines skip the protection entirely - the PE Anvil only extracts
+    -- weapon procs, so "keep this so you can extract later" has no
+    -- reading for a trinket. Fall through to whatever verdict the
+    -- earlier rules produced (Won't Sell (no value) / Keep (equipped) /
+    -- Will Sell / etc.). Mirrors the same gate in EC_IsSellable +
+    -- describeSellability.
+    local chanceOnHitAppliesToItem = EC_compCache.isExtractableWeaponSlot
+        and EC_compCache.isExtractableWeaponSlot(id)
+    if DB.protectChanceOnHitItems and chanceOnHitAppliesToItem and EC_compCache.liveTooltipHasChanceOnHit(tooltip, id) then
         -- Explicit user lists override the safety net. The protection
         -- veto in EC_IsSellable only narrows qualityPass; whitelistPass
         -- (explicit Sell List entry) keeps the item sellable. BuildQueue's
@@ -1007,16 +1035,22 @@ local function EC_AnnotateTooltipInner(tooltip)
                 statusTag = "override"
             end
         elseif tomeHave then
-            statusLine = string.format(
-                "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (%s you have)"] .. "|r",
-                tomeKindLabel
-            )
+            local haveLabel
+            if tomeKindLabel == "Recipe" then
+                haveLabel = L["Keep (learned recipe)"]
+            else
+                haveLabel = L["Keep (learned tome)"]
+            end
+            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. haveLabel .. "|r"
             statusTag = "tome_have"
         else
-            statusLine = string.format(
-                "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (new %s)"] .. "|r",
-                tomeKindLabel
-            )
+            local newLabel
+            if tomeKindLabel == "Recipe" then
+                newLabel = L["Keep (unlearned recipe)"]
+            else
+                newLabel = L["Keep (unlearned tome)"]
+            end
+            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. newLabel .. "|r"
             statusTag = "tome_new"
         end
     end
@@ -1039,6 +1073,13 @@ local function EC_AnnotateTooltipInner(tooltip)
         statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (known recipe)"] .. "|r"
         statusTag = "willsell"
     end
+
+    -- v2.60.0 iter 3 (Serv follow-up): non-weapon items with chance-on-
+    -- hit lines are treated as any other item without a proc line. No
+    -- special tooltip label is emitted for them; the tooltip either
+    -- shows a verdict from an earlier rule (Keep List, Sell List,
+    -- quality rule, etc.) or shows nothing - same as any other item
+    -- EC has no rule for.
 
     if statusLine then
         tooltip:AddLine(statusLine)

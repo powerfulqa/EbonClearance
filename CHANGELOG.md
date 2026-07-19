@@ -5,6 +5,134 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.60.0
+
+**Per-rarity chat-announce filter for auto-delete / auto-mark events.**
+
+Requested feature: the "Announce auto-deletions in chat" toggle on the Delete Settings panel was all-or-nothing, which made it noisy during farming (Greens and Poors flooded the chat) or silent (turn it off entirely and lose the Rare/Epic deletion visibility that mattered). Now the master toggle stays as the top-level gate, and a new per-rarity multi-select decides which rarities actually print when the master is on.
+
+## What changed
+
+- **Master toggle** (`announceAutoDelete`) unchanged. Off silences everything; on lets the sub-filter decide.
+- **Five new tickboxes** under the master, one per rarity (Poor / Common / Uncommon / Rare / Epic), color-coded. Each writes to `DB.announceAutoDeleteQualities[quality]`. Multi-select - tick any subset. Default: all five ticked, matching pre-v2.60.0 "print everything when master is on" behavior.
+- **Three announce sites** now route through the new shared helper `EC_compCache.shouldAnnounceAutoDelete(quality)`:
+  - Auto-delete-on-pickup ("Auto-deleted X.").
+  - Resilience auto-mark ("Marked for deletion (Resilience, unsellable): X").
+  - Affix-dupe auto-mark ("Marked for delete X - affix you can't sell.").
+- Sub-toggles grey out when the master is off (they're inert without the master).
+
+## Schema
+
+- `DB.announceAutoDeleteQualities` = per-quality table (integers 0-4 = Poor-Epic). Seeded to all-true by `EnsureDB` for fresh installs; existing installs auto-migrate on next login. Downgrade-safe (a pre-v2.60.0 client ignores the extra table).
+
+## Tests + docs
+
+- Help / FAQ entry for `gate-announce-auto-delete` extended to describe the new per-rarity filter.
+- Test 94b + 94c updated to lock the new `shouldAnnounceAutoDelete(quality)` helper + call sites.
+- Comment-hygiene baseline for `AutoDelete` bumped from 3 to 8 to cover the new EC-internal field mentions (announceAutoDeleteQualities + shouldAnnounceAutoDelete). Not third-party addon references.
+
+## Bundled trace + detection fixes
+
+Two protection-path issues surfaced during v2.60.0 in-game testing:
+
+### `/ec sellinfo` tips no longer give stale "turn on the toggle" advice
+
+Reported on `Wrap of the Everliving Tree of Fortified by Pain IV` (Rare, sellPrice=0, affix dupe you own, `autoMarkAffixDupes` toggle already on). Trace lines for both affix-related "no vendor value" branches read `(turn on 'Auto-mark unsellable affixes for deletion' to trash it)` even when the toggle was on - misleading advice.
+
+The item was actually blocked by `itemProtectedFromAutoMarkDelete` (v2.57.2 safety net) because iLvl 200 exceeds the 100 "real gear" threshold. Trace now checks the toggle state AND the auto-mark protection at message-selection time and picks one of three tips:
+
+- **Toggle OFF**: existing tip ("turn on 'Auto-mark unsellable affixes for deletion' to trash it").
+- **Toggle ON + item protected**: `auto-mark is on but this item is protected as real gear (iLvl >= 100), a gear-set member, or equipped. Add to Delete List manually if you want it gone.`
+- **Toggle ON + item eligible**: `auto-mark is on so this item will be marked for deletion on the next bag update`.
+
+Applied to both trace steps (`affixRankRule` for rank-below-floor + `alreadyHaveAffixRule` for owned dupes). Four new locale template keys.
+
+### Chance-on-hit detector catches `Equip: Chance on hit` variants + weapon-only extraction rule + weapon-only PROTECTION rule
+
+Reported on `Jouster's Fury` (Rare PvP trinket, iLvl 200). Three-part fix:
+
+1. **Detection**: tooltip line reads `Equip: Chance on hit to increase your critical strike rating by 328 for 10 secs.` (no colon after "hit"). Pre-fix detector only recognized `Chance on hit:` (with colon, via `ITEM_SPELL_TRIGGER_ONPROC`) and `^Equip: Chance to` - the equip-line variant slipped through, so the item was invisible to the protection layer. Added `^Equip:%s*Chance on hit` pattern (anchored to prevent description-line false positives). Trinkets and some equip-proc weapons now register correctly.
+2. **Extraction eligibility**: Anvil-verified refusal (confirmed by Serv). PE's Anvil accepts chance-on-hit-proc extractions from WEAPONS only - trinkets / rings / necks / armor slots are always refused regardless of the proc text. Added a structural fast-path in `playerHasExtractedProc`: if the item's equipLoc isn't in the weapon set (`INVTYPE_WEAPON` / `_MAINHAND` / `_OFFHAND` / `2HWEAPON` / `RANGED` / `RANGEDRIGHT` / `THROWN`), short-circuit to `(false, nil, nil)` before the catalog scan.
+3. **Protection scope narrowed to weapons - non-weapons treated as if no proc line**: follow-on from #2. The chance-on-hit protection was originally built around "keep this so you can extract the proc at the Anvil later" - a mental model that has no reading for a non-weapon (extraction is refused up front). Pre-fix, EC's protection still kept trinkets / rings / necks with proc lines out of the sell path, leaving them wedged for no benefit. Added `EC_compCache.isExtractableWeaponSlot(itemID)` as a shared helper; the chance-on-hit protection outer gate in all three surfaces (`EC_IsSellable`, `describeSellability`, `EC_AnnotateTooltip`) now consults it. Non-weapons with proc lines fall through to whatever OTHER rule applies (Sell List / quality rule / Delete List / etc.) - same as any item without a proc line, no special tooltip label, no special trace step. From the player's perspective a trinket with a proc line looks identical to a trinket without one; the chance-on-hit machinery is completely invisible for non-weapons. Test 109c updated to lock the added weapon gate across the mirror contract.
+
+### Unsellable-affix auto-mark: iLvl safety net is now user-controllable
+
+Reported by Serv against `Wristwraps of the Cutthroat of Feral Grace II` (iLvl 213, Epic, sellPrice=0, affix player owns) and `Axe of the Sen'jin Protector of Iron Will II` (iLvl 200, Epic, sellPrice=0, affix player owns). Both should have been auto-marked for deletion by the `Auto-mark unsellable affixes for deletion` toggle - they meet every listed criterion - but neither was.
+
+Root cause: the v2.57.2 safety net `EC_AUTOMARK_PROTECT_ILVL = 100` treated any item at iLvl >= 100 as "real gear" and skipped it, regardless of user config. That threshold was originally set to prevent Bizzaro's near-item-loss on a brand-new high-value drop, but on a WotLK-max character (gear routinely 200+) the gate ends up protecting old PvP dupes the player deliberately wants gone.
+
+Fix (two parts):
+
+1. **Threshold raised from 100 to 200.** On a WotLK-max character most gear sits above iLvl 100 - the old threshold effectively protected everything, including mid-BC-era drops the player doesn't care about. 200 keeps real endgame gear safe (Ulduar / ToC / ICC drops all sit above) while letting the auto-mark scan catch old low-mid-iLvl PvP dupes and BC-era drops.
+2. **Threshold is now user-controllable.** New `DB.automarkProtectHighILvl` toggle on the **Keep Settings** panel ("Protect high-iLvl items from unsellable-affix auto-mark (iLvl >= 200)"). Default ON (safe default). Turn OFF and the iLvl gate stops applying entirely; auto-mark then catches items with known-dupe affixes and sellPrice=0 at any iLvl. Placed alongside the other `Protect X` toggles (`autoAddEquipped`, `autoProtectUpgrades`, `protectAffixedRareItems`, `protectChanceOnHitItems`, `protectAllTomes`, `protectUnlearnedTomes`) for semantic consistency - Delete Settings is delete-action-only. **The other safety nets stay unconditional either way** - Keep List entries (including autoAddEquipped / autoProtectUpgrades / autoProtectEquipmentSets auto-tags), Sell List entries, currently-equipped items, and quest items are still protected regardless of the toggle state.
+
+Design note: relying on the user's Keep List instead of a raw iLvl threshold matches Serv's play style (curated Keep List + autoAddEquipped + Set-member tags = worn-once gear stays protected; never-worn old drops trash cleanly). Users without that curation can leave the safety net on and get the v2.57.2 protection.
+
+### Resilience auto-mark now catches lowercase "resilience" (case-fold)
+
+Reported by Serv against Jouster's Fury - the same PvP trinket the chance-on-hit fixes above dealt with. It has `Equip: Improves your resilience rating by 73.` in its tooltip AND the user's `autoMarkResilience` toggle is on, but the item was never getting stamped onto the Delete List.
+
+Root cause: `itemHasResilience` at `EbonClearance_Protection.lua:1739` did a **case-sensitive** substring match on the literal `"Resilience"` (capital R). WoW's `Equip:` stat-line text renders in sentence case (`"resilience"` lowercase), so every PvP set piece using the Equip: form silently missed the detector while the bare-stat form (`"Resilience Rating +X"`, capital R) matched. `Auto-mark PvP gear (Resilience) for deletion` therefore covered only a subset of PvP gear.
+
+Fix: case-fold the tooltip text before the substring check (`txt:lower():find("resilience", 1, true)`). Catches both capitalization variants. Note: existing `resilienceCache` entries persist until `/reload` - previously-cached false entries for Equip:-form items need a reload to invalidate.
+
+### Specific "Keep" verdict labels for auto-mark protection
+
+Reported against `Wrap of the Everliving Tree of Fortified by Pain IV` (iLvl 213, sellPrice=0, affix dupe you own). The tooltip showed the bland `Keep (protected)` label with no hint about WHY. The v2.57.2 `itemProtectedFromAutoMarkDelete` gate is one predicate but has five branches (equipment-set member, currently equipped, quest item, on account Sell List, iLvl >= 200 gate), and the player couldn't tell which one fired.
+
+`itemProtectedFromAutoMarkDelete` now returns a `(bool, reason)` tuple where `reason` is a canonical token (`"set"`, `"equipped"`, `"quest"`, `"sellList"`, `"highIlvl"`). The tooltip maps each token to a specific label:
+
+- `Keep (in a gear set)` - saved equipment-set member
+- `Keep (currently equipped)`
+- `Keep (quest item)`
+- `Keep (on Account Sell List)`
+- `Keep (real gear, iLvl >= 200)` - the high-iLvl safety net
+- `Keep (protected)` - fallback for future branches
+
+Every branch shares the same token vocabulary between the mirror-contract callers, so the trace step + tooltip label + bugreport can't drift.
+
+### Tome / recipe tooltip labels renamed for clarity
+
+Reported against `Recipe: Last Week's Mammoth` and `Recipe: Haunted Herring` (learned Cooking recipes, sellPrice=0). The tooltip line `[EC] Keep (Recipe you have)` didn't obviously connect back to the panel toggle labelled "Keep unlearned tomes and recipes" / "Keep them even after you learn them". Renamed the four tome/recipe labels to a leading-verb form that mirrors the panel toggle:
+
+- `Keep (Recipe you have)` -> `Keep (learned recipe)`
+- `Keep (Tome you have)` -> `Keep (learned tome)`
+- `Keep (new Recipe)` -> `Keep (unlearned recipe)`
+- `Keep (new Tome)` -> `Keep (unlearned tome)`
+
+FAQ entry `label-tome-have` retitled to match. Locale template keys migrated (deDE + frFR).
+
+### Bug report field names now say "Tomes/Recipes"
+
+`/ec bugreport` printed `Protect All Tomes: true` and `Protect Unlearned Tomes: true`, dropping the "and recipes" that the panel toggle explicitly names. Renamed both dump lines to `Protect All Tomes/Recipes` / `Protect Unlearned Tomes/Recipes`. Backing DB fields (`protectAllTomes` / `protectUnlearnedTomes`) unchanged - no schema migration.
+
+### Auto-mark unsellable known recipes for deletion
+
+Reported against the same two Cooking recipes: `Sell Known Recipes` was on with all qualities enabled, but the vendor refused the items (`sellPrice=0`) so the sell path was inert and the recipes sat in bags forever.
+
+New Delete Settings toggle: **`Auto-mark unsellable known recipes for deletion`** (default OFF, opt-in). When on AND `Sell Known Recipes` is on, learned profession recipes with `sellPrice=0` are added to the Delete List automatically (one chat line per add). Unlearned recipes are never touched; sellable known recipes are left for the vendor path. Same safety nets as the other auto-marks (Keep List, equipment-set members, currently equipped, quest items). Announce honours the per-rarity chat filter above.
+
+Backed by a new scanner `runAutoMarkKnownUnsellableRecipes` on the shared BAG_UPDATE debounce alongside `runAutoMarkResilience` + `runAutoMarkAffixDupes`. Uses the shared flush snapshot for slot consistency. New DB field `DB.autoMarkKnownUnsellableRecipes` (boolean, default false, downgrade-safe). New FAQ entry `gate-automark-known-recipes` explains the mental model (a companion to Sell Known Recipes, not a replacement). Bug-report dump gains a matching "Auto-mark unsellable known recipes for deletion" line plus a `Last runAutoMarkKnownUnsellableRecipes` timestamp under `Last Event Times`.
+
+### README: exact-count download badges
+
+`img.shields.io/github/downloads/OWNER/REPO/total` hard-codes a `K` / `M` metric abbreviation in its badge template with no query-param opt-out. Report: "4K" isn't the exact number.
+
+Replaced the single abbreviated badge with two exact-count badges:
+
+- **Downloads (this release)** via shields.io `dynamic/json` reading `api.github.com/.../releases/latest`. Exact current-release count, refreshed by the shields.io CDN cache with no infrastructure on our side.
+- **Downloads (lifetime)** via shields.io `endpoint` reading `.github/downloads.json` from the repo. New file, initial seed committed with the correct count at v2.60.0 tag time. A new `Refresh lifetime downloads badge JSON` step in `.github/workflows/release.yml` sums `download_count` across every asset via `gh api --paginate` and commits the updated JSON back with `[skip ci]` on each tag. `continue-on-error: true` so a flaky GitHub API on release day never fails the tag. Stale between tags is fine; the per-release badge covers the live signal.
+
+### Notes
+
+- Existing `chanceOnHitCache` + `resilienceCache` entries persist until `/reload` after upgrading.
+- `DB.automarkProtectHighILvl` + `DB.autoMarkKnownUnsellableRecipes` + `DB.announceAutoDeleteQualities` are additive schema; a pre-v2.60.0 client sees the fields as absent and defaults to the previous behaviour.
+
+Downgrade-safe.
+
+---
+
+
 ### v2.59.12
 
 **Item cache warming on payload decode so first-render name resolution catches localized entries.**

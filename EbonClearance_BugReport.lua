@@ -243,8 +243,8 @@ local function EC_BuildBugReport()
     add("Auto-Protect Equipment Sets: " .. tostring(DB.autoProtectEquipmentSets))
     add("Protect Affixed Rare Items: " .. tostring(DB.protectAffixedRareItems))
     add("Protect Chance-on-Hit Items: " .. tostring(DB.protectChanceOnHitItems))
-    add("Protect Unlearned Tomes: " .. tostring(DB.protectUnlearnedTomes))
-    add("Protect All Tomes: " .. tostring(DB.protectAllTomes))
+    add("Protect Unlearned Tomes/Recipes: " .. tostring(DB.protectUnlearnedTomes))
+    add("Protect All Tomes/Recipes: " .. tostring(DB.protectAllTomes))
     add("Sell Known Chance-on-Hit Procs (experimental): " .. tostring(DB.sellChanceOnHitKnown))
     add("Sell Known Recipes: " .. tostring(DB.sellKnownRecipes))
     if DB.sellKnownRecipes then
@@ -535,6 +535,7 @@ local function EC_BuildBugReport()
         ((DB.affixMinSellRank and DB.affixMinSellRank > 0) and tostring(DB.affixMinSellRank) or "off"))
     add("Auto-mark PvP gear (Resilience) for deletion: " .. (DB.autoMarkResilience and "yes" or "no"))
     add("Auto-mark unsellable affixes for deletion: " .. (DB.autoMarkAffixDupes and "yes" or "no"))
+    add("Auto-mark unsellable known recipes for deletion: " .. (DB.autoMarkKnownUnsellableRecipes and "yes" or "no"))
     add("Keep bind-on-equip affix dupes (sell soulbound only): " .. (DB.keepBoeAffixDupes and "yes" or "no"))
     -- v2.37.0 (Borrow A): surface the affix debug log status. When the
     -- log has rows, prompt the reporter to also include /ec affixdebug
@@ -819,6 +820,7 @@ local function EC_BuildBugReport()
             { "vendorRunStart",        "Last vendor cycle StartRun" },
             { "autoMarkAffix",         "Last runAutoMarkAffixDupes" },
             { "autoMarkResilience",    "Last runAutoMarkResilience" },
+            { "autoMarkKnownRecipe",   "Last runAutoMarkKnownUnsellableRecipes" },
             { "autoDeleteScan",        "Last runAutoDeleteOnPickup" },
         }
         for i = 1, #order do
@@ -1257,6 +1259,9 @@ local function EC_BuildRuleSummary()
     add("    - 'Auto-mark unsellable affixes for deletion' ("
         .. onoff(DB.autoMarkAffixDupes) .. ") adds soulbound, no-vendor-value")
     add("      affixes EC would otherwise sell (dupes + below your rank floor) to the Delete List.")
+    add("    - 'Auto-mark unsellable known recipes for deletion' ("
+        .. onoff(DB.autoMarkKnownUnsellableRecipes) .. ") adds learned")
+    add("      profession recipes with no vendor value to the Delete List. Requires Sell Known Recipes.")
     add("    - 'Keep bind-on-equip ones' (" .. onoff(DB.keepBoeAffixDupes) .. ") restricts the")
     add("      'Allow selling affixes you already have' release to soulbound dupes; BoE dupes are kept.")
     add("")
@@ -1324,6 +1329,7 @@ local function EC_BuildRuleSummary()
     add("  Auto-delete on pickup:                    " .. onoff(DB.autoDeleteOnPickup))
     add("  Auto-mark PvP gear (Resilience):          " .. onoff(DB.autoMarkResilience))
     add("  Auto-mark unsellable affixes:             " .. onoff(DB.autoMarkAffixDupes))
+    add("  Auto-mark unsellable known recipes:       " .. onoff(DB.autoMarkKnownUnsellableRecipes))
     add("  Keep BoE affix dupes (sell soulbound):    " .. onoff(DB.keepBoeAffixDupes))
     add("  Keep gear you're wearing:                 " .. onoff(DB.autoAddEquipped))
     add("  Keep upgrades found in bags:              " .. onoff(DB.autoProtectUpgrades))

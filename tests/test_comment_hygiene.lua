@@ -92,7 +92,7 @@ end
 -- Any future contributor who genuinely needs to add a new mention must
 -- bump the matching baseline here in the same commit.
 local BASELINES = {
-    AutoDelete   = 3,
+    AutoDelete   = 9, -- v2.60.0: bumped from 3 -> 8 (per-rarity announceAutoDelete family) -> 9 (auto-mark-unsellable-known-recipes wiring comment). EC-internal field/function mentions, not a third-party addon reference.
     AutoLoot     = 0,
     AdiBags      = 0,
     Bagnon       = 0,

@@ -311,6 +311,47 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             L["|cff888888Soulbound affixed items with no vendor value that EC would otherwise sell (a dupe you own, or a rank below your 'Sell affixes below rank' setting). Needs affix protection on in Keep Settings.|r"]
         )
 
+        -- v2.60.0 (Serv follow-up): the "Protect high-iLvl items from
+        -- unsellable-affix auto-mark" toggle was briefly on this panel
+        -- but moved to Keep Settings on Serv's request - it's semantically
+        -- a "Protect X" toggle and belongs with the other Keep-Settings
+        -- protection toggles for discoverability. See
+        -- EbonClearance_ProtectionPanel.lua for the actual UI + wiring.
+
+        -- v2.60.0 (Serv report, Recipe: Haunted Herring / Recipe: Last
+        -- Week's Mammoth): auto-mark learned profession recipes with
+        -- sellPrice 0 for deletion. Parallel to the unsellable-affix
+        -- auto-mark above. Requires the parent "Sell known recipes"
+        -- toggle on (see Sell Settings) so the mental model is a single
+        -- "get rid of learned recipes" opt-in with two disposition paths.
+        local knownRecipeCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceAutoMarkKnownRecipesCB",
+            self,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        knownRecipeCB:SetPoint("TOPLEFT", affixDupeNote, "BOTTOMLEFT", -26, -8)
+        knownRecipeCB:SetChecked(DB.autoMarkKnownUnsellableRecipes)
+        local knownRecipeText = _G[knownRecipeCB:GetName() .. "Text"]
+        if knownRecipeText then
+            knownRecipeText:SetText(L["Auto-mark unsellable known recipes for deletion"])
+            EC_compCache.setPanelWidth(knownRecipeText, 42)
+            knownRecipeText:SetJustifyH("LEFT")
+            if knownRecipeText.SetWordWrap then
+                knownRecipeText:SetWordWrap(true)
+            end
+        end
+        local knownRecipeNote = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        knownRecipeNote:SetPoint("TOPLEFT", knownRecipeCB, "BOTTOMLEFT", 26, -2)
+        EC_compCache.setPanelWidth(knownRecipeNote, 42)
+        knownRecipeNote:SetJustifyH("LEFT")
+        if knownRecipeNote.SetWordWrap then
+            knownRecipeNote:SetWordWrap(true)
+        end
+        knownRecipeNote:SetText(
+            L["|cff888888Learned profession recipes with no vendor value (some low-rank Cooking recipes, low-level schematics). Needs 'Sell known recipes' on in Sell Settings.|r"]
+        )
+
         -- v2.44.4: announce-in-chat toggle. Gates the "EC just deleted /
         -- marked X" lines. Default ON (destructive actions should be
         -- visible); turn off if the chat noise is unwelcome. Asked for
@@ -321,7 +362,7 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             self,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        announceCB:SetPoint("TOPLEFT", affixDupeNote, "BOTTOMLEFT", -26, -8)
+        announceCB:SetPoint("TOPLEFT", knownRecipeNote, "BOTTOMLEFT", -26, -8)
         announceCB:SetChecked(DB.announceAutoDelete ~= false)
         local announceText = _G[announceCB:GetName() .. "Text"]
         if announceText then
@@ -342,9 +383,55 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
         announceNote:SetText(
             L["|cff888888One chat line per auto-delete or auto-mark event. Off is fine if the chat is too noisy while farming; your Delete List still tracks every destroyed item.|r"]
         )
+
+        -- v2.60.0: per-rarity multi-select filter under the master
+        -- announce toggle. Master off silences everything; master on
+        -- lets each rarity's tickbox decide. Vertical layout matches
+        -- the panel's existing one-checkbox-per-line pattern; each
+        -- label uses the rarity's quality color for at-a-glance
+        -- reading. Defaults all-on so existing users see no behaviour
+        -- change (announceAutoDelete stays their single tunable until
+        -- they explicitly untick a rarity here).
+        DB.announceAutoDeleteQualities = DB.announceAutoDeleteQualities or {}
+        local RARITY_ROWS = {
+            { q = 0, key = "Poor",     hex = "9d9d9d" },
+            { q = 1, key = "Common",   hex = "ffffff" },
+            { q = 2, key = "Uncommon", hex = "1eff00" },
+            { q = 3, key = "Rare",     hex = "0070dd" },
+            { q = 4, key = "Epic",     hex = "a335ee" },
+        }
+        local rarityCBs = {}
+        local prevAnchor = announceNote
+        for _, row in ipairs(RARITY_ROWS) do
+            local cb = CreateFrame(
+                "CheckButton",
+                "EbonClearanceAnnounceAutoDeleteRarity" .. row.key .. "CB",
+                self,
+                "InterfaceOptionsCheckButtonTemplate"
+            )
+            cb:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", (prevAnchor == announceNote) and 0 or 0, -2)
+            cb:SetChecked(DB.announceAutoDeleteQualities[row.q] ~= false)
+            local ct = _G[cb:GetName() .. "Text"]
+            if ct then
+                ct:SetText("|cff" .. row.hex .. L[row.key] .. "|r")
+                EC_compCache.setPanelWidth(ct, 42)
+                ct:SetJustifyH("LEFT")
+            end
+            cb:SetScript("OnClick", function()
+                DB.announceAutoDeleteQualities[row.q] = cb:GetChecked() and true or false
+                PlaySound(cb:GetChecked() and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+            end)
+            rarityCBs[row.q] = { cb = cb, text = ct }
+            prevAnchor = cb
+        end
+
         announceCB:SetScript("OnClick", function()
             DB.announceAutoDelete = announceCB:GetChecked() and true or false
             PlaySound(DB.announceAutoDelete and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+            -- v2.60.0: re-apply the enable/disable state on the rarity
+            -- sub-toggles so they grey out when the master is off (the
+            -- sub-toggles have no effect without the master).
+            if refreshAutoCBEnabled then refreshAutoCBEnabled() end
         end)
 
         refreshAutoCBEnabled = function()
@@ -389,6 +476,26 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
                 end
                 if announceText then
                     announceText:SetTextColor(0.5, 0.5, 0.5)
+                end
+            end
+            -- v2.60.0: the rarity sub-toggles need TWO conditions to be
+            -- fully enabled - the master enableDeletion (whole panel is
+            -- gated on it) AND the announce master. If either is off,
+            -- the sub-toggles are inert; grey them so the UI makes that
+            -- obvious. Uses ITEM_QUALITY_COLORS for the label color so
+            -- the rarity is still visually identifiable when disabled.
+            local subActive = DB.enableDeletion and DB.announceAutoDelete ~= false
+            for _, entry in pairs(rarityCBs) do
+                if subActive then
+                    entry.cb:Enable()
+                    if entry.text then
+                        entry.text:SetAlpha(1.0)
+                    end
+                else
+                    entry.cb:Disable()
+                    if entry.text then
+                        entry.text:SetAlpha(0.5)
+                    end
                 end
             end
         end
@@ -454,10 +561,24 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             end
         end)
 
+        -- v2.60.0: known-unsellable-recipe auto-mark OnClick. Same shape.
+        knownRecipeCB:SetScript("OnClick", function()
+            DB.autoMarkKnownUnsellableRecipes = knownRecipeCB:GetChecked() and true or false
+            PlaySound(DB.autoMarkKnownUnsellableRecipes and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+            if DB.autoMarkKnownUnsellableRecipes and EC_compCache.bagUpdateFrame then
+                EC_compCache.bagUpdatePending = true
+                EC_compCache.bagUpdateAccum = 0
+                EC_compCache.bagUpdateFrame:Show()
+            end
+        end)
+
         -- v2.59.8: size the scroll content to the last widget so the
         -- scroll bar knows the full extent. Announced last-widget is
         -- announceNote (the "Announce auto-deletions in chat" note).
-        NS.FitScrollContent(content, announceNote)
+        -- v2.60.0: fit the scroll content to the LAST rarity sub-toggle
+        -- (was announceNote pre-v2.60.0). rarityCBs[4] is the Epic
+        -- checkbox, the bottom-most widget in the Announce sub-section.
+        NS.FitScrollContent(content, rarityCBs[4] and rarityCBs[4].cb or announceNote)
     end, true)
 end)
 

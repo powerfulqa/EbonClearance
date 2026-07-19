@@ -76,6 +76,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.keepBoeCB then
             self.keepBoeCB:SetChecked(DB.keepBoeAffixDupes)
         end
+        if self.protectHiILvlCB then
+            self.protectHiILvlCB:SetChecked(DB.automarkProtectHighILvl ~= false)
+        end
         if self.UpdateDupeAffixEnabled then
             self:UpdateDupeAffixEnabled()
         end
@@ -475,6 +478,43 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             NS.AddHelpIcon(content, kbText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-dupes")
         end
 
+        -- v2.60.0 (Serv follow-up): "Protect high-iLvl items from
+        -- unsellable-affix auto-mark". Sub-toggle for the v2.57.2 iLvl
+        -- safety net that skips auto-mark on any item at iLvl >= 200.
+        -- Default ON (preserves the Bizzaro-style protection against
+        -- auto-trashing a brand-new high-value drop with a dupe affix).
+        -- Turn OFF to allow auto-mark to catch old high-iLvl PvP gear
+        -- the player has grown out of. Other safety nets (Keep List,
+        -- gear-set members, currently equipped, quest items) stay
+        -- unconditional either way. Lives here in Keep Settings for
+        -- consistency with the other "Protect X" toggles - though it
+        -- specifically affects the Delete Settings auto-mark scan.
+        local protectHiILvlCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceAutoMarkProtectHighILvlCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        protectHiILvlCB:SetPoint("TOPLEFT", keepBoeCB, "BOTTOMLEFT", 0, -8)
+        protectHiILvlCB:SetChecked(DB.automarkProtectHighILvl ~= false)
+        local protectHiILvlText = _G[protectHiILvlCB:GetName() .. "Text"]
+        if protectHiILvlText then
+            protectHiILvlText:SetText(L["Protect high-iLvl items from unsellable-affix auto-mark (iLvl >= 200)"])
+            EC_compCache.setPanelWidth(protectHiILvlText, 86)
+            protectHiILvlText:SetJustifyH("LEFT")
+            if protectHiILvlText.SetWordWrap then
+                protectHiILvlText:SetWordWrap(true)
+            end
+        end
+        protectHiILvlCB:SetScript("OnClick", function(cb)
+            DB.automarkProtectHighILvl = cb:GetChecked() and true or false
+            PlaySound(DB.automarkProtectHighILvl and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+        end)
+        self.protectHiILvlCB = protectHiILvlCB
+        if protectHiILvlText then
+            NS.AddHelpIcon(content, protectHiILvlText, "LEFT", "RIGHT", 6, 0, "gate-automark-protect-hilvl")
+        end
+
         -- Greys-out the child CB when the parent toggle is off OR when PE
         -- isn't detected, and swaps in a status line for that case.
         -- Called on init, on the parent CB's OnClick, and on every
@@ -605,7 +645,11 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- sub-toggle now sits between rankSliderNote and procCB). keepBoeCB is
         -- at the child column (+26), so -26 returns procCB to the parent
         -- toggle column.
-        procCB:SetPoint("TOPLEFT", keepBoeCB, "BOTTOMLEFT", -26, -10)
+        -- v2.60.0: re-anchored from keepBoeCB to protectHiILvlCB (the
+        -- new "Protect high-iLvl items" sub-toggle sits between
+        -- keepBoeCB and procCB). Same child->parent-column offset (-26)
+        -- so procCB returns to the parent toggle column.
+        procCB:SetPoint("TOPLEFT", protectHiILvlCB, "BOTTOMLEFT", -26, -10)
         procCB:SetChecked(DB.protectChanceOnHitItems)
         local pcText = _G[procCB:GetName() .. "Text"]
         if pcText then

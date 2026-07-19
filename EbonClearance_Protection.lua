@@ -1270,6 +1270,14 @@ function EC_compCache.lineLooksLikeChanceProc(txt)
     if txt:find("^Equip:%s*Chance to%s+%a") then
         return true
     end
+    -- v2.60.0 (Serv report - Jouster's Fury, PvP trinket): "Equip: Chance
+    -- on hit to <verb>..." (no colon after "hit"). Pre-fix the detector
+    -- only caught "Chance on hit:" (with colon, matched by ITEM_SPELL_
+    -- TRIGGER_ONPROC) and "Equip: Chance to" - this equip-line variant
+    -- fell through. Anchor prevents description-line false positives.
+    if txt:find("^Equip:%s*Chance on hit") then
+        return true
+    end
     -- v2.44.10 / v2.44.11: PE's transferred-proc system applies a
     -- chance-on-hit proc to a target item as a tooltip line that
     -- uses a different phrasing than the vanilla "Chance on hit:" /
@@ -1590,9 +1598,61 @@ NS.chanceProcConfirmedItems = EC_CHANCE_PROC_CONFIRMED_ITEMS
 --      correlated at runtime from LEARNED_SPELL_IN_TAB observations.
 --      Belt-and-braces nil-guards handle early-boot / fresh-account.
 --   4. chanceProcSpellID: keyword-map inference (best-effort).
+-- v2.60.0 (Serv report - Jouster's Fury, PvP trinket): the PE Anvil
+-- refuses to extract chance-on-hit procs from anything but weapons.
+-- Serv confirmed the general rule ("ONLY weapons with chance on hit
+-- procs can be extracted") after seeding a specific trinket into the
+-- NEVER_EXTRACTABLE list would have been redundant with a broader
+-- structural rule. Any non-weapon equipLoc short-circuits to false at
+-- playerHasExtractedProc so the catalog scan is skipped entirely.
+--
+-- v2.60.0 iter 2 (Serv follow-up): the chance-on-hit PROTECTION layer
+-- itself is meaningless for non-weapons - the feature was originally
+-- designed for extractable weapons, "keep it so you can extract later"
+-- has no reading for a trinket that can't be extracted. Exposing the
+-- same weapon-slot set as a helper so the sell / trace / tooltip
+-- protection blocks can all gate on it in lockstep.
+local EC_EXTRACTABLE_EQUIP_LOCS = {
+    INVTYPE_WEAPON         = true, -- 1H weapons
+    INVTYPE_WEAPONMAINHAND = true,
+    INVTYPE_WEAPONOFFHAND  = true,
+    INVTYPE_2HWEAPON       = true,
+    INVTYPE_RANGED         = true, -- older ranged slot (wands / older gear)
+    INVTYPE_RANGEDRIGHT    = true, -- bows / guns / crossbows
+    INVTYPE_THROWN         = true, -- thrown weapons
+}
+
+-- Returns true iff the item's equipLoc is a slot the PE Anvil accepts
+-- for chance-on-hit extraction. Cold cache / missing equipLoc default
+-- to true so the caller applies protection (safe default; a cached
+-- item's actual equipLoc arrives on a subsequent scan). Consumed by
+-- the chance-on-hit-protection outer gates in EC_IsSellable +
+-- describeSellability + EC_AnnotateTooltip so all three surfaces agree
+-- on the "non-weapons don't need protection" rule.
+function EC_compCache.isExtractableWeaponSlot(itemID)
+    if not itemID or not GetItemInfo then
+        return true
+    end
+    local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
+    if not equipLoc or equipLoc == "" then
+        return true
+    end
+    return EC_EXTRACTABLE_EQUIP_LOCS[equipLoc] == true
+end
+
 function EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
     if itemID and EC_CHANCE_PROC_NEVER_EXTRACTABLE[itemID] then
         return false, nil, nil
+    end
+    -- v2.60.0: weapon-only extraction rule. Fast-return before the
+    -- catalog scan when the item isn't a weapon; no PE affix can be
+    -- extracted from trinkets / rings / neck / armor slots regardless
+    -- of what the item's chance-on-hit line reads.
+    if itemID and GetItemInfo then
+        local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
+        if equipLoc and equipLoc ~= "" and not EC_EXTRACTABLE_EQUIP_LOCS[equipLoc] then
+            return false, nil, nil
+        end
     end
     local ADB = NS.ADB
     local spellID, family
@@ -1676,7 +1736,14 @@ function EC_compCache.itemHasResilience(bag, slot, itemID)
             break
         end
         local txt = line:GetText()
-        if txt and txt:find("Resilience", 1, true) then
+        -- v2.60.0 iter 3 (Serv follow-up - Jouster's Fury): case-fold
+        -- before the substring match. Pre-fix the detector looked for
+        -- literal "Resilience" (capital R), but WoW's stat-line text
+        -- reads "Improves your resilience rating by X" (lowercase r).
+        -- The bare-stat form ("Resilience Rating +X") starts with a
+        -- capital, but the Equip: text uses lowercase, so the detector
+        -- silently missed every PvP Set item that had the Equip: form.
+        if txt and txt:lower():find("resilience", 1, true) then
             result = true
             break
         end

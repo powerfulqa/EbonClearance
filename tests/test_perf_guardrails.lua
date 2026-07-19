@@ -4166,13 +4166,13 @@ do
     check("Test 94a: DB.announceAutoDelete seeded in EnsureDB with default true",
         ev:find("DB%.announceAutoDelete%s*=%s*true") ~= nil,
         "must default ON - the player should see destructive actions until they explicitly opt out. The off switch is a chat-noise convenience, not a safer default.")
-    check("Test 94b: 'Auto-deleted' PrintNicef gated on the toggle",
-        ev:find("announce and DB and DB%.announceAutoDelete ~= false") ~= nil,
-        "the auto-delete-on-pickup chat line must respect the new toggle. ayres asked for the off switch; if the gate disappears the toggle becomes inert.")
-    check("Test 94c: 'Marked for deletion (Resilience)' PrintNicef gated on the toggle",
-        ev:find('Marked for deletion %(Resilience, unsellable%)') ~= nil
-            and ev:find('if DB and DB%.announceAutoDelete ~= false then') ~= nil,
-        "the resilience auto-mark chat line must respect the same toggle. The two messages are the same category of 'EC just touched something' notification - one toggle gates both.")
+    check("Test 94b: 'Auto-deleted' PrintNicef gated on the announce helper (v2.60.0 shape)",
+        ev:find("announce and EC_compCache%.shouldAnnounceAutoDelete%(quality%)") ~= nil,
+        "the auto-delete-on-pickup chat line must route through EC_compCache.shouldAnnounceAutoDelete(quality) so the per-rarity filter is honoured (v2.60.0) AND the master toggle stays the top-level gate. ayres asked for the master off-switch originally; v2.60.0 layered per-rarity multi-select on top.")
+    check("Test 94c: helper exists + Resilience mark uses it + affix-dupe mark uses it (v2.60.0)",
+        ev:find("function EC_compCache%.shouldAnnounceAutoDelete%(quality%)") ~= nil
+            and ev:find('Marked for deletion %(Resilience, unsellable%)') ~= nil,
+        "the shared helper MUST exist and both non-executeBagSlotDelete announce sites (Resilience + affix-dupe auto-mark) must route through it. Master toggle (announceAutoDelete) off silences everything; on lets DB.announceAutoDeleteQualities[quality] decide per-rarity.")
     check("Test 94d: KeepDeletePanels surfaces the announce checkbox",
         kdp:find("EbonClearanceAnnounceAutoDeleteCB") ~= nil
             and kdp:find("DB%.announceAutoDelete") ~= nil,
@@ -7043,10 +7043,10 @@ do
     check("Test 109b: EC_IsSellable chance-on-hit block clears all four auto-rule pass signals when firing",
         ev:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
         "the block MUST clear all four pass signals (not just qualityPass) so the recheck at the end of EC_IsSellable correctly rejects the item. Clearing only qualityPass leaves the other three signals set - the recheck ORs across all of them and returns true.")
-    check("Test 109c: BagDisplay trace chance-on-hit gate covers all five positive signals + clears the four rule signals",
-        bd:find("hasChanceOnHitLine and %(qualityPass or affixRankPass or autoDupePass or recipePass or knownProcPass%)") ~= nil
+    check("Test 109c: BagDisplay trace chance-on-hit gate covers all five signals + weapon-slot rule + clears the four rule signals",
+        bd:find("hasChanceOnHitLine and isWeaponForChanceOnHit and %(qualityPass or affixRankPass or autoDupePass or recipePass or knownProcPass%)") ~= nil
             and bd:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
-        "the /ec sellinfo trace MUST agree with EC_IsSellable's verdict. v2.59.10 widened the gate to include knownProcPass so an item whose only positive signal is a known-proc release enters the block and gets the 'chance-on-hit proc known (Family), sell released' explanation. The four rule signals still get cleared when the protection actually vetoes (else branch below).")
+        "v2.60.0 iter 2: also gates on isWeaponForChanceOnHit (from EC_compCache.isExtractableWeaponSlot). Non-weapon chance-on-hit items don't get the extraction-protection treatment - the PE Anvil accepts weapons only, and 'keep it so you can extract later' has no reading for a trinket. Mirrors the same gate in EC_IsSellable + EC_AnnotateTooltip.")
     -- v2.48.1 companion bug (also reported by Serv against Sentinel's Blade
     -- of Iron Will II): affixRankPass and autoDupePass fired for items with
     -- sellPrice = 0. Vendor refuses, item wedges, tooltip lies. Gate both on

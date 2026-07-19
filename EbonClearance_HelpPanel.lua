@@ -418,7 +418,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-delete-unsellable-dupes",
         q = L["Auto-mark unsellable affixes for deletion"],
-        a = L["On the Delete Settings panel (off by default). When on (with affix protection), EbonClearance puts soulbound affixed items it would otherwise sell, but that have NO vendor value, onto your Delete List automatically (one chat line each). Two kinds qualify: exact-rank duplicates of an affix you already have, AND any affix below your 'Sell affixes below rank' setting. These are the items that would otherwise be flagged 'Will Sell' yet stick in your bags forever, because the merchant refuses them (no sell price). Heads-up: if you use the rank floor, low-rank affixed drops you can't sell WILL be deleted, not kept - that's the point, but it can surprise you. It never touches a rank you're still collecting (those still show 'Keep'), items that have a vendor price (left for the sell path so you keep the gold), or protected gear: Keep List, currently equipped, quest items, saved equipment-set members, high item-level gear (real gear is never auto-deleted), tomes, and profession tools. They delete at a vendor, or instantly with auto-delete-on-pickup."],
+        a = L["On the Delete Settings panel (off by default). When on (with affix protection), EbonClearance puts soulbound affixed items it would otherwise sell, but that have NO vendor value, onto your Delete List automatically (one chat line each). Two kinds qualify: exact-rank duplicates of an affix you already have, AND any affix below your 'Sell affixes below rank' setting. These are the items that would otherwise be flagged 'Will Sell' yet stick in your bags forever, because the merchant refuses them (no sell price). Heads-up: if you use the rank floor, low-rank affixed drops you can't sell WILL be deleted, not kept - that's the point, but it can surprise you. It never touches a rank you're still collecting (those still show 'Keep'), items that have a vendor price (left for the sell path so you keep the gold), or protected gear: Keep List, currently equipped, quest items, saved equipment-set members, high item-level gear (iLvl >= 200; on by default via a Keep Settings toggle - uncheck 'Protect high-iLvl items from unsellable-affix auto-mark' if you want the scan to catch high-iLvl PvP dupes you've grown out of), tomes, and profession tools. They delete at a vendor, or instantly with auto-delete-on-pickup."],
         panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
@@ -431,6 +431,18 @@ local EC_HELP_ENTRIES = {
         id = "gate-keep-boe-dupes",
         q = L["Keep bind-on-equip ones (auction them yourself)"],
         a = L["A sub-option of 'Allow selling affixes you already have' (off by default). With it on, EbonClearance only vendors the affix dupes that are soulbound (a vendor is their only exit anyway) and keeps the bind-on-equip ones, so you can auction those yourself. Turn it off to sell every dupe regardless of bind type. 'You already have it' means the exact rank that dropped, so a rank you haven't extracted is always kept."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "gate-automark-known-recipes",
+        q = L["Auto-mark unsellable known recipes for deletion"],
+        a = L["On the Delete Settings panel (off by default). Some low-rank profession recipes (Cooking recipes like Recipe: Haunted Herring, some Lockpicking and Skinning schematics) drop as soulbound with NO vendor sell price. 'Sell known recipes' can't do anything with them - the merchant refuses. When this toggle is on, learned recipes with no vendor value go onto your Delete List automatically (one chat line each) so they don't pile up in your bags. Needs 'Sell known recipes' on in Sell Settings (this is a companion, not a replacement). Unlearned recipes are never touched, sellable known recipes are left for the vendor path, and Keep List / equipment-set / currently-equipped / quest items are always protected. Deletes at a vendor, or instantly with auto-delete-on-pickup."],
+        panel = "EbonClearanceOptionsDeletionSettings",
+    },
+    {
+        id = "gate-automark-protect-hilvl",
+        q = L["Protect high-iLvl items from unsellable-affix auto-mark (iLvl >= 200)"],
+        a = L["Safety net for the 'Auto-mark unsellable affixes for deletion' scan on Delete Settings. On by default. When on, any item at or above iLvl 200 is treated as 'real gear' and NEVER auto-marked - the auto-mark won't accidentally trash a fresh high-value drop that happens to have a dupe affix and no vendor price. Turn off to let the scan catch old high-iLvl gear (like PvP set pieces you've grown out of) that you WANT trashed. The other safety nets - Keep List entries, saved equipment-set members, currently equipped, quest items, Sell List entries - are ALWAYS respected regardless of this toggle, so anything you've explicitly kept still can't be auto-trashed. If you rely on autoAddEquipped + autoProtectUpgrades + autoProtectEquipmentSets to curate your Keep List (which most players do), unchecking this is usually safe."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
@@ -514,7 +526,7 @@ local EC_HELP_ENTRIES = {
     {
         id = "gate-announce-auto-delete",
         q = L["Announce auto-deletions in chat"],
-        a = L["When EbonClearance auto-deletes a Delete-List item the moment it hits your bags, or auto-marks a piece of unsellable Resilience gear for deletion, it normally prints one chat line per event so you can see what just happened. Turn this off if you find the chat noise unwelcome. The toggle silences only those two lines; the manual vendor-cycle summary, the session stats, and the lifetime totals are unaffected, and your Delete List itself still tracks every destroyed item."],
+        a = L["When EbonClearance auto-deletes a Delete-List item the moment it hits your bags, or auto-marks a piece of unsellable Resilience gear for deletion, it normally prints one chat line per event so you can see what just happened. Turn this off if you find the chat noise unwelcome. The toggle silences only those two lines; the manual vendor-cycle summary, the session stats, and the lifetime totals are unaffected, and your Delete List itself still tracks every destroyed item. v2.60.0 added a per-rarity multi-select filter under the master toggle: pick which rarities (Poor / Common / Uncommon / Rare / Epic) should still print. Master off silences everything; master on lets each rarity's tick decide - so you can see Rare + Epic deletions but silence the Greens and Greys that flood the chat while farming."],
         panel = "EbonClearanceOptionsDeletionSettings",
     },
 
@@ -609,8 +621,8 @@ local EC_HELP_ENTRIES = {
     },
     {
         id = "label-tome-have",
-        q = L["Keep (Tome you have) / Keep (Recipe you have)"],
-        a = L["A tome or recipe you've already learned. Only shows up when 'Protect all tomes / recipes' is turned on. Useful if you save spares for the auction house or alts."],
+        q = L["Keep (learned tome) / Keep (learned recipe)"],
+        a = L["A tome or recipe you've already learned. Only shows up when 'Keep them even after you learn them' is turned on. Useful if you save spares for the auction house or alts."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {

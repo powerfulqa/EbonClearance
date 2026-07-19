@@ -942,6 +942,23 @@ local function EnsureDB()
     if type(DB.announceAutoDelete) ~= "boolean" then
         DB.announceAutoDelete = true
     end
+    -- v2.60.0: per-rarity filter for the auto-delete / auto-mark chat
+    -- announcements. announceAutoDelete stays as the master (off silences
+    -- everything); when on, each rarity's tickbox decides whether that
+    -- rarity's deletion prints. Defaults all true so existing users see
+    -- no behaviour change (matches the pre-v2.60.0 "all-or-nothing"
+    -- toggle). Poor / Common / Uncommon / Rare / Epic keys only;
+    -- higher rarities (Legendary+) are extremely rare drops that don't
+    -- typically hit the auto-delete path.
+    if type(DB.announceAutoDeleteQualities) ~= "table" then
+        DB.announceAutoDeleteQualities = { [0] = true, [1] = true, [2] = true, [3] = true, [4] = true }
+    else
+        for q = 0, 4 do
+            if type(DB.announceAutoDeleteQualities[q]) ~= "boolean" then
+                DB.announceAutoDeleteQualities[q] = true
+            end
+        end
+    end
     -- v2.49.2: auto-delete grey items on loot (opt-in, destructive-
     -- off-by-default). Runs from the existing BAG_UPDATE debounce
     -- alongside the auto-mark scans. See the grey auto-delete scan below.
@@ -1050,6 +1067,32 @@ local function EnsureDB()
     -- or traded and just clutter bags while farming.
     if type(DB.autoMarkAffixDupes) ~= "boolean" then
         DB.autoMarkAffixDupes = false
+    end
+    -- v2.60.0 (Serv follow-up): sub-toggle for the v2.57.2 iLvl safety
+    -- net that skips auto-mark on any item at iLvl >= 200. That safety
+    -- net was added to prevent a near-item-loss on brand-new high-value
+    -- drops with dupe affixes (Bizzaro's report), but for a player with
+    -- a mature Keep List AND autoAddEquipped / autoProtectUpgrades /
+    -- autoProtectEquipmentSets on, the iLvl gate over-protects old PvP
+    -- gear the player deliberately wants trashed. Default TRUE
+    -- (preserves the v2.57.2 behaviour); users can untick to allow
+    -- auto-mark to catch high-iLvl items. Other safety nets (Keep List,
+    -- Sell List, gear-set members, currently equipped, quest items)
+    -- stay unconditional.
+    if type(DB.automarkProtectHighILvl) ~= "boolean" then
+        DB.automarkProtectHighILvl = true
+    end
+    -- v2.60.0 (Serv report, Recipe: Haunted Herring / Recipe: Last Week's
+    -- Mammoth): auto-mark learned profession recipes with sellPrice 0 for
+    -- deletion. "Sell Known Recipes" only fires when the vendor accepts
+    -- the item; a sellPrice 0 recipe stays in bags forever even when the
+    -- player knows the recipe. This toggle catches those. Paired with
+    -- sellKnownRecipes (that toggle must be on for this scan to run at
+    -- all) so the mental model is a single "get rid of learned recipes"
+    -- opt-in with two disposition paths (vendor for sellable, delete for
+    -- unsellable). Default OFF (opt-in, leads to deletion).
+    if type(DB.autoMarkKnownUnsellableRecipes) ~= "boolean" then
+        DB.autoMarkKnownUnsellableRecipes = false
     end
     -- v2.47.0: bind-type split for "Allow selling affixes you already have".
     -- When on, only SOULBOUND owned dupes are released to the sell path; BoE
@@ -3373,6 +3416,12 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- the resilience auto-mark above.
     if EC_compCache.runAutoMarkAffixDupes then
         EC_compCache.runAutoMarkAffixDupes()
+    end
+    -- v2.60.0: auto-mark learned recipes with sellPrice 0 (Sell Known Recipes
+    -- can't move them; they'd sit in bags forever). Same debounce + master-
+    -- gate discipline as the two auto-marks above.
+    if EC_compCache.runAutoMarkKnownUnsellableRecipes then
+        EC_compCache.runAutoMarkKnownUnsellableRecipes()
     end
     -- Loot tracker bag-delta scan. Runs last in the flush: auto-delete-on-
     -- pickup confirms its delete asynchronously (via the delete popup on a
@@ -5822,9 +5871,20 @@ local function EC_IsSellable(bag, slot, junkOnly)
     -- pass signals are cleared when the protection applies so the
     -- recheck below correctly rejects the item; whitelistPass
     -- (explicit Sell List entry) stays exempt per v2.20.1's rule.
+    -- v2.60.0 iter 2 (Serv follow-up): also gate on `isExtractableWeaponSlot`.
+    -- The chance-on-hit protection was designed for weapons the user might
+    -- extract at the Anvil later ("keep the item so the proc isn't lost").
+    -- The PE Anvil rejects extractions from non-weapon slots outright, so
+    -- protecting a trinket / ring / neck that carries a chance-on-hit line
+    -- has no meaningful reading - the user can't extract, and blocking the
+    -- sell path just leaves the item wedged. Fall through to normal rules
+    -- for non-weapon slots; the user's Sell List / quality rule / affix
+    -- controls handle them like any other item.
     if (qualityPass or affixRankPass or autoDupePass or recipePass)
         and DB.protectChanceOnHitItems
         and EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
+        and EC_compCache.isExtractableWeaponSlot
+        and EC_compCache.isExtractableWeaponSlot(itemID)
     then
         -- v2.26.0: chance-on-hit allow list. Items the user has
         -- marked via Alt+Right-Click -> "Allow Sell" fall through to
@@ -6077,6 +6137,25 @@ end
 -- popup), deletes it, and bumps the deletion stats - identical accounting for
 -- the vendor path and the auto-delete path. `announce` true prints one chat
 -- line (auto-delete); the vendor path passes false (it has its own summary).
+-- v2.60.0: per-rarity chat-announce gate. Master toggle
+-- (announceAutoDelete) OFF silences everything; ON lets the per-quality
+-- sub-filter (announceAutoDeleteQualities) decide. Unknown quality
+-- (nil) errs on the side of announcing so we never silently drop an
+-- event the user might care about. Consumed by executeBagSlotDelete +
+-- runAutoMarkResilience + runAutoMarkAffixDupes.
+function EC_compCache.shouldAnnounceAutoDelete(quality)
+    if not DB or DB.announceAutoDelete == false then
+        return false
+    end
+    if not DB.announceAutoDeleteQualities then
+        return true
+    end
+    if quality == nil then
+        return true
+    end
+    return DB.announceAutoDeleteQualities[quality] == true
+end
+
 -- Returns true if the delete was issued.
 function EC_compCache.executeBagSlotDelete(bag, slot, itemID, count, quality, announce)
     ClearCursor()
@@ -6104,7 +6183,7 @@ function EC_compCache.executeBagSlotDelete(bag, slot, itemID, count, quality, an
     -- executed. Source tag preserves that distinction so a report can
     -- separate "worker cleanup" from "auto-delete-on-pickup fired".
     EC_LogRecentDeleted(itemID, delCount, announce and "auto" or "vendor")
-    if announce and DB and DB.announceAutoDelete ~= false then
+    if announce and EC_compCache.shouldAnnounceAutoDelete(quality) then
         local link = select(2, GetItemInfo(itemID)) or ("item:" .. tostring(itemID))
         PrintNicef(L["|cffff4444Auto-deleted|r %s."], link)
     end
@@ -6501,7 +6580,7 @@ local EC_TOGGLE_WATCH_LIST = {
     "enableDeletion", "autoDeleteOnPickup", "autoDeleteGreyOnLoot",
     "announceAutoDelete", "warnConflictingAddons",
     -- auto-mark
-    "autoMarkAffixDupes", "autoMarkResilience",
+    "autoMarkAffixDupes", "autoMarkResilience", "autoMarkKnownUnsellableRecipes",
     -- protection
     "protectAllTomes", "protectUnlearnedTomes", "protectAffixedRareItems",
     "protectChanceOnHitItems", "affixAllowExactDupes", "keepBoeAffixDupes",
@@ -6590,6 +6669,7 @@ local EC_lastEventAt = {
     merchantClosed = nil,
     autoMarkAffix = nil,      -- runAutoMarkAffixDupes ran to completion
     autoMarkResilience = nil, -- runAutoMarkResilience ran to completion
+    autoMarkKnownRecipe = nil, -- runAutoMarkKnownUnsellableRecipes ran to completion
     vendorRunStart = nil,     -- StartRun fired
     autoDeleteScan = nil,     -- runAutoDeleteOnPickup ran
 }
@@ -6655,7 +6735,10 @@ function EC_compCache.runAutoMarkResilience()
                         -- reasonably expected those to be sold instead.
                         -- Skip anything sellable; the normal sell rules
                         -- handle them (Sell List, quality rule).
-                        local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
+                        -- v2.60.0: also destructure `quality` (3rd return)
+                        -- so the announce gate can consult
+                        -- DB.announceAutoDeleteQualities[quality].
+                        local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
                         if sellPrice and sellPrice > 0 then -- luacheck: ignore 542
                             -- Sellable; let the vendor cycle do its
                             -- job. Don't fall through to the next
@@ -6666,7 +6749,7 @@ function EC_compCache.runAutoMarkResilience()
                             deleteList[id] = true
                             -- v2.50.3: session ring-buffer log for /ec bugreport.
                             EC_LogAutoMark(id, "resilience")
-                            if DB and DB.announceAutoDelete ~= false then
+                            if EC_compCache.shouldAnnounceAutoDelete(quality) then
                                 local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
                                 -- v2.50.2: append recovery hint so the player
                                 -- has a path back if the auto-mark caught an
@@ -6712,7 +6795,17 @@ end
 -- for deletion by the unsellable-affix feature. On Project Ebonhold even top-end
 -- soulbound gear has sellPrice 0, so "no vendor value" alone is NOT a safe
 -- "trash" signal - a high-iLvl drop must be protected. Tunable.
-local EC_AUTOMARK_PROTECT_ILVL = 100
+--
+-- v2.60.0 (Serv report): raised from 100 to 200. On a WotLK-max character
+-- most gear sits above iLvl 100 - the old threshold protected essentially
+-- everything, including mid-BC-era drops the player doesn't care about.
+-- 200 keeps real endgame gear safe (Ulduar / ToC / ICC drops all sit
+-- above) while letting the auto-mark scan catch old low-mid-iLvl PvP
+-- dupes and BC-era drops. Users who want tighter or looser protection
+-- can toggle DB.automarkProtectHighILvl off entirely (unlocks all iLvls
+-- for auto-mark, safe if the Keep List / Sets / Equipped tags cover
+-- everything important).
+local EC_AUTOMARK_PROTECT_ILVL = 200
 
 -- v2.57.2 SAFETY: shared "is this item protected from auto-mark deletion?" gate,
 -- called by BOTH runAutoMarkAffixDupes (the real marking) and the tooltip's
@@ -6722,26 +6815,35 @@ local EC_AUTOMARK_PROTECT_ILVL = 100
 -- membership, the account Sell List, currently-equipped, quest items, and high
 -- item level. (The character Keep List, tomes, and baseline tools are checked by
 -- each caller in its own context.)
+-- v2.60.0 (Serv follow-up): also returns a second value naming the
+-- SPECIFIC reason the item is protected, so the tooltip's "Keep
+-- (protected)" label can be more precise. Reason keys are canonical
+-- English tokens ("set" / "sellList" / "equipped" / "quest" /
+-- "highIlvl") the tooltip / trace map to localized strings. Callers
+-- that only need the boolean still work unchanged (they read the first
+-- return and ignore the second).
 function EC_compCache.itemProtectedFromAutoMarkDelete(id)
     if not id then
         return false
     end
     if EC_compCache.equipmentSetIDs and EC_compCache.equipmentSetIDs[id] then
-        return true
+        return true, "set"
     end
     local ADB = NS.ADB
     if ADB and ADB.whitelist and NS.IsInSet and NS.IsInSet(ADB.whitelist, id) then
-        return true
+        return true, "sellList"
     end
     if IsEquippedItem and IsEquippedItem(id) then
-        return true
+        return true, "equipped"
     end
     if EC_compCache.isQuestItem and EC_compCache.isQuestItem(id) then
-        return true
+        return true, "quest"
     end
-    local _, _, _, ilvl = GetItemInfo(id)
-    if ilvl and ilvl >= EC_AUTOMARK_PROTECT_ILVL then
-        return true
+    if DB and DB.automarkProtectHighILvl ~= false then
+        local _, _, _, ilvl = GetItemInfo(id)
+        if ilvl and ilvl >= EC_AUTOMARK_PROTECT_ILVL then
+            return true, "highIlvl"
+        end
     end
     return false
 end
@@ -6857,7 +6959,7 @@ function EC_compCache.runAutoMarkAffixDupes()
                                 deleteList[id] = true
                                 -- v2.50.3: session ring-buffer log for /ec bugreport.
                                 EC_LogAutoMark(id, "affix")
-                                if DB.announceAutoDelete ~= false then
+                                if EC_compCache.shouldAnnounceAutoDelete(quality) then
                                     local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
                                     -- v2.50.2: append recovery hint so the
                                     -- player has a path back if the auto-mark
@@ -6876,6 +6978,79 @@ function EC_compCache.runAutoMarkAffixDupes()
                             end
                             end -- else (rankBelowOnly branch)
                         end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- v2.60.0 (Serv report, Recipe: Haunted Herring / Recipe: Last Week's Mammoth):
+-- auto-mark learned profession recipes with sellPrice 0 for deletion. Some
+-- BoP profession recipes (Cooking recipes at low ranks, some low-level Skinning /
+-- Lockpicking schematics) return sellPrice 0 from GetItemInfo, so "Sell Known
+-- Recipes" can't do anything with them (vendor refuses). When this toggle is on,
+-- and the parent sellKnownRecipes toggle is also on, learned unsellable recipes
+-- are added to the Delete List instead. Skips Keep List / equipment-set /
+-- currently-equipped / quest / non-recipe tomes. Announce goes through the
+-- shared per-rarity chat filter (announceAutoDeleteQualities). Gated like the
+-- other destructive scans (master Enable + enableDeletion).
+function EC_compCache.runAutoMarkKnownUnsellableRecipes()
+    local DB = NS.DB
+    if not EC_IsAddonEnabledForChar() then
+        return
+    end
+    EC_StampEvent("autoMarkKnownRecipe")
+    if not (DB and DB.enableDeletion and DB.autoMarkKnownUnsellableRecipes) then
+        return
+    end
+    if not DB.sellKnownRecipes then
+        return
+    end
+    if EC_compCache.vendorRunning then
+        return
+    end
+    local deleteList = DB.deleteList
+    if not deleteList then
+        return
+    end
+    local keepList = DB.blacklist
+    local accountKeep = NS.ADB and NS.ADB.whitelist
+    local setMembers = EC_compCache.equipmentSetIDs
+    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    for i = 1, #snap.entries do
+        do
+            local e = snap.entries[i]
+            local id = e.itemID
+            if id and not deleteList[id] and GetContainerItemID(e.bag, e.slot) == id then
+                local protectedByKeep = (keepList and keepList[id])
+                    or (accountKeep and accountKeep[id])
+                    or (setMembers and setMembers[id])
+                if not protectedByKeep
+                    and not IsEquippedItem(id)
+                    and not (EC_compCache.isQuestItem and EC_compCache.isQuestItem(id))
+                then
+                    local _, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(id)
+                    if not (sellPrice and sellPrice > 0)
+                        and EC_compCache.itemIsTome
+                        and EC_compCache.tomeKind
+                        and EC_compCache.playerKnowsTomeSpell
+                        and EC_compCache.itemIsTome(e.bag, e.slot, id)
+                        and EC_compCache.tomeKind(id) == "Recipe"
+                        and EC_compCache.playerKnowsTomeSpell(e.bag, e.slot, id)
+                    then
+                        deleteList[id] = true
+                        EC_LogAutoMark(id, "knownRecipe")
+                        if EC_compCache.shouldAnnounceAutoDelete(quality) then
+                            local link = select(2, GetItemInfo(id)) or ("item:" .. tostring(id))
+                            PrintNicef(
+                                L["|cffff4444Marked for delete|r %s - recipe you know (no vendor value)."]
+                                    .. " "
+                                    .. L["|cffaaaaaaAdd to Keep List (Alt+Right-Click on the bag slot) to save it.|r"],
+                                link
+                            )
+                        end
+                        return
                     end
                 end
             end

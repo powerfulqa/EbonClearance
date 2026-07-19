@@ -132,3 +132,28 @@ jobs:
           # content, so the release page shows the curated changelog FIRST
           # and the auto-generated compare-link block below it.
           generate_release_notes: true
+
+      - name: Refresh lifetime downloads badge JSON
+        # Sums download_count across every asset of every release and writes
+        # .github/downloads.json in shields.io endpoint format. The README's
+        # "Downloads (lifetime)" badge reads this file via raw.githubusercontent.
+        # Runs on each tag so the number stays roughly current (stale between
+        # tags is fine; the "this release" badge covers live counts via the
+        # GitHub API dynamic/json shield). Non-fatal if the API is flaky.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        run: |
+          TOTAL=$(gh api -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/releases" \
+            --paginate --jq '.[].assets[].download_count' \
+            | awk '{s+=$1} END {print s+0}')
+          echo "Lifetime downloads: $TOTAL"
+          mkdir -p .github
+          printf '{"schemaVersion":1,"label":"Downloads","message":"%s","color":"blue"}\n' "$TOTAL" > .github/downloads.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/downloads.json
+          git commit -m "Refresh lifetime downloads badge [skip ci]" || echo "No changes"
+          git pull --rebase origin master
+          git push origin master

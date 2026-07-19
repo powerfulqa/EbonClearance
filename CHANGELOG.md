@@ -121,7 +121,7 @@ Backed by a new scanner `runAutoMarkKnownUnsellableRecipes` on the shared BAG_UP
 Replaced the single abbreviated badge with two exact-count badges:
 
 - **Downloads (this release)** via shields.io `dynamic/json` reading `api.github.com/.../releases/latest`. Exact current-release count, refreshed by the shields.io CDN cache with no infrastructure on our side.
-- **Downloads (lifetime)** via shields.io `endpoint` reading `.github/downloads.json` from the repo. New file, initial seed committed with the correct count at v2.60.0 tag time. A new `Refresh lifetime downloads badge JSON` step in `.github/workflows/release.yml` sums `download_count` across every asset via `gh api --paginate` and commits the updated JSON back with `[skip ci]` on each tag. `continue-on-error: true` so a flaky GitHub API on release day never fails the tag. Stale between tags is fine; the per-release badge covers the live signal.
+- **Downloads (lifetime)** via shields.io `endpoint` reading the pre-existing `badge-data` branch's `downloads.json`, which the pre-existing `update-download-badge.yml` scheduled workflow already refreshes on `release: published` events + every 6h via cron. Exact lifetime count; reuses infrastructure already in place, no additional workflow step needed.
 
 ### Notes
 

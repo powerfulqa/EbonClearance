@@ -985,7 +985,7 @@ local function BuildMainPanel(panel, content)
     -- 2+ lines doesn't push the button down - the button stays aligned
     -- with the first line. The next row anchors to the previous label's
     -- BOTTOMLEFT, so wrapping pushes everything below it down cleanly.
-    local LABEL_COL_X = 54 -- button width (48) + 6 px gap; labels start at this x
+    local LABEL_COL_X = 70 -- button width (64) + 6 px gap; labels start at this x
     local PANEL_RIGHT_PAD = 16 -- same right margin the original cmdText used
     local prevAnchor = cmdHeader
     -- v2.49.0: track prev anchor's x-offset in content so we can flip
@@ -1037,7 +1037,7 @@ local function BuildMainPanel(panel, content)
 
             if row.run or row.prefill then
                 local btn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-                btn:SetSize(48, 20)
+                btn:SetSize(64, 20)
                 -- LEFT-to-LEFT vertically-centres the button against the
                 -- label's centre line, so single-line labels (the common
                 -- case) read as perfectly aligned. The button still sits in

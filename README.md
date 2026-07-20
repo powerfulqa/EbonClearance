@@ -111,7 +111,7 @@ Working on the addon? There's developer documentation under [docs/](docs/):
 - [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md) is the prescriptive guide for coding in this addon. Read it first: it covers 3.3.5a client gotchas, the file's architecture, naming conventions, the state machine, UI patterns and the decision not to embed Ace3.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) is a short list of known follow-up cleanups that weren't part of the last pass.
 
-- [docs/TRANSLATING.md](docs/TRANSLATING.md) is the guide for translating the addon into your language (French and German templates ship ready to fill in).
+- [docs/TRANSLATING.md](docs/TRANSLATING.md) is the guide for translating the addon into your language. French (`frFR`) and German (`deDE`) ship substantially complete; other languages start from the French template.
 
 A Luacheck config ([.luacheckrc](.luacheckrc)) and a StyLua formatter config ([stylua.toml](stylua.toml)) are checked in. Run `stylua --check *.lua` and `luacheck *.lua` before opening a PR. (The addon ships as 37 `.lua` files after the v2.32.0 file-split, the v2.36.0 Help / Stats panel splits, the v2.38.0 Quickstart panel, the v2.39.0 `EbonClearance_Comms.lua` addition, the v2.40.0 guild-share files, the v2.43.0 localization files, the v2.53.0 `EbonClearance_ProcShare.lua` addition, the v2.57.0 `EbonClearance_HistoryWindow.lua` addition, and the v2.58.0 realm-wide sharing files (`EbonClearance_RealmComms.lua`, `EbonClearance_ServerShare.lua`, `EbonClearance_ServerStatsPanel.lua`); the entry hub is `EbonClearance_Events.lua`.)
 

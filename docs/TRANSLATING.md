@@ -1,6 +1,6 @@
 # Translating EbonClearance
 
-EbonClearance can be translated into any language with no code changes. French (`frFR`) and German (`deDE`) templates ship ready to fill in. Anything you don't translate falls back to English, so a partial translation is always safe.
+EbonClearance can be translated into any language with no code changes. French (`frFR`) and German (`deDE`) now ship substantially complete; other languages start from the French template. Anything you don't translate falls back to English, so a partial translation is always safe.
 
 Thank you for helping. This guide is everything you need.
 

@@ -232,7 +232,7 @@ function EC_compCache.buildListHeaderRow(box, setTableName)
     addLabel:SetText(L["Add item:"])
 
     local addBtn = CreateFrame("Button", nil, box, "UIPanelButtonTemplate")
-    addBtn:SetSize(60, 20)
+    addBtn:SetSize(72, 20)
     -- -20 (not -24): the input anchors to the label's vertical centre, which
     -- sits ~4px below the row top, so the button is lifted 4px to line up
     -- with the field's centre (same trick as the v2.32.x sort buttons).

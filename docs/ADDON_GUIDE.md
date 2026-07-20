@@ -759,7 +759,12 @@ frFR / deDE. Engine button globals (`YES`/`NO`/`OKAY`) stay unwrapped.
 **Load order** matters only for `Locale.lua` itself (must precede any file
 binding `local L = NS.L` at its main chunk). File-scope wrapped tables (e.g.
 dropdown data built at load) get translated values because the locale tables
-register before the panels load.
+register before the panels load. That only holds for the **client** locale,
+though: a value captured into a module-level table at load is frozen at the
+client language, so a live `/ec locale` override does not update it (it needs
+a `/reload`). For content that must follow a live override, build the table
+lazily in a function that runs at render time so `L[]` resolves per call - see
+`EC_buildHelpEntries()` in `EbonClearance_HelpPanel.lua` (v2.61.0, the Help FAQ).
 
 Invariants in `tests/test_locale_integrity.lua`: passthrough + override +
 empty-skip behaviour, format-placeholder parity between each English key and
@@ -768,6 +773,17 @@ retail tokens. The locale files are in `test_comment_hygiene.lua`'s source
 list and the CI `luac` list, but deliberately **not** in
 `test_perf_guardrails.lua`'s concatenated `src` (its substring presence /
 absence checks would false-match the English keys in the templates).
+
+`tests/test_locale_coverage.lua` (v2.61.0) is the coverage backstop: it
+extracts every literal `L["..."]` key from the addon source (file list read
+from the `.toc`) and fails the build if a key is missing from either template,
+or if the frFR / deDE key sets diverge. Practical rule: **any new player-facing
+`L["..."]` string must get an entry in BOTH `EbonClearance_Locale_frFR.lua` and
+`EbonClearance_Locale_deDE.lua`** - an empty value is fine (it falls back to
+English until a translator fills it). The test catches a forgotten slot
+automatically, so a string can never ship invisible to translators. Dynamic
+`L[var]` lookups can't be checked statically and are skipped; parity keeps the
+two files in lockstep for those.
 
 ## Gotchas and refactoring traps
 

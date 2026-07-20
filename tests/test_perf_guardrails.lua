@@ -4270,9 +4270,9 @@ do
             and tt:find('statusTag = "wontsell"') ~= nil,
         "items with no slot mapping must show 'Won't Sell (Rarity, no equipment slot)' with statusTag=wontsell. The user needs to understand the addon is DECLINING to evaluate them (mirroring Won't Sell (equipped) / Won't Sell (no value)), NOT actively keeping them as upgrade candidates. Reframed mid-v2.44.6 after the user pointed out that 'Keep' implied protection.")
     check("Test 96c: locale templates carry the new key",
-        de:find('%["Won\'t Sell %(%%s, no equipment slot%)"%] = ""') ~= nil
-            and fr:find('%["Won\'t Sell %(%%s, no equipment slot%)"%] = ""') ~= nil,
-        "every new English key must have a matching empty-template entry in the fr/de locale files so community translators have a slot to fill. Without these, the locale-integrity test (test_locale_integrity.lua) misses the key on its next pass.")
+        de:find('%["Won\'t Sell %(%%s, no equipment slot%)"%] =') ~= nil
+            and fr:find('%["Won\'t Sell %(%%s, no equipment slot%)"%] =') ~= nil,
+        "every new English key must have a matching entry in the fr/de locale files so community translators have a slot to fill (the value may be empty or already translated). Without these, the locale-integrity test (test_locale_integrity.lua) misses the key on its next pass.")
 end
 
 -- ---------------------------------------------------------------------------
@@ -4431,11 +4431,11 @@ do
             and tt:find("if affix%.rank then") ~= nil,
         "rank=nil PE affixes (transferred procs) shouldn't claim 'rank known' / 'rank needed' - there's no rank to call out. Branch on affix.rank: emit the existing labels for ranked, the new 'affix known' / 'affix needed' for unranked. Same statusTag (affixknown / affixneeded) so the bag-border tint and downstream code stays the same.")
     check("Test 99e: new locale keys present in fr/de templates",
-        de:find('%["Keep %(affix known%)"%] = ""') ~= nil
-            and de:find('%["Keep %(affix needed%)"%] = ""') ~= nil
-            and fr:find('%["Keep %(affix known%)"%] = ""') ~= nil
-            and fr:find('%["Keep %(affix needed%)"%] = ""') ~= nil,
-        "new English keys 'Keep (affix known)' and 'Keep (affix needed)' must have matching empty-template entries in fr/de so the locale-integrity test sees them on its next pass.")
+        de:find('%["Keep %(affix known%)"%] =') ~= nil
+            and de:find('%["Keep %(affix needed%)"%] =') ~= nil
+            and fr:find('%["Keep %(affix known%)"%] =') ~= nil
+            and fr:find('%["Keep %(affix needed%)"%] =') ~= nil,
+        "new English keys 'Keep (affix known)' and 'Keep (affix needed)' must have matching entries in fr/de (empty or translated) so the locale-integrity test sees them on its next pass.")
     local ev = fileSrc("EbonClearance_Events.lua")
     local proc = fileSrc("EbonClearance_Process.lua")
     check("Test 99f: playerHasAffixFamily returns true on family-key presence",

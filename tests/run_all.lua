@@ -19,6 +19,7 @@ local TESTS = {
     "tests/test_procshare.lua",
     "tests/test_servershare.lua",
     "tests/test_locale_integrity.lua",
+    "tests/test_locale_coverage.lua",
     "tests/test_affix_resilience.lua",
 }
 

@@ -31,7 +31,13 @@ local L = NS.L
 -- collapse-state group, content entries render between markers.
 -- panel field is optional - when present, an `Open <name>` button
 -- jumps to that Interface Options panel.
-local EC_HELP_ENTRIES = {
+-- Built lazily (as a function, not a load-time table) so the L[] lookups
+-- resolve against the ACTIVE locale at render time. A load-time table would
+-- capture the client locale once, leaving Help in English after a live
+-- /ec locale override until /reload. Rebuilt on each panel show / search /
+-- OpenHelpEntry - cheap (~18 entries), never a per-frame path.
+local function EC_buildHelpEntries()
+    return {
     -- ===================================================================
     -- Section 1: Getting started
     -- ===================================================================
@@ -884,7 +890,8 @@ local EC_HELP_ENTRIES = {
         url = "https://github.com/powerfulqa/EbonClearance",
         urlLabel = L["Copy project link"],
     },
-}
+    }
+end
 
 -- ---------------------------------------------------------------------------
 -- Frame creation
@@ -948,7 +955,7 @@ function NS.OpenHelpEntry(entryId)
     -- Find the owning section so it's expanded BEFORE the panel renders.
     if entryId and NS.DB then
         local ownerSection = nil
-        for _, entry in ipairs(EC_HELP_ENTRIES) do
+        for _, entry in ipairs(EC_buildHelpEntries()) do
             if entry.section then
                 ownerSection = entry.section
             elseif entry.id == entryId then
@@ -1379,7 +1386,7 @@ HelpPanel:SetScript("OnShow", function(self)
         --     the current viewport width.
         local items = {}
         local currentSection = nil
-        for _, entry in ipairs(EC_HELP_ENTRIES) do
+        for _, entry in ipairs(EC_buildHelpEntries()) do
             if entry.section then
                 local hdr = CreateFrame("Button", nil, chrome)
                 hdr:SetHeight(22)

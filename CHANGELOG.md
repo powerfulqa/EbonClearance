@@ -5,6 +5,38 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.61.0
+
+**French and German translations now included.**
+
+The `frFR` and `deDE` locale files shipped as empty templates since v2.43.0. They are now filled in: roughly 1,140 player-facing strings per language covering every panel, tooltip, chat message, the Help / FAQ, Quickstart, and the diagnostic output. On a French or German client the addon's UI now displays in that language automatically; English clients are unchanged, and `/ec locale frFR|deDE|auto` still forces or clears the language live.
+
+## What changed
+
+- **French (`frFR`)** filled to the informal "tu" register, matching how the game addresses the player. WoW rarity names use the in-game French terms (Commun / Inhabituel / Rare / Épique), French colon spacing and decimal commas are used, and terminology is consistent across the whole file.
+- **German (`deDE`)** filled to the informal "du" register, with the in-game German rarity names (Gewöhnlich / Ungewöhnlich / Selten / Episch) and consistent terminology.
+- **90 recent-feature strings that had no template slot** (Sold History, Frame Hitches / `/ec spike`, Sell Info traces, `/ec affixfallback`, chance-on-hit sharing, guild share, the sell-affix-by-rank rules, recipe bind filters, and several Help / FAQ answers) were added to both templates and translated. They previously showed English on every client, translated or not.
+- Both files preserve every format placeholder (`%s`, `%d`, `%.1f`, ...) and every `|cff...|r` color code exactly, and contain no em dashes, so they pass `test_locale_integrity.lua`.
+- A small number of strings are intentionally left as English fallback: a few runtime-concatenated color fragments whose markup cannot be balanced in isolation, and a handful of English pluralization strings (an inline `%s` that expands to an English word suffix) that would render incorrectly if translated. These display exactly as an English client sees them.
+
+Anything untranslated still falls back to English, so nothing regresses.
+
+## Fixes from in-game testing
+
+- The command-list **Run** button and the list **Add** button now size to their label, so the longer German (and French) text no longer overflows.
+- Shortened German labels that clipped: the Merchant "Use equipped iLvl" row (now "Angelegte iLvl nutzen" / "max. iLvl:"), the Import / Export intro, and the two import buttons ("Zusammenführen" / "Ersetzen").
+- **Stats - Server** odometer: the German combined-item row labels ran into their numbers (and the French "users sharing" label was too long); shortened both so label and value no longer overlap.
+- Shortened over-long button labels that overflowed their fixed-width buttons: **Open Quickstart**, **Change colour**, and the two **Reset** buttons on the Stats panel (French for all four; German for the Reset buttons).
+- **Help / FAQ now translates under a live `/ec locale` override.** The Help entries were built once at file load (client-locale only); they are now built lazily at render time, so the FAQ follows the active language and live switches.
+
+## Tests + docs
+
+- **New test suite `test_locale_coverage.lua`** (10th suite): extracts every literal `L["..."]` key from the source and fails the build if a key is missing from either template, or if the two templates' key sets diverge. This is what catches a forgotten translation slot (the 90 above) automatically from now on.
+- `test_perf_guardrails.lua` (Tests 96c, 99e) previously asserted that new locale keys existed in the templates with an empty value; they now assert the key is present with any value (empty or translated), since filling the templates is the intended lifecycle. All ten suites and luacheck stay green.
+- README and `docs/TRANSLATING.md` updated to note that French and German ship substantially complete.
+
+---
+
 ### v2.60.0
 
 **Per-rarity chat-announce filter for auto-delete / auto-mark events.**

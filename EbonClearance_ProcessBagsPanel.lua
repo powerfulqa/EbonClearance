@@ -399,12 +399,82 @@ end
 
 -- Refreshes the scrolling item list AND re-arms the cast button.
 -- Called from OnShow, the Refresh button, and BAG_UPDATE.
+-- v2.62.0: show a checkbox only for a mode this character can perform, stack
+-- the visible ones vertically, and size the group so the scroll region (which
+-- anchors to the group's bottom) reflows. Called every refresh. Hung off
+-- EC_compCache (not a file-local) to stay under Lua 5.1's 200-local cap.
+function EC_compCache.layoutSkillToggles(panel)
+    if not panel.skillToggles then
+        return
+    end
+    -- Counterpart to the OnHide skillGroup:Hide() (an explicitly-Hidden child
+    -- stays hidden across the panel's own re-show, so re-Show it here).
+    if panel.skillGroup then
+        panel.skillGroup:Show()
+    end
+    local DB = NS.DB
+    -- Horizontal flow via ANCHOR CHAINING: each visible checkbox's LEFT anchors
+    -- to the previous label's RIGHT, so boxes sit clear of the prior label at
+    -- its true rendered width. This avoids GetStringWidth (which returns 0 for
+    -- a not-yet-measured FontString on the first OnShow layout - that made the
+    -- boxes cram together so a label's text overlapped the next box and stole
+    -- its clicks). Wrap to a new row when the running estimate would exceed the
+    -- group width; the estimate only affects wrap aesthetics, never the
+    -- (anchor-correct) hit regions.
+    local avail = panel.skillGroup:GetWidth()
+    if not avail or avail < 50 then
+        avail = (NS.GetPanelWidth and NS.GetPanelWidth() or 600) - 40
+    end
+    local GAP = 12
+    local rowH = 24
+    local rowStartY = -14 -- below the title line
+    local xEstimate = 0
+    local shown, rows = 0, 1
+    local prevLabel = nil
+    for _, mode in ipairs(panel.skillModeOrder) do
+        local cb = panel.skillToggles[mode]
+        if EC_compCache.processModeAvailable(mode) then
+            cb:SetChecked(DB.processEnabledModes[mode] ~= false)
+            local t = _G[cb:GetName() .. "Text"]
+            local cellW = 26 + ((t and t:GetStringWidth()) or 60) + GAP
+            cb:ClearAllPoints()
+            if prevLabel and (xEstimate + cellW) <= avail then
+                -- same row: sit just right of the previous label's real edge
+                cb:SetPoint("LEFT", prevLabel, "RIGHT", GAP, 0)
+                xEstimate = xEstimate + cellW
+            else
+                if prevLabel then
+                    rowStartY = rowStartY - rowH
+                    rows = rows + 1
+                end
+                cb:SetPoint("TOPLEFT", panel.skillGroup, "TOPLEFT", 0, rowStartY)
+                xEstimate = cellW
+            end
+            cb:Show()
+            prevLabel = t or cb
+            shown = shown + 1
+        else
+            cb:Hide()
+        end
+    end
+    if shown > 0 then
+        panel.skillTitle:Show()
+        panel.skillGroup:SetHeight(14 + rows * rowH)
+    else
+        -- No processing skills for this character: hide the group so the list
+        -- sits directly under the dropdown.
+        panel.skillTitle:Hide()
+        panel.skillGroup:SetHeight(1)
+    end
+end
+
 function EC_compCache.refreshProcessPanel()
     local DB = NS.DB
     local panel = _G["EbonClearanceOptionsProcessBags"]
     if not panel or not panel.rows then
         return
     end
+    EC_compCache.layoutSkillToggles(panel)
     -- Update the Clear Ignored button (visible/labelled with current count).
     if panel.clearIgnoredBtn then
         local n = 0
@@ -685,6 +755,15 @@ ProcessBagsPanel:SetScript("OnHide", function(self)
     if self.processScrollBg then
         self.processScrollBg:Hide()
     end
+    -- v2.62.0: same belt-and-braces for the per-skill toggle group. Its
+    -- checkboxes are non-secure children of the panel, so out of combat this
+    -- keeps them from lingering behind the next panel; re-shown on refresh
+    -- (layoutSkillToggles). In combat the panel's Hide is no-op'd (secure
+    -- button), so OnHide doesn't fire and the known lockdown bleed still
+    -- applies to every control - unchanged by this line.
+    if self.skillGroup then
+        self.skillGroup:Hide()
+    end
 end)
 
 ProcessBagsPanel:SetScript("OnShow", function(self)
@@ -837,6 +916,59 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
             ddHelp = NS.AddHelpIcon(content, dd, "LEFT", "RIGHT", 0, 2, "process-disenchant")
         end
 
+        -- v2.62.0: per-skill toggles. One checkbox per processing mode this
+        -- character can perform; unticking hides that skill's items from the
+        -- list and the keybind. Visibility + layout are (re)done every refresh
+        -- (layoutSkillToggles) so a learned profession or a looted convertible
+        -- shows up without a /reload.
+        local skillGroup = CreateFrame("Frame", nil, content)
+        skillGroup:SetPoint("TOPLEFT", ddLabel, "BOTTOMLEFT", 0, -12)
+        skillGroup:SetPoint("RIGHT", content, "RIGHT", -12, 0)
+        skillGroup:SetHeight(1)
+        self.skillGroup = skillGroup
+
+        local skillTitle = skillGroup:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        skillTitle:SetPoint("TOPLEFT", skillGroup, "TOPLEFT", 0, 0)
+        skillTitle:SetText(L["Process these skills:"])
+        self.skillTitle = skillTitle
+
+        local SKILL_MODE_ORDER = { "Disenchant", "Mill", "Prospect", "Lockpick", "Convert" }
+        local SKILL_MODE_LABEL = {
+            Disenchant = L["Disenchant"],
+            Mill = L["Mill"],
+            Prospect = L["Prospect"],
+            Lockpick = L["Pick Lock"],
+            Convert = L["Convert"],
+        }
+        self.skillToggles = {}
+        for _, mode in ipairs(SKILL_MODE_ORDER) do
+            local cb = CreateFrame(
+                "CheckButton",
+                "EbonClearanceProcessMode" .. mode .. "CB",
+                skillGroup,
+                "InterfaceOptionsCheckButtonTemplate"
+            )
+            -- The template extends the click hit rect 100px to the right (so
+            -- the label is clickable in the usual vertical layout). Laid out
+            -- horizontally, that reaches across the next checkbox and steals
+            -- its hovers/clicks. Clamp the hit rect to the visible 26px box so
+            -- each toggle only responds over its own square.
+            cb:SetHitRectInsets(0, 0, 0, 0)
+            local t = _G[cb:GetName() .. "Text"]
+            if t then
+                t:SetText(SKILL_MODE_LABEL[mode])
+                t:SetJustifyH("LEFT")
+            end
+            cb:SetScript("OnClick", function(self2)
+                DB.processEnabledModes[mode] = self2:GetChecked() and true or false
+                PlaySound("igMainMenuOptionCheckBoxOn")
+                EC_compCache.refreshProcessPanel()
+            end)
+            cb:Hide()
+            self.skillToggles[mode] = cb
+        end
+        self.skillModeOrder = SKILL_MODE_ORDER
+
         -- Clear-ignored button. Sits to the right of the DE dropdown
         -- (after the help icon, when present). Hidden when there's
         -- nothing to clear so the panel doesn't carry chrome for a
@@ -878,7 +1010,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         -- inside it holds the section headers + item rows.
 
         local scrollBg = CreateFrame("Frame", nil, content)
-        scrollBg:SetPoint("TOPLEFT", ddLabel, "BOTTOMLEFT", -4, -16)
+        scrollBg:SetPoint("TOPLEFT", skillGroup, "BOTTOMLEFT", -4, -12)
         scrollBg:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -12, 62)
         scrollBg:SetBackdrop({
             bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",

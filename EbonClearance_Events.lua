@@ -345,6 +345,10 @@ local PER_CHAR_FIELDS = {
     activeProfileName = true,
     processIgnored = true,
     processCollapsedModes = true,
+    -- v2.62.0 per-skill Process Bags toggles ({ mode = bool }, default-on).
+    -- Per-character because professions vary by alt (mirrors the
+    -- processCollapsedModes / processIgnored precedent).
+    processEnabledModes = true,
     -- v2.35.x gold-per-hour stats. bestGPH stores the highest sustained
     -- session GPH (copper/hour) the character has reached; bestGPHAt is
     -- the wall-clock timestamp via `time()` so the panel can render a
@@ -1206,6 +1210,18 @@ local function EnsureDB()
     -- Enabled by default since the entry point is the panel itself.
     if type(DB.lockpickEnabled) ~= "boolean" then
         DB.lockpickEnabled = true
+    end
+    -- v2.62.0: per-skill Process Bags toggles. A { mode = bool } table
+    -- (Disenchant / Mill / Prospect / Lockpick / Convert); a missing entry
+    -- means enabled, so reads use `DB.processEnabledModes[mode] ~= false`.
+    -- Default empty (all skills on). Seed Lockpick once from the old
+    -- DB.lockpickEnabled flag so upgraders keep their choice; lockpickEnabled
+    -- is left in place (unread by new code) for downgrade safety.
+    if type(DB.processEnabledModes) ~= "table" then
+        DB.processEnabledModes = {}
+    end
+    if DB.processEnabledModes.Lockpick == nil then
+        DB.processEnabledModes.Lockpick = (DB.lockpickEnabled ~= false)
     end
     -- Optional combat-exit chat hint: "N lockbox(es) available. Click
     -- Process Next to open." Default off (one extra line on every

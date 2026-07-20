@@ -728,6 +728,12 @@ local function EC_buildHelpEntries()
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
+        id = "process-skill-toggles",
+        q = L["Can I stop Process Bags from using one skill?"],
+        a = L["Yes. The checkboxes at the top of the Process Bags panel let you pick which skills the keybind acts on. Untick Mill, for example, and Process Next keeps disenchanting and prospecting but leaves your herbs alone. Only skills your character can do are shown, so a character without Enchanting never sees Disenchant. Your choices are saved per character."],
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
         id = "process-disenchant",
         q = L["Disenchant mode"],
         a = L["Requires the Enchanting profession. The panel lists eligible Uncommon (Green) and Rare (Blue) Weapons / Armor. Click the Cast button to disenchant the current item into dust, essences, and shards; click again for the next one. Items without Enchanting eligibility are skipped."],

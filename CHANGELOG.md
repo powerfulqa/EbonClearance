@@ -5,6 +5,29 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.62.0
+
+**Pick which skills Process Bags uses.**
+
+The Process Bags panel now has a checkbox per processing skill (Disenchant, Mill, Prospect, Pick Lock, Convert). Untick one and the same "Process Next" keybind skips that skill while still doing the rest - keep milling herbs by hand, for example, but auto-disenchant and prospect everything else.
+
+## What changed
+
+- New per-skill checkboxes, shown only for skills this character can actually do (known spell); Convert appears only when convertible motes/crystallized items are in your bags.
+- Unticking a skill removes its items from the list and from the keybind rotation. Same single keybind, fewer skills.
+- Choices are saved per character (professions vary by alt). The old Lockpick on/off flag folds into the new per-skill set, so your setting carries over.
+- French and German labels included.
+
+## Schema
+
+- `DB.processEnabledModes` = per-character `{ mode = bool }` table, seeded on next login (a missing entry means enabled). Additive and downgrade-safe.
+
+## Tests
+
+- New invariants in `test_perf_guardrails.lua`: the mode cascade gates every skill on `processEnabledModes`, `EnsureDB` seeds + migrates it, and the panel gates toggle visibility on the character's known spells.
+
+---
+
 ### v2.61.0
 
 **French and German translations now included.**

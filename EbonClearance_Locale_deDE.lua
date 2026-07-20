@@ -18,6 +18,12 @@ local NS = select(2, ...)
 
 NS.RegisterLocale("deDE", {
     -- EbonClearance_ProcessBagsPanel.lua
+    ["Process these skills:"] = "Diese Fähigkeiten verarbeiten:",
+    ["Disenchant"] = "Entzaubern",
+    ["Mill"] = "Mahlen",
+    ["Prospect"] = "Prospektieren",
+    ["Pick Lock"] = "Schloss knacken",
+    ["Convert"] = "Umwandeln",
     ["Process Next (%s)"] = "Nächstes verarbeiten (%s)",
     ["item"] = "Gegenstand",
     ["|cffaaaaaaNext:|r %s"] = "|cffaaaaaaNächstes:|r %s",
@@ -946,6 +952,8 @@ NS.RegisterLocale("deDE", {
 
     ["Sold History"] = "Verkaufsverlauf",
     -- EbonClearance_HelpPanel.lua
+    ["Can I stop Process Bags from using one skill?"] = "Kann ich verhindern, dass Taschen verarbeiten eine Fähigkeit nutzt?",
+    ["Yes. The checkboxes at the top of the Process Bags panel let you pick which skills the keybind acts on. Untick Mill, for example, and Process Next keeps disenchanting and prospecting but leaves your herbs alone. Only skills your character can do are shown, so a character without Enchanting never sees Disenchant. Your choices are saved per character."] = "Ja. Mit den Kästchen oben im Panel Taschen verarbeiten wählst du, welche Fähigkeiten der Tastenkürzel nutzt. Deaktiviere z. B. Mahlen, und Nächstes verarbeiten entzaubert und prospektiert weiter, lässt deine Kräuter aber in Ruhe. Es werden nur Fähigkeiten angezeigt, die dein Charakter beherrscht, ein Charakter ohne Verzauberkunst sieht Entzaubern also nie. Deine Auswahl wird pro Charakter gespeichert.",
     ["Getting started"] = "Erste Schritte",
     ["What does EbonClearance do?"] = "Was macht EbonClearance?",
     ["EbonClearance is a bag manager. When you visit a vendor, it auto-sells your junk and old gear, and protects anything important (gear you're wearing, upgrades, quest items, Project Ebonhold affixes). It can also delete items you don't want, summon the Goblin Merchant when bags fill up, and bulk-disenchant, mill, or prospect a stack of items."] = "EbonClearance ist ein Taschenmanager. Wenn du einen Händler besuchst, verkauft es automatisch deinen Müll und deine alte Ausrüstung und schützt alles Wichtige (Ausrüstung, die du trägst, Verbesserungen, Questgegenstände, Project-Ebonhold-Affixe). Es kann außerdem Gegenstände löschen, die du nicht möchtest, den Goblin-Händler rufen, wenn die Taschen voll sind, und einen Stapel Gegenstände in Massen entzaubern, zermahlen oder prospektieren.",

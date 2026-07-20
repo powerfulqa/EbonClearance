@@ -7748,6 +7748,95 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- v2.62.0 Process Bags per-skill toggles.
+-- ---------------------------------------------------------------------------
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev = fileSrc("EbonClearance_Events.lua")
+    local pr = fileSrc("EbonClearance_Process.lua")
+    local pb = fileSrc("EbonClearance_ProcessBagsPanel.lua")
+    local function has(s, sub)
+        return s:find(sub, 1, true) ~= nil
+    end
+
+    -- Schema
+    check(
+        "PBmodes: processEnabledModes seeded in EnsureDB",
+        has(ev, "DB.processEnabledModes = {}"),
+        "EnsureDB must nil-default DB.processEnabledModes to an empty table"
+    )
+    check(
+        "PBmodes: lockpickEnabled migrated into processEnabledModes.Lockpick",
+        has(ev, "DB.processEnabledModes.Lockpick = (DB.lockpickEnabled ~= false)"),
+        "one-time seed of the Lockpick toggle from the old flag"
+    )
+    check(
+        "PBmodes: processEnabledModes is per-character",
+        has(ev, "processEnabledModes = true"),
+        "must be in PER_CHAR_FIELDS (table field, like processCollapsedModes)"
+    )
+
+    -- Engine gate + capability helpers
+    for _, m in ipairs({ "Disenchant", "Mill", "Prospect", "Lockpick", "Convert" }) do
+        check(
+            "PBmodes: cascade gates " .. m .. " on processEnabledModes",
+            has(pr, "DB.processEnabledModes." .. m .. " ~= false"),
+            m .. " branch must check DB.processEnabledModes before selecting the mode"
+        )
+    end
+    check(
+        "PBmodes: old lockpickEnabled no longer gates the cascade",
+        not has(pr, "DB.lockpickEnabled and EC_compCache.canPickLock"),
+        "the Lockpick branch must use processEnabledModes.Lockpick, not lockpickEnabled"
+    )
+    check(
+        "PBmodes: processModeAvailable capability helper exists",
+        has(pr, "function EC_compCache.processModeAvailable"),
+        "panel needs a per-mode capability check"
+    )
+    check(
+        "PBmodes: hasConvertiblesInBags helper exists",
+        has(pr, "function EC_compCache.hasConvertiblesInBags"),
+        "Convert toggle visibility needs a bag scan for convertibles"
+    )
+
+    -- Panel wiring
+    check(
+        "PBmodes: panel builds a skill-toggle set",
+        has(pb, "skillToggles"),
+        "panel must create per-mode checkboxes stored on panel.skillToggles"
+    )
+    check(
+        "PBmodes: toggle setter writes processEnabledModes",
+        has(pb, "DB.processEnabledModes["),
+        "checkbox OnClick must write the toggle table"
+    )
+    check(
+        "PBmodes: toggle visibility uses processModeAvailable",
+        has(pb, "EC_compCache.processModeAvailable"),
+        "only show a checkbox for a skill this character can do"
+    )
+    check(
+        "PBmodes: layoutSkillToggles refresh-time layout exists",
+        has(pb, "layoutSkillToggles"),
+        "visibility + layout recomputed on each refresh"
+    )
+    check(
+        "PBmodes: scroll region anchors below the skill group",
+        has(pb, '"TOPLEFT", skillGroup, "BOTTOMLEFT"'),
+        "scrollBg must re-anchor to the toggle group so the list reflows"
+    )
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

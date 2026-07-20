@@ -95,6 +95,44 @@ EC_compCache.SPELL_PICK_LOCK = 1804
 -- EC_compCache to stay under Lua 5.1's 200-locals cap.
 EC_compCache.PICK_LOCK_NAME = (GetSpellInfo and GetSpellInfo(1804)) or "Pick Lock"
 
+-- v2.62.0: per-skill Process Bags toggles. Map each spell-gated mode to its
+-- spell so the panel can show a toggle only for skills this character has.
+-- Convert has no spell (its OnUse item drives the conversion), so its
+-- availability is "is a convertible in the bags right now" - hasConvertiblesInBags.
+EC_compCache.PROCESS_MODE_SPELL = {
+    Disenchant = EC_compCache.SPELL_DISENCHANT,
+    Mill = EC_compCache.SPELL_MILLING,
+    Prospect = EC_compCache.SPELL_PROSPECTING,
+    Lockpick = EC_compCache.SPELL_PICK_LOCK,
+}
+
+-- True if any bag slot holds a convertible mote/crystallized item, regardless
+-- of stack size or whether Convert is enabled. Early-exits on first hit; the
+-- check is a table lookup (canConvertElemental), no tooltip scan.
+function EC_compCache.hasConvertiblesInBags()
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag) or 0
+        for slot = 1, slots do
+            local itemID = GetContainerItemID(bag, slot)
+            if itemID and EC_compCache.canConvertElemental(itemID) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Can THIS character perform `mode` at all (independent of the on/off toggle
+-- and of stack counts)? Skills gate on IsSpellKnown; Convert gates on bag
+-- contents. Used only for deciding which toggle checkboxes to show.
+function EC_compCache.processModeAvailable(mode)
+    if mode == "Convert" then
+        return EC_compCache.hasConvertiblesInBags()
+    end
+    local sid = EC_compCache.PROCESS_MODE_SPELL[mode]
+    return (sid and IsSpellKnown and IsSpellKnown(sid)) and true or false
+end
+
 -- v2.41.2: equippable slots that LOOK like DE candidates (pass
 -- IsEquippableItem + quality 2-4) but the server rejects with
 -- "Item cannot be disenchanted". The 9th GetItemInfo return is
@@ -350,7 +388,7 @@ function EC_compCache.buildProcessSummary()
                     -- One GetItemInfo read for quality, reused by the
                     -- Disenchant gate and the result row below.
                     local _, _, quality = GetItemInfo(itemID)
-                    if EC_compCache.canDisenchant(itemID) then
+                    if DB.processEnabledModes.Disenchant ~= false and EC_compCache.canDisenchant(itemID) then
                         -- v2.23.0: same dupe gate as the sell / delete
                         -- chain. v2.27.0: also honour the unified
                         -- ADB.allowedItems override so a user-marked
@@ -402,19 +440,19 @@ function EC_compCache.buildProcessSummary()
                                 perCast = 1
                             end
                         end
-                    elseif EC_compCache.canMill(bag, slot, itemID) then
+                    elseif DB.processEnabledModes.Mill ~= false and EC_compCache.canMill(bag, slot, itemID) then
                         if count >= 5 then
                             mode = "Mill"
                             spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_MILLING) or "Milling"
                             perCast = 5
                         end
-                    elseif EC_compCache.canProspect(bag, slot, itemID) then
+                    elseif DB.processEnabledModes.Prospect ~= false and EC_compCache.canProspect(bag, slot, itemID) then
                         if count >= 5 then
                             mode = "Prospect"
                             spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_PROSPECTING) or "Prospecting"
                             perCast = 5
                         end
-                    elseif DB.lockpickEnabled and EC_compCache.canPickLock(bag, slot) then
+                    elseif DB.processEnabledModes.Lockpick ~= false and EC_compCache.canPickLock(bag, slot) then
                         -- v2.25.0: rogue Pick Lock. perCast = 1 (one
                         -- cast unlocks one container; the container
                         -- itself stays in the bag with a Right Click
@@ -423,7 +461,7 @@ function EC_compCache.buildProcessSummary()
                         mode = "Lockpick"
                         spellName = GetSpellInfo and GetSpellInfo(EC_compCache.SPELL_PICK_LOCK) or "Pick Lock"
                         perCast = 1
-                    elseif EC_compCache.canConvertElemental(itemID) then
+                    elseif DB.processEnabledModes.Convert ~= false and EC_compCache.canConvertElemental(itemID) then
                         -- v2.44.9: Crystallized / Mote condensing.
                         -- No spell to cast - the lower-tier item's
                         -- OnUse triggers the server-side conversion

@@ -16,6 +16,12 @@ local NS = select(2, ...)
 
 NS.RegisterLocale("frFR", {
     -- EbonClearance_ProcessBagsPanel.lua
+    ["Process these skills:"] = "Traiter ces compétences :",
+    ["Disenchant"] = "Désenchanter",
+    ["Mill"] = "Broyer",
+    ["Prospect"] = "Prospecter",
+    ["Pick Lock"] = "Crocheter",
+    ["Convert"] = "Convertir",
     ["Process Next (%s)"] = "Traiter le suivant (%s)",
     ["item"] = "objet",
     ["|cffaaaaaaNext:|r %s"] = "|cffaaaaaaSuivant :|r %s",
@@ -944,6 +950,8 @@ NS.RegisterLocale("frFR", {
 
     ["Sold History"] = "Historique des ventes",
     -- EbonClearance_HelpPanel.lua
+    ["Can I stop Process Bags from using one skill?"] = "Puis-je empêcher Traiter les sacs d'utiliser une compétence ?",
+    ["Yes. The checkboxes at the top of the Process Bags panel let you pick which skills the keybind acts on. Untick Mill, for example, and Process Next keeps disenchanting and prospecting but leaves your herbs alone. Only skills your character can do are shown, so a character without Enchanting never sees Disenchant. Your choices are saved per character."] = "Oui. Les cases en haut du panneau Traiter les sacs te laissent choisir les compétences utilisées par le raccourci. Décoche Broyer, par exemple, et Traiter le suivant continue de désenchanter et prospecter mais laisse tes herbes tranquilles. Seules les compétences que ton personnage possède sont affichées, donc un personnage sans Enchantement ne voit jamais Désenchanter. Tes choix sont enregistrés par personnage.",
     ["Getting started"] = "Pour commencer",
     ["What does EbonClearance do?"] = "Que fait EbonClearance ?",
     ["EbonClearance is a bag manager. When you visit a vendor, it auto-sells your junk and old gear, and protects anything important (gear you're wearing, upgrades, quest items, Project Ebonhold affixes). It can also delete items you don't want, summon the Goblin Merchant when bags fill up, and bulk-disenchant, mill, or prospect a stack of items."] = "EbonClearance est un gestionnaire de sacs. Quand tu passes chez un marchand, il vend automatiquement ta camelote et ton vieil équipement, et protège tout ce qui compte (l'équipement que tu portes, les améliorations, les objets de quête, les affixes de Project Ebonhold). Il peut aussi supprimer les objets dont tu ne veux pas, invoquer le marchand gobelin quand les sacs se remplissent, et désenchanter, broyer ou prospecter une pile d'objets en une fois.",

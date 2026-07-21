@@ -1551,12 +1551,15 @@ Two adjacent rules in the same vein:
 ### The flush chain shares ONE bag snapshot (v2.59.0+)
 
 Coalescing (above) bounded how often the flush fires; v2.59.0 bounds
-what each flush costs. The debounce flush builds
-`EC_compCache.buildBagFlushSnapshot()` once (per-slot entries + an
-`{itemID = count}` map) and every scanner in the chain iterates it via
-`EC_compCache.currentFlushSnapshot() or buildBagFlushSnapshot()`
-instead of walking bags itself. Locked by Test 119. The load-bearing
-details:
+what each flush costs. Scanners share ONE bag snapshot per flush
+(per-slot entries + an `{itemID = count}` map) instead of walking bags
+independently. v2.63.0 made the build LAZY: each scanner calls
+`EC_compCache.acquireFlushSnapshot()`, which builds and caches the
+snapshot on first use in the frame - with every entries-consumer
+toggled off (the default config) no snapshot is built at all, and the
+loot delta falls back to its cheap flat count walk via
+`currentFlushSnapshot()` (read-only). Locked by Test 119. The
+load-bearing details:
 
 - **Validity is the frame it was built in** (`snap.at == GetTime()`;
   GetTime is frame-constant). An error mid-flush can therefore never

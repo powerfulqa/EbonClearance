@@ -5,6 +5,15 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.63.0
+
+**Internal cleanup release from the second audit: shared stats-panel widgets and a lazier bag snapshot. Nothing changes in how the addon looks or behaves.**
+
+- **Stats - Guild and Stats - Server now share their row-building code.** The two panels carried identical copies of the row layout, number formatting, and item-hover wiring - a past fix already had to be applied twice because of it. One shared implementation (in the panel-widgets file) now serves both, so future fixes land once. Visually identical.
+- **The per-loot-burst bag snapshot is now built only when something needs it.** With the common configuration (auto-delete/auto-mark features off), the burst handler used to build a detailed per-slot snapshot that nothing consumed - the loot tally only needs a simple count map. The first feature that actually runs now builds the snapshot; if none runs, none is built. All the v2.59.0 safety rules (same-frame validity, live slot re-verify before destructive actions) are unchanged and the test invariants were updated in lockstep.
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.62.1
 
 **Performance and polish patch from a second full-addon audit. Plus: the Process Bags selection now stays put after processing an item.**

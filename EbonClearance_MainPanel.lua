@@ -166,9 +166,11 @@ function NS.RefreshStats()
         return
     end
     local showSession = (view == "character")
-    -- Thousands-separated count (readability for large tallies).
+    -- Thousands-separated count. Lazy delegate over the nil-safe
+    -- NS.CommaNumber (this closure runs post-load, so the lookup always
+    -- resolves; the old `and/or` fallback was dead defensiveness).
     local function num(n)
-        return NS.CommaNumber and NS.CommaNumber(n) or tostring(n or 0)
+        return NS.CommaNumber(n)
     end
     local function sessionSuffix(n)
         if not showSession then

@@ -7433,14 +7433,21 @@ do
     check("Test 119b: currentFlushSnapshot validates the frame stamp",
         src:find("snap and snap%.at == GetTime%(%)") ~= nil,
         "currentFlushSnapshot must only return a snapshot built THIS frame; anything looser lets an error mid-flush leave a stale snapshot influencing a scanner on a later frame.")
-    check("Test 119c: the flush builds the shared snapshot once",
-        src:find("EC_compCache.flushSnapshot = EC_compCache.buildBagFlushSnapshot()", 1, true) ~= nil,
-        "the debounce flush must build the snapshot before firing the scan chain - that is the whole point of v2.59.0.")
+    -- v2.63.0: the snapshot is acquired LAZILY. The flush must NOT build it
+    -- eagerly (default config has no entries-consumer enabled, so an eager
+    -- build allocates ~one table per occupied slot per burst for nobody);
+    -- acquireFlushSnapshot builds-and-caches on first use with the same
+    -- same-frame stamp, and the flush still clears the ref at the end.
+    check("Test 119c: acquireFlushSnapshot builds lazily and caches on EC_compCache.flushSnapshot",
+        src:find("function EC_compCache%.acquireFlushSnapshot%(%)") ~= nil
+            and src:find("snap = EC_compCache.buildBagFlushSnapshot()\n    EC_compCache.flushSnapshot = snap", 1, true) ~= nil
+            and select(2, src:gsub("EC_compCache%.flushSnapshot = EC_compCache%.buildBagFlushSnapshot%(%)", "")) == 0,
+        "the flush must not build the snapshot eagerly (an eager build allocates per-slot tables per burst even when every entries-consumer is toggled off); scanners acquire it on first use, cached under the same-frame stamp.")
     local _, consumers = src:gsub(
-        "EC_compCache%.currentFlushSnapshot%(%) or EC_compCache%.buildBagFlushSnapshot%(%)", "")
-    check("Test 119d: scanners consume the shared snapshot with a standalone fallback",
-        consumers >= 6,
-        "expected >= 6 scanners (auto-open x2, upgrades, pickup-delete, resilience, affix-dupes, grey) using `currentFlushSnapshot() or buildBagFlushSnapshot()`; found " .. consumers .. ". A scanner reverting to its own nested bag walk reintroduces the multi-walk cost.")
+        "EC_compCache%.acquireFlushSnapshot%(%)", "")
+    check("Test 119d: scanners acquire the shared snapshot lazily",
+        consumers >= 8,
+        "expected >= 8 mentions of `EC_compCache.acquireFlushSnapshot()` (the definition plus the seven scanner call sites: auto-open x2, upgrades, pickup-delete, resilience, affix-dupes, grey, known-recipes); found " .. consumers .. ". A scanner reverting to its own nested bag walk reintroduces the multi-walk cost.")
     local _, verifies = src:gsub("GetContainerItemID%(e%.bag, e%.slot%) == id", "")
     check("Test 119e: post-pickup-delete scanners live-verify the slot before acting",
         verifies >= 3,

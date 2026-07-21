@@ -2005,6 +2005,24 @@ function EC_compCache.currentFlushSnapshot()
     return nil
 end
 
+-- v2.63.0: lazy acquire - return this frame's shared snapshot, building
+-- and caching it on FIRST use. The flush no longer builds the snapshot
+-- eagerly: in the default configuration every entries-consumer is toggled
+-- off and the only flush consumer is the loot delta, which needs just the
+-- flat `counts` map - so the eager build allocated ~one table per occupied
+-- bag slot per burst for nobody. The first scanner that actually runs
+-- builds it; every later scanner in the same frame reuses it; the flush
+-- still clears the ref when it finishes.
+function EC_compCache.acquireFlushSnapshot()
+    local snap = EC_compCache.currentFlushSnapshot()
+    if snap then
+        return snap
+    end
+    snap = EC_compCache.buildBagFlushSnapshot()
+    EC_compCache.flushSnapshot = snap
+    return snap
+end
+
 -- v2.49.0: equipped snapshot for the unequip guard on EC_ScanLootDelta.
 -- Reported by Serv: unequipping a worn item counts it as loot because
 -- the item moves from an equipment slot to a bag slot, showing as a
@@ -3373,10 +3391,12 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- included) is the "bag update" phase.
     local _spikeT0 = EC_prof and EC_prof()
     EC_StampEvent("bagUpdate")
-    -- v2.59.0: build the shared bag snapshot ONCE for the whole chain
-    -- below. Scanners pick it up via EC_compCache.currentFlushSnapshot()
-    -- (same-frame validity), so their call shapes stay unchanged.
-    EC_compCache.flushSnapshot = EC_compCache.buildBagFlushSnapshot()
+    -- v2.63.0: the shared bag snapshot is now acquired LAZILY - the first
+    -- scanner below that actually runs builds it via
+    -- EC_compCache.acquireFlushSnapshot() and later scanners in this same
+    -- frame reuse it. With every entries-consumer toggled off (the default
+    -- config) no snapshot is built at all; the loot delta falls back to
+    -- its cheap flat {itemID = count} walk.
     -- Burst settled. Fire the deferred work once.
     if EC_HandleAutoOpenContainers then
         EC_HandleAutoOpenContainers()
@@ -3567,7 +3587,7 @@ function EC_HandleAutoOpenContainers()
         if not EC_compCache.combatDeferredAnnounced then
             EC_compCache.combatDeferredAnnounced = true
             local hasOpenable = false
-            local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+            local snap = EC_compCache.acquireFlushSnapshot()
             for i = 1, #snap.entries do
                 local e = snap.entries[i]
                 if EC_IsOpenable(e.bag, e.slot) then
@@ -3591,7 +3611,7 @@ function EC_HandleAutoOpenContainers()
     -- called outside the flush, e.g. from PLAYER_REGEN_ENABLED or the
     -- post-open EC_Delay retry). EC_IsOpenable re-reads the live slot, so
     -- a snapshot entry that has moved just resolves to "not openable".
-    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    local snap = EC_compCache.acquireFlushSnapshot()
     for i = 1, #snap.entries do
         local e = snap.entries[i]
         if EC_IsOpenable(e.bag, e.slot) then
@@ -4784,7 +4804,7 @@ function EC_compCache.checkBagsForUpgrades()
     -- called outside the flush, e.g. the Protection panel toggle). The
     -- upgradeProcessed memo and every action below are itemID-keyed list
     -- writes, so snapshot iteration needs no live slot re-verify here.
-    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    local snap = EC_compCache.acquireFlushSnapshot()
     for i = 1, #snap.entries do
         do -- scoping block keeps the old two-level loop body untouched
             local itemID = snap.entries[i].itemID
@@ -6262,7 +6282,7 @@ function EC_compCache.runAutoDeleteOnPickup()
     -- snapshotted itemID is on the Delete List reach the eligibility gate,
     -- so unlisted slots cost one table lookup each. deleteListSlotEligible
     -- re-reads the live slot itself, so a moved/changed slot returns nil.
-    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    local snap = EC_compCache.acquireFlushSnapshot()
     for i = 1, #snap.entries do
         local e = snap.entries[i]
         if IsInSet(DB.deleteList, e.itemID) then
@@ -6329,7 +6349,7 @@ function EC_compCache.runAutoDeleteGrey()
     -- check below, never to a skip. This scan runs AFTER the pickup-delete
     -- scan (which can synchronously destroy one item), so the live slot is
     -- re-verified against the snapshotted itemID before acting.
-    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    local snap = EC_compCache.acquireFlushSnapshot()
     for i = 1, #snap.entries do
         local e = snap.entries[i]
         local id = e.itemID
@@ -6737,7 +6757,7 @@ function EC_compCache.runAutoMarkResilience()
     -- the live slot is re-verified against the snapshotted itemID before
     -- the tooltip scan - itemHasResilience caches by itemID, and scanning
     -- a changed slot would poison that cache.
-    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    local snap = EC_compCache.acquireFlushSnapshot()
     for i = 1, #snap.entries do
         do -- scoping block keeps the old two-level loop body untouched
             local e = snap.entries[i]
@@ -6913,7 +6933,7 @@ function EC_compCache.runAutoMarkAffixDupes()
     -- quality check, never to a skip. Runs after the pickup-delete scan, so
     -- the live slot is re-verified against the snapshotted itemID before
     -- the per-slot tooltip work (tome / affix / bind scans cache by item).
-    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    local snap = EC_compCache.acquireFlushSnapshot()
     for i = 1, #snap.entries do
         do -- scoping block keeps the old two-level loop body untouched
             local e = snap.entries[i]
@@ -7050,7 +7070,7 @@ function EC_compCache.runAutoMarkKnownUnsellableRecipes()
     local keepList = DB.blacklist
     local accountKeep = NS.ADB and NS.ADB.whitelist
     local setMembers = EC_compCache.equipmentSetIDs
-    local snap = EC_compCache.currentFlushSnapshot() or EC_compCache.buildBagFlushSnapshot()
+    local snap = EC_compCache.acquireFlushSnapshot()
     for i = 1, #snap.entries do
         do
             local e = snap.entries[i]

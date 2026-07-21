@@ -33,26 +33,21 @@ local VALUE_X = 220
 
 local repaintServerPanel
 
+-- Two-column label+value row. v2.63.0: body extracted to NS.MakeStatRow
+-- (EbonClearance_PanelWidgets.lua), shared with Stats - Guild; this
+-- delegate just carries the panel's value column. Lazy NS resolution
+-- because this file loads before PanelWidgets per the .toc.
 local function makeRow(parent, anchor, yOff)
-    local row = CreateFrame("Frame", nil, parent)
-    row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOff or -2)
-    row:SetHeight(14)
-    EC_compCache.setPanelWidth(row, 16)
-    row.left = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    row.left:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.left:SetJustifyH("LEFT")
-    row.right = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    row.right:SetPoint("LEFT", row, "LEFT", VALUE_X, 0)
-    row.right:SetJustifyH("LEFT")
-    return row
+    return NS.MakeStatRow(parent, anchor, yOff, VALUE_X)
 end
 
 local function copperStr(c)
     return NS.CopperToColoredText and NS.CopperToColoredText(c or 0) or tostring(c or 0)
 end
 
+-- Thin lazy delegate (see the makeRow note); NS.CommaNumber is nil-safe.
 local function num(n)
-    return NS.CommaNumber and NS.CommaNumber(n) or tostring(n or 0)
+    return NS.CommaNumber(n)
 end
 
 repaintServerPanel = function()
@@ -225,17 +220,8 @@ ServerPanel:SetScript("OnShow", function(self)
             local row = makeRow(content, iPrev, iYOff)
             row.itemID = nil
             row:Hide()
-            row:EnableMouse(true)
-            row:SetScript("OnEnter", function(self2)
-                if self2.itemID then
-                    GameTooltip:SetOwner(self2, "ANCHOR_CURSOR")
-                    GameTooltip:SetHyperlink("item:" .. self2.itemID)
-                    GameTooltip:Show()
-                end
-            end)
-            row:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
+            -- Shared item-hover wiring (v2.63.0; see NS.InstallStatRowItemHover).
+            NS.InstallStatRowItemHover(row)
             buildSelf._itemRows[i] = row
             iPrev, iYOff = row, -2
         end

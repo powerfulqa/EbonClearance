@@ -159,8 +159,12 @@ function GuildShare.decodePayload(str)
                     -- Stats-Guild panel's first render resolves the
                     -- receiver-locale name via GetItemInfo instead of
                     -- falling back to the payload-locale name. Same
-                    -- rationale as ServerShare.decodePayload.
-                    if nid and GetItemInfo then GetItemInfo(nid) end
+                    -- rationale as ServerShare.decodePayload. v2.62.1:
+                    -- gated on the panel having been opened this session
+                    -- so non-viewers don't pay it per overheard payload.
+                    if nid and GetItemInfo and NS.compCache and NS.compCache.guildPanelSeen then
+                        GetItemInfo(nid)
+                    end
                 end
             end
         end
@@ -348,10 +352,30 @@ NS.Comms.RegisterHandler("GREQ", function(_, sender, _)
     end
 end)
 
+-- Coalesced repaint: one GREQ yields one GDAT whisper per opted-in guildmate,
+-- and repainting per message makes the open panel pay a full aggregate + sort
+-- per reply (~N repaints per burst). One deferred repaint after the burst
+-- settles shows the same data ~half a second later.
+local repaintPending = false
+local function scheduleGuildRepaint()
+    if repaintPending then
+        return
+    end
+    if NS.Delay then
+        repaintPending = true
+        NS.Delay(0.5, function()
+            repaintPending = false
+            if NS.RefreshGuildPanel then
+                NS.RefreshGuildPanel()
+            end
+        end)
+    elseif NS.RefreshGuildPanel then
+        NS.RefreshGuildPanel()
+    end
+end
+
 -- A reply arrived: merge it anonymously (sender ignored entirely).
 NS.Comms.RegisterHandler("GDAT", function(payload, _, _)
     GuildShare.mergeReply(agg(), GuildShare.decodePayload(payload))
-    if NS.RefreshGuildPanel then
-        NS.RefreshGuildPanel()
-    end
+    scheduleGuildRepaint()
 end)

@@ -825,7 +825,13 @@ local function EC_BuildBugReport()
         }
         for i = 1, #order do
             local k, label = order[i][1], order[i][2]
-            add(string.format("  %s: %s", label, tostring(ts[k] or "(never)")))
+            local v = ts[k]
+            -- Stamps are epoch integers (formatted here, not at stamp time);
+            -- tolerate legacy string values from a mid-session upgrade.
+            if type(v) == "number" then
+                v = date("%H:%M:%S", v)
+            end
+            add(string.format("  %s: %s", label, tostring(v or "(never)")))
         end
     end
     add("")

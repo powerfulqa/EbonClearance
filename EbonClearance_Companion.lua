@@ -277,6 +277,9 @@ local function EC_RestoreBubbleFrame(frame)
     frame.__EC_killedKey = nil
     frame:SetAlpha(1)
     frame:EnableMouse(frame.__EC_prevMouse == true)
+    -- Clear the captured mouse state so a later re-kill of this recycled
+    -- frame re-captures the live value instead of reusing a stale one.
+    frame.__EC_prevMouse = nil
 end
 
 local function EC_KillBubbleFrame(frame, key)
@@ -341,13 +344,22 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Prune expired greedy-speech timestamps (8 s TTL). Without this the
     -- set never empties on its own and the OnUpdate body keeps walking
     -- WorldFrame children long after the Scavenger has gone quiet.
+    -- v2.62.1: also track the SHORTEST live key length. Normalisation only
+    -- ever shortens a string, so any on-screen text shorter than the
+    -- shortest tracked key can be skipped below without the ~6-gsub
+    -- EC_GreedyKey pass - which used to run for every nameplate name and
+    -- combat-text FontString in view during a speech window.
     local now = GetTime()
     local hasLive = false
+    local minLiveKeyLen = math.huge
     for k, t in pairs(EC_greedyMessages) do
         if (now - t) > 8 then
             EC_greedyMessages[k] = nil
         else
             hasLive = true
+            if #k < minLiveKeyLen then
+                minLiveKeyLen = #k
+            end
         end
     end
 
@@ -391,7 +403,10 @@ EC_bubbleFrame:SetScript("OnUpdate", function(self, elapsed)
                 local region = regions[j]
                 if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                     local text = region:GetText()
-                    if text then
+                    -- Raw-length pre-filter (see the prune loop above): a
+                    -- text shorter than the shortest live key can never
+                    -- normalise into a match, so skip the string work.
+                    if text and #text >= minLiveKeyLen then
                         local key = EC_GreedyKey(text)
                         local matched = key and EC_greedyMessages[key] ~= nil
                         -- Ring only sentence-length texts: the walk also sees

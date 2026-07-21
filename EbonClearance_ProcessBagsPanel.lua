@@ -125,11 +125,32 @@ function EC_compCache.rearmProcessButton()
         end
         -- Step 2: armedMode sticky preference - only if the mode
         -- itself isn't collapsed.
+        -- v2.62.1 (Serv report): resume the mode scan from the prior
+        -- cursor POSITION, not from the top. Processing an item removes
+        -- it from the list, so the exact (bag, slot) match above fails;
+        -- restarting the mode scan at index 1 then yanked the selection
+        -- back to the first row even though the user was working halfway
+        -- down the list. Searching forward from the old index (wrapping
+        -- to the earlier rows only when nothing of the mode remains
+        -- below) keeps the cursor where the user was working - after a
+        -- process, the next same-mode item slides into the same spot.
         if not idx and EC_compCache.armedMode and collapsed[EC_compCache.armedMode] ~= true then
-            for i = 1, #list do
+            local start = EC_compCache.armedIndex or 1
+            if start < 1 or start > #list then
+                start = 1
+            end
+            for i = start, #list do
                 if list[i].mode == EC_compCache.armedMode and not isCollapsed(list[i]) then
                     idx = i
                     break
+                end
+            end
+            if not idx then
+                for i = 1, start - 1 do
+                    if list[i].mode == EC_compCache.armedMode and not isCollapsed(list[i]) then
+                        idx = i
+                        break
+                    end
                 end
             end
             if not idx then
@@ -184,6 +205,12 @@ function EC_compCache.rearmProcessButton()
         -- knows which cooldown to watch and the rearm path can paint
         -- the cooldown swirl on initial entry.
         panel.armedSpellName = entry.spellName
+        -- v2.62.1: stash the armed entry's mode + perCast so the cast
+        -- button's PostClick capture can log the Recent Processed entry
+        -- without rebuilding the whole process summary (a full bag walk
+        -- + tooltip scans) per click.
+        EC_compCache.armedEntryMode = entry.mode
+        EC_compCache.armedEntryPerCast = entry.perCast
         if panel.castBtnLabel then
             -- Mode label only; the dynamic item name lives on the
             -- separate label below the button so a long item name
@@ -198,6 +225,8 @@ function EC_compCache.rearmProcessButton()
         panel.castBtn:SetAttribute("macrotext", "")
         panel.castBtn:Disable()
         panel.armedSpellName = nil
+        EC_compCache.armedEntryMode = nil
+        EC_compCache.armedEntryPerCast = nil
         if panel.castBtnLabel then
             panel.castBtnLabel:SetText(L["Process Next"])
         end
@@ -1147,19 +1176,12 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
                 -- Match perCast semantics from buildProcessSummary so
                 -- the log reads "5 [Peacebloom] Milled" rather than
                 -- "1 [Peacebloom]" (Milling consumes 5 per cast).
-                local perCast = 1
-                local mode
-                local list = EC_compCache.buildProcessSummary and EC_compCache.buildProcessSummary()
-                if list then
-                    for i = 1, #list do
-                        local e = list[i]
-                        if e.bag == bag and e.slot == slot then
-                            perCast = tonumber(e.perCast) or 1
-                            mode = e.mode
-                            break
-                        end
-                    end
-                end
+                -- v2.62.1: mode + perCast are stashed at arm time
+                -- (EC_compCache.armedEntryMode / armedEntryPerCast), so
+                -- this capture no longer rebuilds the whole process
+                -- summary (a full bag walk) on every cast click.
+                local perCast = tonumber(EC_compCache.armedEntryPerCast) or 1
+                local mode = EC_compCache.armedEntryMode
                 EC_compCache.pendingProcessCast = {
                     itemID = itemID,
                     itemName = itemLink or (itemID and ("item:" .. tostring(itemID))) or "?",

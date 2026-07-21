@@ -3372,6 +3372,7 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Frame-spike timing: the whole settled-burst flush (loot-delta scan
     -- included) is the "bag update" phase.
     local _spikeT0 = EC_prof and EC_prof()
+    EC_StampEvent("bagUpdate")
     -- v2.59.0: build the shared bag snapshot ONCE for the whole chain
     -- below. Scanners pick it up via EC_compCache.currentFlushSnapshot()
     -- (same-frame validity), so their call shapes stay unchanged.
@@ -6220,7 +6221,6 @@ end
 -- not combat-protected on 3.3.5a and farming happens in combat, which is the
 -- whole point of the feature. Do NOT add a combat guard.
 function EC_compCache.runAutoDeleteOnPickup()
-    EC_StampEvent("autoDeleteScan")
     local DB = NS.DB
     -- v2.42.1: master Enable toggle must veto the sweep, same as the
     -- vendor cycle / scavenger / auto-loot paths do. Without this gate,
@@ -6238,6 +6238,10 @@ function EC_compCache.runAutoDeleteOnPickup()
     if not (DB and DB.enableDeletion and DB.autoDeleteOnPickup) then
         return
     end
+    -- Stamped after the feature gates (not at function entry) so the
+    -- bugreport's last-ran line for this scan means it actually ran, and a
+    -- flush with the feature off pays no stamp.
+    EC_StampEvent("autoDeleteScan")
     if EC_compCache.vendorRunning then
         return
     end
@@ -6690,7 +6694,11 @@ local EC_lastEventAt = {
     autoDeleteScan = nil,     -- runAutoDeleteOnPickup ran
 }
 EC_StampEvent = function(key)
-    EC_lastEventAt[key] = date("%H:%M:%S")
+    -- Store the cheap epoch integer; /ec bugreport formats it to HH:MM:SS at
+    -- render time. date("%H:%M:%S") here was a strftime + string alloc per
+    -- stamp, and one call site sits on the RAW (un-coalesced) BAG_UPDATE /
+    -- ITEM_LOCK_CHANGED path where it ran once per event during AOE loot.
+    EC_lastEventAt[key] = time()
 end
 NS.lastEventAt = EC_lastEventAt
 NS.StampEvent = EC_StampEvent
@@ -6708,10 +6716,10 @@ function EC_compCache.runAutoMarkResilience()
     if not EC_IsAddonEnabledForChar() then
         return
     end
-    EC_StampEvent("autoMarkResilience")
     if not (DB and DB.autoMarkResilience) then
         return
     end
+    EC_StampEvent("autoMarkResilience")
     if EC_compCache.vendorRunning then
         return
     end
@@ -6869,10 +6877,10 @@ function EC_compCache.runAutoMarkAffixDupes()
     if not EC_IsAddonEnabledForChar() then
         return
     end
-    EC_StampEvent("autoMarkAffix")
     if not (DB and DB.enableDeletion and DB.autoMarkAffixDupes) then
         return
     end
+    EC_StampEvent("autoMarkAffix")
     if not DB.protectAffixedRareItems then
         return
     end
@@ -7016,13 +7024,22 @@ function EC_compCache.runAutoMarkKnownUnsellableRecipes()
     if not EC_IsAddonEnabledForChar() then
         return
     end
-    EC_StampEvent("autoMarkKnownRecipe")
     if not (DB and DB.enableDeletion and DB.autoMarkKnownUnsellableRecipes) then
         return
     end
     if not DB.sellKnownRecipes then
         return
     end
+    EC_StampEvent("autoMarkKnownRecipe")
+    -- EC-TRAP: this scan deliberately does NOT consult protectAllTomes /
+    -- protectUnlearnedTomes. It rides the same documented carve-out as
+    -- EC_IsSellable's recipePass ("Sell Known Recipes overrides the tome
+    -- veto for LEARNED recipes"): the feature only exists for learned,
+    -- unsellable recipes, and it requires three explicit opt-ins
+    -- (enableDeletion + autoMarkKnownUnsellableRecipes + sellKnownRecipes).
+    -- Adding a protectAllTomes guard here would make the toggle silently
+    -- inert for exactly the users who asked for it. Unlearned recipes are
+    -- never touched (playerKnowsTomeSpell gate below).
     if EC_compCache.vendorRunning then
         return
     end
@@ -9431,7 +9448,10 @@ f:SetScript("OnEvent", function(self, event, ...)
             wipe(EC_compCache.tomeIsKnownCache)
         end
     elseif event == "BAG_UPDATE" or event == "ITEM_LOCK_CHANGED" then
-        EC_StampEvent("bagUpdate")
+        -- (The "bagUpdate" bugreport stamp lives in the settled flush, not
+        -- here: this raw branch fires once per slot filled during AOE loot
+        -- and should stay free of any per-event work beyond the debounce
+        -- arm + the synchronous bag-full check.)
         -- v2.24.0 perf: bag-full handler stays synchronous so the
         -- cycle's responsiveness across the free-slot threshold is
         -- unchanged (its internal 1.5 s hysteresis already debounces

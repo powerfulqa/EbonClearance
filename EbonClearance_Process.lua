@@ -109,17 +109,33 @@ EC_compCache.PROCESS_MODE_SPELL = {
 -- True if any bag slot holds a convertible mote/crystallized item, regardless
 -- of stack size or whether Convert is enabled. Early-exits on first hit; the
 -- check is a table lookup (canConvertElemental), no tooltip scan.
+-- v2.62.1: memoised per frame (GetTime is frame-constant on 3.3.5a). The
+-- per-skill toggle layout asks for Convert availability on every panel
+-- refresh, which otherwise repeated this full bag walk alongside the
+-- buildProcessSummary walk in the same refresh. Bags cannot change within
+-- a frame, so a same-frame memo is exact.
+local convertMemoAt, convertMemoVal
 function EC_compCache.hasConvertiblesInBags()
+    local now = GetTime()
+    if convertMemoAt == now then
+        return convertMemoVal
+    end
+    local found = false
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag) or 0
         for slot = 1, slots do
             local itemID = GetContainerItemID(bag, slot)
             if itemID and EC_compCache.canConvertElemental(itemID) then
-                return true
+                found = true
+                break
             end
         end
+        if found then
+            break
+        end
     end
-    return false
+    convertMemoAt, convertMemoVal = now, found
+    return found
 end
 
 -- Can THIS character perform `mode` at all (independent of the on/off toggle

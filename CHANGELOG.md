@@ -5,6 +5,28 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.62.1
+
+**Performance and polish patch from a second full-addon audit. Plus: the Process Bags selection now stays put after processing an item.**
+
+**The visible fix (reported in play-testing):** clicking an item halfway down the Process Bags list and processing it used to snap the selection back to the top of the list. The cursor now stays where you were working - the next same-type item slides into the processed item's spot. Also documented in the FAQ: re-aiming Process Next (skip arrow / list clicks) is blocked by the game during combat for every addon; the panel catches up when combat ends.
+
+**Performance (audit batch, no behaviour change):**
+
+- **Stats - Guild / Stats - Server:** incoming replies repainted the open panel once per message - on a busy realm that's a full recompute per reply. Replies now paint once per half-second settle window. The item-name cache warmup also now only runs once you've opened the panel that session, so non-viewers stop paying it for every overheard message.
+- **Bag events:** the per-event timestamp bookkeeping on the raw bag-update path (one formatted string per event during AOE loot) now stores a cheap number, formatted only when `/ec bugreport` renders. The bugreport's "Last ran" lines for the auto-mark scans are also now accurate (they used to update even when the feature was off).
+- **Item-level overlay:** the bag hook did per-slot work on every bag repaint even with the overlay off (the default). It now skips entirely when off.
+- **Process Bags:** clicking Process Next no longer rescans your bags just to log the cast; the Convert checkbox check no longer does its own extra bag walk per refresh.
+- **Scavenger bubbles:** the mute's screen check skips texts too short to ever match, cutting string work during speech windows in busy areas.
+
+**Correctness hardening:**
+
+- Resilience and chance-on-hit detection no longer remember a "no" answer taken from an item whose data hadn't loaded yet - previously that could silently disable PvP-gear auto-mark or proc protection for an item until `/reload`.
+- A muted bubble frame reused by the game now restores its exact prior mouse state.
+- The Guild stats panel re-sizes its scroll area after live data adds rarity rows, so the bottom item rows can't become unreachable.
+
+No new settings, no schema change, downgrade-safe. One new FAQ entry (combat arming), translated in French and German. Verified in game: stats panels, AOE farm with all auto-deletes/marks, item-level overlay toggle, Process Bags including the cursor fix, `/ec bugreport` timestamps.
+
 ### v2.62.0
 
 **Pick which skills Process Bags uses.**

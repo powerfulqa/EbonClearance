@@ -261,6 +261,12 @@ ServerPanel:SetScript("OnShow", function(self)
         end
     end, true)
 
+    -- v2.62.1: mark the panel as seen this session. The SDAT decode-time
+    -- item-cache warmup is gated on this flag, so the many clients that
+    -- never open this panel don't pay GetItemInfo per overheard payload.
+    if NS.compCache then
+        NS.compCache.serverStatsPanelSeen = true
+    end
     if EbonClearanceDB and EbonClearanceDB.shareServerData and NS.ServerShare and NS.ServerShare.RequestNow then
         NS.ServerShare.RequestNow()
     end

@@ -728,6 +728,12 @@ local function EC_buildHelpEntries()
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
+        id = "process-combat-arming",
+        q = L["Why won't the Process Bags skip arrow or list clicks work in combat?"],
+        a = L["That's a game restriction, not a setting. Aiming Process Next at a different item rewrites a protected macro button, and the game blocks that change during combat for every addon. Leave combat and the panel catches up on its own - your click isn't lost, it just applies once the fight ends. Casting the already-armed item still works in combat."],
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
         id = "process-skill-toggles",
         q = L["Can I stop Process Bags from using one skill?"],
         a = L["Yes. The checkboxes at the top of the Process Bags panel let you pick which skills the keybind acts on. Untick Mill, for example, and Process Next keeps disenchanting and prospecting but leaves your herbs alone. Only skills your character can do are shown, so a character without Enchanting never sees Disenchant. Your choices are saved per character."],

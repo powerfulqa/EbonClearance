@@ -671,6 +671,15 @@ function EC_compCache.applyItemLevelOverlay(button, itemLink, fallbackQuality, s
 end
 
 local function EC_applyContainerItemLevel(frame)
+    -- v2.62.1 gate: the overlay defaults OFF, yet this hook used to pay two
+    -- container API calls per slot (plus a lazy FontString per button) on
+    -- every repaint regardless. Every path that flips the surface off goes
+    -- through NS.RefreshItemLevelOverlay (Item Highlighting panel toggles),
+    -- which hides already-painted numbers - so when disabled this hook can
+    -- skip the walk entirely, mirroring the sell-border hook's early bail.
+    if not EC_itemLevelSurfaceEnabled("bags") then
+        return
+    end
     if not (frame and frame.size) then
         return
     end

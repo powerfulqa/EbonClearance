@@ -147,8 +147,15 @@ function ServerShare.decodePayload(str)
                     -- the receiver-locale display resolves on first
                     -- render instead of the payload-locale fallback.
                     -- Return value discarded - this call is purely
-                    -- side-effect (cache warmup).
-                    if nid and GetItemInfo then GetItemInfo(nid) end
+                    -- side-effect (cache warmup). v2.62.1: gated on the
+                    -- panel having been opened this session - warming for
+                    -- clients that never look at the panel was a per-item
+                    -- cost on every overheard payload, realm-wide, with
+                    -- sharing now default-ON. The panel's render-time
+                    -- GetItemInfo resolve covers the first-open case.
+                    if nid and GetItemInfo and NS.compCache and NS.compCache.serverStatsPanelSeen then
+                        GetItemInfo(nid)
+                    end
                 end
             end
         elseif prefix == "z" then
@@ -352,16 +359,36 @@ NS.RealmComms.RegisterHandler("SREQ", function(payload, sender)
     end
 end)
 
+-- Coalesced repaint: replies to one SREQ jitter in over ~8 s, one per
+-- responder, and with sharing default-ON that is realm-population many.
+-- Repainting per message made the open panel pay a full aggregate + sort
+-- per reply; one deferred repaint per settle window shows the same data.
+local repaintPending = false
+local function scheduleServerRepaint()
+    if repaintPending then
+        return
+    end
+    if NS.Delay then
+        repaintPending = true
+        NS.Delay(0.5, function()
+            repaintPending = false
+            if NS.RefreshServerStatsPanel then
+                NS.RefreshServerStatsPanel()
+            end
+        end)
+    elseif NS.RefreshServerStatsPanel then
+        NS.RefreshServerStatsPanel()
+    end
+end
+
 -- A data line arrived (including our own echo when we share). Store it keyed by
--- sender (latest-wins), learn the embedded version, repaint.
+-- sender (latest-wins), learn the embedded version, schedule a repaint.
 NS.RealmComms.RegisterHandler("SDAT", function(payload, sender)
     lastActivityAt = GetTime()
     local d = ServerShare.decodePayload(payload)
     noteVersion(d.ver, sender)
     storePeer(sender, d)
-    if NS.RefreshServerStatsPanel then
-        NS.RefreshServerStatsPanel()
-    end
+    scheduleServerRepaint()
 end)
 
 -- ---- diagnostic (/ec servertest) ----------------------------------------

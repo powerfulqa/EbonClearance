@@ -1329,17 +1329,28 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
     EC_compCache.scanBagItem(bag, slot)
     local result = false
+    local sawAnyLine = false
     for i = 1, 30 do
         local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
         if not line then
             break
         end
-        if EC_compCache.lineLooksLikeChanceProc(line:GetText()) then
+        local txt = line:GetText()
+        if txt and txt ~= "" then
+            sawAnyLine = true
+        end
+        if EC_compCache.lineLooksLikeChanceProc(txt) then
             result = true
             break
         end
     end
-    EC_compCache.chanceOnHitCache[itemID] = result
+    -- Only cache a NEGATIVE result from a tooltip that actually rendered
+    -- (cold item cache = empty tooltip; caching false from it would hide
+    -- the proc from the protection layer for the whole session). Same
+    -- discipline as EC_IsOpenable's "never" cache.
+    if result or sawAnyLine then
+        EC_compCache.chanceOnHitCache[itemID] = result
+    end
     return result
 end
 
@@ -1730,12 +1741,16 @@ function EC_compCache.itemHasResilience(bag, slot, itemID)
     end
     EC_compCache.scanBagItem(bag, slot)
     local result = false
+    local sawAnyLine = false
     for i = 1, 30 do
         local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
         if not line then
             break
         end
         local txt = line:GetText()
+        if txt and txt ~= "" then
+            sawAnyLine = true
+        end
         -- v2.60.0 iter 3 (Serv follow-up - Jouster's Fury): case-fold
         -- before the substring match. Pre-fix the detector looked for
         -- literal "Resilience" (capital R), but WoW's stat-line text
@@ -1748,7 +1763,13 @@ function EC_compCache.itemHasResilience(bag, slot, itemID)
             break
         end
     end
-    EC_compCache.resilienceCache[itemID] = result
+    -- Only cache a NEGATIVE result from a tooltip that actually rendered:
+    -- a cold item cache renders an empty tooltip, and caching false from
+    -- it would silently disable resilience detection for that itemID for
+    -- the whole session. Same discipline as EC_IsOpenable's "never" cache.
+    if result or sawAnyLine then
+        EC_compCache.resilienceCache[itemID] = result
+    end
     return result
 end
 

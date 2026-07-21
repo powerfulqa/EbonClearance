@@ -306,6 +306,20 @@ repaintGuildPanel = function()
         panel._itemEmptyRow.right:SetText("")
         panel._itemEmptyRow:Show()
     end
+
+    -- v2.62.1: re-fit the scroll extent after the data-driven re-anchor
+    -- above. The quality block compacts around visible rarities and
+    -- re-anchors _itemsHeader (and thus the whole item chain) per repaint,
+    -- but the extent was only sized once at build - a reply that makes
+    -- MORE rarities visible than existed at build pushed the bottom item
+    -- rows past the scrollable area. Idempotent re-registration per
+    -- EbonClearance_PanelInfra.lua.
+    if NS.FitScrollContent and panel._itemRows and panel._itemRows[5] then
+        local content = panel._itemRows[5]:GetParent()
+        if content then
+            NS.FitScrollContent(content, panel._itemRows[5])
+        end
+    end
 end
 
 GuildPanel:SetScript("OnShow", function(self)
@@ -606,6 +620,12 @@ GuildPanel:SetScript("OnShow", function(self)
         end
     end, true)
 
+    -- v2.62.1: mark the panel as seen this session. The GDAT decode-time
+    -- item-cache warmup is gated on this flag (see the matching note in
+    -- EbonClearance_ServerStatsPanel.lua).
+    if NS.compCache then
+        NS.compCache.guildPanelSeen = true
+    end
     -- On every show (first and subsequent), broadcast a request and
     -- schedule a repaint so replies have time to arrive before display.
     if NS.GuildShare and NS.GuildShare.RequestNow then

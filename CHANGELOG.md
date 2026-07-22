@@ -5,6 +5,26 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.65.1
+
+**Rate-limit the Scavenger recovery announce + add a session counter to /ec bugreport.**
+
+Reported by Serv (rough-terrain farming spammed the chat with "went quiet" / "resummoned" every 10-15 s while the movement-stuck / loot-silence recovery loop correctly dismissed + re-summoned a pet trapped on rocks or cliffs). The mechanic itself is legitimate; the spam reads as "lots of problems" even though the addon is working exactly as it should.
+
+## What changed
+
+- **60-second announce cooldown** on the stuck-signal recovery. The first fire per cooldown window still prints "Scavenger fell behind" or "Scavenger went quiet during looting" plus the follow-up "Greedy Scavenger resummoned". Subsequent stuck firings inside the cooldown still dismiss + re-summon the pet, they just do it silently. Suppresses BOTH prints so a lone "resummoned" without a preceding "went quiet" doesn't read as a bug.
+- **New Runtime State line** in `/ec bugreport`: `Scavenger Recovery Fires: N (last Xs ago)`. Counts every stuck firing (announced or suppressed) so the true session cadence stays visible without chat noise. Non-zero on rough-terrain farms is normal - a value that keeps climbing across a session is diagnostic.
+
+## Notes
+
+- EC-TRAP: recovery state stored on `EC_compCache` (not file-locals) because `EbonClearance_Events.lua` is at Lua 5.1's 200-local-variable cap. Adding fresh file-locals throws "too many local variables in main function" at `luac`. The cross-file cache table is already a shared surface, so adding fields there costs nothing.
+- No new toggle. There's no scenario where the chat spam is useful - the mechanic works the same either way.
+- No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.65.0
 
 **Re-summon the Scavenger after loading screens (opt-in, only if the pet was out beforehand).**

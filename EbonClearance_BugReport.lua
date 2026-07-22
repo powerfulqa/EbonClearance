@@ -311,6 +311,19 @@ local function EC_BuildBugReport()
     add("Scavenger Out: " .. tostring(EC_compCache.lastScavengerOut))
     add("Addon-Dismissed: " .. tostring(EC_compCache.addonDismissed))
     add("Scav Speech Heard This Session: " .. tostring(EC_compCache.scavSpeechEverHeard))
+    -- v2.65.1: session-scoped stuck-recovery counter. Counts every
+    -- movement-stuck OR loot-silence-stuck dismiss+resummon firing,
+    -- including the ones suppressed from chat by the 60s announce
+    -- cooldown. Non-zero on rough-terrain farm spots is normal.
+    if NS.GetScavRecoveryStats then
+        local fires, lastAt = NS.GetScavRecoveryStats()
+        if lastAt and lastAt > 0 and GetTime then
+            local ago = GetTime() - lastAt
+            add(string.format("Scavenger Recovery Fires: %d (last %.0fs ago)", fires or 0, ago))
+        else
+            add("Scavenger Recovery Fires: " .. tostring(fires or 0))
+        end
+    end
     if EC_compCache.bagFullSince and EC_compCache.bagFullSince > 0 then
         local elapsed = (GetTime and GetTime() or 0) - EC_compCache.bagFullSince
         add(string.format("Bag-Full Threshold Hit: %.1fs ago", elapsed))

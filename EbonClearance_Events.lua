@@ -241,6 +241,31 @@ local EC_scavStateBootstrapped = false
 -- completed). Pruned in place inside EC_IsLootSilenceStuck on each pet-tick
 -- check, so it cannot grow unboundedly across a session.
 local EC_recentLootTimes = {}
+
+-- v2.65.1 (Serv report - rough-terrain farming spammed the chat with
+-- "went quiet" / "resummoned" every 10-15 s while the recovery loop
+-- correctly dismissed + re-summoned a stuck pet). The recovery MECHANIC
+-- is legitimate; the spam is what makes it read as "lots of problems".
+-- Rate-limit the announce to at most one pair (went quiet -> resummoned)
+-- per EC_RECOVERY_ANNOUNCE_COOLDOWN seconds. Subsequent stuck-signal
+-- dismiss+resummons within the cooldown still happen, just silently.
+-- Counter + last-fire timestamp surface in /ec bugreport so a session's
+-- actual recovery cadence stays visible without chat noise.
+--
+-- EC-TRAP: state stored on EC_compCache (not as file-locals) because
+-- EbonClearance_Events.lua is already at the 200-local cap; every new
+-- local here throws "too many local variables in main function" at
+-- luac. Same reason a few other counters live on EC_compCache.
+EC_compCache.scavRecoveryFires = 0
+EC_compCache.lastScavRecoveryAt = 0
+EC_compCache.lastScavRecoveryAnnounceAt = 0
+EC_compCache.scavRecoveryAnnounceCooldown = 60
+
+-- Accessor for /ec bugreport. Returns the current session count + the
+-- absolute GetTime() the last recovery fired (0 if none yet).
+NS.GetScavRecoveryStats = function()
+    return EC_compCache.scavRecoveryFires, EC_compCache.lastScavRecoveryAt
+end
 -- v2.9.0 manual-sell attribution. inSelfSell brackets every UseContainerItem
 -- call DoNextAction makes so the hooksecurefunc bound at ADDON_LOADED skips
 -- it (counters are bumped directly by the worker queue). snapshot is a
@@ -5097,18 +5122,31 @@ local function EC_HandleScavengerOut(scavengerOut)
     local stuckByLootSilence = EC_IsLootSilenceStuck()
     if stuckByMovement or stuckByLootSilence then
         EC_compCache.addonDismissed = true
-        -- v2.10.0: arm the resummon-print debounce. The recovery path may
-        -- fire CallCompanion several times before the server confirms the
-        -- summon; this flag ensures only the first successful CallCompanion
-        -- in the cycle prints "Greedy Scavenger resummoned.".
-        EC_compCache.pendingAnnounce = true
+        -- v2.65.1: count every stuck-signal firing regardless of announce
+        -- cooldown, so /ec bugreport shows the true recovery cadence.
+        EC_compCache.scavRecoveryFires = (EC_compCache.scavRecoveryFires or 0) + 1
+        EC_compCache.lastScavRecoveryAt = GetTime()
+        -- v2.65.1: rate-limit the announce so rough-terrain farming
+        -- doesn't spam the chat every 10-15 s. Silent dismiss+resummon
+        -- inside the cooldown; still audible on the first fire per
+        -- window so the player knows why the pet just teleported to
+        -- their feet. Only arm pendingAnnounce when we're announcing
+        -- this recovery - silent-cooldown recoveries suppress both
+        -- "went quiet" AND "resummoned" so the two prints stay paired.
+        local now = GetTime()
+        local cooldown = EC_compCache.scavRecoveryAnnounceCooldown or 60
+        local announce = (now - (EC_compCache.lastScavRecoveryAnnounceAt or 0)) >= cooldown
+        if announce then
+            EC_compCache.lastScavRecoveryAnnounceAt = now
+            EC_compCache.pendingAnnounce = true
+            if stuckByMovement then
+                PrintNice(L["|cffffff00Scavenger fell behind. Resummoning when you stop moving.|r"])
+            else
+                PrintNice(L["|cffffff00Scavenger went quiet during looting. Resummoning when you stop moving.|r"])
+            end
+        end
         EC_scavMovementAccum = 0
         EC_recentLootTimes = {}
-        if stuckByMovement then
-            PrintNice(L["|cffffff00Scavenger fell behind. Resummoning when you stop moving.|r"])
-        else
-            PrintNice(L["|cffffff00Scavenger went quiet during looting. Resummoning when you stop moving.|r"])
-        end
         DismissGreedyScavenger()
     end
     return true

@@ -5,6 +5,54 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.64.0
+
+**Four new chance-on-hit pairings + trace tip now names the specific safety net + Help/FAQ plain-language pass.**
+
+## Seed catalog additions
+
+Four weapons whose proc text is a verbatim / near-verbatim match against the engrave-affix spellbook. Shackling (700082) and Fury (700106) were freshly extracted in-session; the resulting spellbook entries gave us their spellIDs and confirmed the pairings. Nightblade + Glaive of the Pit registered "already learnt" at the Anvil AND their proc text is verbatim against the Affliction / Vampirism affix tooltips ("send a shadowy bolt at the target, dealing Shadow damage" / "chance to steal life from the target").
+
+- **Nightblade** (1982) - Affliction (700086). "shadowy bolt / Shadow damage" family (same as Black Duskwood Staff + Shadowblade + Skeletal Club).
+- **The Shatterer** (7954) - Shackling (700082). Opens the disarm family.
+- **Glaive of the Pit** (28774) - Vampirism (700095). "steal life" family.
+- **Rod of the Sun King** (29996) - Fury (700106). Opens the Energy/Rage-gain family.
+
+These join the existing seed catalog in [EbonClearance_Protection.lua](EbonClearance_Protection.lua#L1531), so a fresh install recognises them without needing autolearn to observe an extraction.
+
+## /ec sellinfo trace tip now names the specific safety net
+
+Reported by Serv against `Signet of the Impregnable Fortress of Thick Hide IV` (Epic, iLvl 213, sellPrice=0, affix player owns): the trace's `alreadyHaveAffixRule` step correctly explained the item was blocked from auto-mark, but the tip listed three possible safety nets ("protected as real gear (iLvl >= 200), a gear-set member, or equipped") instead of naming the one that actually fired. The player couldn't tell which of the three was doing the blocking, so couldn't tell which toggle to flip.
+
+Fix: consume the `(bool, reason)` tuple `itemProtectedFromAutoMarkDelete` has returned since v2.60.0 (added for the tooltip-verdict labels but ignored by the trace) and route each reason to a specific tip. New file-local helper `EC_autoMarkProtectionSuffix(reason)` in [EbonClearance_BagDisplay.lua](EbonClearance_BagDisplay.lua) maps the five reason tokens to five specific suffixes:
+
+- `highIlvl` -> "auto-mark is on but this item is high item level (iLvl >= 200). Turn off 'Protect high-iLvl items from unsellable-affix auto-mark' in Keep Settings to let it be trashed, or add to the Delete List by hand."
+- `set` -> "in one of your saved gear sets. Remove it from the set..."
+- `equipped` -> "you're wearing this item. Unequip it first..."
+- `quest` -> "this is a quest item..."
+- `sellList` -> "this item is on your Sell List..."
+
+Both branches that consume this (`affixRankRule` step + `alreadyHaveAffixRule` step) route through the helper. Player reading the trace now sees exactly which toggle to flip.
+
+## Help/FAQ plain-language pass
+
+Three FAQ entries were long walls of text with code-flavored field names and jargon ("safety net", "scan", "gate", `autoAddEquipped`/`autoProtectUpgrades`/`autoProtectEquipmentSets`). Rewritten to be brief and new-player-friendly, following the CLAUDE.md guideline ("lead with what happens, drop the mechanism, avoid code jargon"):
+
+- **`gate-automark-protect-hilvl`** ("Protect high-iLvl items from unsellable-affix auto-mark") - trimmed from 6-sentence block to 4 short sentences. Dropped the DB field name references. Kept the practical "when to turn it off" cue.
+- **`gate-delete-unsellable-dupes`** ("Auto-mark unsellable affixes for deletion") - simplified from ~130 words to ~110, with a natural break after the heads-up sentence. Kept the full list of "never touched" categories since they matter for safety.
+- **`gate-automark-known-recipes`** ("Auto-mark unsellable known recipes for deletion") - trimmed from 8-sentence block to 6 short sentences.
+
+Locale template keys added for all three new answer texts (deDE + frFR). Old keys stay in the locale files as orphans (harmless - the lookup just doesn't hit them anymore).
+
+## Notes
+
+- Six new locale keys registered as empty templates in frFR / deDE (three new Help/FAQ answers + five new trace-tip suffixes + two new prefix templates that accept a `%s` suffix). Test 96c / 99e / test_locale_coverage.lua enforce the parity.
+- Existing `chanceProcConfirmedItems` autolearned entries are unchanged. The four new seed rows and any user-autolearned pairings for the same itemIDs are duplicate-safe writes (seed and autolearn agree on the same `(itemID, spellID)`).
+- No schema change. Downgrade-safe.
+
+---
+
+
 ### v2.63.0
 
 **Internal cleanup release from the second audit: shared stats-panel widgets and a lazier bag snapshot. Nothing changes in how the addon looks or behaves.**

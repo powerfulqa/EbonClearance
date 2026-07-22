@@ -1586,6 +1586,19 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     -- Azzinoth to protect you in battle for a short period of time.")
     -- and the Anvil accepts it. Same Azzinoth (700108) family.
     [32471] = { spellID = 700108, family = "Azzinoth",     item = "Shard of Azzinoth" },
+    -- v2.64.0 (captureproc + Anvil verification, 2026-07-22): four
+    -- weapons whose proc text is a verbatim / near-verbatim match
+    -- against the engrave-affix spellbook. Shackling (700082) and
+    -- Fury (700106) were freshly extracted this session, spellIDs
+    -- confirmed from the resulting spellbook entries. Nightblade +
+    -- Glaive of the Pit registered "already learnt" at the Anvil AND
+    -- their proc text is verbatim against the Affliction / Vampirism
+    -- affix tooltips ("send a shadowy bolt at the target, dealing
+    -- Shadow damage" / "chance to steal life from the target").
+    [1982]  = { spellID = 700086, family = "Affliction", item = "Nightblade" },
+    [7954]  = { spellID = 700082, family = "Shackling",  item = "The Shatterer" },
+    [28774] = { spellID = 700095, family = "Vampirism",  item = "Glaive of the Pit" },
+    [29996] = { spellID = 700106, family = "Fury",       item = "Rod of the Sun King" },
     -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
     -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
     -- spell, not the PE affix id EC matches in learnedAffixes (in-game

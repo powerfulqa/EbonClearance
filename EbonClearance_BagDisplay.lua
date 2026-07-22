@@ -1054,6 +1054,30 @@ end
 EC_compCache.qualityNames =
     { [0] = L["Junk"], [1] = L["Common"], [2] = L["Uncommon"], [3] = L["Rare"], [4] = L["Epic"], [5] = L["Legendary"] }
 
+-- v2.64.0: pick a specific "why is this item protected from auto-mark"
+-- suffix based on the reason token returned by
+-- EC_compCache.itemProtectedFromAutoMarkDelete (v2.60.0 tuple return).
+-- Called by describeSellability's affixRankRule + alreadyHaveAffixRule
+-- branches. Naming the exact safety net lets the trace tip point at
+-- the toggle to flip / list to edit rather than reading out the entire
+-- possibility set. Falls back to the generic label when the reason is
+-- unrecognised (future branches, defensive against nil).
+local function EC_autoMarkProtectionSuffix(reason)
+    if reason == "highIlvl" then
+        return L["auto-mark is on but this item is high item level (iLvl >= 200). Turn off 'Protect high-iLvl items from unsellable-affix auto-mark' in Keep Settings to let it be trashed, or add to the Delete List by hand."]
+    elseif reason == "set" then
+        return L["auto-mark is on but this item is in one of your saved gear sets. Remove it from the set, or add to the Delete List by hand."]
+    elseif reason == "equipped" then
+        return L["auto-mark is on but you're wearing this item. Unequip it first, or add to the Delete List by hand."]
+    elseif reason == "quest" then
+        return L["auto-mark is on but this is a quest item. Add to the Delete List by hand if you're sure."]
+    elseif reason == "sellList" then
+        return L["auto-mark is on but this item is on your Sell List. Remove it from the Sell List, or add to the Delete List by hand."]
+    else
+        return L["auto-mark is on but this item is protected. Add to the Delete List by hand if you want it gone."]
+    end
+end
+
 function EC_compCache.describeSellability(bag, slot)
     local DB = NS.DB
     local ADB = NS.ADB
@@ -1251,23 +1275,39 @@ function EC_compCache.describeSellability(bag, slot)
                     -- excluded from auto-mark). Pre-fix the tip always
                     -- said "turn on the toggle" even when it was already
                     -- on and the item was blocked by the iLvl gate.
+                    -- v2.64.0 (Serv report - Signet of the Impregnable
+                    -- Fortress of Thick Hide IV): consume the reason
+                    -- tuple from itemProtectedFromAutoMarkDelete so the
+                    -- tip names the SPECIFIC safety net (highIlvl / set /
+                    -- equipped / quest / sellList) + the toggle to flip.
                     local autoMarkOn = DB and DB.autoMarkAffixDupes and DB.enableDeletion
-                    local protectedFromAutoMark = itemID
-                        and EC_compCache.itemProtectedFromAutoMarkDelete
-                        and EC_compCache.itemProtectedFromAutoMarkDelete(itemID)
+                    local protectedFromAutoMark, protectReason
+                    if itemID and EC_compCache.itemProtectedFromAutoMarkDelete then
+                        protectedFromAutoMark, protectReason =
+                            EC_compCache.itemProtectedFromAutoMarkDelete(itemID)
+                    end
                     local tipMsg
                     if not autoMarkOn then
-                        tipMsg = L["rank %d below floor of %d, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"]
+                        tipMsg = string.format(
+                            L["rank %d below floor of %d, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"],
+                            affixDataForTrace.rank,
+                            DB.affixMinSellRank
+                        )
                     elseif protectedFromAutoMark then
-                        tipMsg = L["rank %d below floor of %d, but item has no vendor value; auto-mark is on but this item is protected as real gear (iLvl >= 200), a gear-set member, or equipped. Add to Delete List manually if you want it gone."]
+                        tipMsg = string.format(
+                            L["rank %d below floor of %d, but item has no vendor value; %s"],
+                            affixDataForTrace.rank,
+                            DB.affixMinSellRank,
+                            EC_autoMarkProtectionSuffix(protectReason)
+                        )
                     else
-                        tipMsg = L["rank %d below floor of %d, but item has no vendor value; auto-mark is on so this item will be marked for deletion on the next bag update"]
+                        tipMsg = string.format(
+                            L["rank %d below floor of %d, but item has no vendor value; auto-mark is on so this item will be marked for deletion on the next bag update"],
+                            affixDataForTrace.rank,
+                            DB.affixMinSellRank
+                        )
                     end
-                    step("affixRankRule", false, string.format(
-                        tipMsg,
-                        affixDataForTrace.rank,
-                        DB.affixMinSellRank
-                    ))
+                    step("affixRankRule", false, tipMsg)
                 else
                     step("affixRankRule", false, string.format(
                         L["rank %d below floor of %d, but item has no vendor value AND you don't own this rank yet - kept for extraction"],
@@ -1348,15 +1388,24 @@ function EC_compCache.describeSellability(bag, slot)
             -- toggle-on + protected => explain the protection instead
             -- of the stale "turn it on" advice; toggle-on + eligible
             -- => "will mark on next scan".
+            -- v2.64.0 (Serv report - Signet of the Impregnable Fortress
+            -- of Thick Hide IV): consume the reason tuple from
+            -- itemProtectedFromAutoMarkDelete so the tip names the
+            -- SPECIFIC safety net + the toggle to flip.
             local autoMarkOn = DB and DB.autoMarkAffixDupes and DB.enableDeletion
-            local protectedFromAutoMark = itemID
-                and EC_compCache.itemProtectedFromAutoMarkDelete
-                and EC_compCache.itemProtectedFromAutoMarkDelete(itemID)
+            local protectedFromAutoMark, protectReason
+            if itemID and EC_compCache.itemProtectedFromAutoMarkDelete then
+                protectedFromAutoMark, protectReason =
+                    EC_compCache.itemProtectedFromAutoMarkDelete(itemID)
+            end
             local tipMsg
             if not autoMarkOn then
                 tipMsg = L["you own this affix, but item has no vendor value (turn on 'Auto-mark unsellable affixes for deletion' to trash it)"]
             elseif protectedFromAutoMark then
-                tipMsg = L["you own this affix, but item has no vendor value; auto-mark is on but this item is protected as real gear (iLvl >= 200), a gear-set member, or equipped. Add to Delete List manually if you want it gone."]
+                tipMsg = string.format(
+                    L["you own this affix, but item has no vendor value; %s"],
+                    EC_autoMarkProtectionSuffix(protectReason)
+                )
             else
                 tipMsg = L["you own this affix, but item has no vendor value; auto-mark is on so this item will be marked for deletion on the next bag update"]
             end

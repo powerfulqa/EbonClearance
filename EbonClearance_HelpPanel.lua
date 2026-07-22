@@ -806,6 +806,12 @@ local function EC_buildHelpEntries()
         panel = "EbonClearanceOptionsScavenger",
     },
     {
+        id = "scav-restore-load",
+        q = L["Re-summon Greedy Scavenger after loading screens (if it was out)"],
+        a = L["Off by default. The game dismisses your Scavenger every time you cross a loading screen (dungeon, raid, battleground, hearthstone, teleporter, continent flight). Turn this on and EbonClearance calls the pet back automatically once the loading screen finishes. Only fires if the pet was actually out just before the loading screen - if you dismissed it on purpose beforehand, EbonClearance leaves it dismissed. Expect roughly a 3 second wait between the loading screen finishing and the pet reappearing: the game keeps you 'busy' for about a second and a half after every load, so the summon call has to wait for that window to clear. Requires 'Summon Greedy Scavenger after selling' to also be on."],
+        panel = "EbonClearanceOptionsScavenger",
+    },
+    {
         id = "scav-summon-delay",
         q = L["Summon delay"],
         a = L["How long EbonClearance waits before re-summoning the Scavenger after it goes away. A short delay avoids fighting the game's own summon timing right after a vendor or a leash. Raise it if you see the pet summon-flicker; lower it for a snappier loop."],

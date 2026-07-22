@@ -5,6 +5,38 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.65.0
+
+**Re-summon the Scavenger after loading screens (opt-in, only if the pet was out beforehand).**
+
+Requested feature (Alckor): Blizzard's engine dismisses CRITTER-type companions across every loading screen (dungeon, raid, battleground, arena, hearthstone, teleporter, continent flight), so the Scavenger had to be re-summoned by hand every time. Easy to forget, especially on quick zone chains during farming.
+
+## What changed
+
+- **New Scavenger Settings toggle**: `Re-summon Greedy Scavenger after loading screens (if it was out)`. Default OFF (opt-in - the pet-visibility contract shouldn't change on upgrade).
+- **New `DB.restoreScavengerAfterLoad` schema field**. Additive; a pre-v2.65.0 client just ignores it.
+- **Handler block on the existing PLAYER_ENTERING_WORLD** in [EbonClearance_Events.lua](EbonClearance_Events.lua) - captures `wasBootstrapped` before the login bootstrap runs, so the first PLAYER_ENTERING_WORLD after `/reload` or fresh login is skipped (the bootstrap seeds `lastScavengerOut` there, and treating that as "was out before the load screen" would spam a summon on every login).
+- **Gates:**
+  - `DB.summonGreedy` master toggle (respects "pet disabled entirely")
+  - `DB.restoreScavengerAfterLoad` opt-in
+  - `EC_compCache.lastScavengerOut` truthy - **only summons if the pet was actually out just before the load screen**. If the user deliberately dismissed it beforehand, EbonClearance leaves it dismissed. This is the key refinement over the initial "always summon on instance zone-in" scope.
+  - Scavenger not currently out (defensive; `CallCompanion` is a no-op if the pet is up, but skipping the call keeps the initiate-summon state machine tidy)
+- Routes through `EC_SummonGreedyWithDelay` so `DB.summonDelay` (default 1.6s) applies uniformly. Expect roughly a 3 second wait between the loading screen finishing and the pet reappearing - the game's post-zone-in "player busy" window swallows `CallCompanion` for ~1.5 s, so the summon defers into the retry loop until Blizzard's engine accepts it. Documented in the FAQ so a player checking the Help panel understands why the pet doesn't reappear instantly.
+
+## Diagnostics
+
+- `/ec bugreport` --- Scavenger --- section gains a `Restore Scavenger After Loading Screen: true/false` line.
+- `EC_TOGGLE_WATCH_LIST` gains `restoreScavengerAfterLoad`, so flipping the toggle mid-session shows up in the `--- Toggles Changed This Session ---` bug-report section.
+- New FAQ entry `scav-restore-load` on the Scavenger Settings panel with the standard [?] icon wiring. Locale template keys added to `_deDE.lua` + `_frFR.lua`.
+
+## Notes
+
+- No behavioural change with the toggle off (default). A pre-v2.65.0 client seeing the new field just ignores it.
+- Downgrade-safe.
+
+---
+
+
 ### v2.64.0
 
 **Four new chance-on-hit pairings + trace tip now names the specific safety net + Help/FAQ plain-language pass.**

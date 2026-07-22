@@ -38,6 +38,9 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if self.sumCB then
             self.sumCB:SetChecked(DB.summonGreedy)
         end
+        if self.restoreLoadCB then
+            self.restoreLoadCB:SetChecked(DB.restoreScavengerAfterLoad)
+        end
         if self.delaySlider then
             self.delaySlider:SetValue(DB.summonDelay or 1.6)
         end
@@ -127,6 +130,36 @@ ScavengerPanel:SetScript("OnShow", function(self)
             end
         end
 
+        -- v2.65.0 (Alckor request): re-summon the Scavenger after ANY
+        -- loading screen (dungeon / raid / bg / arena / hearth / teleport
+        -- / continent-flight) if the pet was out immediately beforehand.
+        -- Blizzard's engine dismisses CRITTER companions across every
+        -- loading screen. Opt-in; the handler that reads this toggle
+        -- lives in the PLAYER_ENTERING_WORLD branch of the event
+        -- dispatcher and consults EC_compCache.lastScavengerOut to
+        -- respect the user's pre-load-screen dismissal decision.
+        local restoreLoadCB = NS.AddCheckbox(
+            content,
+            "EbonClearanceRestoreScavengerAfterLoadCB",
+            combatOnlyCB,
+            L["Re-summon |cffff7f7fGreedy Scavenger|r after loading screens (if it was out)"],
+            function()
+                return DB.restoreScavengerAfterLoad
+            end,
+            function(v)
+                DB.restoreScavengerAfterLoad = v
+            end,
+            -8
+        )
+        self.restoreLoadCB = restoreLoadCB
+        do
+            local t = _G[restoreLoadCB:GetName() .. "Text"]
+            if t then
+                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
+                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-restore-load")
+            end
+        end
+
         -- Hide chat + hide bubbles checkboxes were removed: this is now
         -- baked-in addon behaviour. DB.hideGreedyChat /
         -- DB.hideGreedyBubbles are forced true in EnsureDB so the
@@ -135,7 +168,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         local delaySlider = NS.AddSlider(
             content,
             "EbonClearanceSummonDelaySlider",
-            combatOnlyCB,
+            restoreLoadCB,
             L["Summon delay"],
             0.0,
             20.0,

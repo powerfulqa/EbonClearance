@@ -981,6 +981,20 @@ local function EnsureDB()
     if type(DB.summonOnlyOutOfCombat) ~= "boolean" then
         DB.summonOnlyOutOfCombat = false
     end
+    -- v2.65.0 (Alckor request): auto-re-summon the Scavenger after ANY
+    -- loading screen (dungeon / raid / bg / arena / hearthstone / teleporter
+    -- / continent-flight) IF the pet was out immediately before the load.
+    -- Blizzard's engine dismisses CRITTER-type companions across every
+    -- loading screen, so the pet needs to be re-summoned by hand each
+    -- time. Gating on the pre-load state (via EC_compCache.lastScavenger
+    -- Out) keeps the toggle from summoning the pet when the player had
+    -- deliberately dismissed it before the zone change. Default OFF
+    -- (opt-in). The existing summonDelay (default 1.6 s) covers the
+    -- window between load-screen-finished and Blizzard accepting the
+    -- CallCompanion call.
+    if type(DB.restoreScavengerAfterLoad) ~= "boolean" then
+        DB.restoreScavengerAfterLoad = false
+    end
     if type(DB.summonDelay) ~= "number" then
         DB.summonDelay = 1.6
     end
@@ -6631,7 +6645,7 @@ local EC_TOGGLE_WATCH_LIST = {
     -- vendor mode
     "merchantMode", "repairGear", "repairUseGuildBank",
     -- scavenger
-    "summonGreedy", "muteGreedy", "autoLootCycle",
+    "summonGreedy", "muteGreedy", "autoLootCycle", "restoreScavengerAfterLoad",
     -- sharing (v2.53.0)
     "shareGuildData", "shareGuildName", "shareChanceProcs",
     -- realm-wide sharing (v2.58.0)
@@ -9270,6 +9284,14 @@ f:SetScript("OnEvent", function(self, event, ...)
         if NS.InstallGreedyMuteOnce then
             NS.InstallGreedyMuteOnce()
         end
+        -- v2.65.0 (Alckor request): capture "was bootstrap already done"
+        -- BEFORE the bootstrap block runs, so the re-summon block below
+        -- can distinguish first PLAYER_ENTERING_WORLD (login / /reload -
+        -- skip re-summon; the bootstrap seeds lastScavengerOut but that
+        -- reflects the login-time state, not a pre-load-screen state)
+        -- from subsequent PLAYER_ENTERING_WORLDs (zone change - re-
+        -- summon is valid because lastScavengerOut IS the pre-load state).
+        local wasBootstrapped = EC_scavStateBootstrapped
         -- One-time companion-state bootstrap so the OnUpdate movement
         -- accumulator can start counting immediately if the Scavenger was
         -- already out at /reload (otherwise we wait for the first 5 s tick
@@ -9280,6 +9302,38 @@ f:SetScript("OnEvent", function(self, event, ...)
                 EC_compCache.lastScavengerOut = true
             end
             EC_scavStateBootstrapped = true
+        end
+        -- v2.65.0 (Alckor request): re-summon the Scavenger after ANY
+        -- loading screen if the pet was out immediately before it.
+        -- PLAYER_ENTERING_WORLD fires on every loading-screen finish; the
+        -- "was pet out beforehand" signal is EC_compCache.lastScavengerOut,
+        -- which the OnUpdate movement accumulator has been tracking
+        -- continuously up to the load-screen pause. Gated on:
+        --   (a) wasBootstrapped - skip first PLAYER_ENTERING_WORLD after
+        --       login/reload; that's not a zone-change signal
+        --   (b) DB.summonGreedy (master Scavenger toggle) - respect
+        --       "user has the pet disabled entirely"
+        --   (c) DB.restoreScavengerAfterLoad opt-in toggle - off by
+        --       default so no pet-visibility surprise on first upgrade
+        --   (d) EC_compCache.lastScavengerOut - only re-summon if the
+        --       pet WAS out before the load screen (respects the user's
+        --       explicit dismissal decision)
+        --   (e) scavenger not currently out - CallCompanion is a no-op
+        --       if the pet is somehow already present, but skipping the
+        --       delayed call keeps the initiate-summon state machine tidy
+        -- Routes through EC_SummonGreedyWithDelay so the summonDelay
+        -- setting applies uniformly (default 1.6 s covers the window
+        -- between load-screen-finished and Blizzard accepting the call).
+        if wasBootstrapped
+            and DB
+            and DB.summonGreedy
+            and DB.restoreScavengerAfterLoad
+            and EC_compCache.lastScavengerOut
+        then
+            local _, scavOut = EC_FindGreedyScavenger()
+            if not scavOut then
+                EC_SummonGreedyWithDelay()
+            end
         end
         -- v2.49.2: conflict warning. Fires only when EC's delete path
         -- is active AND the player hasn't opted out AND a third-party

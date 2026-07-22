@@ -349,15 +349,21 @@ do
         f:close()
         local tocVersion = tocContent:match("##%s*Version:%s*(v[%d%.]+)")
         local luaVersion = src:match("local ADDON_VERSION%s*=%s*\"(v[%d%.]+)\"")
+        -- ADDON_VERSION lives in EbonClearance_Events.lua (Test 55 in the
+        -- perf-guardrails suite pins that). The failure branches used to
+        -- concatenate the undefined singular `SOURCE_PATH` (a SOURCE_PATHS
+        -- migration leftover), which crashed the suite with a nil-concat
+        -- exactly when this assertion needed to print its message.
+        local versionFile = "EbonClearance_Events.lua"
         local message
         if not tocVersion then
             message = "no '## Version: vX.Y.Z' line found in " .. tocPath
         elseif not luaVersion then
-            message = "no 'local ADDON_VERSION = \"vX.Y.Z\"' line found in " .. SOURCE_PATH
+            message = "no 'local ADDON_VERSION = \"vX.Y.Z\"' line found in " .. versionFile
         elseif tocVersion ~= luaVersion then
             message = string.format(
                 "version drift: %s says %s but %s says %s",
-                tocPath, tocVersion, SOURCE_PATH, luaVersion
+                tocPath, tocVersion, versionFile, luaVersion
             )
         end
         check("ADDON_VERSION matches .toc Version field", message == nil, message)

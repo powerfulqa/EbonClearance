@@ -9,8 +9,12 @@ internet tutorial disagree, follow the guide.
 1. **Client target is WoW 3.3.5a (Interface 30300 / WotLK / Lua 5.1).**
    Do not copy-paste retail code. APIs like `C_Timer`, `C_Container`,
    and `BAG_UPDATE_DELAYED` do not exist here.
-2. **Single file.** All code lives in `EbonClearance.lua`. Do not split
-   into modules unless explicitly asked - see "When to split" below.
+2. **Multi-file since the Stage 1-9 split.** Code lives in the
+   `EbonClearance_*.lua` files listed in the `.toc` (Core loads first;
+   the event hub is `EbonClearance_Events.lua`, renamed from the
+   original monolith). Cross-file state goes through the shared `NS`
+   namespace; do not add new files without registering them in the
+   `.toc`, the test SOURCE_PATHS arrays, and CLAUDE.md's file count.
 3. **Namespace via `EC_` prefixed locals.** There is no addon table.
    Nearly everything is `local`; the only intentional globals are the
    saved-variable tables (`EbonClearanceDB`, `EbonClearanceAccountDB`),
@@ -22,12 +26,13 @@ internet tutorial disagree, follow the guide.
    `EBONCLEARANCE_AUTHOR`, `EBONCLEARANCE_ORIGIN`,
    `__EbonClearance_origin`, `__EbonClearance_author`).
 4. **State machine uses `STATE.*` constants**, never raw strings. See
-   `STATE = { IDLE, LOOTING, WAITING_MERCHANT, SELLING }` in the file.
+   `STATE = { IDLE, LOOTING, WAITING_MERCHANT, SELLING }` in
+   `EbonClearance_Events.lua`.
 5. **Cache hot WoW API globals at file top**, then use the locals on
    hot paths (vendor loop, bag scans, OnUpdate callbacks).
 6. **One event-dispatch frame.** All events hang off `f` at the bottom
-   of `EbonClearance.lua`. Do not create new event frames for new events
-   - add to the dispatch table.
+   of `EbonClearance_Events.lua`. Do not create new event frames for new
+   events - add to the dispatch table.
 7. **Print through `PrintNice` or `PrintNicef`.** Never call
    `DEFAULT_CHAT_FRAME:AddMessage` directly outside those helpers.
 8. **Saved variables always go through `EnsureDB()`.** New fields must
@@ -120,7 +125,7 @@ them in XML at addon-load time.
 
 ## Architecture
 
-> For the multi-file map (which of the 34 `.lua` files owns what, the
+> For the multi-file map (which `.lua` file owns what, the
 > cross-file boundaries, and a "where do I change X?" table), see
 > [ARCHITECTURE.md](ARCHITECTURE.md). The per-file ordering notes below
 > describe the rough layout *within* the larger files (Core, Events, etc.)

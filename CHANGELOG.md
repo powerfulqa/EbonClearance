@@ -5,6 +5,69 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.66.0
+
+**Keep BoE affixes below rank floor for auction + BoE-toggle rename pass + shorter labels + panel reorder + red "PE not detected" warning + specific BoE tooltip labels.**
+
+## New toggle: Keep BoE affixes below rank floor
+
+Requested by Valentine on Discord: the `Sell affixes below rank N` slider was selling their BoE items even when they wanted to list those on the auction house. The existing `Keep bind-on-equip ones` toggle only gated the owned-dupe sell rule, not the rank-floor sell rule.
+
+New Keep Settings toggle **`Keep BoE affixes below rank floor`** (default OFF, opt-in). Companion to the rank slider; parallel to the existing BoE-keep for the dupe rule. When on, BoE items with rank below the floor are kept for auction; soulbound items in the same band still sell (a vendor is their only exit). New DB field `keepBoeBelowRankFloor` (boolean). Added to `EC_TOGGLE_WATCH_LIST` and `/ec bugreport`.
+
+The gate is applied at three sites (three-way mirror contract): `EC_IsSellable` in [EbonClearance_Events.lua](EbonClearance_Events.lua), `describeSellability` in [EbonClearance_BagDisplay.lua](EbonClearance_BagDisplay.lua), and `EC_AnnotateTooltip` in [EbonClearance_Tooltip.lua](EbonClearance_Tooltip.lua). All three name the specific rule that suppressed the release so the trace / tooltip / bug report agree with what the vendor cycle actually does.
+
+## Toggle-label rename pass (Serv feedback)
+
+- `Keep bind-on-equip ones (auction them yourself)` -> **`Keep BoE affixes you already have`**
+- `Keep BoE items below rank floor (auction them yourself)` -> **`Keep BoE affixes below rank floor`**
+- `Protect high-iLvl items from unsellable-affix auto-mark (iLvl >= 200)` -> **`Protect iLvl 200+ items from auto-mark`** (66 chars -> 39 chars, fits on one line at default panel width)
+
+BoE terminology is consistent across both toggles now (was "bind-on-equip" on one, "BoE" on the other). Parenthetical "(auction them yourself)" dropped from both. Parallel construction with the parent rule's own words ("affixes you already have" mirrors "Allow selling affixes you already have"; "below rank floor" mirrors "Sell affixes below rank N").
+
+Old locale keys stay as orphans; new keys added to `_deDE.lua` + `_frFR.lua` as empty templates.
+
+## Panel layout reorder
+
+The two BoE-keep toggles used to both sit after the rank slider, which visually disconnected the dupe-BoE toggle from its parent rule (`Allow selling affixes you already have`). Reordered so each BoE-keep sits directly under the rule it applies to:
+
+```
+Keep blue/purple items with affixes
+  Allow selling affixes you already have
+    Keep BoE affixes you already have         <- moved here
+  Sell affixes below rank N (slider)
+    Keep BoE affixes below rank floor
+  Protect iLvl 200+ items from auto-mark
+```
+
+`rankSlider` re-anchors to `keepBoeCB`, `protectHiILvlCB` re-anchors to `keepBoeRankCB`, downstream chance-on-hit + tome sections chain-follow from `protectHiILvlCB`. `keepBoeRankCB` gets an enabled/disabled state that follows the rank slider (greyed when the slider is 0 or when PE is not detected), and `UpdateDupeAffixEnabled` re-fires when the slider value changes so the sub-toggle greys / lights up in real time.
+
+## "Project Ebonhold addon not detected" warning is now red
+
+The dupeAffixNote status line ("Project Ebonhold addon not detected. This option needs PE to know which affixes you have.") was rendering in grey (`|cff888888`), same colour as regular explanatory notes. That made it read as neutral prose when it's actually a warning about a missing dependency. Swapped to red (`|cffff4040`) so it registers as "attention needed".
+
+## Specific BoE-keep tooltip labels (Serv report)
+
+The tooltip on the Viking Warhammer of Iron Will I read `Keep (affix rank known)` when the actual reason it stayed in bags was the BoE-below-rank-floor toggle. Misleading - "affix rank known" implies "kept because you already own this affix" when the truth was "kept because it's BoE and I'd otherwise sell it via the rank floor rule."
+
+Fix: track which BoE-keep gate suppressed a would-have-been release (`keptByBoeDupes` / `keptByBoeBelowRank`) and route to a specific label in the "Keep" branch of the affix protection block. Two new tooltip labels:
+
+- **`Keep (BoE, below rank floor)`** - when `keepBoeBelowRankFloor` fires
+- **`Keep (BoE, affix you already have)`** - when `keepBoeAffixDupes` fires
+
+Priority: below-rank-floor first (names the specific sell rule that WOULD have fired), then dupes. Both fall through to the existing `Keep (affix rank known)` / `Keep (affix rank needed)` fallbacks when neither BoE gate fires.
+
+Two new label-FAQ entries in the Help panel (`label-keep-boe-below-rank-label` + `label-keep-boe-affix-known-label`) with the standard [?] wiring so a player hovering an item and reading the label can look up what it means.
+
+## Notes
+
+- Downgrade-safe. `DB.keepBoeBelowRankFloor` is additive; pre-v2.66.0 clients ignore the extra field.
+- No test-suite changes; the 10 existing suites all still pass.
+- Quickstart deliberately left alone. The new toggle defaults OFF (pre-v2.66.0 behaviour) so new players get the safe default without discovering BoE/AH concepts they don't have context for yet.
+
+---
+
+
 ### v2.65.1
 
 **Rate-limit the Scavenger recovery announce + add a session counter to /ec bugreport.**

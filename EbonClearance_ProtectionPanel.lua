@@ -76,6 +76,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if self.keepBoeCB then
             self.keepBoeCB:SetChecked(DB.keepBoeAffixDupes)
         end
+        if self.keepBoeRankCB then
+            self.keepBoeRankCB:SetChecked(DB.keepBoeBelowRankFloor)
+        end
         if self.protectHiILvlCB then
             self.protectHiILvlCB:SetChecked(DB.automarkProtectHighILvl ~= false)
         end
@@ -376,6 +379,11 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- double the indent. Shift left by 26 px so the slider lines
         -- up with dupeAffixCB visually - both are siblings under the
         -- parent affix-protection toggle.
+        -- Note: this anchor is a temporary placeholder; the v2.66.0
+        -- follow-up further down re-anchors rankSlider to keepBoeCB
+        -- so it sits under the "Allow selling ..." + BoE grouping.
+        -- keepBoeCB is created LATER in this build block, so we can't
+        -- reference it here.
         rankSlider:ClearAllPoints()
         rankSlider:SetPoint("TOPLEFT", dupeAffixNote, "BOTTOMLEFT", -26, -14)
         EC_compCache.setPanelWidth(rankSlider, 100)
@@ -392,6 +400,13 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end
         rankSlider:HookScript("OnValueChanged", function(_, v)
             refreshRankSliderLabel(v)
+            -- v2.66.0: re-sync the enabled state of the new "Keep BoE
+            -- below rank floor" companion toggle so it greys out when
+            -- the slider drops to 0 (Off) and lights up when it moves
+            -- above 0. self is captured from the panel closure.
+            if self and self.UpdateDupeAffixEnabled then
+                self:UpdateDupeAffixEnabled()
+            end
         end)
         refreshRankSliderLabel(DB.affixMinSellRank or 0)
         local rankLow = _G["EbonClearanceAffixMinSellRankSliderLow"]
@@ -440,6 +455,40 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         refreshRankSliderNote(DB.affixMinSellRank or 0)
 
+        -- v2.66.0 (Valentine request): BoE-keep for the rank-floor sell
+        -- rule. Companion to the rank slider above; parallel to the
+        -- keepBoeCB for the owned-dupe rule below. When on, BoE items
+        -- with rank below the floor are kept for auction; soulbound
+        -- items in the same band still sell.
+        local keepBoeRankCB = CreateFrame(
+            "CheckButton",
+            "EbonClearanceKeepBoeBelowRankFloorCB",
+            content,
+            "InterfaceOptionsCheckButtonTemplate"
+        )
+        keepBoeRankCB:SetPoint("TOPLEFT", rankSliderNote, "BOTTOMLEFT", 0, -8)
+        keepBoeRankCB:SetChecked(DB.keepBoeBelowRankFloor)
+        local kbrText = _G[keepBoeRankCB:GetName() .. "Text"]
+        if kbrText then
+            kbrText:SetText(L["Keep BoE affixes below rank floor"])
+            EC_compCache.setPanelWidth(kbrText, 86)
+            kbrText:SetJustifyH("LEFT")
+            if kbrText.SetWordWrap then
+                kbrText:SetWordWrap(true)
+            end
+        end
+        keepBoeRankCB:SetScript("OnClick", function(cb)
+            DB.keepBoeBelowRankFloor = cb:GetChecked() and true or false
+            PlaySound("igMainMenuOptionCheckBoxOn")
+            if NS.RefreshSellBorders then
+                NS.RefreshSellBorders()
+            end
+        end)
+        self.keepBoeRankCB = keepBoeRankCB
+        if kbrText then
+            NS.AddHelpIcon(content, kbrText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-below-rank")
+        end
+
         -- v2.47.0 sub-toggle of "Allow selling affixes you already have":
         -- keep bind-on-equip owned dupes for the auction house, sell only the
         -- soulbound ones. When on, EC_IsSellable's dupe release is restricted
@@ -455,11 +504,18 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- Sits in the child column (rankSliderNote is already at the child
         -- indent), below the rank-slider note - grouped with the affix-sell
         -- controls it relates to.
-        keepBoeCB:SetPoint("TOPLEFT", rankSliderNote, "BOTTOMLEFT", 0, -8)
+        -- v2.66.0 (Serv follow-up): moved from "under keepBoeRankCB" to
+        -- "under dupeAffixNote" so the toggle sits directly beneath its
+        -- parent rule ("Allow selling affixes you already have"). Its
+        -- rank-floor sibling stays under the rank slider. -26 x-offset
+        -- returns from the note's double indent (dupeAffixNote at +52)
+        -- to the sub-toggle column (+26) so the checkbox lines up with
+        -- dupeAffixCB visually.
+        keepBoeCB:SetPoint("TOPLEFT", dupeAffixNote, "BOTTOMLEFT", -26, -8)
         keepBoeCB:SetChecked(DB.keepBoeAffixDupes)
         local kbText = _G[keepBoeCB:GetName() .. "Text"]
         if kbText then
-            kbText:SetText(L["Keep bind-on-equip ones (auction them yourself)"])
+            kbText:SetText(L["Keep BoE affixes you already have"])
             EC_compCache.setPanelWidth(kbText, 86)
             kbText:SetJustifyH("LEFT")
         end
@@ -478,6 +534,22 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             NS.AddHelpIcon(content, kbText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-dupes")
         end
 
+        -- v2.66.0 (Serv follow-up): the two BoE sub-toggles were both
+        -- grouped after the rank slider originally, which visually
+        -- disconnected keepBoeCB from its parent rule ("Allow selling
+        -- affixes you already have"). Re-anchor rankSlider so it sits
+        -- BELOW keepBoeCB, giving the layout:
+        --   Allow selling affixes you already have
+        --     Keep BoE affixes you already have    (keepBoeCB)
+        --   Sell affixes below rank N              (rankSlider)
+        --     [rank slider note]
+        --     Keep BoE affixes below rank floor    (keepBoeRankCB)
+        -- rankSliderNote + keepBoeRankCB chain-anchor off rankSlider so
+        -- they follow it down automatically. keepBoeCB (X=26) shares the
+        -- sub-toggle column with rankSlider, so 0 x-offset here.
+        rankSlider:ClearAllPoints()
+        rankSlider:SetPoint("TOPLEFT", keepBoeCB, "BOTTOMLEFT", 0, -14)
+
         -- v2.60.0 (Serv follow-up): "Protect high-iLvl items from
         -- unsellable-affix auto-mark". Sub-toggle for the v2.57.2 iLvl
         -- safety net that skips auto-mark on any item at iLvl >= 200.
@@ -495,11 +567,18 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             content,
             "InterfaceOptionsCheckButtonTemplate"
         )
-        protectHiILvlCB:SetPoint("TOPLEFT", keepBoeCB, "BOTTOMLEFT", 0, -8)
+        -- v2.66.0 (Serv follow-up): keepBoeCB moved UP to sit directly
+        -- under its dupeAffix parent, so protectHiILvlCB (and every
+        -- widget chained below it) followed keepBoeCB up and overlapped
+        -- the rank slider. Re-anchor to keepBoeRankCB - the new last
+        -- widget in the affix subsection - so the chance-on-hit +
+        -- tome sections that chain-anchor off protectHiILvlCB still
+        -- sit below the rank-floor group visually.
+        protectHiILvlCB:SetPoint("TOPLEFT", keepBoeRankCB, "BOTTOMLEFT", 0, -8)
         protectHiILvlCB:SetChecked(DB.automarkProtectHighILvl ~= false)
         local protectHiILvlText = _G[protectHiILvlCB:GetName() .. "Text"]
         if protectHiILvlText then
-            protectHiILvlText:SetText(L["Protect high-iLvl items from unsellable-affix auto-mark (iLvl >= 200)"])
+            protectHiILvlText:SetText(L["Protect iLvl 200+ items from auto-mark"])
             EC_compCache.setPanelWidth(protectHiILvlText, 86)
             protectHiILvlText:SetJustifyH("LEFT")
             if protectHiILvlText.SetWordWrap then
@@ -569,6 +648,29 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                         end
                     end
                 end
+                -- v2.66.0 (Serv report): the "keep BoE below rank floor"
+                -- sub-option only does anything when the rank slider is
+                -- non-zero. Enable it when the slider is active, grey it
+                -- otherwise so the parent-child state is visually
+                -- consistent (child mustn't look live when the parent
+                -- gate is off).
+                if keepBoeRankCB then
+                    if (DB.affixMinSellRank or 0) > 0 then
+                        if keepBoeRankCB.Enable then
+                            keepBoeRankCB:Enable()
+                        end
+                        if kbrText then
+                            kbrText:SetTextColor(1, 1, 1)
+                        end
+                    else
+                        if keepBoeRankCB.Disable then
+                            keepBoeRankCB:Disable()
+                        end
+                        if kbrText then
+                            kbrText:SetTextColor(0.5, 0.5, 0.5)
+                        end
+                    end
+                end
             else
                 dupeAffixCB:Disable()
                 if rankSlider and rankSlider.Disable then
@@ -579,7 +681,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 end
                 if not peOn then
                     dupeAffixNote:SetText(
-                        L["|cff888888Project Ebonhold addon not detected. This option needs PE to know which affixes you have.|r"]
+                        L["|cffff4040Project Ebonhold addon not detected. This option needs PE to know which affixes you have.|r"]
                     )
                 else
                     dupeAffixNote:SetText(L["|cff888888Turn on the affix protection above to use this option.|r"])
@@ -595,6 +697,16 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 end
                 if kbText then
                     kbText:SetTextColor(0.5, 0.5, 0.5)
+                end
+                -- v2.66.0: grey the "keep BoE below rank floor" sub-option
+                -- too. Without PE detected OR without the parent affix
+                -- protection on, the rank slider is inert; keep its
+                -- companion toggle visually consistent.
+                if keepBoeRankCB and keepBoeRankCB.Disable then
+                    keepBoeRankCB:Disable()
+                end
+                if kbrText then
+                    kbrText:SetTextColor(0.5, 0.5, 0.5)
                 end
             end
         end

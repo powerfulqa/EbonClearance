@@ -1064,7 +1064,7 @@ EC_compCache.qualityNames =
 -- unrecognised (future branches, defensive against nil).
 local function EC_autoMarkProtectionSuffix(reason)
     if reason == "highIlvl" then
-        return L["auto-mark is on but this item is high item level (iLvl >= 200). Turn off 'Protect high-iLvl items from unsellable-affix auto-mark' in Keep Settings to let it be trashed, or add to the Delete List by hand."]
+        return L["auto-mark is on but this item is high item level (iLvl >= 200). Turn off 'Protect iLvl 200+ items from auto-mark' in Keep Settings to let it be trashed, or add to the Delete List by hand."]
     elseif reason == "set" then
         return L["auto-mark is on but this item is in one of your saved gear sets. Remove it from the set, or add to the Delete List by hand."]
     elseif reason == "equipped" then
@@ -1236,10 +1236,28 @@ function EC_compCache.describeSellability(bag, slot)
         and affixDataForTrace.rank
         and affixDataForTrace.rank < DB.affixMinSellRank
         or false
+    -- v2.66.0 mirror of EC_IsSellable's keepBoeBelowRankFloor gate. When
+    -- on, BoE below-rank items are kept instead of sold; the trace names
+    -- the reason so the player can tie the outcome back to the toggle.
+    local rankBelowKeptForBoe = false
+    if affixRankPass
+        and DB.keepBoeBelowRankFloor
+        and EC_compCache.getBindType
+        and EC_compCache.getBindType(bag, slot) ~= "bop"
+    then
+        affixRankPass = false
+        rankBelowKeptForBoe = true
+    end
     if affixRankPass and not affixWithinCeiling then
         affixRankPass = false
         step("affixRankRule", false, string.format(
             L["rank %d is below your floor of %d, but its item level is above your sell cap for this rarity - kept"],
+            affixDataForTrace.rank,
+            DB.affixMinSellRank
+        ))
+    elseif rankBelowKeptForBoe then
+        step("affixRankRule", false, string.format(
+            L["rank %d is below your floor of %d, but this item is BoE - kept for auction ('Keep BoE affixes below rank floor' is on)"],
             affixDataForTrace.rank,
             DB.affixMinSellRank
         ))

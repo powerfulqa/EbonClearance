@@ -551,6 +551,7 @@ local function EC_BuildBugReport()
     add("Auto-mark unsellable affixes for deletion: " .. (DB.autoMarkAffixDupes and "yes" or "no"))
     add("Auto-mark unsellable known recipes for deletion: " .. (DB.autoMarkKnownUnsellableRecipes and "yes" or "no"))
     add("Keep bind-on-equip affix dupes (sell soulbound only): " .. (DB.keepBoeAffixDupes and "yes" or "no"))
+    add("Keep BoE affixes below rank floor: " .. (DB.keepBoeBelowRankFloor and "yes" or "no"))
     -- v2.37.0 (Borrow A): surface the affix debug log status. When the
     -- log has rows, prompt the reporter to also include /ec affixdebug
     -- dump so the maintainer gets the structured event trail.
@@ -1282,8 +1283,8 @@ local function EC_BuildRuleSummary()
     add("    - 'Auto-mark unsellable known recipes for deletion' ("
         .. onoff(DB.autoMarkKnownUnsellableRecipes) .. ") adds learned")
     add("      profession recipes with no vendor value to the Delete List. Requires Sell Known Recipes.")
-    add("    - 'Keep bind-on-equip ones' (" .. onoff(DB.keepBoeAffixDupes) .. ") restricts the")
-    add("      'Allow selling affixes you already have' release to soulbound dupes; BoE dupes are kept.")
+    add("    - 'Keep BoE affixes you already have' (" .. onoff(DB.keepBoeAffixDupes) .. ") restricts the")
+    add("      'Allow selling affixes you already have' release to soulbound items; BoE ones are kept.")
     add("")
     add("Step 2: Should I SELL this?")
     add("  Yes, if ANY ONE of the reasons below matches (the rules don't")

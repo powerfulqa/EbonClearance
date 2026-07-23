@@ -1146,6 +1146,16 @@ local function EnsureDB()
     if type(DB.keepBoeAffixDupes) ~= "boolean" then
         DB.keepBoeAffixDupes = false
     end
+    -- v2.66.0 (Valentine request): BoE-keep for the RANK FLOOR sell rule,
+    -- parallel to keepBoeAffixDupes for the owned-dupe rule. When on, an
+    -- affixed BoE item with rank below the 'Sell affixes below rank'
+    -- setting is kept so the player can auction it. Soulbound items in
+    -- the same rank band still sell as before. Default OFF (opt-in;
+    -- pre-v2.66.0 behaviour is to sell all rank-below items regardless
+    -- of bind, so leaving this off preserves it).
+    if type(DB.keepBoeBelowRankFloor) ~= "boolean" then
+        DB.keepBoeBelowRankFloor = false
+    end
     -- v2.20.0: Chance-on-hit protection. PE lets players EXTRACT proc
     -- spells from weapons (the green `Chance on hit:` tooltip line)
     -- and apply them to other items, so an item with a Chance-on-hit
@@ -5722,6 +5732,16 @@ local function EC_IsSellable(bag, slot, junkOnly)
         and affixForRank.rank
         and affixForRank.rank < DB.affixMinSellRank
         or false
+    -- v2.66.0 (Valentine request): BoE-keep for the rank-floor sell path.
+    -- Parallel to the keepBoeAffixDupes gate on autoDupePass below (line
+    -- ~5757). When on, BoE items with rank below the floor stay in bags
+    -- so the player can auction them; soulbound items still sell.
+    -- EC-TRAP: describeSellability + EC_AnnotateTooltip apply the same
+    -- gate; keep all three sites in lockstep or the trace / tooltip
+    -- disagree with the vendor.
+    if affixRankPass and DB.keepBoeBelowRankFloor and EC_compCache.getBindType(bag, slot) ~= "bop" then
+        affixRankPass = false
+    end
     -- v2.44.0: "Allow selling affixes you already have" is also a
     -- standalone sell rule, not just a release-only lever. The label
     -- says "selling," so the behaviour should sell. Matches the slider's
@@ -6676,6 +6696,7 @@ local EC_TOGGLE_WATCH_LIST = {
     -- protection
     "protectAllTomes", "protectUnlearnedTomes", "protectAffixedRareItems",
     "protectChanceOnHitItems", "affixAllowExactDupes", "keepBoeAffixDupes",
+    "keepBoeBelowRankFloor",
     -- auto-protect (equipped / upgrades / sets)
     "autoAddEquipped", "autoProtectUpgrades", "autoProtectEquipmentSets",
     -- sell rules

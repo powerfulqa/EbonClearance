@@ -434,8 +434,14 @@ local function EC_buildHelpEntries()
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
+        id = "gate-keep-boe-below-rank",
+        q = L["Keep BoE affixes below rank floor"],
+        a = L["Off by default. Companion to the 'Sell affixes below rank N' slider above. When on, EbonClearance keeps bind-on-equip items with a low-rank affix so you can list them on the auction house instead of vendoring them. Soulbound low-rank items still sell (the vendor is their only exit anyway). Turn on if you sell low-rank affixed BoEs on the AH; leave off if you'd rather just vendor everything below the floor."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
         id = "gate-keep-boe-dupes",
-        q = L["Keep bind-on-equip ones (auction them yourself)"],
+        q = L["Keep BoE affixes you already have"],
         a = L["A sub-option of 'Allow selling affixes you already have' (off by default). With it on, EbonClearance only vendors the affix dupes that are soulbound (a vendor is their only exit anyway) and keeps the bind-on-equip ones, so you can auction those yourself. Turn it off to sell every dupe regardless of bind type. 'You already have it' means the exact rank that dropped, so a rank you haven't extracted is always kept."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
@@ -447,7 +453,7 @@ local function EC_buildHelpEntries()
     },
     {
         id = "gate-automark-protect-hilvl",
-        q = L["Protect high-iLvl items from unsellable-affix auto-mark (iLvl >= 200)"],
+        q = L["Protect iLvl 200+ items from auto-mark"],
         a = L["On by default. Keeps items at item level 200 or higher safe from the 'Auto-mark unsellable affixes for deletion' scan. So a good drop can't be auto-deleted just because you already own one of its affixes. Turn off when you WANT older iLvl 200+ gear thrown away (like PvP pieces you've upgraded past). Your Keep List, saved gear-set members, items you're wearing, and quest items are ALWAYS kept safe regardless of this toggle."],
         panel = "EbonClearanceOptionsBlacklistSettings",
     },
@@ -612,6 +618,18 @@ local function EC_buildHelpEntries()
         q = L["Keep (affix needed)"],
         a = L["Project Ebonhold transferred-proc affix on the item that you haven't extracted yet. Protected so you can extract it at the Anvil. Unranked variant of 'Keep (affix rank needed)' for procs like Vampirism / Resurgence that don't have ranks."],
         panel = nil,
+    },
+    {
+        id = "label-keep-boe-below-rank-label",
+        q = L["Keep (BoE, below rank floor)"],
+        a = L["The affix rank is below your 'Sell affixes below rank N' setting AND you've turned on 'Keep BoE affixes below rank floor' in Keep Settings. So this item would normally sell via the rank-floor rule, but because it's bind-on-equip, EbonClearance keeps it so you can auction it. Turn off the BoE-keep toggle to sell it anyway."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
+    },
+    {
+        id = "label-keep-boe-affix-known-label",
+        q = L["Keep (BoE, affix you already have)"],
+        a = L["You already own this affix at this rank AND you've turned on 'Allow selling affixes you already have' + 'Keep BoE affixes you already have' in Keep Settings. So this item would normally sell via the dupes rule, but because it's bind-on-equip, EbonClearance keeps it so you can auction it. Soulbound dupes still sell (the vendor is their only exit anyway)."],
+        panel = "EbonClearanceOptionsBlacklistSettings",
     },
     {
         id = "label-chance-on-hit",

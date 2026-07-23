@@ -520,6 +520,12 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- (matches what the user requested when shipping the
                 -- family + rank fallback).
                 local autoDupe = DB.affixAllowExactDupes and (playerKnows or playerKnowsRank or playerKnowsFamily)
+                -- v2.66.0: track which BoE-keep gate (if any) suppressed a
+                -- would-have-been release, so the "Keep" branch below can
+                -- name the specific reason instead of falling through to
+                -- the generic "Keep (affix rank known/needed)" label.
+                local keptByBoeDupes = false
+                local keptByBoeBelowRank = false
                 -- v2.47.0: bind-type split mirror. When "keep BoE dupes" is on,
                 -- a BoE owned dupe is NOT released (kept for the auction house),
                 -- so the tooltip must not say "Will Sell" for it. Reads the bind
@@ -531,6 +537,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                     and EC_compCache.getBindTypeFromTooltip(tooltip, id) ~= "bop"
                 then
                     autoDupe = false
+                    keptByBoeDupes = true
                 end
                 -- v2.44.0: rank-floor opt-out. Mirrors the sell-path
                 -- so the tooltip reflects the true outcome when an
@@ -541,6 +548,20 @@ local function EC_AnnotateTooltipInner(tooltip)
                     and DB.affixMinSellRank > 0
                     and affix.rank
                     and affix.rank < DB.affixMinSellRank
+                -- v2.66.0 (Valentine request): BoE-keep for the rank-floor
+                -- sell rule. Mirrors the gate in EC_IsSellable at ~5717.
+                -- When the toggle is on and the item is bind-on-equip,
+                -- the rank-below signal is suppressed so the tooltip
+                -- doesn't say "Will Sell" for an item the vendor path
+                -- will actually keep.
+                if rankBelow
+                    and DB.keepBoeBelowRankFloor
+                    and EC_compCache.getBindTypeFromTooltip
+                    and EC_compCache.getBindTypeFromTooltip(tooltip, id) ~= "bop"
+                then
+                    rankBelow = false
+                    keptByBoeBelowRank = true
+                end
                 -- v2.44.0: rankBelow IS a positive sell rule (handled
                 -- in EC_IsSellable via affixRankPass), not just a
                 -- release-only lever like manualAllow / autoDupe. So
@@ -756,6 +777,23 @@ local function EC_AnnotateTooltipInner(tooltip)
                     -- Bone Colossus already had via the destinationLabel
                     -- Keep-List-wins short-circuit in the canSell=true
                     -- branch above.
+                elseif keptByBoeBelowRank or keptByBoeDupes then
+                    -- v2.66.0 (Serv report - Viking Warhammer of Iron Will I
+                    -- read "Keep (affix rank known)" when the actual reason
+                    -- it stayed in bags was the BoE-below-rank-floor toggle).
+                    -- Name the specific BoE-keep rule that fired so the
+                    -- player can tie the label back to the toggle they
+                    -- flipped. Priority: below-rank-floor first (more
+                    -- specific about the sell rule that WOULD have fired),
+                    -- then dupes fallback.
+                    local boeLabel
+                    if keptByBoeBelowRank then
+                        boeLabel = L["Keep (BoE, below rank floor)"]
+                    else
+                        boeLabel = L["Keep (BoE, affix you already have)"]
+                    end
+                    statusLine = "|cff66ccff[EC]|r |cffffb84d" .. boeLabel .. "|r"
+                    statusTag = "keep"
                 elseif playerKnows or playerKnowsRank or playerKnowsFamily then
                     -- The player has this exact (family, rank) - either
                     -- via description-text match (the v2.23.0 path) or

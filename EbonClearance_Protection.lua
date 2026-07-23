@@ -1440,6 +1440,11 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     -- for non-weapon slots. The "of Armor Rend III" suffix on a given
     -- drop is a stat-family random affix, not a chance-on-hit family.
     [50363] = "Deathbringer's Will",
+    -- v2.66.1 (Serv Anvil verification, 2026-07-23): Blazing Rapier's
+    -- "Burns the enemy for 120 damage over 30 sec" is a pure-DoT proc
+    -- with no matching PE weapon affix (Pyromancy has an initial-hit
+    -- component too; Venom is a Nature poison, not fire).
+    [12777] = "Blazing Rapier",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1599,6 +1604,33 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     [7954]  = { spellID = 700082, family = "Shackling",  item = "The Shatterer" },
     [28774] = { spellID = 700095, family = "Vampirism",  item = "Glaive of the Pit" },
     [29996] = { spellID = 700106, family = "Fury",       item = "Rod of the Sun King" },
+    -- v2.66.1 (captureproc + Anvil / wowhead verification, 2026-07-23):
+    -- five more weapons whose proc text is a verbatim / near-verbatim
+    -- match against the engrave-affix spellbook.
+    -- Shell Launcher Shotgun: ranged Fire proc; matches Fire Blast's
+    --   "ranged abilities have a chance to strike your target with
+    --   Fire Damage" verbatim.
+    -- Claw of the Shadowmancer + The Black Knight: "Sends a shadowy
+    --   bolt" - same Affliction family as Nightblade / Shadowblade /
+    --   Skeletal Club / Black Duskwood Staff.
+    -- Burning War Axe: "Hurls a fiery ball ... additional damage over
+    --   6 sec" - Pyromancy verbatim.
+    -- Venomspitter: "Poisons target for X Nature damage every 2 sec" -
+    --   Venom verbatim.
+    [2299]  = { spellID = 700084, family = "Pyromancy",  item = "Burning War Axe" },
+    [2912]  = { spellID = 700086, family = "Affliction", item = "Claw of the Shadowmancer" },
+    [12974] = { spellID = 700086, family = "Affliction", item = "The Black Knight" },
+    [13146] = { spellID = 700121, family = "Fire Blast", item = "Shell Launcher Shotgun" },
+    [13183] = { spellID = 700079, family = "Venom",      item = "Venomspitter" },
+    -- v2.66.1 deferred pairings - vanilla proc IDs known from wowhead,
+    -- but the PE affix ID (700xxx / 900xxx) is unknown. Same fate as
+    -- Arcanite Champion (12790, note below). The chance-on-hit
+    -- protection layer already keeps them safe; sellChanceOnHitKnown
+    -- can't release them until autolearn observes an extraction that
+    -- links the vanilla spell to the real PE affix ID. Left un-seeded
+    -- so a wrong hardcoded ID can't mask a real autolearn event.
+    -- Hammer of Destiny (31322)   -> vanilla proc "Destiny Fulfilled" (38284)
+    -- Greatsword of Forlorn Visions (28367) -> vanilla proc "Armor Buff" (34199)
     -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
     -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
     -- spell, not the PE affix id EC matches in learnedAffixes (in-game
@@ -1653,9 +1685,19 @@ local EC_EXTRACTABLE_EQUIP_LOCS = {
 -- the chance-on-hit-protection outer gates in EC_IsSellable +
 -- describeSellability + EC_AnnotateTooltip so all three surfaces agree
 -- on the "non-weapons don't need protection" rule.
+-- v2.66.1 (Serv report): also return false for items in the
+-- NEVER_EXTRACTABLE list, so weapons the Anvil refuses (Blazing Rapier,
+-- Frostguard, Felstriker, etc.) stop being wedged in bags by the
+-- chance-on-hit protection layer. Mirrors the v2.60.0 non-weapon
+-- fall-through: extraction can't happen -> protection has no reading ->
+-- item obeys normal quality / list rules. Alt+Right-Click -> Keep List
+-- still works for individual overrides.
 function EC_compCache.isExtractableWeaponSlot(itemID)
     if not itemID or not GetItemInfo then
         return true
+    end
+    if EC_CHANCE_PROC_NEVER_EXTRACTABLE[itemID] then
+        return false
     end
     local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
     if not equipLoc or equipLoc == "" then

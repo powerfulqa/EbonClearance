@@ -605,7 +605,10 @@ local function lootEnsureWindow()
         return lootWindow
     end
     local win = CreateFrame("Frame", "EbonClearanceLootWindow", UIParent)
-    win:SetFrameStrata("FULLSCREEN_DIALOG")
+    -- v2.66.1 (Serv report): TOOLTIP strata (not FULLSCREEN_DIALOG) so
+    -- the loot log sits above the Interface Options frame. Same reason
+    -- the Quickstart panel + Sold History window use TOOLTIP.
+    win:SetFrameStrata("TOOLTIP")
     win:SetSize(360, 440)
     win:SetPoint("CENTER")
     win:SetBackdrop({

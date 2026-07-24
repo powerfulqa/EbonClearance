@@ -229,7 +229,13 @@ local function historyEnsureWindow()
         return historyWindow
     end
     local win = CreateFrame("Frame", "EbonClearanceHistoryWindow", UIParent)
-    win:SetFrameStrata("FULLSCREEN_DIALOG")
+    -- v2.66.1 (Serv report): TOOLTIP strata (not FULLSCREEN_DIALOG) so the
+    -- window sits above the Interface Options frame. Same reason the
+    -- Quickstart panel uses TOOLTIP - FULLSCREEN_DIALOG ties in strata
+    -- with the Interface Options container, and whichever is shown last
+    -- wins the z-order tiebreaker. Opening Options after the pop-out
+    -- would hide it.
+    win:SetFrameStrata("TOOLTIP")
     win:SetSize(420, 460)
     win:SetPoint("CENTER")
     win:SetBackdrop({

@@ -1445,6 +1445,15 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     -- with no matching PE weapon affix (Pyromancy has an initial-hit
     -- component too; Venom is a Nature poison, not fire).
     [12777] = "Blazing Rapier",
+    -- v2.66.1 iter 2 (Serv Anvil verification, 2026-07-24): two more
+    -- items the Anvil refuses. Sword of Decay's "Reduces target's
+    -- Strength by 10 for 30 sec" is a single-attribute reduction with
+    -- no matching PE affix (Frailty reduces ALL attributes, not just
+    -- Strength). Toxic Revenger's "AoE Nature damage around caster"
+    -- has the same mechanic shape as Flame Wrath but Nature instead of
+    -- Fire - PE has no Nature-around-caster affix.
+    [1727]  = "Sword of Decay",
+    [9453]  = "Toxic Revenger",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1622,6 +1631,27 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     [12974] = { spellID = 700086, family = "Affliction", item = "The Black Knight" },
     [13146] = { spellID = 700121, family = "Fire Blast", item = "Shell Launcher Shotgun" },
     [13183] = { spellID = 700079, family = "Venom",      item = "Venomspitter" },
+    -- v2.66.1 iter 2 (captureproc + wowhead spellID cross-reference,
+    -- 2026-07-24): five more weapons whose proc text is a verbatim
+    -- match against the engrave-affix spellbook.
+    -- Sword of Corruption: shadow DoT (wowhead spell=17510 "Corruption");
+    --   matches Decay's "critical strikes have a chance to corrupt the
+    --   target, dealing Shadow damage every 3 sec" verbatim.
+    -- Supercharger Battle Axe: direct Nature blast (wowhead spell=13527
+    --   "Lightning Bolt"); matches Wilds' "blast the target dealing
+    --   Nature damage" - single-target Nature (not chain like
+    --   Thunderfury).
+    -- Searing Blade: fireball with DoT (wowhead spell=16413 "Fireball");
+    --   Pyromancy family (same as Burning War Axe).
+    -- Vibroblade: armor reduction (wowhead spell=11791 "Puncture Armor");
+    --   matches Rending's "chance to reduce the target's armor".
+    -- Bite of Serra'kis: poison Nature DoT (wowhead spell=8313 "Poison");
+    --   Venom family (same as Venomspitter).
+    [6904]  = { spellID = 700079, family = "Venom",      item = "Bite of Serra'kis" },
+    [9485]  = { spellID = 700081, family = "Rending",    item = "Vibroblade" },
+    [9486]  = { spellID = 700088, family = "Wilds",      item = "Supercharger Battle Axe" },
+    [12992] = { spellID = 700084, family = "Pyromancy",  item = "Searing Blade" },
+    [13032] = { spellID = 700091, family = "Decay",      item = "Sword of Corruption" },
     -- v2.66.1 deferred pairings - vanilla proc IDs known from wowhead,
     -- but the PE affix ID (700xxx / 900xxx) is unknown. Same fate as
     -- Arcanite Champion (12790, note below). The chance-on-hit

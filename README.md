@@ -11,9 +11,9 @@ Sells what you don't want. Keeps what you do. Knows the difference because it re
 
 ## How it sells
 
-- **Per-rarity auto-sell rules** (White / Green / Blue / Purple). Caps follow your equipped iLvl, or set a fixed max. Bind-type filter per rarity.
+- **Per-rarity auto-sell rules** (Common / Uncommon / Rare / Epic). Caps follow your equipped iLvl, or set a fixed max. Bind-type filter per rarity.
 - **Sell, Keep, and Delete lists**, per-character and account-wide. Bulk-add from your bags by colour, switch lists by activity with saved profiles.
-- **Sell known recipes** you've already learned, opt-in and per-rarity (White / Green / Blue / Purple). Per-rarity bind-type filter too (Any / BoE only / BoP only) so you can sell BoE patterns alts won't use while keeping the BoP ones. Learn-state is read per-character, so each alt only sells the patterns it already knows; unlearned ones stay safe.
+- **Sell known recipes** you've already learned, opt-in and per-rarity (Common / Uncommon / Rare / Epic). Per-rarity bind-type filter too (Any / BoE only / BoP only) so you can sell BoE patterns alts won't use while keeping the BoP ones. Learn-state is read per-character, so each alt only sells the patterns it already knows; unlearned ones stay safe.
 - **Tooltip says what will happen** before you vendor. `/ec sellinfo` traces every decision, and Alt+Right-Click → **Sell Info** gives the same trace for one item, so "why isn't this selling?" is one click away.
 
 ## What it protects
@@ -35,7 +35,7 @@ A complete enumeration of every feature lives in [docs/ADDON_GUIDE.md](docs/ADDO
 1. Head to the [latest release](https://github.com/powerfulqa/EbonClearance/releases/latest) and download the zip file.
 2. Extract the `EbonClearance` folder into your `Interface/AddOns` directory.
 3. Log in and type `/ec` to open the settings panel.
-4. Sensible defaults are seeded for new characters - White and Green auto-vendor below your equipped iLvl, equipped gear is auto-Kept, the Scavenger / auto-loot cycle are on. Tune from there.
+4. Sensible defaults are seeded for new characters - Common and Uncommon auto-vendor below your equipped iLvl, equipped gear is auto-Kept, the Scavenger / auto-loot cycle are on. Tune from there.
 
 Per-character on/off: tick / untick the **Enable EbonClearance** checkbox at the top of the main panel, right-click the minimap button, or type `/ec enable` / `/ec disable` to skip the addon on alts you'd rather it leave alone. Use `/ec status` to check the current state at any time.
 
@@ -54,7 +54,7 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 - **Statistics.** Lifetime + session counters side-by-side, reset independently. Includes per-rarity breakdowns of sells and deletions, top-5 most-sold and most-deleted items, lifetime Process Bags counters (Disenchant / Mill / Prospect / Pick Lock), and a top-zones leaderboard by lifetime gold earned at vendor. **Stats - Guild** pools opted-in guild/group members anonymously; **Stats - Server** (on by default as of v2.59.1; uncheck the panel toggle to opt out) is a realm-wide "collective odometer" showing the combined, anonymous totals of everyone online and sharing right now (gold vendored, items sold/deleted/processed, busiest zones, most-sold items, live sharer count) - not a leaderboard, never names. It rides a hidden chat channel (one channel slot while sharing is on) and can also carry realm-wide update alerts.
 - **Loot Log.** A resizable window (`/ec loot`, the main-panel or Stats-panel **Loot Log** buttons, or a key binding) listing everything you've looted, how many, its vendor value, and that value's share of your total looted gold - so you can see which drops earn and which are dead weight worth filtering or auto-deleting. Sort by name, count, or gold (count and gold diverge when a high-volume drop is low-value), filter by rarity, and right-click a row to hide that item so it stops skewing the shares (Unhide All restores them). Counts what you actually loot - your own loot, the auto-loot cycle, and the Greedy Scavenger's haul - and ignores items you buy, mail, withdraw from the bank, or get from quests. Three views: Session (this login), Character (this character's lifetime), Account (all characters). Alt+hover a row for EbonClearance's verdict on that item. Tallied per item, so it stays light no matter how long you farm.
 - **Sold History.** A window (`/ec history`, the main-panel **Sold History** button, or Alt+Right-Click any bag item) listing everything sold or deleted this session and the plain-English rule that decided it, newest-first. Filter by **All / Sold / Deleted**, search by item name or reason, and **Copy** the current view for a Discord paste. Records the whole session (v2.57.0 raised it from the old 20-entry cap to the full session), so nothing is lost during a long farm; session-only, clears on `/reload`.
-- **Updates.** "Tell me when an update is available" toggle on the main panel (on by default). EbonClearance learns the newest version from other users in your guild or group and shows one chat line with a clickable copy-link.
+- **Updates.** "Tell me when an update is available" toggle on the main panel (on by default). EbonClearance learns the newest version from other users in your guild or group and shows one chat line with a clickable copy-link. The newest version seen also stays on the main panel, on its own line under the toggle, so you can check it any time instead of having to catch the one chat line.
 - **Key Bindings (WoW).** Open settings, toggle enabled, force sell at current merchant, open/close the Loot Log, Process Next.
 - **Minimap button.** Left: options, Middle: Process Bags, Right: toggle.
 - **Alt+Right-Click any bag item** for a quick-action menu (add to Sell / Keep / Delete, Allow Sell on protected items, **Sell Info** for a per-item sell-decision trace, and **Sold History** for this session's sell/delete log).

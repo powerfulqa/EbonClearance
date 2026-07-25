@@ -154,7 +154,7 @@ local function EC_buildHelpEntries()
     {
         id = "version-update-alert",
         q = L["How do I know when there's a new version?"],
-        a = L['If another EbonClearance user in your guild or group has a newer version, you get one chat line at login telling you an update is available, with the download link. Turn this off with the "Tell me when an update is available" box on the main EbonClearance panel. EbonClearance cannot check for updates on its own; it learns the latest version from other players running it.'],
+        a = L['If another EbonClearance user in your guild or group has a newer version, you get one chat line at login telling you an update is available, with the download link. The newest version seen also shows on the main EbonClearance panel, under the "Tell me when an update is available" box, so you can check it any time. Turn the chat line off with that box. EbonClearance cannot check for updates on its own; it learns the latest version from other players running it.'],
         panel = nil,
     },
 

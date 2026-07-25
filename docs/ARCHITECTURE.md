@@ -64,7 +64,7 @@ One file per panel (or closely-related pair). All register centrally in
 | File | Owns |
 |------|------|
 | [EbonClearance_PanelInfra.lua](../EbonClearance_PanelInfra.lua) | The panel-width registry + reactivity layer (`EC_compCache`). Any widget that snapshots panel width MUST go through it. |
-| [EbonClearance_PanelWidgets.lua](../EbonClearance_PanelWidgets.lua) | Panel widget primitives. |
+| [EbonClearance_PanelWidgets.lua](../EbonClearance_PanelWidgets.lua) | Panel widget primitives, plus `NS.MakeStatRow` - the shared two-column stat row (`row.left` / `row.right` at a fixed value X) every stats surface uses so numbers stack in a column. |
 | [EbonClearance_ListWidget.lua](../EbonClearance_ListWidget.lua) | The reusable list-management widget (add input / search / sort / rarity filter). |
 
 ### Other UI & utility
@@ -110,13 +110,14 @@ anything that looks like dead code or a bug.
 | Add a `/ec` subcommand | the slash handler in `Events.lua` (and a row in `README.md`) |
 | Change a bag border or tooltip annotation | `BagDisplay.lua` / `Tooltip.lua` |
 | Send an addon-to-addon message | `NS.Comms` in `Comms.lua` |
+| Add or align a row on a stats surface | `NS.MakeStatRow` in `PanelWidgets.lua`; the refresh body lives in `MainPanel.lua` (`NS.RefreshStats`) |
 
 ## Verifying a change
 
 From the repo root:
 
 ```
-lua tests/run_all.lua          # all eight invariant suites in one shot
+lua tests/run_all.lua          # all ten invariant suites in one shot
 luac -p EbonClearance_*.lua     # syntax check every shipped file (luac5.1 in CI)
 luacheck *.lua                  # 0 warnings expected (runs in CI; see CLAUDE.md)
 ```

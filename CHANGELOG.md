@@ -5,6 +5,67 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.67.0
+
+**Stats read like a spreadsheet + the available update stays on screen + quality names replace colour words + eleven new chance-on-hit pairings.**
+
+## Stats - Personal is aligned and gold-only
+
+Serv's report: the stats screen was hard to scan. Values started at whatever X the label happened to end at, so nothing lined up, and every gold figure carried silver and copper that pushed the numbers around.
+
+- **Gold-only display.** Aggregate gold values render as whole gold. New `NS.CopperToGoldOnlyText` helper sits alongside the existing `NS.CopperToColoredText`, which still handles every surface that wants full precision.
+- **Fixed value columns everywhere.** Every section moved onto the shared `NS.MakeStatRow` two-column rig (`row.left` label, `row.right` value at a fixed X). That covers the aggregate rows, Sold by Quality, Deleted by Quality, both Top 5 lists, Top Zones, and Process Bags Totals. Numbers now stack in a column down the panel.
+- **Sold by Quality gets a third column** for its gold value, at its own fixed X so the "Xg" figures stack against each other as well as against the counts.
+- **Top 5 counts are white,** not gold. They are item counts, and rendering them in the gold colour read as money.
+
+## Stats gaps closed
+
+Sections are built with a fixed row count (8 quality buckets, 5 top-5 slots) and unused rows are hidden. A hidden row still occupies its 14px slot in the anchor chain, so a partially-filled section left a hole above the next header - up to about 42px between "Sold by Quality" and "Deleted by Quality".
+
+Fixed by re-anchoring at refresh time: each section header now attaches to the **last visible row** of the section above it rather than to a fixed row index. Padding lands at a natural 10px regardless of how many buckets have data.
+
+Process Bags Totals takes the simpler route and always renders all four operations, greying out any with a count of zero. No hidden middle row, so no hole where Milling would sit when you have not milled anything.
+
+## The available update stays on the panel
+
+Previously the newest version heard from another player was announced once in chat at login and then gone. Miss that line and there was no way to see it again.
+
+`NS.Comms` now tracks the highest version it has heard on the addon channel and exposes it as `Comms.GetLatestPeerVersion()`. The main panel shows it on its own line under the **Tell me when an update is available** toggle, appearing only when an update actually exists. Widgets below the toggle re-anchor dynamically, so they stay in the checkbox column whether or not the notice is showing.
+
+## Quality names instead of colour words
+
+The Merchant panel referred to rarities as White / Green / Blue / Purple. Those are the tooltip colours, not the game's names for them, and a new player reading "Purple" has to translate it. Now reads **Common / Uncommon / Rare / Epic** throughout, including the recipe-quality row. README updated to match.
+
+## Alignment pass
+
+- **Merchant** and **Scavenger** panels: `[?]` help icons aligned, following the Keep Settings pattern the panels already had right.
+- **Item Highlighting**: the Change colour buttons align in a column, positioned off the widest label rather than each following its own label.
+- `NS.AddCheckbox` label inset raised so a `[?]` anchored past the label clears the scrollbar zone.
+
+## Chance-on-hit pairings
+
+Eleven pairings added across this cycle from `/ec captureproc` dumps plus Anvil verification:
+
+- Bite of Serra'kis (6904) and Venomspitter (13183) -> **Venom**
+- Vibroblade (9485) -> **Rending**
+- Supercharger Battle Axe (9486) -> **Wilds**
+- Searing Blade (12992) and Burning War Axe (2299) -> **Pyromancy**
+- Sword of Corruption (13032) -> **Decay**
+- Claw of the Shadowmancer (2912) and The Black Knight (12974) -> **Affliction**
+- Shell Launcher Shotgun (13146) -> **Fire Blast**
+- Blade of Unquenched Thirst (31193) -> **Vampirism**, second item in that family alongside Glaive of the Pit. Its proc is vanilla Drain Life, and Vampirism is the only life-steal affix in the 700xxx weapon family.
+
+Three items Anvil-verified as **not** extractable and added to the never-extractable set: Blazing Rapier (12777), Sword of Decay (1727), Toxic Revenger (9453). Items in that set now bypass chance-on-hit protection entirely, since there is nothing to protect.
+
+## Fixes
+
+- Loot Log and Sold History pop-outs now sit above Interface Options. Both shared `FULLSCREEN_DIALOG` strata with the Options container, and WoW's z-order tiebreaker gives priority to whichever was shown most recently. Both moved to `TOOLTIP` strata, the same trick the Quickstart panel already uses.
+
+## Docs
+
+In-game Help FAQ, README, and `docs/ARCHITECTURE.md` all updated for the version notice, quality wording, and `NS.MakeStatRow`. Locale templates carry translated entries for the changed Help answer.
+
+
 ### v2.66.0
 
 **Keep BoE affixes below rank floor for auction + BoE-toggle rename pass + shorter labels + panel reorder + red "PE not detected" warning + specific BoE tooltip labels.**

@@ -39,6 +39,8 @@ from `Bindings.xml`.
 | [EbonClearance_Comms.lua](../EbonClearance_Comms.lua) | `NS.Comms` addon-to-addon transport + the version-update gossip. |
 | [EbonClearance_GuildShare.lua](../EbonClearance_GuildShare.lua) | Opt-in, anonymous-by-default guild/group stats sharing (a `NS.Comms` consumer). |
 | [EbonClearance_ProcShare.lua](../EbonClearance_ProcShare.lua) | Opt-in, anonymous chance-on-hit proc-pairing sharing across the guild (a `NS.Comms` consumer, v2.53.0). |
+| [EbonClearance_RealmComms.lua](../EbonClearance_RealmComms.lua) | `NS.RealmComms` - a hidden-chat-channel transport sibling of `NS.Comms`, because 3.3.5a `SendAddonMessage` cannot reach the whole realm (v2.58.0). |
+| [EbonClearance_ServerShare.lua](../EbonClearance_ServerShare.lua) | The realm-wide anonymous stats odometer (a `NS.RealmComms` consumer). Aggregates per sender, so a re-send never double-counts. |
 
 ### Interface Options panels (feature UI)
 
@@ -56,6 +58,7 @@ One file per panel (or closely-related pair). All register centrally in
 [ProfilesPanel](../EbonClearance_ProfilesPanel.lua) ·
 [StatsPanel](../EbonClearance_StatsPanel.lua) ·
 [GuildPanel](../EbonClearance_GuildPanel.lua) ·
+[ServerStatsPanel](../EbonClearance_ServerStatsPanel.lua) ·
 [QuickstartPanel](../EbonClearance_QuickstartPanel.lua) ·
 [HelpPanel](../EbonClearance_HelpPanel.lua)
 
@@ -66,6 +69,17 @@ One file per panel (or closely-related pair). All register centrally in
 | [EbonClearance_PanelInfra.lua](../EbonClearance_PanelInfra.lua) | The panel-width registry + reactivity layer (`EC_compCache`). Any widget that snapshots panel width MUST go through it. |
 | [EbonClearance_PanelWidgets.lua](../EbonClearance_PanelWidgets.lua) | Panel widget primitives, plus `NS.MakeStatRow` - the shared two-column stat row (`row.left` / `row.right` at a fixed value X) every stats surface uses so numbers stack in a column. |
 | [EbonClearance_ListWidget.lua](../EbonClearance_ListWidget.lua) | The reusable list-management widget (add input / search / sort / rarity filter). |
+
+### Localization
+
+| File | Owns |
+|------|------|
+| [EbonClearance_Locale.lua](../EbonClearance_Locale.lua) | The `NS.L` lookup layer (v2.43.0). Resolves per-lookup, not copied at load, so `/ec locale <code\|auto>` switches live. Loads right after Core. |
+| [EbonClearance_Locale_frFR.lua](../EbonClearance_Locale_frFR.lua) · [EbonClearance_Locale_deDE.lua](../EbonClearance_Locale_deDE.lua) | Translation templates. The English string IS the key; an empty value falls back to English. See [TRANSLATING.md](TRANSLATING.md). |
+
+Player-facing strings are wrapped at the call site as `L["English text"]`
+(`local L = NS.L`). `tests/test_locale_coverage.lua` fails the build if a new
+`L[]` key has no slot in both templates, so a string cannot ship untranslatable.
 
 ### Other UI & utility
 

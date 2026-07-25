@@ -464,7 +464,7 @@ would be:
 | AceConfigDialog-3.0  | panels collapse to one options table       |
 | AceTimer-3.0         | The four OnUpdate timer frames             |
 
-Use a WotLK-compatible Ace3 revision (r1196–r1249 era; verify
+Use a WotLK-compatible Ace3 revision (r1196-r1249 era; verify
 `## Interface: 30300` on the tagged release before embedding).
 
 **What we steal without embedding.** The *shape* of AceConfig's options
@@ -2844,8 +2844,10 @@ so the exposures stay on the cross-file surface:
 
 - `NS.CreateListUI` - the scrollable item-list UI builder; called by
   every list-management panel.
-- `NS.AddScanByQualityRow` - the "Add from bags: White / Green /
-  Blue" bulk-add row used by Sell List + Account Sell List.
+- `NS.AddScanByQualityRow` - the "Add from bags: Common / Uncommon /
+  Rare" bulk-add row used by Sell List + Account Sell List. (Labelled
+  White / Green / Blue before v2.67.1; the buttons keep their rarity
+  colour codes, only the words changed.)
 
 Moved into the new file:
 

@@ -6123,9 +6123,13 @@ NS.IsSellable = EC_IsSellable
 -- out fully (unlike the tooltip), and because the signal comes straight from
 -- EC_IsSellable the explanation can't drift from the real sell logic.
 function EC_compCache.sellReasonForSignal(signal, quality, rule)
-    local rarity = (quality == 1 and L["White"])
-        or (quality == 2 and L["Green"])
-        or (quality == 3 and L["Blue"])
+    -- v2.67.1: quality NAMES, not tooltip colour words. This expression
+    -- used to read White / Green / Blue / Epic - three colours and one
+    -- quality name, so the same window could print "white item" and
+    -- "Epic item" a line apart. Matches the Merchant panel wording.
+    local rarity = (quality == 1 and L["Common"])
+        or (quality == 2 and L["Uncommon"])
+        or (quality == 3 and L["Rare"])
         or (quality == 4 and L["Epic"])
         or "?"
     if signal == "whitelist_char" then

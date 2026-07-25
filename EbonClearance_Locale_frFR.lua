@@ -469,11 +469,11 @@ NS.RegisterLocale("frFR", {
     ["Skipped |cffffff00%d|r already on another list."] = "|cffffff00%d|r ignoré(s), déjà sur une autre liste.",
     ["Add from bags:"] = "Ajouter depuis les sacs :",
     ["Scanned bags: added |cffffff00%d|r %s items to %s."] = "Sacs scannés : |cffffff00%d|r objets %s ajoutés à %s.",
-    ["|cffffffffWhite|r"] = "|cffffffffBlanc|r",
+    ["|cffffffffCommon|r"] = "|cffffffffCommun|r",
     ["white"] = "blanc",
-    ["|cff1eff00Green|r"] = "|cff1eff00Vert|r",
+    ["|cff1eff00Uncommon|r"] = "|cff1eff00Inhabituel|r",
     ["green"] = "vert",
-    ["|cff0070ddBlue|r"] = "|cff0070ddBleu|r",
+    ["|cff0070ddRare|r"] = "|cff0070ddRare|r",
     ["blue"] = "bleu",
 
     -- EbonClearance_QuickstartPanel.lua

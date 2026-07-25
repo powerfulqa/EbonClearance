@@ -17,7 +17,7 @@
 --   * CreateListUI                          (assembles the above into one widget,
 --                                            wires OnClick / OnTextChanged handlers,
 --                                            owns the Refresh closure)
---   * EC_AddScanByQualityRow                (shared "Add from bags: White/Green/Blue"
+--   * EC_AddScanByQualityRow                (shared "Add from bags: Common/Uncommon/Rare"
 --                                            scan row used by both Sell List panels)
 --
 -- NS exposures published from this file (for panel files that call them
@@ -808,7 +808,7 @@ NS.CreateListUI = CreateListUI
 -- Shared "Add from bags" scan row used by both whitelist panels.
 -- setTableName resolves to the underlying list via NS.GetListTable, so the same
 -- helper drives the per-character whitelist and the account whitelist.
--- Build the "Add from bags: [White] [Green] [Blue]" scan row. Returns a
+-- Build the "Add from bags: [Common] [Uncommon] [Rare]" scan row. Returns a
 -- container Frame whose BOTTOMLEFT is the natural anchor for the next
 -- downstream widget (typically the list UI). Callers pass an anchorFrame
 -- (usually the panel description) so the row cascades when the description
@@ -857,14 +857,18 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
     scanLabel:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
     scanLabel:SetText(L["Add from bags:"])
 
-    local function MakeBtn(prevAnchor, leftPad, label, qualityNum, colorWord)
+    -- v2.67.1: buttons carry quality NAMES, not tooltip colour words
+    -- (matches the Merchant panel). Width raised 55 -> 74 because
+    -- "Uncommon" clips at 55; the colour codes stay so the row is still
+    -- scannable at a glance.
+    local function MakeBtn(prevAnchor, leftPad, label, qualityNum, qualityName)
         local b = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
-        b:SetSize(55, 20)
+        b:SetSize(74, 20)
         b:SetPoint("LEFT", prevAnchor, "RIGHT", leftPad, 0)
         b:SetText(label)
         b:SetScript("OnClick", function()
             local added, skipped = ScanBagsForQuality(qualityNum)
-            NS.PrintNicef(L["Scanned bags: added |cffffff00%d|r %s items to %s."], added, colorWord, listLabel)
+            NS.PrintNicef(L["Scanned bags: added |cffffff00%d|r %s items to %s."], added, qualityName, listLabel)
             if skipped and skipped > 0 then
                 NS.PrintNicef(L["Skipped |cffffff00%d|r already on another list."], skipped)
             end
@@ -876,9 +880,9 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
         return b
     end
 
-    local btnWhite = MakeBtn(scanLabel, 8, L["|cffffffffWhite|r"], 1, L["white"])
-    local btnGreen = MakeBtn(btnWhite, 4, L["|cff1eff00Green|r"], 2, L["green"])
-    MakeBtn(btnGreen, 4, L["|cff0070ddBlue|r"], 3, L["blue"])
+    local btnCommon = MakeBtn(scanLabel, 8, L["|cffffffffCommon|r"], 1, L["Common"])
+    local btnUncommon = MakeBtn(btnCommon, 4, L["|cff1eff00Uncommon|r"], 2, L["Uncommon"])
+    MakeBtn(btnUncommon, 4, L["|cff0070ddRare|r"], 3, L["Rare"])
 
     return rowFrame
 end

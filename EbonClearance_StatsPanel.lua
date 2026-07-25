@@ -162,12 +162,14 @@ StatsPanel:SetScript("OnShow", function(self)
         -- are the contract the test suite scans for - keep them literal
         -- (no table-driven indirection) so the static-pattern check can
         -- find them.
+        -- v2.66.1 iter (Serv report): aggregate rows now use NS.MakeStatRow
+        -- (row.left / row.right) so the value column aligns at a fixed X -
+        -- matches Stats - Guild / Stats - Server. RefreshStats writes to
+        -- row.left (label) and row.right (formatted value) instead of a
+        -- single :SetText on the FontString.
+        local AGGREGATE_VALUE_X = 200
         local function makeStatRow(yOffset, anchorPrev)
-            local fs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-            fs:SetPoint("TOPLEFT", anchorPrev, "BOTTOMLEFT", 0, yOffset)
-            EC_compCache.setPanelWidth(fs, 16)
-            fs:SetJustifyH("LEFT")
-            return fs
+            return NS.MakeStatRow(content, anchorPrev, yOffset, AGGREGATE_VALUE_X)
         end
 
         -- v2.38.1: first stat row anchors below the started-at note now
@@ -189,19 +191,36 @@ StatsPanel:SetScript("OnShow", function(self)
         panel.statsBestGPH = bestGPH
         local avgWorth = makeStatRow(-6, bestGPH)
         panel.statsAvgWorth = avgWorth
-        -- v2.37.0: Sold-by-Quality breakdown. Multi-line FontString; the
-        -- row height grows with the number of quality buckets that have
-        -- nonzero counts (RefreshStats emits 1-8 indented rows). Width
-        -- is registered via setPanelWidth so live panel-resize keeps
-        -- the text flush. Word-wrap is set TRUE explicitly (the same
-        -- guard every other panel uses for multi-line content) so a long
-        -- row wraps instead of truncating; the \n breaks RefreshStats
-        -- emits render as separate lines either way.
+        -- v2.66.1 iter (Serv report): Sold-by-Quality now header + per-
+        -- quality MakeStatRow so the value column aligns at TOP5_VALUE_X
+        -- (same X used by Top 5 lists below). RefreshStats writes to
+        -- row.left / row.right per quality bucket instead of a single
+        -- table.concat FontString.
         local qualityBreakdown = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         qualityBreakdown:SetPoint("TOPLEFT", avgWorth, "BOTTOMLEFT", 0, -10)
         EC_compCache.setPanelWidth(qualityBreakdown, 16)
         qualityBreakdown:SetJustifyH("LEFT")
         qualityBreakdown:SetJustifyV("TOP")
+        -- Also declare the row containers here so the anchor chain below
+        -- can descend past all 8 possible rows. Quality indices 0..7.
+        -- v2.66.1 iter 2 (Serv report): third column for Sold-by-Quality's
+        -- gold value. row.left = quality name, row.right = count, row.gold
+        -- = gold value at a fixed X column so the "Xg" values stack.
+        -- v2.66.1 iter 2 (Serv report): gold column moved closer to the
+        -- count column (was 320 - too far right). 260 keeps them visually
+        -- as a pair while still stacking to a fixed X across rows.
+        local SOLD_GOLD_X = 260
+        panel._soldByQualityRows = {}
+        local lastSoldQ = qualityBreakdown
+        for q = 0, 7 do
+            local row = NS.MakeStatRow(content, lastSoldQ, q == 0 and -2 or 0, 200)
+            row.gold = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+            row.gold:SetPoint("LEFT", row, "LEFT", SOLD_GOLD_X, 0)
+            row.gold:SetJustifyH("LEFT")
+            panel._soldByQualityRows[q] = row
+            lastSoldQ = row
+        end
+        panel._soldByQualityEmpty = NS.MakeStatRow(content, qualityBreakdown, -2, 200)
         if qualityBreakdown.SetWordWrap then
             qualityBreakdown:SetWordWrap(true)
         end
@@ -210,71 +229,107 @@ StatsPanel:SetScript("OnShow", function(self)
         -- per-rarity counts only (no copper, deletion produces no
         -- money). Rendered when DB.deletedItemsByQuality has any
         -- non-zero entry; reads "None yet" otherwise.
+        -- v2.66.1 iter: anchor descends past all 8 Sold-by-Quality rows.
+        -- Deleted-by-Quality itself becomes header + per-quality rows too.
         local deletedByQuality = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        deletedByQuality:SetPoint("TOPLEFT", qualityBreakdown, "BOTTOMLEFT", 0, -10)
+        deletedByQuality:SetPoint("TOPLEFT", lastSoldQ, "BOTTOMLEFT", 0, -10)
         EC_compCache.setPanelWidth(deletedByQuality, 16)
         deletedByQuality:SetJustifyH("LEFT")
         deletedByQuality:SetJustifyV("TOP")
-        if deletedByQuality.SetWordWrap then
-            deletedByQuality:SetWordWrap(true)
-        end
         panel.statsDeletedByQuality = deletedByQuality
-        -- v2.37.0: panel.statsMostSold is now a multi-line "Top 5 Most
-        -- Sold" widget. The name is preserved because Test 80 docs
-        -- reference it as a contract surface; the format changed from
-        -- single-line "Most Sold Item: ..." to a heading + up to five
-        -- ranked rows. RefreshStats writes the full block via
-        -- table.concat with "\n" so it grows row by row.
-        local mostSold = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        mostSold:SetPoint("TOPLEFT", deletedByQuality, "BOTTOMLEFT", 0, -10)
-        EC_compCache.setPanelWidth(mostSold, 16)
-        mostSold:SetJustifyH("LEFT")
-        mostSold:SetJustifyV("TOP")
-        if mostSold.SetWordWrap then
-            mostSold:SetWordWrap(true)
+        panel._deletedByQualityRows = {}
+        local lastDelQ = deletedByQuality
+        for q = 0, 7 do
+            local row = NS.MakeStatRow(content, lastDelQ, q == 0 and -2 or 0, 200)
+            panel._deletedByQualityRows[q] = row
+            lastDelQ = row
         end
-        panel.statsMostSold = mostSold
-        -- v2.37.x: Top 5 Most Deleted mirrors Top 5 Most Sold.
-        -- Reuses GetTopNItems over DB.deletedItemCounts.
-        local mostDeleted = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        mostDeleted:SetPoint("TOPLEFT", mostSold, "BOTTOMLEFT", 0, -10)
-        EC_compCache.setPanelWidth(mostDeleted, 16)
-        mostDeleted:SetJustifyH("LEFT")
-        mostDeleted:SetJustifyV("TOP")
-        if mostDeleted.SetWordWrap then
-            mostDeleted:SetWordWrap(true)
+        panel._deletedByQualityEmpty = NS.MakeStatRow(content, deletedByQuality, -2, 200)
+        -- v2.66.1 iter (Serv report): Top 5 lists converted from a single
+        -- FontString (with newline-joined rows) to a header + per-row
+        -- MakeStatRow containers so the count column aligns at a fixed
+        -- X - matches the spreadsheet-style alignment on Stats - Guild
+        -- and Stats - Server. RefreshStats writes to row.left (rank +
+        -- item name) and row.right (count) instead of a table.concat.
+        local TOP5_VALUE_X = 200
+        local function makeTopRow(anchor, yOff)
+            return NS.MakeStatRow(content, anchor, yOff, TOP5_VALUE_X)
         end
-        panel.statsMostDeleted = mostDeleted
+        -- Header FontString (unchanged in shape from v2.37.0).
+        local mostSoldHeader = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        -- v2.66.1 iter: descend past all 8 Deleted-by-Quality rows.
+        mostSoldHeader:SetPoint("TOPLEFT", lastDelQ, "BOTTOMLEFT", 0, -10)
+        EC_compCache.setPanelWidth(mostSoldHeader, 16)
+        mostSoldHeader:SetJustifyH("LEFT")
+        panel.statsMostSold = mostSoldHeader
+        panel._mostSoldHeader = mostSoldHeader
+        panel._mostSoldRows = {}
+        local lastMostSoldAnchor = mostSoldHeader
+        for i = 1, 5 do
+            local row = makeTopRow(lastMostSoldAnchor, i == 1 and -2 or 0)
+            panel._mostSoldRows[i] = row
+            lastMostSoldAnchor = row
+        end
+        panel._mostSoldEmpty = makeTopRow(mostSoldHeader, -2)
 
-        -- v2.37.0: Process Bags lifetime totals (Disenchant / Mill /
-        -- Prospect / Pick Lock). Multi-line; RefreshStats emits a
-        -- header plus one row per nonzero counter.
+        -- Top 5 Most Deleted mirrors Top 5 Most Sold.
+        local mostDeletedHeader = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        mostDeletedHeader:SetPoint("TOPLEFT", lastMostSoldAnchor, "BOTTOMLEFT", 0, -10)
+        EC_compCache.setPanelWidth(mostDeletedHeader, 16)
+        mostDeletedHeader:SetJustifyH("LEFT")
+        panel.statsMostDeleted = mostDeletedHeader
+        panel._mostDeletedHeader = mostDeletedHeader
+        panel._mostDeletedRows = {}
+        local lastMostDeletedAnchor = mostDeletedHeader
+        for i = 1, 5 do
+            local row = makeTopRow(lastMostDeletedAnchor, i == 1 and -2 or 0)
+            panel._mostDeletedRows[i] = row
+            lastMostDeletedAnchor = row
+        end
+        panel._mostDeletedEmpty = makeTopRow(mostDeletedHeader, -2)
+
+        -- v2.66.1 iter 4 (Serv report): Process Bags Totals converted from
+        -- a single multi-line FontString to a header + per-operation
+        -- MakeStatRow rig so the count column aligns at TOP5_VALUE_X -
+        -- matches the spreadsheet-style alignment elsewhere on the panel.
+        -- RefreshStats writes to row.left (operation label) and row.right
+        -- (count) instead of table.concat.
         local processTotals = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        processTotals:SetPoint("TOPLEFT", mostDeleted, "BOTTOMLEFT", 0, -10)
+        processTotals:SetPoint("TOPLEFT", lastMostDeletedAnchor, "BOTTOMLEFT", 0, -10)
         EC_compCache.setPanelWidth(processTotals, 16)
         processTotals:SetJustifyH("LEFT")
         processTotals:SetJustifyV("TOP")
-        if processTotals.SetWordWrap then
-            processTotals:SetWordWrap(true)
-        end
         panel.statsProcessTotals = processTotals
+        panel._processRows = {}
+        local lastProcess = processTotals
+        for i = 1, 4 do
+            local row = makeTopRow(lastProcess, i == 1 and -2 or 0)
+            panel._processRows[i] = row
+            lastProcess = row
+        end
+        panel._processEmpty = makeTopRow(processTotals, -2)
 
-        -- v2.37.0: Top zones by lifetime gold earned. RefreshStats emits
-        -- a header plus up to five ranked zone rows (gold-desc) so the
-        -- player can see where they've grossed the most.
+        -- v2.66.1 iter: Top zones header + per-zone MakeStatRow so the
+        -- gold column aligns at TOP5_VALUE_X.
         local topZones = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        topZones:SetPoint("TOPLEFT", processTotals, "BOTTOMLEFT", 0, -10)
+        topZones:SetPoint("TOPLEFT", lastProcess, "BOTTOMLEFT", 0, -10)
         EC_compCache.setPanelWidth(topZones, 16)
         topZones:SetJustifyH("LEFT")
         topZones:SetJustifyV("TOP")
-        if topZones.SetWordWrap then
-            topZones:SetWordWrap(true)
-        end
         panel.statsTopZones = topZones
+        panel._topZoneRows = {}
+        local lastZone = topZones
+        for i = 1, 5 do
+            local row = NS.MakeStatRow(content, lastZone, i == 1 and -2 or 0, 200)
+            panel._topZoneRows[i] = row
+            lastZone = row
+        end
+        panel._topZoneEmpty = NS.MakeStatRow(content, topZones, -2, 200)
 
         -- Footnote about buyback exclusion.
         local statsNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        statsNote:SetPoint("TOPLEFT", topZones, "BOTTOMLEFT", 0, -4)
+        -- v2.66.1 iter: descend past all 5 Top-Zones rows.
+        statsNote:SetPoint("TOPLEFT", lastZone, "BOTTOMLEFT", 0, -4)
         EC_compCache.setPanelWidth(statsNote, 16)
         statsNote:SetJustifyH("LEFT")
         statsNote:SetText(L["|cff888888Stats don't account for items bought back from a merchant.|r"])

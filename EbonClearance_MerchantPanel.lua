@@ -138,10 +138,10 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- Build-time table population. See the EC_WHITELIST_QUALITIES
         -- declaration above for why this can't run at file load.
         EC_WHITELIST_QUALITIES = {
-            { text = NS.ColorTextByQuality(1, L["White (Common)"]), value = 1 },
-            { text = NS.ColorTextByQuality(2, L["Green (Uncommon)"]), value = 2 },
-            { text = NS.ColorTextByQuality(3, L["Blue (Rare)"]), value = 3 },
-            { text = NS.ColorTextByQuality(4, L["Purple (Epic)"]), value = 4 },
+            { text = NS.ColorTextByQuality(1, L["Common"]), value = 1 },
+            { text = NS.ColorTextByQuality(2, L["Uncommon"]), value = 2 },
+            { text = NS.ColorTextByQuality(3, L["Rare"]), value = 3 },
+            { text = NS.ColorTextByQuality(4, L["Epic"]), value = 4 },
         }
 
         NS.MakeHeader(content, L["Merchant Settings"], -16)
@@ -184,6 +184,13 @@ MerchantPanel:SetScript("OnShow", function(self)
         UIDropDownMenu_SetWidth(modeDD, 180)
         UIDropDownMenu_SetText(modeDD, GetModeText(DB.merchantMode))
         UIDropDownMenu_Initialize(modeDD, MerchantModeInit)
+        -- v2.66.1 iter 3 (Serv report): back to inline [?] next to the
+        -- dropdown. Right-edge alignment via setPanelWidth on modeLabel
+        -- (iter 2) pushed modeDD off-screen because modeDD anchors to
+        -- modeLabel's RIGHT and modeLabel's frame became panel-wide.
+        -- Two-anchor SetPoint hack (iter 1) didn't visibly move it
+        -- either. Accept the inline position - matches the Scavenger
+        -- slider [?] pattern (also inline).
         NS.AddHelpIcon(content, modeDD, "LEFT", "RIGHT", 4, 2, "gate-merchant-mode")
 
         self.RefreshMerchantModeDropDown = function()
@@ -201,9 +208,10 @@ MerchantPanel:SetScript("OnShow", function(self)
         if rt then
             rt:SetText(L["Repair gear while selling"])
             -- v2.59.8: reactive width matches the shared NS.AddCheckbox
-            -- helper. The help-icon below uses GetStringWidth, not the
-            -- frame width, so [?] anchoring is unaffected.
-            EC_compCache.setPanelWidth(rt, 42)
+            -- helper. v2.66.1 iter: bumped from 42 to 60 (matching the
+            -- shared helper's new default) so the [?] icon at text:RIGHT
+            -- + 6 stays inside the scrollbar zone.
+            EC_compCache.setPanelWidth(rt, 60)
             rt:SetJustifyH("LEFT")
             if rt.SetWordWrap then
                 rt:SetWordWrap(true)
@@ -215,13 +223,12 @@ MerchantPanel:SetScript("OnShow", function(self)
         end)
         self.repairCB = repairCB
         if rt then
-            -- Same trick as Scavenger: text frame is reactive-width
-            -- (v2.59.8, was 420) for wrap support but the label only
-            -- takes ~150px. Anchor LEFT-to-LEFT using GetStringWidth so
-            -- the [?] sits right after the label - content-derived, so
-            -- the icon tracks resize / wrap correctly.
-            local strW = (rt.GetStringWidth and rt:GetStringWidth()) or 0
-            NS.AddHelpIcon(content, rt, "LEFT", "LEFT", strW + 6, 0, "gate-repair")
+            -- v2.66.1 iter (Serv report): right-edge-align across the
+            -- panel to match Keep Settings. Label FontString is already
+            -- reactive-wide via setPanelWidth above; anchor LEFT-to-RIGHT
+            -- puts the icon at the label's right edge (panel edge minus
+            -- inset).
+            NS.AddHelpIcon(content, rt, "LEFT", "RIGHT", 6, 0, "gate-repair")
         end
 
         -- Guild-bank funded repair. Indented under the master repair toggle so
@@ -245,8 +252,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         end)
         self.guildRepairCB = guildRepairCB
         if grt then
-            local strW = (grt.GetStringWidth and grt:GetStringWidth()) or 0
-            NS.AddHelpIcon(content, grt, "LEFT", "LEFT", strW + 6, 0, "gate-guild-bank-repair")
+            NS.AddHelpIcon(content, grt, "LEFT", "RIGHT", 6, 0, "gate-guild-bank-repair")
         end
 
         local keepBagsCB =
@@ -265,8 +271,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         end)
         self.keepBagsCB = keepBagsCB
         if kbt then
-            local strW = (kbt.GetStringWidth and kbt:GetStringWidth()) or 0
-            NS.AddHelpIcon(content, kbt, "LEFT", "LEFT", strW + 6, 0, "gate-keep-bags-open")
+            NS.AddHelpIcon(content, kbt, "LEFT", "RIGHT", 6, 0, "gate-keep-bags-open")
         end
 
         -- v2.37.7: slider label changed from "Vendoring Speed" to
@@ -295,7 +300,20 @@ MerchantPanel:SetScript("OnShow", function(self)
         )
         self.speedSlider = speedSlider
         speedSlider:SetWidth(200)
-        NS.AddHelpIcon(content, speedSlider, "LEFT", "TOPRIGHT", 6, 0, "gate-sell-speed")
+        -- v2.66.1 iter: anchor to the slider's label FontString (inline
+        -- with the label at the top of the slider) instead of the
+        -- slider frame's TOPRIGHT corner. Matches Keep Settings' slider
+        -- [?] pattern.
+        local speedSliderText = _G["EbonClearanceVendoringSpeedSliderText"]
+        NS.AddHelpIcon(
+            content,
+            speedSliderText or speedSlider,
+            "LEFT",
+            speedSliderText and "RIGHT" or "TOPRIGHT",
+            6,
+            0,
+            "gate-sell-speed"
+        )
 
         -- v2.37.7: live items/sec readout. Updated whenever the slider
         -- moves OR when Fast Mode / Turbo Mode toggles flip the
@@ -369,8 +387,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         do
             local fmt = _G[fastModeCB:GetName() .. "Text"]
             if fmt then
-                local strW = (fmt.GetStringWidth and fmt:GetStringWidth()) or 0
-                NS.AddHelpIcon(content, fmt, "LEFT", "LEFT", strW + 6, 0, "gate-fast-mode")
+                NS.AddHelpIcon(content, fmt, "LEFT", "RIGHT", 6, 0, "gate-fast-mode")
             end
         end
 
@@ -414,8 +431,7 @@ MerchantPanel:SetScript("OnShow", function(self)
         do
             local tmt = _G[turboModeCB:GetName() .. "Text"]
             if tmt then
-                local strW = (tmt.GetStringWidth and tmt:GetStringWidth()) or 0
-                NS.AddHelpIcon(content, tmt, "LEFT", "LEFT", strW + 6, 0, "gate-turbo-mode")
+                NS.AddHelpIcon(content, tmt, "LEFT", "RIGHT", 6, 0, "gate-turbo-mode")
             end
         end
 
@@ -764,7 +780,10 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- rarity, each writing DB.sellKnownRecipeQualities[q]. Greyed out when
         -- the parent is off. Each row has a Bind dropdown mirroring the
         -- per-rarity bind-type filter on the quality rules above.
-        local recipeQualityLabels = { L["White"], L["Green"], L["Blue"], L["Epic"] }
+        -- v2.66.1 iter (Serv report): colour words replaced with quality
+        -- names ("Common"/"Uncommon"/"Rare"/"Epic"). Matches the quality-
+        -- threshold rows above.
+        local recipeQualityLabels = { L["Common"], L["Uncommon"], L["Rare"], L["Epic"] }
         local recipeQualityCBs = {}
         local recipeBindDDs = {}
         local recipeAnchor = sellRecipesCB

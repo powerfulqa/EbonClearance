@@ -182,25 +182,22 @@ function NS.RefreshStats()
         if not showSession then
             return ""
         end
-        return "  |cff888888(session +" .. NS.CopperToColoredText(c or 0) .. "|cff888888)|r"
+        return "  |cff888888(session +" .. NS.CopperToGoldOnlyText(c or 0) .. "|cff888888)|r"
     end
-    panel.statsMoney:SetText(
-        L["Total Money Made: "] .. NS.CopperToColoredText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper)
-    )
-    panel.statsSold:SetText(
-        L["Total Items Sold: "] .. num(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold)
-    )
-    panel.statsDeleted:SetText(
-        L["Total Items Deleted: "] .. num(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted)
-    )
-    panel.statsRepairs:SetText(
-        L["Total Repairs: "] .. num(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs)
-    )
-    panel.statsRepairCost:SetText(
-        L["Total Repair Cost: "]
-            .. NS.CopperToColoredText(src.totalRepairCopper or 0)
-            .. sessionMoneySuffix(NS.session.repairCopper)
-    )
+    -- v2.66.1 iter (Serv report): aggregate rows are now two-column
+    -- MakeStatRow containers (row.left = label, row.right = value).
+    -- Label stays static, value updates per refresh; session-suffix is
+    -- appended to the value cell so it flows with the same column.
+    panel.statsMoney.left:SetText(L["Total Money Made"])
+    panel.statsMoney.right:SetText(NS.CopperToGoldOnlyText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper))
+    panel.statsSold.left:SetText(L["Total Items Sold"])
+    panel.statsSold.right:SetText(num(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold))
+    panel.statsDeleted.left:SetText(L["Total Items Deleted"])
+    panel.statsDeleted.right:SetText(num(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted))
+    panel.statsRepairs.left:SetText(L["Total Repairs"])
+    panel.statsRepairs.right:SetText(num(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs))
+    panel.statsRepairCost.left:SetText(L["Total Repair Cost"])
+    panel.statsRepairCost.right:SetText(NS.CopperToGoldOnlyText(src.totalRepairCopper or 0) .. sessionMoneySuffix(NS.session.repairCopper))
 
     -- v2.35.x: Session + Best Gold/Hour. See
     -- docs/specs/2026-05-26-gph-stats-design.md for the design.
@@ -233,16 +230,14 @@ function NS.RefreshStats()
         sessionGPH = math.floor((NS.session.copper / elapsed) * 3600)
     end
     if panel.statsSessionGPH then
+        panel.statsSessionGPH.left:SetText(L["Session Gold/Hour"])
         if sessionGPH then
-            panel.statsSessionGPH:SetText(
-                L["Session Gold/Hour: "]
-                    .. NS.CopperToColoredText(sessionGPH)
+            panel.statsSessionGPH.right:SetText(
+                NS.CopperToGoldOnlyText(sessionGPH)
                     .. string.format("  |cff888888(%s)|r", humanDuration(elapsed))
             )
         else
-            panel.statsSessionGPH:SetText(
-                L["Session Gold/Hour: |cff888888-  (computing...)|r"]
-            )
+            panel.statsSessionGPH.right:SetText(L["|cff888888-  (computing...)|r"])
         end
     end
 
@@ -304,13 +299,14 @@ function NS.RefreshStats()
             if view == "account" and src.bestGPHChar and src.bestGPHChar ~= "" then
                 charSuffix = string.format(L[" on %s"], src.bestGPHChar)
             end
-            panel.statsBestGPH:SetText(
-                L["Best Gold/Hour: "]
-                    .. NS.CopperToColoredText(best)
-                    .. string.format(L["\n  |cff888888in %s, %s%s|r"], zone, when, charSuffix)
+            panel.statsBestGPH.left:SetText(L["Best Gold/Hour"])
+            panel.statsBestGPH.right:SetText(
+                NS.CopperToGoldOnlyText(best)
+                    .. string.format(L["  |cff888888in %s, %s%s|r"], zone, when, charSuffix)
             )
         else
-            panel.statsBestGPH:SetText(L["Best Gold/Hour: |cff888888-|r"])
+            panel.statsBestGPH.left:SetText(L["Best Gold/Hour"])
+            panel.statsBestGPH.right:SetText(L["|cff888888-|r"])
         end
     end
 
@@ -319,8 +315,9 @@ function NS.RefreshStats()
         -- only (no account aggregate). Account view shows a dash for
         -- this row since the average wouldn't be meaningful across
         -- characters with different equip levels.
+        panel.statsAvgWorth.left:SetText(L["Average Inventory Worth"])
         if view == "account" then
-            panel.statsAvgWorth:SetText(L["Average Inventory Worth: |cff888888- (per-character only)|r"])
+            panel.statsAvgWorth.right:SetText(L["|cff888888- (per-character only)|r"])
         else
             local cnt = DB.inventoryWorthCount or 0
             local total = DB.inventoryWorthTotal or 0
@@ -328,102 +325,173 @@ function NS.RefreshStats()
             if cnt > 0 then
                 avg = math.floor((total / cnt) + 0.5)
             end
-            panel.statsAvgWorth:SetText(L["Average Inventory Worth: "] .. NS.CopperToColoredText(avg))
+            panel.statsAvgWorth.right:SetText(NS.CopperToGoldOnlyText(avg))
         end
     end
 
+    -- v2.66.1 iter (Serv report): Sold-by-Quality now header + per-quality
+    -- MakeStatRow with .left (color-coded quality name) and .right (count
+    -- + gold value). Rows Hide when their quality bucket has 0 entries;
+    -- empty-state row Shows when all are 0.
     if panel.statsQualityBreakdown then
+        panel.statsQualityBreakdown:SetText(L["|cffffd200Sold by Quality|r"])
+    end
+    -- v2.66.1 iter 3 (Serv report): SetHeight-based collapse was tried
+    -- earlier this iteration but caused subsequent sections to fail to
+    -- render on the user's client - reverted. Rows are just Hidden when
+    -- empty; the vertical gap between the last data row and the next
+    -- section header remains because Hidden rows still occupy their
+    -- 14px slot in the anchor chain. A future refactor could re-anchor
+    -- the next section header at refresh time (dynamic chaining) but
+    -- for now visible-stats-with-gaps beats invisible-stats-no-gaps.
+    if panel._soldByQualityRows and panel._soldByQualityEmpty then
         local items = src.soldItemsByQuality or {}
         local copper = src.soldCopperByQuality or {}
-        local rows = { L["|cffffd200Sold by Quality|r"] }
         local any = false
         for q = 0, 7 do
+            local row = panel._soldByQualityRows[q]
             local cnt = items[q]
-            if cnt and cnt > 0 then
-                any = true
-                -- v2.37.x: x-prefixed grey count + " - " separator
-                -- between count and money so two adjacent number groups
-                -- don't read as a single long number. Matches the Top 5
-                -- row format ("name  x42") for visual consistency.
-                rows[#rows + 1] = string.format(
-                    "  |cff%s%s|r: |cff888888x%s|r  |cff888888-|r  %s",
-                    QUALITY_HEX[q] or "ffffff",
-                    QUALITY_NAMES[q] or ("Quality " .. q),
-                    num(cnt),
-                    NS.CopperToColoredText(copper[q] or 0)
-                )
+            if row then
+                if cnt and cnt > 0 then
+                    any = true
+                    row.left:SetText(string.format(
+                        "  |cff%s%s|r",
+                        QUALITY_HEX[q] or "ffffff",
+                        QUALITY_NAMES[q] or ("Quality " .. q)
+                    ))
+                    row.right:SetText(string.format("|cff888888x%s|r", num(cnt)))
+                    if row.gold then
+                        row.gold:SetText(NS.CopperToGoldOnlyText(copper[q] or 0))
+                    end
+                    row:Show()
+                else
+                    row.left:SetText("")
+                    row.right:SetText("")
+                    if row.gold then
+                        row.gold:SetText("")
+                    end
+                    row:Hide()
+                end
             end
         end
         if not any then
-            rows[#rows + 1] = L["  |cff888888Nothing sold yet.|r"]
+            panel._soldByQualityEmpty.left:SetText(L["  |cff888888Nothing sold yet.|r"])
+            panel._soldByQualityEmpty.right:SetText("")
+            panel._soldByQualityEmpty:Show()
+        else
+            panel._soldByQualityEmpty:Hide()
         end
-        panel.statsQualityBreakdown:SetText(table.concat(rows, "\n"))
     end
 
     if panel.statsDeletedByQuality then
+        panel.statsDeletedByQuality:SetText(L["|cffffd200Deleted by Quality|r"])
+    end
+    if panel._deletedByQualityRows and panel._deletedByQualityEmpty then
         local items = src.deletedItemsByQuality or {}
-        local rows = { L["|cffffd200Deleted by Quality|r"] }
         local any = false
         for q = 0, 7 do
+            local row = panel._deletedByQualityRows[q]
             local cnt = items[q]
-            if cnt and cnt > 0 then
-                any = true
-                rows[#rows + 1] = string.format(
-                    "  |cff%s%s|r: |cff888888x%s|r",
-                    QUALITY_HEX[q] or "ffffff",
-                    QUALITY_NAMES[q] or ("Quality " .. q),
-                    num(cnt)
-                )
+            if row then
+                if cnt and cnt > 0 then
+                    any = true
+                    row.left:SetText(string.format(
+                        "  |cff%s%s|r",
+                        QUALITY_HEX[q] or "ffffff",
+                        QUALITY_NAMES[q] or ("Quality " .. q)
+                    ))
+                    row.right:SetText(string.format("|cff888888x%s|r", num(cnt)))
+                    row:Show()
+                else
+                    row.left:SetText("")
+                    row.right:SetText("")
+                    row:Hide()
+                end
             end
         end
         if not any then
-            rows[#rows + 1] = L["  |cff888888Nothing deleted yet.|r"]
+            panel._deletedByQualityEmpty.left:SetText(L["  |cff888888Nothing deleted yet.|r"])
+            panel._deletedByQualityEmpty.right:SetText("")
+            panel._deletedByQualityEmpty:Show()
+        else
+            panel._deletedByQualityEmpty:Hide()
         end
-        panel.statsDeletedByQuality:SetText(table.concat(rows, "\n"))
     end
 
+    -- v2.66.1 iter (Serv report): Top 5 lists now render via per-row
+    -- MakeStatRow containers so the count column aligns at a fixed X -
+    -- matches Stats - Guild / Stats - Server. Header widget still lives
+    -- on panel.statsMostSold / panel.statsMostDeleted (name preserved
+    -- as a contract surface); the actual data rows live on
+    -- panel._mostSoldRows / panel._mostDeletedRows (built in
+    -- EbonClearance_StatsPanel.lua's buildCallback).
     if panel.statsMostSold then
+        panel.statsMostSold:SetText(L["|cffffd200Top 5 Most Sold|r"])
+    end
+    if panel._mostSoldRows and panel._mostSoldEmpty then
         local top = GetTopNItems(src.soldItemCounts, 5)
-        if #top == 0 then
-            panel.statsMostSold:SetText(L["|cffffd200Top 5 Most Sold|r\n  |cff888888Nothing sold yet.|r"])
-        else
-            local rows = { L["|cffffd200Top 5 Most Sold|r"] }
-            for i = 1, #top do
-                rows[#rows + 1] = string.format(
-                    "  %d. %s  |cff888888x|r|cffffd100%s|r",
-                    i,
-                    ItemLabel(top[i].id),
-                    num(top[i].count)
-                )
+        for i = 1, 5 do
+            local row = panel._mostSoldRows[i]
+            local e = top[i]
+            if row then
+                if e then
+                    row.left:SetText(string.format("  %d. %s", i, ItemLabel(e.id)))
+                    row.right:SetText(string.format("|cff888888x|r|cffffffff%s|r", num(e.count)))
+                    row:Show()
+                else
+                    row.left:SetText("")
+                    row.right:SetText("")
+                    row:Hide()
+                end
             end
-            panel.statsMostSold:SetText(table.concat(rows, "\n"))
+        end
+        if #top == 0 then
+            panel._mostSoldEmpty.left:SetText(L["  |cff888888Nothing sold yet.|r"])
+            panel._mostSoldEmpty.right:SetText("")
+            panel._mostSoldEmpty:Show()
+        else
+            panel._mostSoldEmpty:Hide()
         end
     end
 
     if panel.statsMostDeleted then
+        panel.statsMostDeleted:SetText(L["|cffffd200Top 5 Most Deleted|r"])
+    end
+    if panel._mostDeletedRows and panel._mostDeletedEmpty then
         local top = GetTopNItems(src.deletedItemCounts, 5)
-        if #top == 0 then
-            panel.statsMostDeleted:SetText(L["|cffffd200Top 5 Most Deleted|r\n  |cff888888Nothing deleted yet.|r"])
-        else
-            local rows = { L["|cffffd200Top 5 Most Deleted|r"] }
-            for i = 1, #top do
-                rows[#rows + 1] = string.format(
-                    "  %d. %s  |cff888888x|r|cffffd100%s|r",
-                    i,
-                    ItemLabel(top[i].id),
-                    num(top[i].count)
-                )
+        for i = 1, 5 do
+            local row = panel._mostDeletedRows[i]
+            local e = top[i]
+            if row then
+                if e then
+                    row.left:SetText(string.format("  %d. %s", i, ItemLabel(e.id)))
+                    row.right:SetText(string.format("|cff888888x|r|cffffffff%s|r", num(e.count)))
+                    row:Show()
+                else
+                    row.left:SetText("")
+                    row.right:SetText("")
+                    row:Hide()
+                end
             end
-            panel.statsMostDeleted:SetText(table.concat(rows, "\n"))
+        end
+        if #top == 0 then
+            panel._mostDeletedEmpty.left:SetText(L["  |cff888888Nothing deleted yet.|r"])
+            panel._mostDeletedEmpty.right:SetText("")
+            panel._mostDeletedEmpty:Show()
+        else
+            panel._mostDeletedEmpty:Hide()
         end
     end
 
     if panel.statsProcessTotals then
+        panel.statsProcessTotals:SetText(L["|cffffd200Process Bags Totals|r"])
+    end
+    if panel._processRows and panel._processEmpty then
         local counts = src.processCastCounts or {}
-        local rows = { L["|cffffd200Process Bags Totals|r"] }
-        local any = false
         -- Fixed display order: Disenchant, Milling, Prospecting, Pick Lock.
-        -- Mirrors the Process Bags panel's section order.
+        -- Mirrors the Process Bags panel's section order. All four rows
+        -- always render even if the count is zero so there's no hidden
+        -- middle row leaving a gap; zero counts render greyed out.
         local order = { "Disenchant", "Milling", "Prospecting", "Pick Lock" }
         local labels = {
             Disenchant = L["Disenchanted"],
@@ -431,20 +499,30 @@ function NS.RefreshStats()
             Prospecting = L["Prospected"],
             ["Pick Lock"] = L["Lockboxes Picked"],
         }
-        for _, k in ipairs(order) do
+        for i = 1, 4 do
+            local row = panel._processRows[i]
+            local k = order[i]
             local n = counts[k] or 0
-            if n > 0 then
-                any = true
-                rows[#rows + 1] = string.format("  %s: %s", labels[k], num(n))
+            if row then
+                if n > 0 then
+                    row.left:SetText(string.format("  %s", labels[k]))
+                    row.right:SetText(string.format("|cffffffff%s|r", num(n)))
+                else
+                    row.left:SetText(string.format("  |cff888888%s|r", labels[k]))
+                    row.right:SetText("|cff888888" .. num(n) .. "|r")
+                end
+                row:Show()
             end
         end
-        if not any then
-            rows[#rows + 1] = L["  |cff888888Nothing processed yet.|r"]
-        end
-        panel.statsProcessTotals:SetText(table.concat(rows, "\n"))
+        panel._processEmpty:Hide()
     end
 
+    -- v2.66.1 iter (Serv report): Top Zones now header + per-zone
+    -- MakeStatRow so the gold column aligns at a fixed X.
     if panel.statsTopZones then
+        panel.statsTopZones:SetText(L["|cffffd200Top Zones (gold earned)|r"])
+    end
+    if panel._topZoneRows and panel._topZoneEmpty then
         local zones = src.copperByZone or {}
         local entries = {}
         for name, copper in pairs(zones) do
@@ -458,21 +536,107 @@ function NS.RefreshStats()
             end
             return a.copper > b.copper
         end)
-        local rows = { L["|cffffd200Top Zones (gold earned)|r"] }
-        if #entries == 0 then
-            rows[#rows + 1] = L["  |cff888888No zones tracked yet.|r"]
-        else
-            local cap = math.min(#entries, 5)
-            for i = 1, cap do
-                rows[#rows + 1] = string.format(
-                    "  %d. %s  %s",
-                    i,
-                    entries[i].name,
-                    NS.CopperToColoredText(entries[i].copper)
-                )
+        local cap = math.min(#entries, 5)
+        for i = 1, 5 do
+            local row = panel._topZoneRows[i]
+            local e = (i <= cap) and entries[i] or nil
+            if row then
+                if e then
+                    row.left:SetText(string.format("  %d. %s", i, e.name))
+                    row.right:SetText(NS.CopperToGoldOnlyText(e.copper))
+                    row:Show()
+                else
+                    row.left:SetText("")
+                    row.right:SetText("")
+                    row:Hide()
+                end
             end
         end
-        panel.statsTopZones:SetText(table.concat(rows, "\n"))
+        if #entries == 0 then
+            panel._topZoneEmpty.left:SetText(L["  |cff888888No zones tracked yet.|r"])
+            panel._topZoneEmpty.right:SetText("")
+            panel._topZoneEmpty:Show()
+        else
+            panel._topZoneEmpty:Hide()
+        end
+    end
+
+    -- v2.66.1 iter 4 (Serv report): dynamic gap closure. Each section
+    -- header re-anchors at refresh time to the LAST VISIBLE row of the
+    -- previous section, rather than staying pinned to row N of a fixed
+    -- N-row block. Hidden rows still occupy their 14px slot in the
+    -- static anchor chain built by StatsPanel, so with (say) 5 of 8
+    -- quality buckets populated, the next section header would otherwise
+    -- sit ~42px below the last populated row. Re-anchoring closes those
+    -- gaps to a natural 10-14px header padding.
+    local function lastVisibleRow(rows, header, emptyRow, minIndex, maxIndex)
+        if rows then
+            for i = maxIndex, minIndex, -1 do
+                local row = rows[i]
+                if row and row:IsShown() then
+                    return row
+                end
+            end
+        end
+        if emptyRow and emptyRow:IsShown() then
+            return emptyRow
+        end
+        return header
+    end
+    local function reanchor(target, anchor, yOff)
+        if not target or not anchor then
+            return
+        end
+        target:ClearAllPoints()
+        target:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOff)
+    end
+    if panel.statsDeletedByQuality then
+        reanchor(
+            panel.statsDeletedByQuality,
+            lastVisibleRow(panel._soldByQualityRows, panel.statsQualityBreakdown, panel._soldByQualityEmpty, 0, 7),
+            -10
+        )
+    end
+    if panel.statsMostSold then
+        reanchor(
+            panel.statsMostSold,
+            lastVisibleRow(
+                panel._deletedByQualityRows,
+                panel.statsDeletedByQuality,
+                panel._deletedByQualityEmpty,
+                0,
+                7
+            ),
+            -10
+        )
+    end
+    if panel.statsMostDeleted then
+        reanchor(
+            panel.statsMostDeleted,
+            lastVisibleRow(panel._mostSoldRows, panel.statsMostSold, panel._mostSoldEmpty, 1, 5),
+            -10
+        )
+    end
+    if panel.statsProcessTotals then
+        reanchor(
+            panel.statsProcessTotals,
+            lastVisibleRow(panel._mostDeletedRows, panel.statsMostDeleted, panel._mostDeletedEmpty, 1, 5),
+            -10
+        )
+    end
+    if panel.statsTopZones then
+        reanchor(
+            panel.statsTopZones,
+            lastVisibleRow(panel._processRows, panel.statsProcessTotals, panel._processEmpty, 1, 4),
+            -10
+        )
+    end
+    if panel.statsNote then
+        reanchor(
+            panel.statsNote,
+            lastVisibleRow(panel._topZoneRows, panel.statsTopZones, panel._topZoneEmpty, 1, 5),
+            -4
+        )
     end
 end
 
@@ -763,6 +927,25 @@ local function BuildMainPanel(panel, content)
         -14
     )
 
+    -- v2.66.1 iter 2 (Serv report): notice appears BELOW the checkbox on
+    -- its own line, only when an update is detected. Widgets below
+    -- (minimapButtonCB, warnConflictCB, cmdHeader) dynamically re-anchor
+    -- to either the notice text (update available) or the checkbox
+    -- itself (on latest), so on-latest state closes the notice slot
+    -- entirely.
+    -- v2.66.1 iter 3 (Serv report): FontString is a direct child of
+    -- content (no wrapper frame). Earlier iterations wrapped the notice
+    -- in a Frame that toggled between height 0 and 16, but SetHeight(0)
+    -- on the wrapper broke the anchor chain for widgets below on the
+    -- user's client - the whole panel below the checkbox vanished when
+    -- no update was available. Direct FontString + dynamic re-anchor of
+    -- minimapButtonCB avoids the zero-height frame entirely.
+    local versionNotice = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    versionNotice:SetPoint("TOPLEFT", versionAlertCB, "BOTTOMLEFT", 26, -2)
+    versionNotice:SetJustifyH("LEFT")
+    versionNotice:SetText("")
+    versionNotice:Hide()
+
     -- v2.44.7: show / hide the EC minimap button. Workaround for clashes
     -- with minimap-replacement / magnifier addons (Magnify-WotLK was the
     -- trigger). EC stays fully functional with the button hidden via the
@@ -784,6 +967,26 @@ local function BuildMainPanel(panel, content)
         end,
         -2
     )
+
+    -- Now that minimapButtonCB exists, define the refresh that also
+    -- re-anchors the widget below the notice when an update is available.
+    -- The default anchor was set at build time (versionAlertCB.BOTTOMLEFT
+    -- -2); when a peer version is heard, we re-anchor to sit below the
+    -- notice line instead.
+    NS._refreshVersionNotice = function()
+        local latest = (NS.Comms and NS.Comms.GetLatestPeerVersion) and NS.Comms.GetLatestPeerVersion() or nil
+        minimapButtonCB:ClearAllPoints()
+        if latest then
+            versionNotice:SetText(string.format(L["|cffffff00Update available: %s|r"], latest))
+            versionNotice:Show()
+            minimapButtonCB:SetPoint("TOPLEFT", versionNotice, "BOTTOMLEFT", -26, -4)
+        else
+            versionNotice:SetText("")
+            versionNotice:Hide()
+            minimapButtonCB:SetPoint("TOPLEFT", versionAlertCB, "BOTTOMLEFT", 0, -2)
+        end
+    end
+    NS._refreshVersionNotice()
 
     -- v2.49.2: conflicting-addon warning opt-out. Sits with the other
     -- global toggles (version alert / minimap button) rather than in
@@ -1109,6 +1312,12 @@ MainOptions:SetScript("OnShow", function(self)
         end
         if refreshSelf.enableCB then
             refreshSelf.enableCB:SetChecked(NS.DB and NS.DB.enabled ~= false)
+        end
+        -- v2.66.1 iter: refresh the "Latest available" notice on panel
+        -- show so a peer version detected while the panel was hidden
+        -- surfaces the next time the player opens the panel.
+        if NS._refreshVersionNotice then
+            NS._refreshVersionNotice()
         end
     end, function(buildSelf, content)
         -- v2.12.0: scroll-wrap the Main panel so the Slash Commands block

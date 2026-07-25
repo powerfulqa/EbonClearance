@@ -76,9 +76,11 @@ ScavengerPanel:SetScript("OnShow", function(self)
         local st = _G[sumCB:GetName() .. "Text"]
         if st then
             st:SetText(L["Summon |cffff7f7fGreedy Scavenger|r after selling"])
-            -- v2.59.8: reactive width. Help-icon anchoring further down
-            -- uses GetStringWidth, not the frame width.
-            EC_compCache.setPanelWidth(st, 42)
+            -- v2.59.8: reactive width. v2.66.1 iter: bumped from 42 to 60
+            -- (matching the shared NS.AddCheckbox helper's new default)
+            -- so the [?] icon at text:RIGHT + 6 stays inside the scrollbar
+            -- zone.
+            EC_compCache.setPanelWidth(st, 60)
             st:SetJustifyH("LEFT")
             if st.SetWordWrap then
                 st:SetWordWrap(true)
@@ -96,16 +98,13 @@ ScavengerPanel:SetScript("OnShow", function(self)
         end)
         self.sumCB = sumCB
         if st then
-            -- AddCheckbox sets the text FontString frame to a reactive
-            -- width (v2.59.8, was 420px) so long labels can wrap. For
-            -- short labels like this one (~170px), anchoring [?] to
-            -- text:RIGHT would put the icon past the visible text.
-            -- Anchor LEFT-to-LEFT using GetStringWidth (the actual
-            -- rendered text width) so the icon sits right after the
-            -- visible label. Content-derived, so the icon tracks
-            -- resize / wrap correctly.
-            local strW = (st.GetStringWidth and st:GetStringWidth()) or 0
-            NS.AddHelpIcon(content, st, "LEFT", "LEFT", strW + 6, 0, "scav-summon")
+            -- v2.66.1 iter (Serv report): [?] icons now right-edge-align
+            -- across the panel, matching the Keep Settings visual. The
+            -- label FontString is already reactive-wide via
+            -- EC_compCache.setPanelWidth(st, 42) above; anchoring LEFT-
+            -- to-RIGHT puts the icon at the label's right edge (which
+            -- is the panel edge minus the inset).
+            NS.AddHelpIcon(content, st, "LEFT", "RIGHT", 6, 0, "scav-summon")
         end
 
         local combatOnlyCB = NS.AddCheckbox(
@@ -125,8 +124,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         do
             local t = _G[combatOnlyCB:GetName() .. "Text"]
             if t then
-                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
-                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-combat-only")
+                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-combat-only")
             end
         end
 
@@ -155,8 +153,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         do
             local t = _G[restoreLoadCB:GetName() .. "Text"]
             if t then
-                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
-                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-restore-load")
+                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-restore-load")
             end
         end
 
@@ -184,7 +181,20 @@ ScavengerPanel:SetScript("OnShow", function(self)
         )
         self.delaySlider = delaySlider
         delaySlider:SetWidth(200)
-        NS.AddHelpIcon(content, delaySlider, "LEFT", "TOPRIGHT", 6, 0, "scav-summon-delay")
+        -- v2.66.1 iter (Serv report): anchor to the slider's label
+        -- FontString (which sits above the bar) instead of the slider
+        -- frame's TOPRIGHT, so the [?] sits inline next to the label
+        -- - matches the Keep Settings slider [?] pattern.
+        local delaySliderText = _G["EbonClearanceSummonDelaySliderText"]
+        NS.AddHelpIcon(
+            content,
+            delaySliderText or delaySlider,
+            "LEFT",
+            delaySliderText and "RIGHT" or "TOPRIGHT",
+            6,
+            0,
+            "scav-summon-delay"
+        )
 
         local cycleCB = NS.AddCheckbox(
             content,
@@ -208,12 +218,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         self.cycleCB = cycleCB
         local cycleCBText = _G[cycleCB:GetName() .. "Text"]
         if cycleCBText then
-            -- See the matching AddHelpIcon for sumCB above: AddCheckbox's
-            -- reactive-width text FontString (v2.59.8, was 420px) makes
-            -- text:RIGHT unreachable for short labels. Anchor LEFT-to-
-            -- LEFT past GetStringWidth instead.
-            local strW = (cycleCBText.GetStringWidth and cycleCBText:GetStringWidth()) or 0
-            NS.AddHelpIcon(content, cycleCBText, "LEFT", "LEFT", strW + 6, 0, "scav-autoloot-cycle")
+            NS.AddHelpIcon(content, cycleCBText, "LEFT", "RIGHT", 6, 0, "scav-autoloot-cycle")
         end
 
         -- threshSlider used to anchor to a multi-line cycleNote FontString
@@ -241,7 +246,17 @@ ScavengerPanel:SetScript("OnShow", function(self)
         )
         self.threshSlider = threshSlider
         threshSlider:SetWidth(200)
-        NS.AddHelpIcon(content, threshSlider, "LEFT", "TOPRIGHT", 6, 0, "scav-bag-threshold")
+        -- v2.66.1 iter: same slider-label anchor pattern as delaySlider above.
+        local threshSliderText = _G["EbonClearanceBagThresholdSliderText"]
+        NS.AddHelpIcon(
+            content,
+            threshSliderText or threshSlider,
+            "LEFT",
+            threshSliderText and "RIGHT" or "TOPRIGHT",
+            6,
+            0,
+            "scav-bag-threshold"
+        )
 
         local autoOpenCB = NS.AddCheckbox(
             content,
@@ -260,8 +275,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         do
             local t = _G[autoOpenCB:GetName() .. "Text"]
             if t then
-                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
-                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-auto-open")
+                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-auto-open")
             end
         end
 
@@ -306,8 +320,7 @@ ScavengerPanel:SetScript("OnShow", function(self)
         do
             local t = _G[fastLootCB:GetName() .. "Text"]
             if t then
-                local w = (t.GetStringWidth and t:GetStringWidth()) or 0
-                NS.AddHelpIcon(content, t, "LEFT", "LEFT", w + 6, 0, "scav-fast-loot")
+                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-fast-loot")
             end
         end
 

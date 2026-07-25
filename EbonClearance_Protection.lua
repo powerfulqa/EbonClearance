@@ -1652,6 +1652,19 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     [9486]  = { spellID = 700088, family = "Wilds",      item = "Supercharger Battle Axe" },
     [12992] = { spellID = 700084, family = "Pyromancy",  item = "Searing Blade" },
     [13032] = { spellID = 700091, family = "Decay",      item = "Sword of Corruption" },
+    -- v2.66.1 iter 3 (Serv extraction-confirmed, 2026-07-25): Blade of
+    -- Unquenched Thirst extracts at the Anvil - Serv has already pulled
+    -- this affix from it. Its proc is vanilla Drain Life (wowhead
+    -- spell=24585, "Steals 48 to 54 life from target enemy"), and
+    -- Vampirism is the only life-steal affix in the whole 700xxx weapon
+    -- family, so the pairing follows by elimination. Second item in the
+    -- Vampirism family alongside Glaive of the Pit (28774).
+    -- Note this does NOT make the two life-steal entries in
+    -- EC_CHANCE_PROC_NEVER_EXTRACTABLE wrong: Skullforge Reaver (13361)
+    -- and Reclaimed Shadowstrike (49302) were Anvil-refused on their own
+    -- merits. PE registers extraction per item, not per proc mechanic,
+    -- so matching proc text has never been sufficient evidence either way.
+    [31193] = { spellID = 700095, family = "Vampirism",  item = "Blade of Unquenched Thirst" },
     -- v2.66.1 deferred pairings - vanilla proc IDs known from wowhead,
     -- but the PE affix ID (700xxx / 900xxx) is unknown. Same fate as
     -- Arcanite Champion (12790, note below). The chance-on-hit

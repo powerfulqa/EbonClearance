@@ -242,11 +242,17 @@ local function AddCheckbox(parent, name, anchor, labelText, getter, setter, yOff
         t:SetText(labelText)
         -- v2.59.8 (Serv report): reactive width for the checkbox label.
         -- Pre-fix a bare SetWidth(420) overflowed the ~360px default
-        -- Interface Options panel width and froze at build time. The 42
-        -- inset matches the sibling note-FontString pattern (26 indent
-        -- past the checkbox anchor + 16 right margin). SetWordWrap on
-        -- so long labels wrap instead of clipping.
-        EC_compCache.setPanelWidth(t, 42)
+        -- Interface Options panel width and froze at build time.
+        -- SetWordWrap on so long labels wrap instead of clipping.
+        -- v2.66.1 iter (Serv report): inset raised from 42 to 60 so the
+        -- [?] help icon anchored to text:RIGHT + 6 stays inside the
+        -- scrollbar zone. Inset 42 left only ~26 px of margin past the
+        -- text frame's right edge, so the [?] icon (20 px wide) landed
+        -- underneath the scrollbar and clipped to "[" on both the
+        -- Scavenger and Merchant panels. 60 matches the Keep Settings
+        -- panel's manual-CB inset, which the user confirmed as the
+        -- correct alignment.
+        EC_compCache.setPanelWidth(t, 60)
         t:SetJustifyH("LEFT")
         if t.SetWordWrap then
             t:SetWordWrap(true)

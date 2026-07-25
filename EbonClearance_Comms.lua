@@ -105,6 +105,13 @@ local RELEASE_URL = "https://github.com/powerfulqa/EbonClearance/releases/latest
 local RELEASE_LINK = "|cff33ff33|Hecupdate:latest|h[Click here]|h|r"
 local NUDGE_DELAY_S = 3
 local versionNudgeShown = false -- once per session
+-- v2.66.1 iter (Serv report): remember the highest peer version we've
+-- seen this session so the Main panel can display "Latest available:
+-- vX.Y.Z" next to the update-alert toggle. The chat nudge only fires
+-- once per session, so a player who joined after the nudge could
+-- otherwise miss the info.
+local highestPeerVersionStr = nil
+local highestPeerVersionInt = 0
 
 local function myVersionStr()
     return NS.GetVersion and NS.GetVersion() or nil
@@ -206,11 +213,28 @@ local function considerPeerVersion(verStr, sender)
     if peerMaj > myMaj + 1 then
         return
     end
-    if peerInt > myInt and NS.Delay then
-        NS.Delay(NUDGE_DELAY_S, function()
-            showVersionNudge(verStr)
-        end)
+    if peerInt > myInt then
+        -- Track the highest peer version we've seen this session so the
+        -- Main panel can display it next to the update-alert toggle.
+        -- Same major-version sanity cap already applied above.
+        if peerInt > highestPeerVersionInt then
+            highestPeerVersionInt = peerInt
+            highestPeerVersionStr = verStr
+        end
+        if NS.Delay then
+            NS.Delay(NUDGE_DELAY_S, function()
+                showVersionNudge(verStr)
+            end)
+        end
     end
+end
+
+-- Exposed for the Main panel (EbonClearance_MainPanel.lua) to render
+-- next to the "Tell me when an update is available" toggle. Returns
+-- the version string of the highest-version peer we've seen this
+-- session, or nil if no peer has advertised a newer version than ours.
+Comms.GetLatestPeerVersion = function()
+    return highestPeerVersionStr
 end
 
 -- Exposed so the realm-wide share (NS.ServerShare) can feed peer versions it
@@ -285,6 +309,8 @@ function Comms.RunSelfTest()
 
     -- 2. Logic + UX check: simulate a higher-version peer through the real path.
     versionNudgeShown = false -- reset so the test is repeatable
+    highestPeerVersionStr = nil
+    highestPeerVersionInt = 0
     local myInt = Comms.parseVersion(myVer)
     if myInt then
         local maj = math.floor(myInt / 1000000)

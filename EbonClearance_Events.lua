@@ -2606,6 +2606,22 @@ local function CopperToColoredText(copper)
 end
 NS.CopperToColoredText = CopperToColoredText
 
+-- v2.66.1 iter (Serv report): gold-only variant for the Stats panel's
+-- aggregate lines (Total Money Made, Total Repair Cost, Session /
+-- Best Gold/Hour). Silver + copper are noise at multi-thousand-gold
+-- totals. Per-item vendor prices (loot log entries, bug report line
+-- items) still use the full CopperToColoredText above where the
+-- silver/copper components can be meaningful.
+local function CopperToGoldOnlyText(copper)
+    if not copper or copper < 0 then
+        copper = 0
+    end
+    local gold = math.floor(copper / 10000)
+    local goldText = (NS.CommaNumber and NS.CommaNumber(gold)) or tostring(gold)
+    return string.format("|cffF8D943%sg|r", goldText)
+end
+NS.CopperToGoldOnlyText = CopperToGoldOnlyText
+
 local function PrintNice(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[EbonClearance]|r " .. msg)
 end

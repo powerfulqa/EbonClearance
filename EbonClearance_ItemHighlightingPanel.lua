@@ -121,6 +121,16 @@ CharPanel:SetScript("OnShow", function(self)
             { key = "rule", label = L["Quality rule match (gold)"] },
         }
         local catSwatchUpdaters = {}
+        -- v2.66.1 iter (Serv report): buttons in this list used to float
+        -- right of each row's label + swatch, so the varying label widths
+        -- put each Change colour button at a different X. Track the row
+        -- widgets so a post-pass below can re-align swatch + button to a
+        -- fixed column past the widest label. All catCBs share the same
+        -- X (row-1 anchor offset + subsequent 0-offset chain), so the
+        -- fixed column is well-defined.
+        local rowCatCBTexts = {}
+        local rowCatSwatches = {}
+        local rowCatBtns = {}
 
         local lastRowAnchor = sbCB
         for i, cat in ipairs(SELL_BORDER_CATEGORIES) do
@@ -143,6 +153,7 @@ CharPanel:SetScript("OnShow", function(self)
                 catCBText:SetText(cat.label)
                 catCBText:SetJustifyH("LEFT")
             end
+            rowCatCBTexts[i] = catCBText
             catCB:SetScript("OnClick", function()
                 DB.sellBorderCategories[key].enabled = catCB:GetChecked() and true or false
                 PlaySound("igMainMenuOptionCheckBoxOn")
@@ -163,6 +174,7 @@ CharPanel:SetScript("OnShow", function(self)
             catSwatch:SetSize(16, 16)
             catSwatch:SetPoint("LEFT", catCBText or catCB, "RIGHT", 12, 0)
             catSwatch:SetTexture("Interface\\Buttons\\WHITE8X8")
+            rowCatSwatches[i] = catSwatch
 
             local function updateCatSwatch()
                 local entry = DB.sellBorderCategories[key]
@@ -183,6 +195,7 @@ CharPanel:SetScript("OnShow", function(self)
             catBtn:SetSize(110, 22)
             catBtn:SetPoint("LEFT", catSwatch, "RIGHT", 6, 0)
             catBtn:SetText(L["Change colour"])
+            rowCatBtns[i] = catBtn
             catBtn:SetScript("OnClick", function()
                 local c = DB.sellBorderCategories[key].color
                 local function commit(r, g, b, a)
@@ -235,6 +248,44 @@ CharPanel:SetScript("OnShow", function(self)
             end)
 
             lastRowAnchor = catCB
+        end
+
+        -- v2.66.1 iter (Serv report): re-align every row's swatch + button
+        -- to a fixed column past the widest label. Before this pass, each
+        -- row's swatch was anchored to that row's label RIGHT edge, and
+        -- the button was anchored to that row's swatch RIGHT edge - so
+        -- varying label widths put each button at a different X. Now:
+        --   [checkbox] [label] ... [swatch (aligned)] [button (aligned)]
+        -- All swatches column-align. All buttons column-align 22 px later
+        -- (16 px swatch + 6 px gap). Shorter labels have visible gap
+        -- between label end and swatch; the tradeoff is uniform column
+        -- alignment which reads cleaner than left-ragged buttons.
+        local maxLabelWidth = 0
+        for _, txt in ipairs(rowCatCBTexts) do
+            local w = (txt and txt.GetStringWidth and txt:GetStringWidth()) or 0
+            if w > maxLabelWidth then
+                maxLabelWidth = w
+            end
+        end
+        -- +12 gap between (aligned) column start and the swatch/button
+        -- pair, matching the original per-row gap. Anchors to the label
+        -- FontString's LEFT (which shares an X across all rows because
+        -- every catCB shares an X) + maxLabelWidth + gap.
+        local ALIGN_GAP = 12
+        for i, btn in ipairs(rowCatBtns) do
+            local txt = rowCatCBTexts[i]
+            local swatch = rowCatSwatches[i]
+            if txt then
+                if swatch then
+                    swatch:ClearAllPoints()
+                    swatch:SetPoint("LEFT", txt, "LEFT", maxLabelWidth + ALIGN_GAP, 0)
+                    btn:ClearAllPoints()
+                    btn:SetPoint("LEFT", swatch, "RIGHT", 6, 0)
+                else
+                    btn:ClearAllPoints()
+                    btn:SetPoint("LEFT", txt, "LEFT", maxLabelWidth + ALIGN_GAP + 16 + 6, 0)
+                end
+            end
         end
 
         -- v2.37.0 (Borrow C): item-level text overlay. Master toggle +

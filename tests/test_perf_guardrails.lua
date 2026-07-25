@@ -2880,10 +2880,11 @@ do
             )
         end
         check(
-            "EbonClearance_MainPanel.lua uses NS.CopperToColoredText",
-            code:find("NS%.CopperToColoredText%(") ~= nil
-                and code:find("[^.%w_]CopperToColoredText%(") == nil,
-            "stats display must call NS.CopperToColoredText (the local lives in EbonClearance_Events.lua)"
+            "EbonClearance_MainPanel.lua uses NS.CopperToColoredText / NS.CopperToGoldOnlyText",
+            (code:find("NS%.CopperToColoredText%(") ~= nil or code:find("NS%.CopperToGoldOnlyText%(") ~= nil)
+                and code:find("[^.%w_]CopperToColoredText%(") == nil
+                and code:find("[^.%w_]CopperToGoldOnlyText%(") == nil,
+            "stats display must call one of the NS-namespaced money formatters (both locals live in EbonClearance_Events.lua). v2.66.1 iter: stats display swapped to NS.CopperToGoldOnlyText for the aggregate lines - either form is acceptable."
         )
         -- Catch other common file-scope-locals-as-globals traps from the
         -- extraction: ADDON_AUTHOR / ADDON_URL / EC_session are file-

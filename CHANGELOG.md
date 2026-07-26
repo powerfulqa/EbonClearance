@@ -5,6 +5,52 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.68.0
+
+**The Loot Log no longer slows the game down + rarity and search filters on both pop-out windows.**
+
+## Account scope was degrading the whole client
+
+Reported by Serv: opening the Loot Log with the Account view selected made the entire game stutter, not just the window, and scrolling made it worst.
+
+The cause was one line of design: the refresh created a frame for every entry. With 5000+ items that is 5000 frames, each holding an icon texture and two FontStrings, so roughly 20,000 live UI objects. WoW's layout cost scales with live frame count across the whole interface, which is why the damage was global rather than confined to the list.
+
+**The list is now virtualised.** The row pool holds only what fits the viewport plus two (around 20 rows) and re-binds those same frames to a different slice of the list as you scroll. Frame count is constant no matter how long the list is, so Account now costs the same as Session. Nothing is hidden or truncated: the scroll range still spans the full list.
+
+**The safety refresh was also doing far too much.** It rebuilt everything every 2 seconds, forever - walking every item in the scope calling `GetItemInfo` and re-sorting, whether or not anything had changed. It now holds that fast cadence only while item names are still being resolved, then drops to 15 seconds. New loot still appears immediately.
+
+## Account view showed "item:3669" instead of names
+
+The Account view aggregates loot from every character, so it lists items the current character has never seen. Those are missing from the client's item cache, so they rendered as a raw ID with a "?" icon. Less visibly they also counted as 0 gold and were skipped by the rarity filter, because their price and quality were unknown too.
+
+Those rows now request their item data and fill in on their own within a few seconds, with the gold total climbing as they resolve. The requests are capped per refresh and per item so a handful that never resolve cannot retry forever.
+
+## New filters
+
+- **Rarity filter on Sold History**, the same control the Loot Log has. Combines with the All / Sold / Deleted buttons and the search box.
+- **Search box on the Loot Log**, matching the one Sold History already had. Type any part of an item name.
+- **Filters now rebase the totals.** Narrow to Epics and each row shows its share of your Epics, with the visible rows adding up to 100%. Previously every share was measured against everything you had ever looted, so a filtered view showed a handful of tiny percentages. The header counts rebase the same way, so the whole window describes one thing.
+- **Percentages show two decimals.** With thousands of distinct drops every share sits under about 1.5%, so at one decimal long runs of rows all read "0.8%" and the column ranked nothing.
+- **Numbers are comma-grouped** throughout the Loot Log, so "355869 looted" reads as "355,869 looted".
+
+## Two z-order fixes
+
+Both were fallout from raising these windows above the Interface Options frame in the v2.67.0 cycle:
+
+- The Loot Log's rarity dropdown opened **behind** the window, so clicking it appeared to do nothing.
+- Hovering a row put the tooltip **behind** the window, so half of it was unreadable. The same bug was latent on both of Sold History's hover paths, including the one that shows the full untruncated row text.
+
+Both are fixed through shared helpers, so any future pop-out inherits them instead of rediscovering the problem.
+
+## Chance-on-hit
+
+- Blade of Unquenched Thirst (31193) pairs to **Vampirism**, confirmed by extraction. Second weapon in that family alongside Glaive of the Pit.
+
+## Docs
+
+In-game Help entries for both windows, README, and `docs/ARCHITECTURE.md` updated for the new filters and shared helpers. French and German translations updated rather than left to fall back to English.
+
+
 ### v2.67.0
 
 **Stats read like a spreadsheet + the available update stays on screen + quality names replace colour words + eleven new chance-on-hit pairings.**

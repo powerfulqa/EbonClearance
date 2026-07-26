@@ -67,7 +67,7 @@ One file per panel (or closely-related pair). All register centrally in
 | File | Owns |
 |------|------|
 | [EbonClearance_PanelInfra.lua](../EbonClearance_PanelInfra.lua) | The panel-width registry + reactivity layer (`EC_compCache`). Any widget that snapshots panel width MUST go through it. |
-| [EbonClearance_PanelWidgets.lua](../EbonClearance_PanelWidgets.lua) | Panel widget primitives, plus `NS.MakeStatRow` - the shared two-column stat row (`row.left` / `row.right` at a fixed value X) every stats surface uses so numbers stack in a column. |
+| [EbonClearance_PanelWidgets.lua](../EbonClearance_PanelWidgets.lua) | Panel widget primitives, plus `NS.MakeStatRow` - the shared two-column stat row (`row.left` / `row.right` at a fixed value X) every stats surface uses so numbers stack in a column. Also `NS.MakeRarityDropdown` and the two z-order helpers (`NS.RaiseDropDownAbove`, `NS.RaiseTooltipAboveWindows`) that any TOOLTIP-strata pop-out needs - see the EC-TRAP notes there before adding a dropdown or tooltip to one. |
 | [EbonClearance_ListWidget.lua](../EbonClearance_ListWidget.lua) | The reusable list-management widget (add input / search / sort / rarity filter). |
 
 ### Localization

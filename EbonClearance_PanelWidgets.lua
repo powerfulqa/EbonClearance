@@ -158,6 +158,135 @@ function NS.MakeStatRow(parent, anchor, yOff, valueX)
     return row
 end
 
+-- v2.68.0 (Serv report): keep a dropdown flyout visible when its host
+-- window sits at TOOLTIP strata.
+--
+-- EC-TRAP: DropDownList1 / DropDownList2 are SHARED Blizzard frames
+-- living at a strata BELOW TOOLTIP. The Loot Log + Sold History windows
+-- run at TOOLTIP so they clear the Interface Options frame (v2.66.1), so
+-- an untouched flyout opens BEHIND its own window and reads to the
+-- player as "the dropdown does nothing". These helpers raise the shared
+-- list frames only while one of OUR dropdowns is open, and restore the
+-- saved strata/level on hide.
+--
+-- Do NOT "simplify" this to a single SetFrameStrata("TOOLTIP") at load.
+-- The list frames belong to the whole UI: leaving them raised would put
+-- every other addon's dropdown above everything for the rest of the
+-- session. Restore-on-hide is the point, not incidental.
+local ddSavedStrata = {}
+local ddRestoreHooked = false
+
+local function ecRestoreDropDownList(i)
+    local saved = ddSavedStrata[i]
+    if not saved then
+        return
+    end
+    local lf = _G["DropDownList" .. i]
+    if lf then
+        lf:SetFrameStrata(saved.strata)
+        lf:SetFrameLevel(saved.level)
+    end
+    ddSavedStrata[i] = nil
+end
+
+-- Raise the currently-open flyout above `win`. Called from the dropdown
+-- button's post-hook, by which point ToggleDropDownMenu has already
+-- shown the list (so IsShown is the right test for which level is up).
+function NS.RaiseDropDownAbove(win)
+    if not ddRestoreHooked then
+        ddRestoreHooked = true
+        -- Hooked once, not per open: HookScript accumulates handlers.
+        for i = 1, 2 do
+            local lf = _G["DropDownList" .. i]
+            if lf then
+                -- Per-index restore so closing a submenu cannot drop the
+                -- still-open parent list back behind the window.
+                lf:HookScript("OnHide", function()
+                    ecRestoreDropDownList(i)
+                end)
+            end
+        end
+    end
+    local base = (win and win.GetFrameLevel and win:GetFrameLevel()) or 0
+    for i = 1, 2 do
+        local lf = _G["DropDownList" .. i]
+        if lf and lf:IsShown() and not ddSavedStrata[i] then
+            ddSavedStrata[i] = { strata = lf:GetFrameStrata(), level = lf:GetFrameLevel() }
+            lf:SetFrameStrata("TOOLTIP")
+            -- Clear the window and everything parented inside it.
+            lf:SetFrameLevel(base + 20)
+        end
+    end
+end
+
+-- v2.68.0 (Serv report): keep GameTooltip visible over a TOOLTIP-strata
+-- window. Call immediately AFTER GameTooltip:Show().
+--
+-- EC-TRAP: GameTooltip parents under its owner. When the owner is a row
+-- inside a window that is itself at TOOLTIP strata (Loot Log, Sold
+-- History), the tooltip inherits a frame level BELOW that window and
+-- renders behind it - the tooltip is up, the player just cannot read
+-- half of it. GameTooltip:Raise() does NOT fix this: a toplevel parent
+-- still wins. Only an absolute frame level does.
+--
+-- 250 is the same value EbonClearance_QuickstartPanel.lua has used since
+-- v2.38.1 for the identical reason (Quickstart is TOOLTIP strata at
+-- level 100). Keep the two in step; this helper is the shared home for
+-- the trick so a third TOOLTIP-strata window does not have to
+-- rediscover it.
+function NS.RaiseTooltipAboveWindows()
+    if not GameTooltip then
+        return
+    end
+    GameTooltip:SetFrameStrata("TOOLTIP")
+    GameTooltip:SetFrameLevel(250)
+end
+
+-- Shared "Show: [rarity]" filter dropdown for the Loot Log + Sold
+-- History windows. Quality names come from the client's
+-- ITEM_QUALITYn_DESC globals so they are locale-correct without
+-- hand-written strings. onSelect receives the chosen quality number, or
+-- nil for "All rarities"; the caller stores it and re-renders. The
+-- selection lives on dd.selected so the check marks are self-managing.
+-- Installs the TOOLTIP-strata fix above, which is why both windows must
+-- build their dropdown through here rather than inline.
+function NS.MakeRarityDropdown(win, name, onSelect)
+    local opts = {
+        { text = L["All rarities"], q = nil },
+        { text = _G["ITEM_QUALITY0_DESC"] or "Poor", q = 0 },
+        { text = _G["ITEM_QUALITY1_DESC"] or "Common", q = 1 },
+        { text = _G["ITEM_QUALITY2_DESC"] or "Uncommon", q = 2 },
+        { text = _G["ITEM_QUALITY3_DESC"] or "Rare", q = 3 },
+        { text = _G["ITEM_QUALITY4_DESC"] or "Epic", q = 4 },
+    }
+    local dd = CreateFrame("Frame", name, win, "UIDropDownMenuTemplate")
+    UIDropDownMenu_SetWidth(dd, 100)
+    dd.selected = nil
+    UIDropDownMenu_Initialize(dd, function(_, level)
+        for _, opt in ipairs(opts) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = opt.text
+            info.checked = (dd.selected == opt.q)
+            info.func = function()
+                dd.selected = opt.q
+                UIDropDownMenu_SetText(dd, opt.text)
+                if onSelect then
+                    onSelect(opt.q)
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    UIDropDownMenu_SetText(dd, L["All rarities"])
+    local btn = _G[name .. "Button"]
+    if btn then
+        btn:HookScript("OnClick", function()
+            NS.RaiseDropDownAbove(win)
+        end)
+    end
+    return dd
+end
+
 -- Shared item hover for stat rows carrying row.itemID (the most-sold item
 -- lists on Stats - Guild / Stats - Server). Extracted with MakeStatRow -
 -- the OnEnter/OnLeave wiring was byte-identical in both panels.

@@ -411,15 +411,48 @@ end)
 -- Session Loot window
 -- ============================================================
 -- Standalone floating window opened by the Stats panel's "Session Loot"
--- button and by /ec loot. Read-only scroll list of items looted, count
--- only, in two scopes: Session (NS.lootSession, in-memory, clears on
--- /reload or Reset Session) and Account (the persisted account-wide
--- running total). Fixed-size window, so it never snapshots EC_PANEL_WIDTH
--- and is outside the reactive-width contract that governs the Interface
--- Options sub-panels. Loot capture + storage live in EbonClearance_Events.lua.
+-- button and by /ec loot. Read-only scroll list of items looted showing
+-- count, vendor value and each item's share of the total, in three scopes:
+-- Session (NS.lootSession, in-memory, clears on /reload or Reset Session),
+-- Character (DB.lootedItemCounts) and Account (the persisted account-wide
+-- running total). Narrowed by a rarity dropdown and a free-text search.
+-- Resizable via the bottom-right grip, but it never snapshots
+-- EC_PANEL_WIDTH - the scroll child tracks the viewport through the
+-- scroll frame's own OnSizeChanged, so this window stays outside the
+-- reactive-width contract that governs the Interface Options sub-panels.
+-- Loot capture + storage live in EbonClearance_Events.lua.
 local lootWindow
 
 local LOOT_ROW_H = 18
+-- v2.68.0: per-itemID cache-priming attempt counter. Session-only, and
+-- deliberately NOT saved: the client's item cache persists to disk, so a
+-- later session usually resolves these on the first GetItemInfo with no
+-- priming at all. The cap stops a handful of itemIDs that never resolve
+-- (removed from the game DB, or a server that will not serve them) from
+-- re-priming on every single refresh forever, which would also pin the
+-- loot window on its fast refresh cadence permanently.
+local lootPrimeTries = {}
+local LOOT_PRIME_MAX_TRIES = 3
+
+-- v2.68.0 (Serv report): coin text with a comma-grouped gold figure.
+-- GetCoinTextureString emits the gold amount raw, and a seven-digit
+-- total ("1037251g") is unreadable at a glance.
+--
+-- EC-TRAP: only the LEADING digit run is substituted, and only once. The
+-- rest of the returned string is texture escapes
+-- (|TInterface\MoneyFrame\UI-GoldIcon:12:12:2:0|t) which contain digits
+-- of their own - a global %d substitution corrupts the coin icons.
+-- When gold is 0 the string starts with the silver figure instead, which
+-- is at most two digits, so commaing it is a harmless no-op.
+local function lootCoinText(copper, fallback)
+    if not (copper and copper > 0 and GetCoinTextureString) then
+        return fallback
+    end
+    local s = GetCoinTextureString(copper)
+    return (s:gsub("^(%d+)", function(g)
+        return NS.CommaNumber(tonumber(g) or 0)
+    end, 1))
+end
 local LOOT_DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 -- Forward-declared so the row factory's right-click handler (defined before
@@ -429,13 +462,23 @@ local LOOT_DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local lootRefresh
 
 -- Build a sorted array of { id, qty, value, name, quality, texture } for the
--- given scope (filtered by rarityFilter when set), plus the grand totals of
--- quantity AND vendor value across EVERY entry (so shares read as "of
--- everything looted", even with a rarity filter on). value = per-unit vendor
--- sell price (GetItemInfo) x quantity; it's 0 for items with no sell price,
--- which is itself useful - it flags the worthless drops worth deleting.
--- One GetItemInfo per item (cached) feeds both the sort and the render.
-local function lootBuildArray(scope, sortKey, sortDir, rarityFilter)
+-- given scope, narrowed by rarityFilter and/or search when set, plus the
+-- totals of quantity AND vendor value.
+--
+-- v2.68.0 (Serv request): the totals cover ONLY the rows that survive the
+-- filters. They used to span every entry in the scope, so with a filter on,
+-- the per-row percentages read as a share of everything ever looted and the
+-- visible rows summed to some small fraction of 100%. Now filtering to Epics
+-- gives you each Epic's share OF YOUR EPICS, and the shares of what is on
+-- screen add up to 100%. The header counts rebase the same way, so the whole
+-- window consistently describes the current view rather than mixing the two.
+--
+-- value = per-unit vendor sell price (GetItemInfo) x quantity; it's 0 for
+-- items with no sell price, which is itself useful - it flags the worthless
+-- drops worth deleting. One GetItemInfo per item (cached) feeds sort + render.
+-- Returns (arr, total, totalValue, primed); `primed` is how many item-cache
+-- fetches this pass kicked off, which drives the window's refresh cadence.
+local function lootBuildArray(scope, sortKey, sortDir, rarityFilter, search)
     local src
     if scope == "account" then
         local AS = NS.ADB and NS.ADB.accountStats
@@ -445,25 +488,71 @@ local function lootBuildArray(scope, sortKey, sortDir, rarityFilter)
     else
         src = NS.lootSession
     end
-    -- Hidden items (right-clicked to hide) are dropped BEFORE the totals so
+    -- Hidden items (right-clicked to hide) are dropped before the totals, so
     -- the remaining rows' count/gold shares rebase as if the hidden ones were
-    -- never looted. This differs from the rarity filter, which hides rows but
-    -- keeps them in the totals.
+    -- never looted. As of v2.68.0 the rarity + search filters behave the same
+    -- way, so all three narrowing mechanisms are consistent: whatever is out
+    -- of view is out of the totals.
     local hidden = (NS.ADB and NS.ADB.lootLogHidden) or {}
     local arr, total, totalValue = {}, 0, 0
+    -- v2.68.0 (Serv report): the account scope aggregates loot from every
+    -- character, so it names items THIS character has never seen. Those
+    -- are absent from the client's item cache, GetItemInfo returns nil
+    -- for all of them, and the row rendered as "item:3669" with a "?"
+    -- icon. Less visibly it also contributed 0 to the gold column and
+    -- was invisible to any rarity filter, because sellPrice and quality
+    -- were nil too.
+    --
+    -- Prime the cache the same way EbonClearance_BugReport.lua does: a
+    -- SetHyperlink on the hidden scan tooltip makes the client fetch the
+    -- item, and the retry picks it up when the fetch resolved on this
+    -- frame. Bounded per pass - an account log with thousands of
+    -- uncached items would otherwise fire thousands of fetches in one
+    -- frame. Anything left unresolved fills in on a later pass: the
+    -- window's own 2 s safety refresh re-renders, so the rows populate
+    -- themselves with no extra timer.
+    local primesLeft = 25
+    local primed = 0
+    local needle = (search and search ~= "") and search:lower() or nil
     if src then
         for itemID, qty in pairs(src) do
             if qty and qty > 0 and not hidden[itemID] then
                 local name, _, q, _, _, _, _, _, _, texture, sellPrice = GetItemInfo(itemID)
+                local tries = lootPrimeTries[itemID] or 0
+                if not name and primesLeft > 0 and tries < LOOT_PRIME_MAX_TRIES then
+                    primesLeft = primesLeft - 1
+                    lootPrimeTries[itemID] = tries + 1
+                    primed = primed + 1
+                    local st = NS.scanTooltip
+                    if st and st.SetHyperlink then
+                        pcall(st.SetOwner, st, UIParent, "ANCHOR_NONE")
+                        pcall(st.ClearLines, st)
+                        pcall(st.SetHyperlink, st, "item:" .. itemID)
+                        name, _, q, _, _, _, _, _, _, texture, sellPrice = GetItemInfo(itemID)
+                    end
+                end
                 local value = (sellPrice or 0) * qty
-                total = total + qty
-                totalValue = totalValue + value
-                if rarityFilter == nil or q == rarityFilter then
+                -- v2.68.0 (Serv request): free-text name filter, matching the
+                -- Sold History window's search box. Matched against the
+                -- DISPLAYED name so an uncached "item:3669" row is still
+                -- findable while its name resolves.
+                local displayName = name or ("item:" .. itemID)
+                local matchesSearch = true
+                if needle then
+                    matchesSearch = displayName:lower():find(needle, 1, true) ~= nil
+                end
+                if (rarityFilter == nil or q == rarityFilter) and matchesSearch then
+                    -- Totals accumulate INSIDE the filter test, so they cover
+                    -- only what is on screen (see the note on this function).
+                    -- Moving these two lines back out silently reverts the
+                    -- percentages to a share-of-everything reading.
+                    total = total + qty
+                    totalValue = totalValue + value
                     arr[#arr + 1] = {
                         id = itemID,
                         qty = qty,
                         value = value,
-                        name = name or ("item:" .. itemID),
+                        name = displayName,
                         quality = q,
                         texture = texture,
                     }
@@ -502,11 +591,17 @@ local function lootBuildArray(scope, sortKey, sortDir, rarityFilter)
     else
         table.sort(arr, byField("qty"))
     end
-    return arr, total, totalValue
+    -- `primed` tells the caller whether names are still resolving, which
+    -- picks the window's refresh cadence (see the OnUpdate driver).
+    return arr, total, totalValue, primed
 end
 
 -- Pooled row factory. Rows anchor to content's TOPLEFT/TOPRIGHT so they
 -- stretch with the (fixed) content width; reused across Refresh calls.
+-- v2.68.0: `i` is now the POOL slot, not the data index, and the row is
+-- positioned by lootRenderVisible at bind time rather than here. The
+-- pool holds only enough rows to cover the viewport (see the note on
+-- lootRenderVisible); a given slot shows a different item as you scroll.
 local function lootGetRow(win, i)
     win.rows = win.rows or {}
     local row = win.rows[i]
@@ -515,8 +610,6 @@ local function lootGetRow(win, i)
     end
     row = CreateFrame("Frame", nil, win.content)
     row:SetHeight(LOOT_ROW_H)
-    row:SetPoint("TOPLEFT", win.content, "TOPLEFT", 0, -(i - 1) * LOOT_ROW_H)
-    row:SetPoint("TOPRIGHT", win.content, "TOPRIGHT", 0, -(i - 1) * LOOT_ROW_H)
     -- Alt+hover shows the item's tooltip, which EbonClearance's tooltip hook
     -- annotates with the SAME plain-English verdict + reason you see hovering
     -- the item in your bags ("Keep (Green, no item level)", "Won't Sell (no
@@ -555,6 +648,10 @@ local function lootGetRow(win, i)
         end
         GameTooltip:AddLine(L["|cff808080Right-click to hide from the Loot Log.|r"], 1, 1, 1, true)
         GameTooltip:Show()
+        -- This window is TOOLTIP strata, so the tooltip renders behind it
+        -- without an absolute level stamp. See the EC-TRAP note on the
+        -- helper in EbonClearance_PanelWidgets.lua.
+        NS.RaiseTooltipAboveWindows()
     end)
     row:SetScript("OnLeave", function()
         GameTooltip:Hide()
@@ -597,36 +694,102 @@ local function lootGetRow(win, i)
     return row
 end
 
+-- v2.68.0 (Serv report: account scope slowed the WHOLE game, not just
+-- this window): render ONLY the rows currently in the viewport.
+--
+-- Before this, lootRefresh created a frame per entry - with 5000+ items
+-- in the Character / Account scopes that is 5000 frames, each carrying
+-- an icon texture and two FontStrings, so ~20000 live UI objects. WoW's
+-- layout cost scales with live frame count across the whole UI, which is
+-- why the slowdown was global rather than confined to the list, and why
+-- scrolling (which re-lays-out the scroll child) made it worst.
+--
+-- Now the pool holds only what fits the viewport plus a small buffer
+-- (~20 rows), and scrolling re-binds those same frames to a different
+-- slice of the array. Frame count is constant regardless of list size,
+-- so Account scope costs the same as Session. The scrollbar range still
+-- reflects the full list because content height is still #arr rows.
+--
+-- EC-TRAP: rows are positioned HERE, per bind, not in lootGetRow. The
+-- pool index is a screen slot, NOT the data index - do not "simplify"
+-- by anchoring rows once at creation, that is what this replaced.
+local function lootRenderVisible(win)
+    if not win or not win.content then
+        return
+    end
+    local arr = win._arr or {}
+    local totalValue = win._totalValue or 0
+    local scroll = win.scroll
+    local viewH = (scroll and scroll:GetHeight()) or 0
+    local offset = (scroll and scroll:GetVerticalScroll()) or 0
+    -- Index of the first row intersecting the top of the viewport.
+    local first = math.floor(offset / LOOT_ROW_H)
+    if first < 0 then
+        first = 0
+    end
+    -- +2 covers the partially-visible rows at each edge.
+    local slots = math.ceil(viewH / LOOT_ROW_H) + 2
+    for j = 1, slots do
+        local idx = first + j
+        local e = arr[idx]
+        local row = lootGetRow(win, j)
+        if e then
+            local y = -(idx - 1) * LOOT_ROW_H
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", win.content, "TOPLEFT", 0, y)
+            row:SetPoint("TOPRIGHT", win.content, "TOPRIGHT", 0, y)
+            row.itemID = e.id
+            local hex = "ffffffff"
+            if
+                e.quality
+                and ITEM_QUALITY_COLORS
+                and ITEM_QUALITY_COLORS[e.quality]
+                and ITEM_QUALITY_COLORS[e.quality].hex
+            then
+                hex = ITEM_QUALITY_COLORS[e.quality].hex:gsub("|c", "")
+            end
+            row.icon:SetTexture(e.texture or LOOT_DEFAULT_ICON)
+            row.label:SetText(string.format("|c%s%s|r", hex, e.name))
+            -- Amount column: count, vendor value, and that value's share of
+            -- the gold total for the CURRENT view (v2.68.0) - so with a
+            -- filter on the shares are relative to what you filtered to, and
+            -- the visible rows add up to 100%. A worthless drop shows a grey
+            -- dash + 0%, the cue to filter/delete.
+            local goldPct = (totalValue > 0) and (e.value / totalValue * 100) or 0
+            local coin = lootCoinText(e.value, "|cff707070-|r")
+            -- v2.68.0 (Serv report): two decimals, not one. With thousands of
+            -- distinct drops every share is under ~1.5%, so at one decimal
+            -- whole runs of rows all read "0.8%" and the column stopped
+            -- ranking anything. The second decimal separates them again.
+            row.amount:SetText(
+                string.format("|cff808080x%s|r  %s  |cff888888%.2f%%|r", NS.CommaNumber(e.qty), coin, goldPct)
+            )
+            row:Show()
+        else
+            row.itemID = nil
+            row:Hide()
+        end
+    end
+    -- Slots beyond what the current viewport needs (window was shrunk).
+    if win.rows then
+        for j = slots + 1, #win.rows do
+            win.rows[j]:Hide()
+        end
+    end
+end
 function lootRefresh(win)
     if not win then
         return
     end
-    local arr, total, totalValue = lootBuildArray(win.scope or "session", win.sortKey, win.sortDir, win.rarityFilter)
-    for i = 1, #arr do
-        local e = arr[i]
-        local row = lootGetRow(win, i)
-        row.itemID = e.id
-        local hex = "ffffffff"
-        if e.quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[e.quality] and ITEM_QUALITY_COLORS[e.quality].hex then
-            hex = ITEM_QUALITY_COLORS[e.quality].hex:gsub("|c", "")
-        end
-        row.icon:SetTexture(e.texture or LOOT_DEFAULT_ICON)
-        row.label:SetText(string.format("|c%s%s|r", hex, e.name))
-        -- Amount column: count, vendor value, and that value's share of the
-        -- FULL looted gold (grand total), so the % reads as "how much of my
-        -- income is this drop" even with a rarity filter on. A worthless
-        -- drop shows a grey dash + 0%, which is the cue to filter/delete it.
-        local goldPct = (totalValue > 0) and (e.value / totalValue * 100) or 0
-        local coin = (e.value > 0 and GetCoinTextureString) and GetCoinTextureString(e.value) or "|cff707070-|r"
-        row.amount:SetText(string.format("|cff808080x%d|r  %s  |cff888888%.1f%%|r", e.qty, coin, goldPct))
-        row:Show()
-    end
-    if win.rows then
-        for i = #arr + 1, #win.rows do
-            win.rows[i]:Hide()
-        end
-    end
+    local arr, total, totalValue, primed =
+        lootBuildArray(win.scope or "session", win.sortKey, win.sortDir, win.rarityFilter, win.search)
+    -- Stashed for lootRenderVisible, which re-binds the pooled rows on
+    -- every scroll WITHOUT rebuilding or re-sorting the array.
+    win._arr = arr
+    win._totalValue = totalValue
+    win._primedLast = primed or 0
     win.content:SetHeight(math.max(1, #arr * LOOT_ROW_H))
+    lootRenderVisible(win)
     -- Reflect the hidden-item count on the Unhide All button, and grey it out
     -- when nothing is hidden.
     if win.unhideBtn then
@@ -649,8 +812,10 @@ function lootRefresh(win)
         if #arr == 0 then
             win.totalLine:SetText(L["|cff888888Nothing looted yet.|r"])
         else
-            local coinTotal = (totalValue > 0 and GetCoinTextureString) and GetCoinTextureString(totalValue) or "0"
-            win.totalLine:SetText(string.format(L["%d items  |  %d looted  |  %s"], #arr, total, coinTotal))
+            local coinTotal = lootCoinText(totalValue, "0")
+            win.totalLine:SetText(
+                string.format(L["%s items  |  %s looted  |  %s"], NS.CommaNumber(#arr), NS.CommaNumber(total), coinTotal)
+            )
         end
     end
 end
@@ -691,6 +856,7 @@ local function lootEnsureWindow()
     win.sortKey = "gold" -- "name" | "count" | "gold"
     win.sortDir = -1 -- 1 ascending, -1 descending (highest-earning first by default)
     win.rarityFilter = nil -- nil = all; otherwise a quality number 0-4
+    win.search = "" -- free-text name filter; "" = no filter
 
     local title = win:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -12)
@@ -797,39 +963,22 @@ local function lootEnsureWindow()
     updateSortButtons()
 
     -- Rarity filter. "All rarities" plus one entry per quality; restricts
-    -- which rows show. Percentages stay relative to the FULL looted volume
-    -- (the grand total computed in lootBuildArray), so a filtered view still
-    -- reads as "share of everything looted" - the point of the percentage.
-    -- Quality names come from the client's ITEM_QUALITYn_DESC globals so they
-    -- are locale-correct without hand-written strings.
+    -- which rows show. As of v2.68.0 the header counts and the per-row
+    -- percentages rebase onto the filtered set, so filtering to Epics gives
+    -- each Epic's share of your Epics and the visible rows sum to 100%.
     local rarityLabel = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     rarityLabel:SetPoint("TOPLEFT", sortLabel, "BOTTOMLEFT", 0, -14)
     rarityLabel:SetText(L["Show:"])
-    local RARITY_OPTS = {
-        { text = L["All rarities"], q = nil },
-        { text = _G["ITEM_QUALITY0_DESC"] or "Poor", q = 0 },
-        { text = _G["ITEM_QUALITY1_DESC"] or "Common", q = 1 },
-        { text = _G["ITEM_QUALITY2_DESC"] or "Uncommon", q = 2 },
-        { text = _G["ITEM_QUALITY3_DESC"] or "Rare", q = 3 },
-        { text = _G["ITEM_QUALITY4_DESC"] or "Epic", q = 4 },
-    }
-    local rarityDD = CreateFrame("Frame", "EbonClearanceLootRarityDD", win, "UIDropDownMenuTemplate")
-    rarityDD:SetPoint("LEFT", rarityLabel, "RIGHT", -6, -2)
-    UIDropDownMenu_SetWidth(rarityDD, 100)
-    UIDropDownMenu_Initialize(rarityDD, function(_, level)
-        for _, opt in ipairs(RARITY_OPTS) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = opt.text
-            info.checked = (win.rarityFilter == opt.q)
-            info.func = function()
-                win.rarityFilter = opt.q
-                UIDropDownMenu_SetText(rarityDD, opt.text)
-                lootRefresh(win)
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
+    -- v2.68.0 (Serv report): built through NS.MakeRarityDropdown, shared
+    -- with the Sold History window. The helper also installs the
+    -- TOOLTIP-strata fix without which this flyout opens BEHIND the
+    -- window (see the EC-TRAP note in EbonClearance_PanelWidgets.lua) -
+    -- do not rebuild this dropdown inline.
+    local rarityDD = NS.MakeRarityDropdown(win, "EbonClearanceLootRarityDD", function(q)
+        win.rarityFilter = q
+        lootRefresh(win)
     end)
-    UIDropDownMenu_SetText(rarityDD, L["All rarities"])
+    rarityDD:SetPoint("LEFT", rarityLabel, "RIGHT", -6, -2)
 
     -- Unhide All button, on the rarity row. Right-clicking a row hides that
     -- item (it drops from the list and the totals); this restores every
@@ -851,9 +1000,34 @@ local function lootEnsureWindow()
     end)
     win.unhideBtn = unhideBtn
 
+    -- v2.68.0 (Serv request): free-text filter. With thousands of rows in
+    -- the Character / Account scopes, scrolling to one item is hopeless;
+    -- this narrows by name the way the Sold History window's search box
+    -- does. Combines with the rarity dropdown and the scope radios.
+    -- Own row: the window is only 360 px wide (300 min), so the rarity
+    -- row is already full with the dropdown plus Unhide All.
+    local searchLabel = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    searchLabel:SetPoint("TOPLEFT", rarityLabel, "BOTTOMLEFT", 0, -22)
+    searchLabel:SetText(L["Search:"])
+    local search = CreateFrame("EditBox", "EbonClearanceLootSearch", win, "InputBoxTemplate")
+    search:SetSize(190, 20)
+    search:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
+    search:SetAutoFocus(false)
+    search:SetScript("OnTextChanged", function(self)
+        win.search = self:GetText() or ""
+        lootRefresh(win)
+    end)
+    search:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
     -- Scroll chrome (matches the list windows' backdrop look).
     local scrollBg = CreateFrame("Frame", nil, win)
-    scrollBg:SetPoint("TOPLEFT", 12, -120)
+    -- v2.68.0: anchored to the last chrome row instead of the old fixed
+    -- -120 offset. That magic number had to be hand-bumped every time a
+    -- chrome row was added, and a missed bump overlaps the list on top of
+    -- the row above it. Chaining it removes the trap.
+    scrollBg:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 0, -10)
     scrollBg:SetPoint("BOTTOMRIGHT", -12, 12)
     scrollBg:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -876,6 +1050,15 @@ local function lootEnsureWindow()
         NS.HookScrollbarAutoHide(scroll)
     end
     win.content = content
+    -- v2.68.0: lootRenderVisible needs the viewport to know which slice of
+    -- the array is on screen.
+    win.scroll = scroll
+    -- Re-bind the pooled rows as the view moves. HookScript, NOT SetScript:
+    -- UIPanelScrollFrameTemplate's own OnVerticalScroll drives the
+    -- scrollbar thumb, and replacing it would freeze the bar.
+    scroll:HookScript("OnVerticalScroll", function()
+        lootRenderVisible(win)
+    end)
 
     -- Keep the scroll child's width in step with the (resizable) viewport so
     -- rows fill the window and never trigger a horizontal scrollbar. Rows
@@ -884,6 +1067,10 @@ local function lootEnsureWindow()
         if w and w > 0 then
             content:SetWidth(w)
         end
+        -- v2.68.0: a taller viewport needs more pooled rows bound, a
+        -- shorter one needs the surplus hidden. Cheap - re-binds only the
+        -- visible slice, no rebuild.
+        lootRenderVisible(win)
     end)
 
     -- Bottom-right resize grip. Drag to resize; the row list grows/shrinks
@@ -918,11 +1105,20 @@ local function lootEnsureWindow()
         -- second - an open window kept calling GetItemInfo over every looted
         -- itemID and re-sorting even when nothing new had dropped (e.g. a
         -- boss fight with the window left open).
+        -- v2.68.0: the unconditional safety refresh used to fire every 2 s
+        -- forever. A rebuild walks every itemID in the scope calling
+        -- GetItemInfo and re-sorts, so on Account scope (thousands of
+        -- items) that was a full sweep twice a second-and-a-half, whether
+        -- or not anything had changed. The dirty flag already catches real
+        -- loot; the safety net only needs to be frequent while item names
+        -- are still resolving from the cache primer. Once nothing is being
+        -- primed it drops to a slow tick.
+        local safetyEvery = (self._primedLast or 0) > 0 and 2.0 or 15.0
         if EC_compCache.lootWindowDirty and self._lootTick >= 1.0 then
             self._lootTick = 0
             EC_compCache.lootWindowDirty = false
             lootRefresh(self)
-        elseif self._lootTick >= 2.0 then
+        elseif self._lootTick >= safetyEvery then
             self._lootTick = 0
             EC_compCache.lootWindowDirty = false
             lootRefresh(self)

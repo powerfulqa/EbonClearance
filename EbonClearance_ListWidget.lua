@@ -857,7 +857,7 @@ local function EC_AddScanByQualityRow(parent, anchorFrame, setTableName, listLab
     scanLabel:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
     scanLabel:SetText(L["Add from bags:"])
 
-    -- v2.67.1: buttons carry quality NAMES, not tooltip colour words
+    -- v2.68.0: buttons carry quality NAMES, not tooltip colour words
     -- (matches the Merchant panel). Width raised 55 -> 74 because
     -- "Uncommon" clips at 55; the colour codes stay so the row is still
     -- scannable at a glance.

@@ -336,14 +336,14 @@ function NS.RefreshStats()
     if panel.statsQualityBreakdown then
         panel.statsQualityBreakdown:SetText(L["|cffffd200Sold by Quality|r"])
     end
-    -- v2.66.1 iter 3 (Serv report): SetHeight-based collapse was tried
-    -- earlier this iteration but caused subsequent sections to fail to
-    -- render on the user's client - reverted. Rows are just Hidden when
-    -- empty; the vertical gap between the last data row and the next
-    -- section header remains because Hidden rows still occupy their
-    -- 14px slot in the anchor chain. A future refactor could re-anchor
-    -- the next section header at refresh time (dynamic chaining) but
-    -- for now visible-stats-with-gaps beats invisible-stats-no-gaps.
+    -- Empty quality buckets are Hidden, never collapsed with SetHeight(0).
+    --
+    -- EC-TRAP: SetHeight(0) on these row frames was tried during v2.66.1
+    -- and broke the anchor chain outright - every section BELOW this one
+    -- stopped rendering in-game. Hide() alone is correct here. The gap a
+    -- Hidden row leaves (it still occupies its 14px slot) is closed at the
+    -- end of RefreshStats instead, where each section header re-anchors to
+    -- the last VISIBLE row above it. Do not reintroduce height collapsing.
     if panel._soldByQualityRows and panel._soldByQualityEmpty then
         local items = src.soldItemsByQuality or {}
         local copper = src.soldCopperByQuality or {}

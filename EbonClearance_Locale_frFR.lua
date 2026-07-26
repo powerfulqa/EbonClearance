@@ -405,7 +405,7 @@ NS.RegisterLocale("frFR", {
     ["Unhide All (%d)"] = "Tout réafficher (%d)",
     ["Unhide All"] = "Tout réafficher",
     ["|cff888888Nothing looted yet.|r"] = "|cff888888Rien de ramassé pour l'instant.|r",
-    ["%d items  |  %d looted  |  %s"] = "%d objets  |  %d ramassés  |  %s",
+    ["%s items  |  %s looted  |  %s"] = "%s objets  |  %s ramassés  |  %s",
     ["Session"] = "Session",
     ["Sort:"] = "Trier :",
     ["Name"] = "Nom",

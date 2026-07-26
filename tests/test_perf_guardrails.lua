@@ -7282,8 +7282,15 @@ do
     check("Test 114: Loot Log window refresh is dirty-driven (EC_BumpLoot flags; window consumes) not an unconditional 1s rebuild",
         ev:find("EC_compCache%.lootWindowDirty = true") ~= nil
             and sp:find("EC_compCache%.lootWindowDirty") ~= nil
-            and sp:find("self%._lootTick >= 2%.0") ~= nil,
-        "v2.50.1 perf: the Loot Log window MUST rebuild only when new loot was actually credited (EC_BumpLoot sets EC_compCache.lootWindowDirty), coalesced, with a 2 s safety fallback - NOT an unconditional per-second lootRefresh. The old 1s rebuild called GetItemInfo over every looted itemID + re-sorted every second while the window was open even when nothing dropped. EC_BumpLoot MUST set the flag and the window's OnUpdate MUST consume it and keep the 2 s safety cap so the view can't go stale.")
+            and sp:find("self%._lootTick >= safetyEvery") ~= nil
+            and sp:find("local safetyEvery = %(self%._primedLast or 0%) > 0 and 2%.0 or 15%.0") ~= nil,
+        "v2.50.1 perf: the Loot Log window MUST rebuild only when new loot was actually credited (EC_BumpLoot sets EC_compCache.lootWindowDirty), coalesced, with a bounded safety fallback - NOT an unconditional per-second lootRefresh. The old 1s rebuild called GetItemInfo over every looted itemID + re-sorted every second while the window was open even when nothing dropped. v2.68.0 tightened the fallback further: a rebuild is a full sweep of the scope (thousands of itemIDs on Account), so the fast 2 s cadence is now held ONLY while the item-cache primer is still resolving names (win._primedLast > 0) and drops to 15 s once it is not. Keep BOTH the dirty consume and the two-speed cap - dropping to a single fixed interval either re-introduces the constant sweep or lets freshly primed names sit unrendered.")
+    check("Test 114b: Loot Log renders only the visible row window (virtualised list)",
+        sp:find("local function lootRenderVisible", 1, true) ~= nil
+            and sp:find("local slots = math%.ceil%(viewH / LOOT_ROW_H%) %+ 2") ~= nil
+            and sp:find('scroll:HookScript%("OnVerticalScroll"') ~= nil
+            and sp:find("win%.content:SetHeight%(math%.max%(1, #arr %* LOOT_ROW_H%)%)") ~= nil,
+        "v2.68.0 perf (Serv report: Account scope degraded the WHOLE client, not just the window): lootRefresh MUST NOT create a frame per entry. With 5000+ items that is 5000 frames each holding an icon + two FontStrings, and WoW's layout cost scales with live frame count across the entire UI. The list MUST stay virtualised: a pool sized to the viewport (ceil(viewH / LOOT_ROW_H) + 2), re-bound to a different slice on scroll via a HookScript on OnVerticalScroll (HookScript, NOT SetScript - the template's own handler drives the scrollbar thumb), with content height still spanning the full array so the scrollbar range stays honest. Row position belongs at bind time in lootRenderVisible, never at creation in lootGetRow.")
 end
 
 -- ---------------------------------------------------------------------------

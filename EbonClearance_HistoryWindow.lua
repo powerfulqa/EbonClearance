@@ -6,7 +6,8 @@
 -- v2.57.0. Replaces the old copy-only /ec history text dump with a movable,
 -- resizable window (modelled on the Loot Log window in
 -- EbonClearance_StatsPanel.lua) that shows the WHOLE session's sell/delete
--- actions, newest-first, with All / Sold / Deleted filters and a search box.
+-- actions, newest-first, with All / Sold / Deleted filters, a rarity filter
+-- (v2.68.0) and a search box. The three narrow the same list together.
 -- Backed by the full-session logs in EbonClearance_Events.lua
 -- (NS.recentSoldLog / NS.recentDeletedLog, now capped at 5000 each with a trim
 -- counter, not the old 20). A Copy button dumps the current filtered view as
@@ -45,7 +46,7 @@ local historyRefresh
 -- Returns (rows, soldN, deletedN): rows is every matching entry (uncapped -
 -- the Copy button wants them all; the renderer caps to HIST_DISPLAY_MAX),
 -- soldN / deletedN are the matching totals for the header line.
-local function historyBuildList(filter, search)
+local function historyBuildList(filter, search, rarityFilter)
     local sold = NS.recentSoldLog or {}
     local deleted = NS.recentDeletedLog or {}
     local needle = (search and search ~= "") and search:lower() or nil
@@ -57,6 +58,20 @@ local function historyBuildList(filter, search)
         end
         if filter == "deleted" and action ~= "deleted" then
             return
+        end
+        -- v2.68.0: rarity filter, mirroring the Loot Log window. The log
+        -- entries carry no quality field, so it comes from GetItemInfo.
+        -- Unlike the Loot Log (whose account scope can name items this
+        -- character never saw), everything here passed through the bags
+        -- this session, so the client cache has it. An item that somehow
+        -- fails the lookup is dropped from a filtered view rather than
+        -- shown as an unknown - a rarity filter that leaks other
+        -- rarities is worse than one that misses a row.
+        if rarityFilter ~= nil then
+            local _, _, q = GetItemInfo(e.itemID or 0)
+            if q ~= rarityFilter then
+                return
+            end
         end
         if needle then
             local name = tostring(e.itemName or ""):lower()
@@ -136,7 +151,14 @@ local function historyGetRow(win, i)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(self.fullText, 1, 1, 1, 1, true)
             GameTooltip:Show()
+        else
+            return
         end
+        -- This window is TOOLTIP strata, so the tooltip renders behind it
+        -- without an absolute level stamp. See the EC-TRAP note on the
+        -- helper in EbonClearance_PanelWidgets.lua. Both branches need it:
+        -- the plain-hover text is the one carrying the untruncated row.
+        NS.RaiseTooltipAboveWindows()
     end)
     row:SetScript("OnLeave", function()
         GameTooltip:Hide()
@@ -166,7 +188,7 @@ function historyRefresh(win)
     if not win then
         return
     end
-    local rows = historyBuildList(win.filter, win.search)
+    local rows = historyBuildList(win.filter, win.search, win.rarityFilter)
     local soldTrimmed, deletedTrimmed = 0, 0
     if NS.SessionHistoryTrimmed then
         soldTrimmed, deletedTrimmed = NS.SessionHistoryTrimmed()
@@ -261,6 +283,7 @@ local function historyEnsureWindow()
     win:Hide()
     win.filter = "all" -- "all" | "sold" | "deleted"
     win.search = ""
+    win.rarityFilter = nil -- nil = all; otherwise a quality number 0-4
 
     local title = win:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -12)
@@ -335,7 +358,7 @@ local function historyEnsureWindow()
     copyBtn:SetPoint("RIGHT", clearBtn, "LEFT", -6, 0)
     copyBtn:SetText(L["Copy"])
     copyBtn:SetScript("OnClick", function()
-        local rows = historyBuildList(win.filter, win.search)
+        local rows = historyBuildList(win.filter, win.search, win.rarityFilter)
         local body
         if #rows == 0 then
             body = L["Nothing matches this session."]
@@ -351,15 +374,36 @@ local function historyEnsureWindow()
         end
     end)
 
-    -- Total line (under the search row).
+    -- v2.68.0 (Serv request): rarity filter, the same control the Loot
+    -- Log window uses (NS.MakeRarityDropdown - shared so both windows
+    -- also get the TOOLTIP-strata flyout fix). Own row rather than
+    -- sharing the search row: this window resizes down to 340 px wide,
+    -- where "Search:" + the 180 px box + a label + the dropdown collide.
+    -- Combines with the All / Sold / Deleted radios and the search box;
+    -- all three narrow the same list.
+    local rarityLabel = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    rarityLabel:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 0, -16)
+    rarityLabel:SetText(L["Show:"])
+    local rarityDD = NS.MakeRarityDropdown(win, "EbonClearanceHistoryRarityDD", function(q)
+        win.rarityFilter = q
+        historyRefresh(win)
+    end)
+    rarityDD:SetPoint("LEFT", rarityLabel, "RIGHT", -6, -2)
+
+    -- Total line (under the rarity row).
     local totalLine = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    totalLine:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 0, -10)
+    totalLine:SetPoint("TOPLEFT", rarityLabel, "BOTTOMLEFT", 0, -12)
     totalLine:SetJustifyH("LEFT")
     win.totalLine = totalLine
 
     -- Scroll chrome (matches the list windows' backdrop look).
     local scrollBg = CreateFrame("Frame", nil, win)
-    scrollBg:SetPoint("TOPLEFT", 12, -104)
+    -- v2.68.0: anchored to the last chrome row instead of the old fixed
+    -- -104 offset. That magic number had to be hand-bumped every time a
+    -- chrome row was added (the new rarity row needed exactly that), and
+    -- a missed bump overlaps the list on top of the row above it.
+    -- Chaining it removes the trap. Matches the Loot Log window.
+    scrollBg:SetPoint("TOPLEFT", totalLine, "BOTTOMLEFT", 0, -8)
     scrollBg:SetPoint("BOTTOMRIGHT", -12, 12)
     scrollBg:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",

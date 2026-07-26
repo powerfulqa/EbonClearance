@@ -6123,7 +6123,7 @@ NS.IsSellable = EC_IsSellable
 -- out fully (unlike the tooltip), and because the signal comes straight from
 -- EC_IsSellable the explanation can't drift from the real sell logic.
 function EC_compCache.sellReasonForSignal(signal, quality, rule)
-    -- v2.67.1: quality NAMES, not tooltip colour words. This expression
+    -- v2.68.0: quality NAMES, not tooltip colour words. This expression
     -- used to read White / Green / Blue / Epic - three colours and one
     -- quality name, so the same window could print "white item" and
     -- "Epic item" a line apart. Matches the Merchant panel wording.

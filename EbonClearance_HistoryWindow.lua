@@ -68,7 +68,16 @@ local function historyBuildList(filter, search, rarityFilter)
         -- shown as an unknown - a rarity filter that leaks other
         -- rarities is worse than one that misses a row.
         if rarityFilter ~= nil then
-            local _, _, q = GetItemInfo(e.itemID or 0)
+            -- v2.68.1: memoise the quality onto the entry. The log entries
+            -- are append-only (a ring slot is replaced whole, never edited),
+            -- so the memo can't go stale - and without it a rarity-filtered
+            -- refresh re-called GetItemInfo for up to 10k entries every
+            -- rebuild.
+            local q = e.quality
+            if q == nil then
+                q = select(3, GetItemInfo(e.itemID or 0))
+                e.quality = q
+            end
             if q ~= rarityFilter then
                 return
             end
@@ -332,9 +341,13 @@ local function historyEnsureWindow()
     search:SetSize(180, 20)
     search:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
     search:SetAutoFocus(false)
-    search:SetScript("OnTextChanged", function(self)
-        win.search = self:GetText() or ""
+    -- v2.68.1: debounced via the shared helper - each keystroke used to
+    -- re-filter the full session logs (up to 10k entries, worse with a
+    -- rarity filter active). One rebuild per 250 ms typing idle instead.
+    NS.MakeSearchDebounce(search, function()
         historyRefresh(win)
+    end, function(text)
+        win.search = text
     end)
     search:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
@@ -459,17 +472,16 @@ local function historyEnsureWindow()
         if EC_compCache.historyDirty and self._histTick >= 1.0 then
             self._histTick = 0
             EC_compCache.historyDirty = false
-            local sold, deleted = NS.recentSoldLog, NS.recentDeletedLog
-            self._histLastToken = (sold and #sold or 0) + (deleted and #deleted or 0)
+            self._histLastToken = EC_compCache.historySeq or 0
             historyRefresh(self)
         elseif self._histTick >= 2.0 then
             self._histTick = 0
-            -- Safety-net rebuild only when the logs actually grew or shrank
-            -- since the last render; the dirty flag above covers the normal
-            -- path, so rebuilding (filter + sort of both full logs) every 2 s
-            -- unconditionally was wasted work on an idle window.
-            local sold, deleted = NS.recentSoldLog, NS.recentDeletedLog
-            local token = (sold and #sold or 0) + (deleted and #deleted or 0)
+            -- Safety-net rebuild only when the logs actually changed since
+            -- the last render. v2.68.1: the token is the monotonic write
+            -- sequence (EC_compCache.historySeq), NOT the log lengths - the
+            -- logs are ring buffers now, so their lengths freeze at the
+            -- 5000 cap while writes keep happening.
+            local token = EC_compCache.historySeq or 0
             if token ~= self._histLastToken then
                 self._histLastToken = token
                 historyRefresh(self)

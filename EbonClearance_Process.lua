@@ -242,7 +242,7 @@ function EC_compCache.processTooltipHasLine(bag, slot, itemID)
     local prospectMarker = ITEM_PROSPECTABLE or "Prospectable"
     local result = "none"
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -308,7 +308,7 @@ function EC_compCache.canPickLock(bag, slot)
     -- EbonClearance_Events.lua's scanBagItem comment for the rationale.
     EC_compCache.scanBagItem(bag, slot)
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -327,7 +327,7 @@ function EC_compCache.processIsSoulbound(bag, slot)
     -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
     EC_compCache.scanBagItem(bag, slot)
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end

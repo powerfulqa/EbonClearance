@@ -25,43 +25,25 @@
 -- API calls into specific third-party globals are necessary for the
 -- integrations to work; this test only polices the prose.
 
--- Post-split: concat every shipped .lua source file. See the matching
--- comment in tests/test_perf_guardrails.lua for the rationale. List
--- order matches the .toc load order.
-local SOURCE_PATHS = {
-    "EbonClearance_Core.lua",
-    "EbonClearance_Locale.lua",
-    "EbonClearance_Locale_frFR.lua",
-    "EbonClearance_Locale_deDE.lua",
-    "EbonClearance_Companion.lua",
-    "EbonClearance_Protection.lua",
-    "EbonClearance_Vendor.lua",
-    "EbonClearance_Process.lua",
-    "EbonClearance_ProcessBagsPanel.lua",
-    "EbonClearance_MerchantPanel.lua",
-    "EbonClearance_ScavengerPanel.lua",
-    "EbonClearance_SellListPanels.lua",
-    "EbonClearance_KeepDeletePanels.lua",
-    "EbonClearance_ProtectionPanel.lua",
-    "EbonClearance_ItemHighlightingPanel.lua",
-    "EbonClearance_ProfilesPanel.lua",
-    "EbonClearance_MainPanel.lua",
-    "EbonClearance_StatsPanel.lua",
-    "EbonClearance_GuildPanel.lua",
-    "EbonClearance_PanelInfra.lua",
-    "EbonClearance_PanelWidgets.lua",
-    "EbonClearance_ListWidget.lua",
-    "EbonClearance_QuickstartPanel.lua",
-    "EbonClearance_Events.lua",
-    "EbonClearance_Comms.lua",
-    "EbonClearance_GuildShare.lua",
-    "EbonClearance_BagDisplay.lua",
-    "EbonClearance_BugReport.lua",
-    "EbonClearance_Minimap.lua",
-    "EbonClearance_Tooltip.lua",
-    "EbonClearance_BagContextMenu.lua",
-    "EbonClearance_HelpPanel.lua",
-}
+-- Post-split: concat every shipped .lua source file. v2.68.1: the list is
+-- DERIVED from EbonClearance.toc (the real load list) instead of a
+-- hand-written array - the array had silently drifted five files behind
+-- the .toc (HistoryWindow, ProcShare, RealmComms, ServerShare,
+-- ServerStatsPanel were shipped but never scanned). Same derivation as
+-- tests/test_locale_coverage.lua. This suite scans EVERYTHING including
+-- the Locale files (translated prose is still prose).
+local SOURCE_PATHS = {}
+do
+    local fh = assert(io.open("EbonClearance.toc", "rb"), "EbonClearance.toc not found (run from repo root)")
+    local toc = fh:read("*a")
+    fh:close()
+    for line in (toc .. "\n"):gmatch("(.-)\r?\n") do
+        local f = line:match("^(EbonClearance_[%w_]+%.lua)%s*$")
+        if f then
+            SOURCE_PATHS[#SOURCE_PATHS + 1] = f
+        end
+    end
+end
 
 local pieces = {}
 for _, path in ipairs(SOURCE_PATHS) do

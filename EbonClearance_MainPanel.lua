@@ -146,70 +146,42 @@ local function ItemLabel(id)
     return "ItemID: " .. tostring(id)
 end
 
-function NS.RefreshStats()
-    local panel = _G["EbonClearanceOptionsStats"]
-    if not panel or not panel.statsMoney then
-        return
-    end
-    local DB = NS.DB
-    local ADB = NS.ADB
-    if not DB then
-        return
-    end
-    -- v2.38.1: view-aware. Character view reads DB.* (this character's
-    -- lifetime). Account view reads ADB.accountStats.* (aggregated
-    -- across all characters since v2.38.1 install). Session deltas only
-    -- render in Character view - "session" is inherently per-character.
-    local view = panel._statsView or "character"
-    local src = (view == "account") and (ADB and ADB.accountStats) or DB
-    if not src then
-        return
-    end
-    local showSession = (view == "character")
-    -- Thousands-separated count. Lazy delegate over the nil-safe
-    -- NS.CommaNumber (this closure runs post-load, so the lookup always
-    -- resolves; the old `and/or` fallback was dead defensiveness).
-    local function num(n)
-        return NS.CommaNumber(n)
-    end
-    local function sessionSuffix(n)
-        if not showSession then
-            return ""
+-- v2.68.1: cheap change-token over every counter RefreshStats renders.
+-- The Stats panel's 1Hz tick used to run the FULL repaint (~40 SetTexts +
+-- a 6-section re-anchor pass) every second while open, even when nothing
+-- changed. The tick now compares this token and only full-repaints on a
+-- real change; between changes it refreshes just the time-varying
+-- Gold/Hour rows. Session-suffix fields only ever change alongside these
+-- lifetime counters (a session reset repaints via its direct
+-- NS.RefreshStats call), so they don't need their own terms.
+local function EC_statsChangeToken(src)
+    local t = (src.totalCopper or 0)
+        + (src.totalItemsSold or 0)
+        + (src.totalItemsDeleted or 0)
+        + (src.totalRepairs or 0)
+        + (src.totalRepairCopper or 0)
+        + (src.inventoryWorthCount or 0)
+    local counts = src.processCastCounts
+    if counts then
+        for _, n in pairs(counts) do
+            t = t + (tonumber(n) or 0)
         end
-        return string.format(L["  |cff888888(session +%s)|r"], num(n))
     end
-    local function sessionMoneySuffix(c)
-        if not showSession then
-            return ""
-        end
-        return "  |cff888888(session +" .. NS.CopperToGoldOnlyText(c or 0) .. "|cff888888)|r"
-    end
-    -- v2.66.1 iter (Serv report): aggregate rows are now two-column
-    -- MakeStatRow containers (row.left = label, row.right = value).
-    -- Label stays static, value updates per refresh; session-suffix is
-    -- appended to the value cell so it flows with the same column.
-    panel.statsMoney.left:SetText(L["Total Money Made"])
-    panel.statsMoney.right:SetText(NS.CopperToGoldOnlyText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper))
-    panel.statsSold.left:SetText(L["Total Items Sold"])
-    panel.statsSold.right:SetText(num(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold))
-    panel.statsDeleted.left:SetText(L["Total Items Deleted"])
-    panel.statsDeleted.right:SetText(num(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted))
-    panel.statsRepairs.left:SetText(L["Total Repairs"])
-    panel.statsRepairs.right:SetText(num(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs))
-    panel.statsRepairCost.left:SetText(L["Total Repair Cost"])
-    panel.statsRepairCost.right:SetText(NS.CopperToGoldOnlyText(src.totalRepairCopper or 0) .. sessionMoneySuffix(NS.session.repairCopper))
+    return t
+end
 
-    -- v2.35.x: Session + Best Gold/Hour. See
-    -- docs/specs/2026-05-26-gph-stats-design.md for the design.
-    --
-    -- The session line shows the live rate (copper/hour) computed
-    -- from session.copper / elapsed-seconds, with a 10-second floor
-    -- on the elapsed value so sub-second extrapolation doesn't
-    -- produce absurd numbers in the moment right after /reload.
-    -- The best line shows the per-character record + the zone +
-    -- when context. Only updates the best when the session has
-    -- run for at least 5 minutes (300s gate) - filters early-
-    -- session burst noise.
+-- v2.35.x Session + Best Gold/Hour rows. Extracted from RefreshStats
+-- (v2.68.1) so the Stats panel's 1Hz tick can refresh ONLY these
+-- time-varying rows between real stat changes. Includes the best-record
+-- stamping (5-minute gate, all three fields written together) - it must
+-- keep running every tick so a record set mid-session is never missed.
+--
+-- The session line shows the live rate (copper/hour) computed from
+-- session.copper / elapsed-seconds, with a 10-second floor on the elapsed
+-- value so sub-second extrapolation doesn't produce absurd numbers right
+-- after /reload. The best line shows the record + zone + when context.
+-- See docs/specs/2026-05-26-gph-stats-design.md.
+local function EC_RefreshGPHRows(panel, view, src, DB, ADB)
     local startedAt = NS.session.startedAt or 0
     local now = GetTime()
     local elapsed = (startedAt > 0) and (now - startedAt) or 0
@@ -309,6 +281,64 @@ function NS.RefreshStats()
             panel.statsBestGPH.right:SetText(L["|cff888888-|r"])
         end
     end
+end
+
+function NS.RefreshStats()
+    local panel = _G["EbonClearanceOptionsStats"]
+    if not panel or not panel.statsMoney then
+        return
+    end
+    local DB = NS.DB
+    local ADB = NS.ADB
+    if not DB then
+        return
+    end
+    -- v2.38.1: view-aware. Character view reads DB.* (this character's
+    -- lifetime). Account view reads ADB.accountStats.* (aggregated
+    -- across all characters since v2.38.1 install). Session deltas only
+    -- render in Character view - "session" is inherently per-character.
+    local view = panel._statsView or "character"
+    local src = (view == "account") and (ADB and ADB.accountStats) or DB
+    if not src then
+        return
+    end
+    local showSession = (view == "character")
+    -- Thousands-separated count. Lazy delegate over the nil-safe
+    -- NS.CommaNumber (this closure runs post-load, so the lookup always
+    -- resolves; the old `and/or` fallback was dead defensiveness).
+    local function num(n)
+        return NS.CommaNumber(n)
+    end
+    local function sessionSuffix(n)
+        if not showSession then
+            return ""
+        end
+        return string.format(L["  |cff888888(session +%s)|r"], num(n))
+    end
+    local function sessionMoneySuffix(c)
+        if not showSession then
+            return ""
+        end
+        return "  |cff888888(session +" .. NS.CopperToGoldOnlyText(c or 0) .. "|cff888888)|r"
+    end
+    -- v2.66.1 iter (Serv report): aggregate rows are now two-column
+    -- MakeStatRow containers (row.left = label, row.right = value).
+    -- Label stays static, value updates per refresh; session-suffix is
+    -- appended to the value cell so it flows with the same column.
+    panel.statsMoney.left:SetText(L["Total Money Made"])
+    panel.statsMoney.right:SetText(NS.CopperToGoldOnlyText(src.totalCopper or 0) .. sessionMoneySuffix(NS.session.copper))
+    panel.statsSold.left:SetText(L["Total Items Sold"])
+    panel.statsSold.right:SetText(num(src.totalItemsSold or 0) .. sessionSuffix(NS.session.sold))
+    panel.statsDeleted.left:SetText(L["Total Items Deleted"])
+    panel.statsDeleted.right:SetText(num(src.totalItemsDeleted or 0) .. sessionSuffix(NS.session.deleted))
+    panel.statsRepairs.left:SetText(L["Total Repairs"])
+    panel.statsRepairs.right:SetText(num(src.totalRepairs or 0) .. sessionSuffix(NS.session.repairs))
+    panel.statsRepairCost.left:SetText(L["Total Repair Cost"])
+    panel.statsRepairCost.right:SetText(NS.CopperToGoldOnlyText(src.totalRepairCopper or 0) .. sessionMoneySuffix(NS.session.repairCopper))
+
+    -- v2.35.x: Session + Best Gold/Hour - body extracted to
+    -- EC_RefreshGPHRows (v2.68.1) so the 1Hz tick can run it alone.
+    EC_RefreshGPHRows(panel, view, src, DB, ADB)
 
     if panel.statsAvgWorth then
         -- inventoryWorthTotal / inventoryWorthCount are per-character
@@ -486,7 +516,7 @@ function NS.RefreshStats()
     if panel.statsProcessTotals then
         panel.statsProcessTotals:SetText(L["|cffffd200Process Bags Totals|r"])
     end
-    if panel._processRows and panel._processEmpty then
+    if panel._processRows then
         local counts = src.processCastCounts or {}
         -- Fixed display order: Disenchant, Milling, Prospecting, Pick Lock.
         -- Mirrors the Process Bags panel's section order. All four rows
@@ -514,7 +544,6 @@ function NS.RefreshStats()
                 row:Show()
             end
         end
-        panel._processEmpty:Hide()
     end
 
     -- v2.66.1 iter (Serv report): Top Zones now header + per-zone
@@ -627,7 +656,10 @@ function NS.RefreshStats()
     if panel.statsTopZones then
         reanchor(
             panel.statsTopZones,
-            lastVisibleRow(panel._processRows, panel.statsProcessTotals, panel._processEmpty, 1, 4),
+            -- v2.68.1: emptyRow arg is nil - the always-hidden _processEmpty
+            -- widget was removed; the header fallback covers the (unreachable
+            -- since v2.66.1) all-rows-hidden case identically.
+            lastVisibleRow(panel._processRows, panel.statsProcessTotals, nil, 1, 4),
             -10
         )
     end
@@ -637,6 +669,37 @@ function NS.RefreshStats()
             lastVisibleRow(panel._topZoneRows, panel.statsTopZones, panel._topZoneEmpty, 1, 5),
             -4
         )
+    end
+
+    -- v2.68.1: stamp the change-token so the 1Hz tick (NS.RefreshStatsTick)
+    -- can tell whether anything this repaint rendered has changed since.
+    panel._statsToken = EC_statsChangeToken(src)
+    panel._statsTokenView = view
+end
+
+-- v2.68.1: the Stats panel's 1Hz driver. Full repaint ONLY when a rendered
+-- counter changed (or the view flipped under us); otherwise just the
+-- time-varying Gold/Hour rows. Direct NS.RefreshStats callers (view
+-- toggles, resets, OnShow) are unaffected - they re-stamp the token.
+function NS.RefreshStatsTick()
+    local panel = _G["EbonClearanceOptionsStats"]
+    if not panel or not panel.statsMoney then
+        return
+    end
+    local DB = NS.DB
+    local ADB = NS.ADB
+    if not DB then
+        return
+    end
+    local view = panel._statsView or "character"
+    local src = (view == "account") and (ADB and ADB.accountStats) or DB
+    if not src then
+        return
+    end
+    if view ~= panel._statsTokenView or EC_statsChangeToken(src) ~= panel._statsToken then
+        NS.RefreshStats()
+    else
+        EC_RefreshGPHRows(panel, view, src, DB, ADB)
     end
 end
 

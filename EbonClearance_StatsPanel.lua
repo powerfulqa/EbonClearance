@@ -36,8 +36,17 @@ StatsPanel:SetScript("OnUpdate", function(self, elapsed)
     self._statsTickAcc = (self._statsTickAcc or 0) + elapsed
     if self._statsTickAcc >= 1.0 then
         self._statsTickAcc = 0
-        if self:IsShown() and NS.RefreshStats then
-            NS.RefreshStats()
+        -- v2.68.1: the tick routes through RefreshStatsTick, which
+        -- full-repaints only when a rendered counter actually changed and
+        -- otherwise refreshes just the time-varying Gold/Hour rows. The
+        -- old unconditional NS.RefreshStats() rewrote ~40 FontStrings and
+        -- re-anchored 6 section headers every second for nothing.
+        if self:IsShown() then
+            if NS.RefreshStatsTick then
+                NS.RefreshStatsTick()
+            elseif NS.RefreshStats then
+                NS.RefreshStats()
+            end
         end
     end
 end)
@@ -307,7 +316,9 @@ StatsPanel:SetScript("OnShow", function(self)
             panel._processRows[i] = row
             lastProcess = row
         end
-        panel._processEmpty = makeTopRow(processTotals, -2)
+        -- (v2.68.1: the old panel._processEmpty "Nothing processed yet" row
+        -- was removed - all four process rows always render since v2.66.1,
+        -- so the empty-state could never show.)
 
         -- v2.66.1 iter: Top zones header + per-zone MakeStatRow so the
         -- gold column aligns at TOP5_VALUE_X.
@@ -1013,9 +1024,15 @@ local function lootEnsureWindow()
     search:SetSize(190, 20)
     search:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
     search:SetAutoFocus(false)
-    search:SetScript("OnTextChanged", function(self)
-        win.search = self:GetText() or ""
+    -- v2.68.1: debounced via the shared helper - each keystroke used to
+    -- re-run the full lootBuildArray sweep (GetItemInfo per item + sort;
+    -- on Account scope that is the exact thousands-of-items pass the
+    -- v2.68.0 rebuild was built to tame). The text stash stays immediate;
+    -- only the rebuild waits for a 250 ms typing idle.
+    NS.MakeSearchDebounce(search, function()
         lootRefresh(win)
+    end, function(text)
+        win.search = text
     end)
     search:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()

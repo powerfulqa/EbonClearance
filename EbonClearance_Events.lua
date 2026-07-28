@@ -2080,18 +2080,26 @@ end
 -- from the positive bag delta before crediting as loot. Standard
 -- inventory slots 1-19 (INVSLOT_HEAD through INVSLOT_TABARD).
 local EC_lootEquippedSnapshot = {}
-local function EC_BuildEquippedSnapshot()
-    local snap = {}
+-- v2.68.1: double-buffer. The scan fills the spare, diffs it against the
+-- baseline, then the two tables SWAP - so this always-on BAG_UPDATE-path
+-- consumer stops allocating a fresh 19-slot table (plus the `unequipped`
+-- scratch below) every settled burst. Same wipe-and-reuse pattern as
+-- EC_manualSell.snapshotBags. On EC_compCache, not file-scope locals:
+-- the main chunk sits at Lua 5.1's 200-locals cap.
+EC_compCache.lootEquippedSpare = {}
+EC_compCache.lootUnequippedScratch = {}
+local function EC_BuildEquippedSnapshot(into)
+    wipe(into)
     if not GetInventoryItemID then
-        return snap
+        return into
     end
     for slot = 1, 19 do
         local id = GetInventoryItemID("player", slot)
         if id then
-            snap[id] = (snap[id] or 0) + 1
+            into[id] = (into[id] or 0) + 1
         end
     end
-    return snap
+    return into
 end
 
 -- v2.49.1: chance-on-hit removal ring buffer. Rolling 5-second window
@@ -2276,7 +2284,7 @@ local function EC_ScanLootDelta()
     -- re-baseline without crediting any delta as loot.
     if not EC_lootSnapshotReady or EC_LootTransactionWindowOpen() then
         EC_lootBagSnapshot = snap
-        EC_lootEquippedSnapshot = EC_BuildEquippedSnapshot()
+        EC_BuildEquippedSnapshot(EC_lootEquippedSnapshot)
         EC_lootSnapshotReady = true
         return
     end
@@ -2287,8 +2295,9 @@ local function EC_ScanLootDelta()
     -- "just unequipped" count. Subtract from the bag delta before
     -- crediting. Equipping (bag -> slot) doesn't trigger a positive
     -- bag delta so no equivalent guard needed on that side.
-    local equippedNow = EC_BuildEquippedSnapshot()
-    local unequipped = {}
+    local equippedNow = EC_BuildEquippedSnapshot(EC_compCache.lootEquippedSpare)
+    local unequipped = EC_compCache.lootUnequippedScratch
+    wipe(unequipped)
     for id, prevEq in pairs(EC_lootEquippedSnapshot) do
         local nowEq = equippedNow[id] or 0
         if nowEq < prevEq then
@@ -2345,6 +2354,9 @@ local function EC_ScanLootDelta()
         end
     end
     EC_lootBagSnapshot = snap
+    -- Rotate the double-buffer: the just-built table becomes the baseline,
+    -- the old baseline becomes next scan's spare (wiped on fill).
+    EC_compCache.lootEquippedSpare = EC_lootEquippedSnapshot
     EC_lootEquippedSnapshot = equippedNow
 end
 NS.ScanLootDelta = EC_ScanLootDelta
@@ -2373,6 +2385,21 @@ EC_GetPlayerName = function()
     return n
 end
 
+-- v2.13.1 robustness helper for EC_IsCharacterAllowed: case-insensitive +
+-- invisible-whitespace-stripped name normalisation. Catches entries added
+-- with different capitalisation (user typed "zittla" but UnitName returns
+-- "Zittla"), entries pasted from chat / web with embedded non-breaking
+-- space (U+00A0) or zero-width joiner (U+200B), and similar look-alike
+-- strings the v2.13.0 add-time trim missed. On a single PE-style private
+-- server character names are unique by case, so a lowercase match cannot
+-- collide with another player's name. (v2.68.1: hoisted out of the
+-- function - it was a closure rebuilt on every slow-path call. Hung off
+-- EC_compCache rather than a file-scope local because the main chunk sits
+-- at Lua 5.1's 200-locals cap.)
+function EC_compCache.stripCharName(s)
+    return (s or ""):lower():gsub("[%s\194\160\226\128\139]+", "")
+end
+
 local function EC_IsCharacterAllowed()
     if not DB or not DB.enableOnlyListedChars then
         return true
@@ -2386,23 +2413,12 @@ local function EC_IsCharacterAllowed()
     if DB.allowedChars[name] == true then
         return true
     end
-    -- v2.13.1 robustness: case-insensitive + invisible-whitespace-stripped
-    -- fallback. Catches entries added with different capitalisation
-    -- (user typed "zittla" but UnitName returns "Zittla"), entries
-    -- pasted from chat / web with embedded non-breaking space (U+00A0)
-    -- or zero-width joiner (U+200B), and similar look-alike strings the
-    -- v2.13.0 add-time trim missed. On a single PE-style private server
-    -- character names are unique by case, so a lowercase match cannot
-    -- collide with another player's name.
-    local function strip(s)
-        return (s or ""):lower():gsub("[%s\194\160\226\128\139]+", "")
-    end
-    local target = strip(name)
+    local target = EC_compCache.stripCharName(name)
     if target == "" then
         return false
     end
     for key, val in pairs(DB.allowedChars) do
-        if val == true and type(key) == "string" and strip(key) == target then
+        if val == true and type(key) == "string" and EC_compCache.stripCharName(key) == target then
             return true
         end
     end
@@ -3292,6 +3308,32 @@ local EC_scanTooltip = CreateFrame("GameTooltip", "EbonClearanceScanTooltip", UI
 EC_scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
 NS.scanTooltip = EC_scanTooltip
 
+-- v2.68.1: memoised access to the scan tooltip's line FontStrings. Every
+-- offscreen tooltip scanner used to rebuild the global name per line per
+-- scan (`_G["EbonClearanceScanTooltipTextLeft" .. i]`) - a throwaway
+-- string + _G hash lookup per iteration, ~1,000+ allocations per scanner
+-- pass on a cold-cache bag walk. Once a line FontString exists it is a
+-- stable session-long reference (fixed frame name), so cache it forever.
+--
+-- MUST stay lazy-fill, NOT an eager loop at load: GameTooltipTemplate only
+-- pre-creates the first line FontStrings; the client materialises higher
+-- indices on demand as tooltips grow. An eager array would freeze nil for
+-- every not-yet-rendered line and silently truncate all scans. The
+-- metatable fires only on a miss; after the rawset, reads are plain hash
+-- hits. A nil return (line not created yet) keeps today's `break`
+-- semantics in every scan loop. Consumers in Protection/Process/BugReport
+-- read EC_compCache.scanLines at CALL time (those files load before this
+-- one - the Test 41 load-order trap).
+EC_compCache.scanLines = setmetatable({}, {
+    __index = function(t, i)
+        local fs = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        if fs then
+            rawset(t, i, fs)
+        end
+        return fs
+    end,
+})
+
 -- v2.38.3: SetOwner-before-SetBagItem invariant. WoW's GameTooltip
 -- silently drops ownership when something calls :Hide() on it - and
 -- anyone iterating UIParent's children (host bag UI replacements, host
@@ -3587,7 +3629,7 @@ local function EC_IsOpenable(bag, slot)
     -- than any container we care about will produce.
     local sawAnyLine = false
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -3722,7 +3764,7 @@ function EC_compCache.getBindType(bag, slot)
     -- 30-line cap matches the openable-container scan; well above any
     -- realistic tooltip we'd encounter on Project Ebonhold.
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -6523,6 +6565,18 @@ local EC_recentSoldLog = {}
 local EC_recentDeletedLog = {}
 local EC_soldLogTrimmed = 0
 local EC_deletedLogTrimmed = 0
+-- v2.68.1: per-log write counters driving a TRUE ring. At the cap the old
+-- code did table.remove(t, 1) per event - an O(5000) front-shift on the
+-- vendor path during exactly the marathon sessions that fill the log
+-- (Turbo mode sells up to 80 items per run). The write slot is now
+-- ((writes - 1) % MAX) + 1: below the cap that is a plain append, at the
+-- cap it overwrites the oldest in place. The array order becomes ROTATED
+-- at the cap - readers must order by the per-entry `seq`, never by array
+-- index (the Sold History window always did; /ec bugreport was converted
+-- alongside this change). On EC_compCache, not file-scope locals: the main
+-- chunk sits at Lua 5.1's 200-locals cap.
+EC_compCache.soldLogWrites = 0
+EC_compCache.deletedLogWrites = 0
 -- Monotonic insertion sequence stamped on every entry so the Sold History
 -- window can merge the two logs into an exact newest-first order (loggedAt is
 -- only 1 s granular and would tie). Session-local.
@@ -6537,13 +6591,15 @@ EC_LogRecentSold = function(itemID, count, path, copper, reason)
     if not itemID then
         return
     end
-    if #EC_recentSoldLog >= EC_RECENT_SOLD_LOG_MAX then
-        table.remove(EC_recentSoldLog, 1)
+    EC_compCache.soldLogWrites = EC_compCache.soldLogWrites + 1
+    local idx = ((EC_compCache.soldLogWrites - 1) % EC_RECENT_SOLD_LOG_MAX) + 1
+    if EC_compCache.soldLogWrites > EC_RECENT_SOLD_LOG_MAX then
         EC_soldLogTrimmed = EC_soldLogTrimmed + 1
     end
     local _, link = GetItemInfo(itemID)
     EC_historySeq = EC_historySeq + 1
-    EC_recentSoldLog[#EC_recentSoldLog + 1] = {
+    EC_compCache.historySeq = EC_historySeq
+    EC_recentSoldLog[idx] = {
         itemID = itemID,
         itemName = link or ("item:" .. tostring(itemID)),
         count = count or 1,
@@ -6560,13 +6616,15 @@ EC_LogRecentDeleted = function(itemID, count, source, reason)
     if not itemID then
         return
     end
-    if #EC_recentDeletedLog >= EC_RECENT_DELETED_LOG_MAX then
-        table.remove(EC_recentDeletedLog, 1)
+    EC_compCache.deletedLogWrites = EC_compCache.deletedLogWrites + 1
+    local idx = ((EC_compCache.deletedLogWrites - 1) % EC_RECENT_DELETED_LOG_MAX) + 1
+    if EC_compCache.deletedLogWrites > EC_RECENT_DELETED_LOG_MAX then
         EC_deletedLogTrimmed = EC_deletedLogTrimmed + 1
     end
     local _, link = GetItemInfo(itemID)
     EC_historySeq = EC_historySeq + 1
-    EC_recentDeletedLog[#EC_recentDeletedLog + 1] = {
+    EC_compCache.historySeq = EC_historySeq
+    EC_recentDeletedLog[idx] = {
         itemID = itemID,
         itemName = link or ("item:" .. tostring(itemID)),
         count = count or 1,
@@ -6644,6 +6702,10 @@ function NS.ClearSessionHistory()
     wipe(EC_recentDeletedLog)
     EC_soldLogTrimmed = 0
     EC_deletedLogTrimmed = 0
+    -- Reset the ring write cursors so post-clear writes append from slot 1
+    -- again (a stale cursor would leave holes ipairs stops at).
+    EC_compCache.soldLogWrites = 0
+    EC_compCache.deletedLogWrites = 0
 end
 
 -- Session sell/delete history. Opens the interactive Sold History window
@@ -8396,7 +8458,7 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
                     EC_scanTooltip:ClearLines()
                     EC_scanTooltip:SetHyperlink(link)
                     for i = 1, EC_scanTooltip:NumLines() do
-                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. i]
+                        local fs = EC_compCache.scanLines[i]
                         if fs and fs.GetText then
                             local txt = fs:GetText()
                             if txt then

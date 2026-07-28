@@ -688,6 +688,25 @@ local function EC_BuildBugReport()
     -- did EC sell in the last vendor visit / manual sell burst?" -
     -- lifetime totals answer "how many", not "which".
     add("--- Recent Sold (this session) ---")
+    -- v2.68.1: the session logs are RING buffers - at the 5000 cap the
+    -- array order rotates, so a tail slice by index would interleave old
+    -- and new entries. Order by the per-entry `seq` instead and take the
+    -- newest `cap`, printed oldest-first like before.
+    local function newestBySeq(t, cap)
+        local all = {}
+        for i = 1, #t do
+            all[i] = t[i]
+        end
+        table.sort(all, function(a, b)
+            return (a.seq or 0) > (b.seq or 0)
+        end)
+        local n = math.min(cap, #all)
+        local slice = {}
+        for i = n, 1, -1 do
+            slice[#slice + 1] = all[i]
+        end
+        return slice
+    end
     do
         local rs = NS.recentSoldLog or {}
         local cap = NS.bugReportRecentMax or 20
@@ -695,14 +714,14 @@ local function EC_BuildBugReport()
             add("  (none this session)")
         else
             -- The full session log can hold thousands now; the report shows
-            -- only the newest `cap` (a tail slice) so it stays short. The full
-            -- list lives in the Sold History window (/ec history).
-            local startI = math.max(1, #rs - cap + 1)
-            if startI > 1 then
-                add(string.format("  (newest %d of %d - full list in /ec history)", #rs - startI + 1, #rs))
+            -- only the newest `cap` so it stays short. The full list lives
+            -- in the Sold History window (/ec history).
+            local slice = newestBySeq(rs, cap)
+            if #rs > #slice then
+                add(string.format("  (newest %d of %d - full list in /ec history)", #slice, #rs))
             end
-            for i = startI, #rs do
-                local e = rs[i]
+            for i = 1, #slice do
+                local e = slice[i]
                 add(string.format("  [%s] %d x%d %s (%s, %s) - %s",
                     tostring(e.loggedAt),
                     tonumber(e.itemID) or 0,
@@ -727,12 +746,12 @@ local function EC_BuildBugReport()
         if #rd == 0 then
             add("  (none this session)")
         else
-            local startI = math.max(1, #rd - cap + 1)
-            if startI > 1 then
-                add(string.format("  (newest %d of %d - full list in /ec history)", #rd - startI + 1, #rd))
+            local slice = newestBySeq(rd, cap)
+            if #rd > #slice then
+                add(string.format("  (newest %d of %d - full list in /ec history)", #slice, #rd))
             end
-            for i = startI, #rd do
-                local e = rd[i]
+            for i = 1, #slice do
+                local e = slice[i]
                 add(string.format("  [%s] %d x%d %s (%s) - %s",
                     tostring(e.loggedAt),
                     tonumber(e.itemID) or 0,
@@ -1572,7 +1591,7 @@ local function EC_BuildProcessDebugDump()
                         local numLines = NS.scanTooltip.NumLines and NS.scanTooltip:NumLines() or -1
                         add(string.format("       NumLines() = %d", numLines))
                         for i = 1, 30 do
-                            local lineFS = _G["EbonClearanceScanTooltipTextLeft" .. i]
+                            local lineFS = EC_compCache.scanLines[i]
                             if not lineFS then
                                 add(string.format("       L%-2d: <FontString not registered>", i))
                                 break
@@ -1670,7 +1689,7 @@ local function EC_BuildScanDebugDump(bag, slot)
         EC_compCache.scanBagItem(bag, slot)
         local empty = true
         for i = 1, 30 do
-            local fs = _G["EbonClearanceScanTooltipTextLeft" .. i]
+            local fs = EC_compCache.scanLines[i]
             local txt = fs and fs.GetText and fs:GetText()
             if txt and txt ~= "" then
                 add(string.format("  [%d] %s", i, txt))
@@ -1825,7 +1844,7 @@ local function EC_BuildCaptureProcDump()
                     EC_compCache.scanBagItem(bag, slot)
                     local procLine = nil
                     for i = 1, 30 do
-                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. i]
+                        local fs = EC_compCache.scanLines[i]
                         if not fs then
                             break
                         end
@@ -1876,7 +1895,7 @@ local function EC_BuildCaptureProcDump()
                             local isEngrave = false
                             local fullTooltip = {}
                             for j = 1, 30 do
-                                local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                                local fs = EC_compCache.scanLines[j]
                                 if not fs then
                                     break
                                 end

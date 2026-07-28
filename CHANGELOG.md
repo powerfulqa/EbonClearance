@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.68.1
+
+**Performance patch from a third full audit: typing in the search boxes no longer re-filters per keystroke, and a batch of engine cleanups. No behaviour change.**
+
+- **Search boxes wait for you to stop typing.** The Loot Log and Sold History searches re-ran their full rebuild on every keystroke - on the Loot Log's Account scope that's the thousands-of-items sweep, nine times for a nine-letter word. Both now refresh once, a quarter-second after you pause, using the same debounce the list panels have had since v2.28.0 (now a shared helper, locked by a new test).
+- **Stats panel stops repainting when nothing changed.** While open it rewrote every row and re-anchored every section once per second; now it does that only when a stat actually changed, and just keeps the live Gold/Hour line ticking in between.
+- **Marathon-session logs are true ring buffers.** At the 5,000-entry cap, every sale/delete used to shift the entire log down by one - a real cost during exactly the long farms that fill it. The logs now overwrite the oldest slot in place; the Sold History window and `/ec bugreport` read them in exact order regardless (locked by a new test).
+- **Tooltip-scan plumbing:** the hidden scan-tooltip's line lookups are memoised (they rebuilt a global-name string per line, per scan, ~1,000+ throwaway strings per cold bag walk); rarity filtering in Sold History remembers each entry's rarity instead of re-asking the client per refresh; the loot tally reuses its scratch tables instead of reallocating per burst; Protection/Tooltip gained the standard cached-API blocks their sibling files already had.
+- **Test-coverage fix (contributor-facing):** the three static test suites had silently drifted behind the `.toc` - up to nine shipped files were never scanned by the comment-hygiene and invariant checks. Their file lists now derive from the `.toc` itself, so they can never drift again (verified by deliberately planting a violation in a previously-unscanned file and watching the gate catch it).
+- **Cleanups:** removed the unreachable "Nothing processed yet" row on the Stats panel (all four process rows always render since v2.66.1), fixed a corrupted first byte pair in docs/ADDON_GUIDE.md, and hoisted a per-call closure out of the character-allowlist check.
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.68.0
 
 **The Loot Log no longer slows the game down + rarity and search filters on both pop-out windows.**

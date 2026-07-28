@@ -138,6 +138,36 @@ local function CommaNumber(n)
 end
 NS.CommaNumber = CommaNumber
 
+-- Shared search debounce (v2.68.1). Typing in a search box must not fire a
+-- full list rebuild per keystroke - on the Loot Log's Account scope that is
+-- a GetItemInfo sweep + sort over thousands of items, nine times for the
+-- word "bloodpike". Same design as the ListWidget original (v2.28.0): a
+-- hidden per-widget OnUpdate frame arms a 250 ms countdown, every keystroke
+-- resets it, and one fn() fires when typing goes idle. The editBox's
+-- OnTextChanged is OWNED by this helper; callers that need the live text
+-- immediately (e.g. stashing win.search) pass it via onText, which runs
+-- per keystroke BEFORE the debounce arms.
+function NS.MakeSearchDebounce(editBox, fn, onText)
+    local debounce = CreateFrame("Frame")
+    debounce:Hide()
+    debounce.elapsed = 0
+    debounce:SetScript("OnUpdate", function(self, dt)
+        self.elapsed = self.elapsed + dt
+        if self.elapsed >= 0.25 then
+            self:Hide()
+            fn()
+        end
+    end)
+    editBox:SetScript("OnTextChanged", function(self)
+        if onText then
+            onText(self:GetText() or "")
+        end
+        debounce.elapsed = 0
+        debounce:Show()
+    end)
+    return debounce
+end
+
 -- Shared two-column stat row for the Stats - Guild / Stats - Server panels
 -- (extracted v2.63.0: the two panels carried byte-identical copies that had
 -- already cost one double-edit fix in v2.59.11). row.left is the label,

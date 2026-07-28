@@ -1,4 +1,4 @@
-ne# EbonClearance - Addon Development Guide
+# EbonClearance - Addon Development Guide
 
 **Read this first if you are an AI agent or new contributor touching
 this codebase.** It is prescriptive: when the guide and a random
@@ -14,7 +14,9 @@ internet tutorial disagree, follow the guide.
    the event hub is `EbonClearance_Events.lua`, renamed from the
    original monolith). Cross-file state goes through the shared `NS`
    namespace; do not add new files without registering them in the
-   `.toc`, the test SOURCE_PATHS arrays, and CLAUDE.md's file count.
+   `.toc` and CLAUDE.md's file count. (v2.68.1: the static test suites
+   derive their SOURCE_PATHS from the `.toc` automatically - the old
+   hand-written arrays had silently drifted up to nine files behind.)
 3. **Namespace via `EC_` prefixed locals.** There is no addon table.
    Nearly everything is `local`; the only intentional globals are the
    saved-variable tables (`EbonClearanceDB`, `EbonClearanceAccountDB`),

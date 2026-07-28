@@ -39,40 +39,23 @@
 -- into per-feature files (Core first, more to follow). Every static-pattern
 -- check below runs against the whole concatenated source, so invariants
 -- expressed as `src:find(...)` continue to hold across the split boundary.
--- Add new source files to the SOURCE_PATHS list in the order they appear in
--- the .toc (matches load order).
-local SOURCE_PATHS = {
-    "EbonClearance_Core.lua",
-    "EbonClearance_Companion.lua",
-    "EbonClearance_Protection.lua",
-    "EbonClearance_Vendor.lua",
-    "EbonClearance_Process.lua",
-    "EbonClearance_ProcessBagsPanel.lua",
-    "EbonClearance_MerchantPanel.lua",
-    "EbonClearance_ScavengerPanel.lua",
-    "EbonClearance_SellListPanels.lua",
-    "EbonClearance_KeepDeletePanels.lua",
-    "EbonClearance_ProtectionPanel.lua",
-    "EbonClearance_ItemHighlightingPanel.lua",
-    "EbonClearance_ProfilesPanel.lua",
-    "EbonClearance_MainPanel.lua",
-    "EbonClearance_StatsPanel.lua",
-    "EbonClearance_GuildPanel.lua",
-    "EbonClearance_PanelInfra.lua",
-    "EbonClearance_PanelWidgets.lua",
-    "EbonClearance_ListWidget.lua",
-    "EbonClearance_QuickstartPanel.lua",
-    "EbonClearance_Events.lua",
-    "EbonClearance_HistoryWindow.lua",
-    "EbonClearance_Comms.lua",
-    "EbonClearance_GuildShare.lua",
-    "EbonClearance_BagDisplay.lua",
-    "EbonClearance_BugReport.lua",
-    "EbonClearance_Minimap.lua",
-    "EbonClearance_Tooltip.lua",
-    "EbonClearance_BagContextMenu.lua",
-    "EbonClearance_HelpPanel.lua",
-}
+-- v2.68.1: the list is DERIVED from EbonClearance.toc (the real load list)
+-- instead of a hand-written array - the array had silently drifted behind
+-- the .toc (ProcShare, RealmComms, ServerShare shipped unscanned). Locale
+-- files are excluded here as before (they carry no code; the locale suites
+-- own them). Same derivation as tests/test_locale_coverage.lua.
+local SOURCE_PATHS = {}
+do
+    local fh = assert(io.open("EbonClearance.toc", "rb"), "EbonClearance.toc not found (run from repo root)")
+    local toc = fh:read("*a")
+    fh:close()
+    for line in (toc .. "\n"):gmatch("(.-)\r?\n") do
+        local f = line:match("^(EbonClearance_[%w_]+%.lua)%s*$")
+        if f and not f:match("^EbonClearance_Locale") then
+            SOURCE_PATHS[#SOURCE_PATHS + 1] = f
+        end
+    end
+end
 
 local pieces = {}
 for _, path in ipairs(SOURCE_PATHS) do
@@ -7228,9 +7211,13 @@ do
             and ev:find("if not junkOnly\n%s+and hasSellPrice\n%s+and DB%.sellChanceOnHitKnown") ~= nil,
         "Serv reported (Windrunner Legguards at a normal merchant with Merchant Mode = goblin): three positive sell signals - affixRankPass, autoDupePass, knownProcPass - bypassed the junkOnly gate that qualityPass, whitelistPass, and recipePass all honour. Result: at a disallowed merchant, items with rank-below-floor affixes or known-dupe affixes (or v2.49.0's known chance-on-hit procs) sold anyway. Every positive signal that fires on non-grey items MUST honour junkOnly so the merchant-mode restriction actually holds. isJunk (grey items) stays exempt - grey is always sold at any merchant per the ADDON_GUIDE 'Grey items are always sold' invariant.")
     check("Test 110h: EC_ScanLootDelta unequip guard subtracts equipped snapshot decreases",
-        ev:find("local function EC_BuildEquippedSnapshot%(%)") ~= nil
-            and ev:find("EC_lootEquippedSnapshot = EC_BuildEquippedSnapshot%(%)") ~= nil
-            and ev:find("local unequipped = {}") ~= nil
+        -- v2.68.1: the snapshot is a wipe-and-fill double-buffer now
+        -- (EC_BuildEquippedSnapshot(into) + spare/baseline rotation) instead
+        -- of a fresh table per burst; the guard's diff-and-subtract shape
+        -- and BOTH re-baseline sites are unchanged.
+        ev:find("local function EC_BuildEquippedSnapshot%(into%)") ~= nil
+            and ev:find("EC_BuildEquippedSnapshot%(EC_lootEquippedSnapshot%)") ~= nil
+            and ev:find("EC_lootEquippedSnapshot = equippedNow") ~= nil
             and ev:find("if nowEq < prevEq then") ~= nil
             and ev:find("local unequipDelta = unequipped%[id%] or 0") ~= nil
             and ev:find("local netDelta = delta %- unequipDelta") ~= nil,
@@ -7849,6 +7836,49 @@ do
         has(pb, '"TOPLEFT", skillGroup, "BOTTOMLEFT"'),
         "scrollBg must re-anchor to the toggle group so the list reflows"
     )
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 124 (v2.68.1): pop-out search debounce + session-log ring buffer.
+-- ---------------------------------------------------------------------------
+-- (a/b) The Loot Log and Sold History search boxes MUST route through the
+-- shared NS.MakeSearchDebounce (250 ms idle, one refresh) - each keystroke
+-- used to re-run the full build pass (GetItemInfo sweep + sort; on Account
+-- scope that is thousands of items, nine times for the word "bloodpike").
+-- ListWidget's own debounce established the convention in v2.28.0.
+-- (c/d) The 5000-cap session logs are TRUE rings: at the cap the old code
+-- did table.remove(t, 1) - an O(5000) front-shift per sale/delete on the
+-- vendor path. Readers must order by the per-entry seq, never array index.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "r")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local pw = fileSrc("EbonClearance_PanelWidgets.lua")
+    local sp = fileSrc("EbonClearance_StatsPanel.lua")
+    local hw = fileSrc("EbonClearance_HistoryWindow.lua")
+    local br = fileSrc("EbonClearance_BugReport.lua")
+    local ev = fileSrc("EbonClearance_Events.lua")
+    check("Test 124a: shared search-debounce helper exists",
+        pw:find("function NS%.MakeSearchDebounce%(") ~= nil,
+        "NS.MakeSearchDebounce must live in EbonClearance_PanelWidgets.lua (hidden OnUpdate frame, 250ms countdown reset per keystroke).")
+    check("Test 124b: both pop-out windows route their search through the helper",
+        sp:find("NS%.MakeSearchDebounce%(") ~= nil and hw:find("NS%.MakeSearchDebounce%(") ~= nil,
+        "the Loot Log (StatsPanel) and Sold History (HistoryWindow) search boxes must use NS.MakeSearchDebounce; a raw OnTextChanged -> refresh reintroduces the per-keystroke full rebuild.")
+    check("Test 124c: session logs never front-shift at the cap",
+        ev:find("table%.remove%(EC_recentSoldLog, 1%)") == nil
+            and ev:find("table%.remove%(EC_recentDeletedLog, 1%)") == nil
+            and ev:find("soldLogWrites %- 1%) %% EC_RECENT_SOLD_LOG_MAX", 1, false) ~= nil
+            and ev:find("deletedLogWrites %- 1%) %% EC_RECENT_DELETED_LOG_MAX", 1, false) ~= nil,
+        "the sold/deleted session logs must ring-write (((writes - 1) %% MAX) + 1), never table.remove(t, 1) - the front-shift is O(5000) per event during exactly the marathon sessions that fill the log.")
+    check("Test 124d: bugreport's recent slices order by seq, not array tail",
+        br:find("newestBySeq") ~= nil and br:find("a%.seq or 0%) > %(b%.seq or 0%)") ~= nil,
+        "at the ring cap the array order rotates; a tail slice by index would interleave old and new entries. The bugreport must sort by the per-entry seq.")
 end
 
 -- ---------------------------------------------------------------------------

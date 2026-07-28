@@ -51,6 +51,17 @@
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
 
+-- Cached API upvalues (v2.68.1): this file was the only engine file
+-- without the convention its siblings follow (Events/Process/BagDisplay
+-- cache these at file head). The affix bag-walk fallback and the tooltip
+-- scanners call these inside nested loops.
+local GetItemInfo = GetItemInfo
+local GetContainerItemID = GetContainerItemID
+local GetContainerItemLink = GetContainerItemLink
+local GetContainerNumSlots = GetContainerNumSlots
+local GetSpellInfo = GetSpellInfo
+local GetTime = GetTime
+
 -- Read-through accessor so each call resolves NS.scanTooltip fresh.
 -- EbonClearance_Events.lua creates the frame and writes NS.scanTooltip during
 -- its main chunk; this file loads first, so any file-load attempt to
@@ -382,7 +393,7 @@ function EC_compCache.bagSlotAffixData(bag, slot)
     end
     -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
     EC_compCache.scanBagItem(bag, slot)
-    local titleFS = _G["EbonClearanceScanTooltipTextLeft1"]
+    local titleFS = EC_compCache.scanLines[1]
     if not titleFS or not titleFS.GetText then
         return nil
     end
@@ -883,7 +894,7 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
             tip:ClearLines()
             tip:SetHyperlink("spell:" .. spellId)
             for j = 1, tip:NumLines() do
-                local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                local fs = EC_compCache.scanLines[j]
                 if fs and fs.GetText then
                     local txt = fs:GetText()
                     if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
@@ -953,7 +964,7 @@ EC_compCache._affixScanFrame:SetScript("OnUpdate", function(self)
                         tip:ClearLines()
                         tip:SetHyperlink("spell:" .. r.id)
                         for j = 1, tip:NumLines() do
-                            local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                            local fs = EC_compCache.scanLines[j]
                             if fs and fs.GetText then
                                 local txt = fs:GetText()
                                 if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
@@ -1140,7 +1151,7 @@ function EC_compCache.refreshExtractionIfDirty()
                     tip:ClearLines()
                     tip:SetHyperlink("spell:" .. r.id)
                     for j = 1, tip:NumLines() do
-                        local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+                        local fs = EC_compCache.scanLines[j]
                         if fs and fs.GetText then
                             local txt = fs:GetText()
                             if txt and txt:find(EC_compCache.AFFIX_SPELL_PREFIX, 1, true) then
@@ -1331,7 +1342,7 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     local result = false
     local sawAnyLine = false
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -1806,7 +1817,7 @@ function EC_compCache.chanceProcLine(bag, slot, itemID)
     -- LEARNED_SPELL_IN_TAB event to a just-removed weapon).
     EC_compCache.procLineByItemID = EC_compCache.procLineByItemID or {}
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -1841,7 +1852,7 @@ function EC_compCache.itemHasResilience(bag, slot, itemID)
     local result = false
     local sawAnyLine = false
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -2003,7 +2014,7 @@ function EC_compCache.itemIsTome(bag, slot, itemID)
     local result = false
     local usePrefix = ITEM_SPELL_TRIGGER_ONUSE or "Use:"
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -2054,7 +2065,7 @@ function EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
     local result = false
     local knownStr = ITEM_SPELL_KNOWN or "Already known"
     for i = 1, 30 do
-        local line = _G["EbonClearanceScanTooltipTextLeft" .. i]
+        local line = EC_compCache.scanLines[i]
         if not line then
             break
         end
@@ -2271,7 +2282,7 @@ function EC_compCache.findLearnedAffixForItem(link)
     scanTip():SetHyperlink(link)
     local found = nil
     for j = 1, scanTip():NumLines() do
-        local fs = _G["EbonClearanceScanTooltipTextLeft" .. j]
+        local fs = EC_compCache.scanLines[j]
         if fs and fs.GetText then
             local text = fs:GetText()
             if text then

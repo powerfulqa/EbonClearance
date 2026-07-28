@@ -35,6 +35,11 @@
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
 
+-- Cached API upvalues (v2.68.1): completes the engine-file convention
+-- (Events/Process/BagDisplay/Protection all cache their hot globals).
+local GetItemInfo = GetItemInfo
+local IsEquippedItem = IsEquippedItem
+
 -- Set-membership helper. Captures the canonical NS.IsInSet (defined in
 -- EbonClearance_Core.lua); per-call cost is one local read.
 local IsInSet = NS.IsInSet

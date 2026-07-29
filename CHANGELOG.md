@@ -5,9 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
-### v2.68.1
+### v2.69.0
 
-**Performance patch from a third full audit: typing in the search boxes no longer re-filters per keystroke, and a batch of engine cleanups. No behaviour change.**
+**Bind filters now work on French and German clients, one shared item scan instead of three, and the third-audit performance batch.**
+
+## Localized bind detection + combined item scan
+
+- **Bind filters were silently broken on non-English clients.** The "Sell BoE only" / "BoP only" rules matched the English tooltip lines ("Binds when picked up", "Soulbound", "Binds when equipped") literally, so on the French and German clients we ship translations for, every bind filter quietly treated all items as "any". Detection now uses the game's own localized strings and works in every client language. (From the competitive review; the sibling addon demonstrated the correct pattern.)
+- **One item scan instead of three.** Checking an item's bind type, chance-on-hit proc, and Resilience each ran a separate hidden-tooltip inspection on first sight. One combined pass now fills all three answers together, and none of them can cache a wrong answer from an item whose data hasn't loaded yet (that guard previously protected proc/Resilience but not bind). Locked by a new test invariant (Test 125).
+- Known limit, documented: the Resilience and proc-text matchers themselves remain English patterns - a separate, much larger question than the bind fix.
+
+## Also in this release: the third-audit performance batch
+
+**Typing in the search boxes no longer re-filters per keystroke, plus a batch of engine cleanups. No behaviour change.**
 
 - **Search boxes wait for you to stop typing.** The Loot Log and Sold History searches re-ran their full rebuild on every keystroke - on the Loot Log's Account scope that's the thousands-of-items sweep, nine times for a nine-letter word. Both now refresh once, a quarter-second after you pause, using the same debounce the list panels have had since v2.28.0 (now a shared helper, locked by a new test).
 - **Stats panel stops repainting when nothing changed.** While open it rewrote every row and re-anchored every section once per second; now it does that only when a stat actually changed, and just keeps the live Gold/Hour line ticking in between.

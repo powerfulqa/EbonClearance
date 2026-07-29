@@ -1315,6 +1315,80 @@ function EC_compCache.lineLooksLikeChanceProc(txt)
     return false
 end
 
+-- v2.69.0 (competitive-review B1): ONE offscreen tooltip walk fills the
+-- three itemID-keyed line-predicate caches together - bind type
+-- (bindCache), chance-on-hit (chanceOnHitCache), and Resilience
+-- (resilienceCache). Each predicate previously ran its own scanBagItem +
+-- 30-line walk, so a fresh item paid up to three identical walks on its
+-- first scan or hover. Tome detection deliberately stays separate: its
+-- walk is gated behind GetItemInfo class fast-paths and carries mid-loop
+-- collectible-reject semantics that don't fit a shared pass.
+--
+-- Cold-tooltip discipline (v2.68.1): nothing is cached unless the tooltip
+-- actually rendered a line. Bind gains this guard for the first time -
+-- the old getBindType cached "any" from an empty warming-up tooltip.
+--
+-- Bind matching uses the client-localized globals (competitive-review
+-- A3): the old enUS literals made every bind filter silently degrade to
+-- "any" on French/German clients.
+function EC_compCache.scanItemMarkers(bag, slot, itemID)
+    if not itemID or not bag or not slot then
+        return
+    end
+    EC_compCache.scanBagItem(bag, slot)
+    local sawAnyLine = false
+    local bind -- nil until a bind line is seen; the first bind line wins
+    local proc = false
+    local resilience = false
+    local bopLine = ITEM_BIND_ON_PICKUP or "Binds when picked up"
+    local sbLine = ITEM_SOULBOUND or "Soulbound"
+    local boeLine = ITEM_BIND_ON_EQUIP or "Binds when equipped"
+    for i = 1, 30 do
+        local line = EC_compCache.scanLines[i]
+        if not line then
+            break
+        end
+        local txt = line:GetText()
+        if txt and txt ~= "" then
+            sawAnyLine = true
+            if not bind then
+                if txt == bopLine or txt == sbLine then
+                    bind = "bop"
+                elseif txt == boeLine then
+                    bind = "boe"
+                end
+            end
+            if not proc and EC_compCache.lineLooksLikeChanceProc(txt) then
+                proc = true
+            end
+            if not resilience and txt:lower():find("resilience", 1, true) then
+                resilience = true
+            end
+        end
+    end
+    if not sawAnyLine then
+        return
+    end
+    if EC_compCache.bindCache[itemID] == nil then
+        EC_compCache.bindCache[itemID] = bind or "any"
+    end
+    if EC_compCache.chanceOnHitCache[itemID] == nil then
+        -- Recipes/tomes leak the crafted item's proc line into their own
+        -- tooltip (the v2.49.1 Frost Tiger Blade report); the accessor's
+        -- tome short-circuit normally fires before any scan, but guard
+        -- here too for callers that reach the combined scan first via
+        -- another predicate.
+        if proc and EC_compCache.itemIsTome and EC_compCache.itemIsTome(bag, slot, itemID) then
+            EC_compCache.chanceOnHitCache[itemID] = false
+        else
+            EC_compCache.chanceOnHitCache[itemID] = proc
+        end
+    end
+    if EC_compCache.resilienceCache[itemID] == nil then
+        EC_compCache.resilienceCache[itemID] = resilience
+    end
+end
+
 function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     if not itemID then
         return false
@@ -1337,32 +1411,11 @@ function EC_compCache.itemHasChanceOnHit(bag, slot, itemID)
     if not bag or not slot then
         return false
     end
-    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
-    EC_compCache.scanBagItem(bag, slot)
-    local result = false
-    local sawAnyLine = false
-    for i = 1, 30 do
-        local line = EC_compCache.scanLines[i]
-        if not line then
-            break
-        end
-        local txt = line:GetText()
-        if txt and txt ~= "" then
-            sawAnyLine = true
-        end
-        if EC_compCache.lineLooksLikeChanceProc(txt) then
-            result = true
-            break
-        end
-    end
-    -- Only cache a NEGATIVE result from a tooltip that actually rendered
-    -- (cold item cache = empty tooltip; caching false from it would hide
-    -- the proc from the protection layer for the whole session). Same
-    -- discipline as EC_IsOpenable's "never" cache.
-    if result or sawAnyLine then
-        EC_compCache.chanceOnHitCache[itemID] = result
-    end
-    return result
+    -- v2.69.0: the shared combined walk fills this cache (and bind +
+    -- Resilience) in one pass; a cold tooltip fills nothing and the next
+    -- call retries. See scanItemMarkers above.
+    EC_compCache.scanItemMarkers(bag, slot, itemID)
+    return EC_compCache.chanceOnHitCache[itemID] or false
 end
 
 -- v2.49.0: chance-on-hit proc -> PE spell ID lookup for the auto-release
@@ -1848,38 +1901,13 @@ function EC_compCache.itemHasResilience(bag, slot, itemID)
     if not bag or not slot then
         return false
     end
-    EC_compCache.scanBagItem(bag, slot)
-    local result = false
-    local sawAnyLine = false
-    for i = 1, 30 do
-        local line = EC_compCache.scanLines[i]
-        if not line then
-            break
-        end
-        local txt = line:GetText()
-        if txt and txt ~= "" then
-            sawAnyLine = true
-        end
-        -- v2.60.0 iter 3 (Serv follow-up - Jouster's Fury): case-fold
-        -- before the substring match. Pre-fix the detector looked for
-        -- literal "Resilience" (capital R), but WoW's stat-line text
-        -- reads "Improves your resilience rating by X" (lowercase r).
-        -- The bare-stat form ("Resilience Rating +X") starts with a
-        -- capital, but the Equip: text uses lowercase, so the detector
-        -- silently missed every PvP Set item that had the Equip: form.
-        if txt and txt:lower():find("resilience", 1, true) then
-            result = true
-            break
-        end
-    end
-    -- Only cache a NEGATIVE result from a tooltip that actually rendered:
-    -- a cold item cache renders an empty tooltip, and caching false from
-    -- it would silently disable resilience detection for that itemID for
-    -- the whole session. Same discipline as EC_IsOpenable's "never" cache.
-    if result or sawAnyLine then
-        EC_compCache.resilienceCache[itemID] = result
-    end
-    return result
+    -- v2.69.0: the shared combined walk fills this cache (and bind +
+    -- chance-on-hit) in one pass. Case-fold matching (the v2.60.0
+    -- Jouster's Fury fix) and the v2.68.1 cold-tooltip guard both live
+    -- inside scanItemMarkers now; a cold tooltip fills nothing and the
+    -- next call retries.
+    EC_compCache.scanItemMarkers(bag, slot, itemID)
+    return EC_compCache.resilienceCache[itemID] or false
 end
 
 function EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)

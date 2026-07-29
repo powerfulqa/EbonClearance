@@ -1591,17 +1591,26 @@ load-bearing details:
   snapshot and, if it acts destructively or scans tooltips, the live
   re-verify.
 
-### Bind-type detection shares `EC_scanTooltip` (v2.10.0+)
+### Bind / proc / Resilience share ONE combined scan (v2.10.0+, reshaped v2.69.0)
 
 The per-rarity `bindFilter` rule reads bind type via the same hidden
-`EC_scanTooltip` frame the openable-container check uses. `EC_compCache.getBindType`
-returns `"boe"`, `"bop"`, or `"any"` and stamps `EC_compCache.bindCache`
-to avoid rescanning on every bag walk.
+`EC_scanTooltip` frame the openable-container check uses.
+`EC_compCache.getBindType` returns `"boe"`, `"bop"`, or `"any"` and stamps
+`EC_compCache.bindCache` to avoid rescanning on every bag walk.
 
-Strings matched (`Binds when picked up`, `Soulbound`, `Binds when equipped`)
-are enUS only. EbonClearance's L10n posture is enUS-only on Project
-Ebonhold; if the project ever ships a localised realm, this scanner needs
-the same treatment as `ITEM_OPENABLE` / `LOCKED` in `EC_IsOpenable`.
+v2.69.0 (competitive-review A3 + B1, locked by Test 125): the walk itself
+lives in `EC_compCache.scanItemMarkers` (Protection.lua), which fills
+`bindCache` + `chanceOnHitCache` + `resilienceCache` from ONE tooltip pass
+per cold item - the three predicates used to run three identical walks.
+Bind lines are matched via the CLIENT-LOCALIZED globals
+(`ITEM_BIND_ON_PICKUP` / `ITEM_SOULBOUND` / `ITEM_BIND_ON_EQUIP`) so bind
+filters work on frFR/deDE clients; nothing is cached from a tooltip that
+has not rendered (the v2.68.1 cold-cache discipline - this also fixed
+getBindType's old sticky-"any" from warming-up tooltips). Tome detection
+deliberately stays a separate walk (class fast-paths + collectible-reject
+semantics). Known remaining enUS surfaces: the Resilience substring and
+the chance-proc phrase patterns are inherently English text matchers - a
+separate, larger localisation question if it ever matters in the field.
 
 Items with no bind line at all (consumables, reagents, trade goods, quest
 items) return `"any"`. Critically, `"any"` is matched by neither `"boe"`

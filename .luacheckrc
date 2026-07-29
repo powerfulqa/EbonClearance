@@ -178,6 +178,7 @@ read_globals = {
     "HasRandomProperty", "CursorHasItem",
     "NUM_BAG_SLOTS", "NUM_BANKGENERIC_SLOTS", "NUM_CONTAINER_FRAMES",
     -- Item tooltip locale strings (Process Bags + protection scans)
+    "ITEM_BIND_ON_EQUIP", "ITEM_BIND_ON_PICKUP",
     "ITEM_MILLABLE", "ITEM_PROSPECTABLE", "ITEM_SOULBOUND", "ITEM_SPELL_KNOWN",
     "ITEM_SPELL_TRIGGER_ONPROC", "ITEM_SPELL_TRIGGER_ONUSE",
     -- Merchant / buyback

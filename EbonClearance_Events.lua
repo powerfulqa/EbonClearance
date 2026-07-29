@@ -3737,13 +3737,14 @@ function EC_HandleAutoOpenContainers()
 end
 
 -- v2.10.0: bind-type detection for the per-rarity bindFilter rule. Returns
--- "boe", "bop", or "any" by scanning the same hidden EC_scanTooltip frame
--- the openable-container check uses. Results are cached on
--- EC_compCache.bindCache for the session because bind type is immutable
--- for a given itemID. Strings matched are the enUS Blizzard tooltip lines
--- (`Binds when picked up`, `Soulbound`, `Binds when equipped`); same enUS
--- constraint that already governs EC_IsOpenable's use of ITEM_OPENABLE /
--- LOCKED locale strings.
+-- "boe", "bop", or "any". v2.69.0: the walk itself lives in the shared
+-- EC_compCache.scanItemMarkers (EbonClearance_Protection.lua), which fills
+-- bind + chance-on-hit + Resilience from ONE tooltip pass, matches the
+-- CLIENT-LOCALIZED bind globals (ITEM_BIND_ON_PICKUP / ITEM_SOULBOUND /
+-- ITEM_BIND_ON_EQUIP - the old enUS literals silently degraded every
+-- bind filter to "any" on French/German clients), and never caches from
+-- a tooltip that hasn't rendered. Results stay on EC_compCache.bindCache
+-- because bind type is immutable for a given itemID.
 --
 -- Items with no bind line at all (consumables, reagents, trade goods,
 -- quest items) return "any" - they aren't subject to BoE-only or BoP-only
@@ -3758,29 +3759,10 @@ function EC_compCache.getBindType(bag, slot)
     if cached then
         return cached
     end
-    -- v2.38.3: SetOwner-before-SetBagItem via the shared helper.
-    EC_compCache.scanBagItem(bag, slot)
-    local result = "any"
-    -- 30-line cap matches the openable-container scan; well above any
-    -- realistic tooltip we'd encounter on Project Ebonhold.
-    for i = 1, 30 do
-        local line = EC_compCache.scanLines[i]
-        if not line then
-            break
-        end
-        local txt = line:GetText()
-        if txt then
-            if txt == "Binds when picked up" or txt == "Soulbound" then
-                result = "bop"
-                break
-            elseif txt == "Binds when equipped" then
-                result = "boe"
-                break
-            end
-        end
+    if EC_compCache.scanItemMarkers then
+        EC_compCache.scanItemMarkers(bag, slot, itemID)
     end
-    EC_compCache.bindCache[itemID] = result
-    return result
+    return EC_compCache.bindCache[itemID] or "any"
 end
 
 -- v2.10.0: bind-type detection that reads a live tooltip's lines instead
@@ -3789,9 +3771,10 @@ end
 -- user is hovering when we don't have a (bag, slot) pair (the annotation
 -- entry point is itemLink, not a container slot). Reads the cache first
 -- so a previously-scanned bag item never re-scans; otherwise walks the
--- live tooltip's TextLeft lines for the same enUS bind-type strings the
--- bag-scan path matches. Stamps the cache on a successful result so a
--- subsequent EC_IsSellable call on the same itemID stays cheap.
+-- live tooltip's TextLeft lines for the same client-localized bind
+-- globals the bag-scan path matches (v2.69.0; was enUS literals). Stamps
+-- the cache on a successful result so a subsequent EC_IsSellable call on
+-- the same itemID stays cheap.
 function EC_compCache.getBindTypeFromTooltip(tooltip, itemID)
     if itemID and EC_compCache.bindCache[itemID] then
         return EC_compCache.bindCache[itemID]
@@ -3805,6 +3788,9 @@ function EC_compCache.getBindTypeFromTooltip(tooltip, itemID)
     end
     local n = tooltip:NumLines() or 0
     local result = "any"
+    local bopLine = ITEM_BIND_ON_PICKUP or "Binds when picked up"
+    local sbLine = ITEM_SOULBOUND or "Soulbound"
+    local boeLine = ITEM_BIND_ON_EQUIP or "Binds when equipped"
     -- Start at line 2: line 1 is the item name; bind line is always one of
     -- the early header lines (line 2 or 3 in 3.3.5a item tooltips).
     for i = 2, n do
@@ -3812,10 +3798,10 @@ function EC_compCache.getBindTypeFromTooltip(tooltip, itemID)
         if fs and fs.GetText then
             local txt = fs:GetText()
             if txt then
-                if txt == "Binds when picked up" or txt == "Soulbound" then
+                if txt == bopLine or txt == sbLine then
                     result = "bop"
                     break
-                elseif txt == "Binds when equipped" then
+                elseif txt == boeLine then
                     result = "boe"
                     break
                 end

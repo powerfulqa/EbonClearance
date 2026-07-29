@@ -7882,6 +7882,46 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 125 (v2.69.0): combined marker scan + localized bind detection.
+-- ---------------------------------------------------------------------------
+-- (competitive-review A3 + B1) One shared tooltip walk (scanItemMarkers)
+-- fills the bind / chance-on-hit / Resilience caches together - the three
+-- predicates used to each run their own scanBagItem + 30-line walk on a
+-- cold item. Bind matching MUST use the client-localized globals: the old
+-- enUS literals silently degraded every bind filter to "any" on frFR/deDE
+-- clients despite the shipped UI translations.
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "r")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local pr = fileSrc("EbonClearance_Protection.lua")
+    local ev2 = fileSrc("EbonClearance_Events.lua")
+    check("Test 125a: scanItemMarkers exists with localized bind globals + cold-tooltip guard",
+        pr:find("function EC_compCache%.scanItemMarkers%(") ~= nil
+            and pr:find("ITEM_BIND_ON_PICKUP", 1, true) ~= nil
+            and pr:find("ITEM_BIND_ON_EQUIP", 1, true) ~= nil
+            and pr:find("ITEM_SOULBOUND", 1, true) ~= nil
+            and pr:find("lineLooksLikeChanceProc", 1, true) ~= nil
+            and pr:find('find("resilience", 1, true)', 1, true) ~= nil
+            and pr:find("if not sawAnyLine then\n        return\n    end", 1, true) ~= nil,
+        "the combined walk must match bind lines via the client-localized globals, classify proc + Resilience lines in the same pass, and cache NOTHING from a tooltip that has not rendered (the v2.68.1 cold-cache discipline).")
+    local _, delegates = (pr .. ev2):gsub("EC_compCache%.scanItemMarkers%(bag, slot, itemID%)", "")
+    check("Test 125b: bind / proc / resilience accessors all delegate to the combined walk",
+        delegates >= 3,
+        "expected >= 3 delegate call sites (getBindType in Events, itemHasChanceOnHit + itemHasResilience in Protection); found " .. delegates .. ". An accessor growing its own scan loop back reintroduces the redundant per-predicate walks.")
+    check("Test 125c: the live-tooltip bind scanner also uses the localized globals",
+        ev2:find('ITEM_BIND_ON_PICKUP or "Binds when picked up"', 1, true) ~= nil
+            and ev2:find('ITEM_BIND_ON_EQUIP or "Binds when equipped"', 1, true) ~= nil,
+        "getBindTypeFromTooltip must match the same client-localized globals as the bag-scan path, with the enUS strings only as nil-fallbacks.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

@@ -5608,9 +5608,13 @@ do
         -- Borrow B: "Already known by this character" tooltip line.
         check(
             "Test 88a: Borrow B - 'Already known by this character' tooltip annotation",
+            -- v2.71.2 (classifier Stage 3): the tooltip reads tome state
+            -- via the decision ctx; the adapter routes ctx.isTome() /
+            -- ctx.knowsTomeSpell() to the liveTooltip* scanners (pinned
+            -- against Decision.lua by Test 128).
             ttSrc:find("Already known by this character") ~= nil
-                and ttSrc:find("liveTooltipIsTome") ~= nil
-                and ttSrc:find("liveTooltipPlayerKnowsTome") ~= nil
+                and ttSrc:find("ctx%.isTome%(%)") ~= nil
+                and ttSrc:find("ctx%.knowsTomeSpell%(%)") ~= nil
                 and ttSrc:find('statusTag ~= "tome_have"') ~= nil,
             "EC_AnnotateTooltip must add the 'Already known by this character' line for tome/recipe items the player has learned, gated on liveTooltipIsTome + liveTooltipPlayerKnowsTome, and dedupe against the existing tome-protection block's '(... you have)' label so the same info doesn't render twice. v2.43.0 localized the labels, so the dedupe reads the English statusTag token (statusTag ~= \"tome_have\") instead of introspecting the displayed string."
         )
@@ -6559,10 +6563,13 @@ do
 
     check(
         "Test 103c: tooltip mirrors the bind-type gate",
-        tip:find('DB%.keepBoeAffixDupes') ~= nil
-            and tip:find("getBindTypeFromTooltip") ~= nil
+        -- v2.71.2 (classifier Stage 3): the tooltip reads the toggle +
+        -- bind type from the shared decision ctx; the live-tooltip
+        -- adapter routes ctx.bindType() to getBindTypeFromTooltip
+        -- (pinned against Decision.lua by Test 128).
+        tip:find('ctx%.keepBoeAffixDupes and ctx%.bindType%(%) ~= "bop"') ~= nil
             and tip:find("autoDupe = false") ~= nil,
-        "the tooltip must clear its autoDupe for a kept BoE dupe (via getBindTypeFromTooltip) so it never shows 'Will Sell' for an item the merchant cycle keeps."
+        "the tooltip must clear its autoDupe for a kept BoE dupe (via the live-tooltip bind reader) so it never shows 'Will Sell' for an item the merchant cycle keeps."
     )
 
     check(
@@ -6848,8 +6855,12 @@ do
             bd107i:find("local recipeBindFilter = ctx%.recipeBindFilter") ~= nil
                 and bd107i:find("local bindType = ctx%.bindType%(%)") ~= nil
                 and bd107i:find("passedBindFilter") ~= nil
-                and tt107i:find("DB%.sellKnownRecipeBindFilter") ~= nil
-                and tt107i:find("EC_compCache%.getBindTypeFromTooltip%(tooltip, id%)") ~= nil,
+                -- v2.71.2 (classifier Stage 3): the tooltip reads the same
+                -- pair through the shared decision ctx (the live-tooltip
+                -- adapter routes ctx.bindType to getBindTypeFromTooltip -
+                -- pinned against Decision.lua by Test 128).
+                and tt107i:find("local recipeBindFilter = ctx%.recipeBindFilter") ~= nil
+                and tt107i:find("local bindType = ctx%.bindType%(%)") ~= nil,
             "v2.50.4 fix (Serv report, Plans: Ragesteel Breastplate): EC_IsSellable's recipePass at Events.lua ~5100 gates on the per-quality bind-type filter (DB.sellKnownRecipeBindFilter) - a soulbound Blue recipe with the Blue-recipe filter set to 'boe' correctly refuses at the vendor. Both mirrors (BagDisplay.lua describeSellability + Tooltip.lua recipeSellable) were missing this gate, so /ec sellinfo said WILL SELL and the tooltip showed 'Will Sell (known recipe)' but the vendor cycle refused. Both mirrors now honour the bind filter, matching EC_IsSellable exactly.")
         check("Test 107j: recipe bind-filter reject label names the actual detected bind, not a hardcoded string",
             bd107i:find("this recipe has no bind line") ~= nil
@@ -7001,7 +7012,7 @@ do
             fileSrc("EbonClearance_Decision.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and %(ctx%.protectAllTomes") ~= nil
                 and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and %(ctx%.protectAllTomes") ~= nil
                 and fileSrc("EbonClearance_Tooltip.lua"):find("and not onSellList") ~= nil
-                and fileSrc("EbonClearance_Tooltip.lua"):find("local onSellList = IsInSet%(DB%.whitelist, id%)") ~= nil,
+                and fileSrc("EbonClearance_Tooltip.lua"):find("local onSellList = ctx%.whitelistedChar or ctx%.whitelistedAccount") ~= nil,
             "v2.51.2 intent + v2.59.10 completion (Serv report, Pattern: Mooncloth Leggings id=14497): the tome-protection HARD veto used to fire on `(qualityPass or whitelistPass)` which was inconsistent with the chance-on-hit narrowing. v2.51.2 narrowed to `qualityPass` alone but forgot the both-signals case (Sell List + rarity rule = still vetoed). v2.59.10 (bug-hunt): explicit `and not whitelistPass` release in EC_IsSellable + describeSellability so all three surfaces match the tooltip's `and not onSellList` guard exactly.")
         check("Test 110n: v2.51.1 Quickstart Q13b deleteMode question wired end-to-end",
             fileSrc("EbonClearance_QuickstartPanel.lua"):find("deleteMode = %{") ~= nil
@@ -7168,7 +7179,7 @@ do
     check("Test 110f: Tooltip surfaces Keep + Will Sell (chance-on-hit proc known) labels",
         tt:find('L%["Keep %(chance%-on%-hit proc known%)"%]') ~= nil
             and tt:find('L%["Will Sell %(chance%-on%-hit proc known%)"%]') ~= nil
-            and tt:find("if procKnown and DB%.sellChanceOnHitKnown and hasSellPriceHere then") ~= nil
+            and tt:find("if procKnown and ctx%.sellChanceOnHitKnown and hasSellPriceHere then") ~= nil
             and tt:find("local hasSellPriceHere = itemSellPrice and itemSellPrice > 0") ~= nil,
         "the tooltip MUST distinguish 'known + toggle on' (Will Sell) from 'known + toggle off' (Keep known) so the player sees the current outcome without opening /ec sellinfo. Falls back to the pre-v2.49.0 'Keep (chance-on-hit proc)' when the proc isn't extracted (or PE hasn't ported it). v2.49.0 (Serv report, Nightfall): knownProcPass is a POSITIVE sell signal in EC_IsSellable (not a veto release), so 'Will Sell' fires the moment (procKnown AND toggle on), matching EC_IsSellable's positive-signal path. v2.49.0 (Serv report, Electrified Dagger): 'Will Sell' ALSO requires itemSellPrice > 0. Soulbound weapons with sellPrice=0 CANNOT be sold - EC_IsSellable's knownProcPass path gates on hasSellPrice for the same reason. Without this gate the tooltip advertises 'Will Sell' while the vendor refuses.")
     check("Test 110g: ProtectionPanel surfaces the experimental checkbox",
@@ -8026,6 +8037,52 @@ do
     check("Test 127c: affix-protection release uses the 3-layer ownership chain (familyKnown drift fix)",
         bdSrc:find("local autoDupe = ctx%.affixAllowExactDupes and %(descKnown or rankKnown or familyKnown%)") ~= nil,
         "v2.71.1 drift fix found during the Stage 2 conversion: the trace's affix-protection veto released autoDupe on descKnown/rankKnown only, missing the v2.45.0 family-only fallback the engine + tooltip have. An unranked family-owned dupe read 'won't sell - protected' in /ec sellinfo while the vendor sold it.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 128 (v2.71.2, classifier Stage 3): EC_AnnotateTooltip consumes the
+-- decision core through the live-tooltip adapter. Every state read goes
+-- through NS.Decision.buildTooltipCtx (instance predicates routed to the
+-- liveTooltip* scanners), the final label is guarded by an equipped-honesty
+-- fix-up plus a verdict sentinel, and the adapter itself keeps the
+-- live-tooltip routing the labels rely on.
+-- ---------------------------------------------------------------------------
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ttSrc = fileSrc("EbonClearance_Tooltip.lua")
+    local dcSrc = fileSrc("EbonClearance_Decision.lua")
+    check("Test 128a: tooltip builds ONE live-tooltip decision ctx",
+        ttSrc:find("NS%.Decision and NS%.Decision%.buildTooltipCtx%(tooltip, id%)") ~= nil,
+        "EC_AnnotateTooltip MUST read all state through the buildTooltipCtx snapshot so the tooltip and the decision core see identical inputs. Raw DB/EC_compCache re-reads reintroduce the mirror-drift bug class.")
+    check("Test 128b: verdict sentinel compares the label class against Decision.sell",
+        ttSrc:find("local verdict = NS%.Decision%.sell%(ctx%)") ~= nil
+            and ttSrc:find('%(verdict == "sell"%) ~= %(statusTag == "willsell"%)') ~= nil
+            and ttSrc:find('skipSentinel = statusTag == "willdelete"') ~= nil,
+        "the label branches are hand-maintained; the sentinel turns a label-vs-engine contradiction into a visible tooltip line asking for a bug report. Delete-side labels are excluded until Stage 4 puts the delete decision in the core.")
+    check("Test 128c: centralized equipped-honesty guard on every Will Sell label",
+        ttSrc:find('if statusTag == "willsell" and ctx%.equipped then') ~= nil,
+        "the engine's equipped veto beats every positive signal, but only the Sell List label branch checked it. The final guard relabels ANY Will Sell on a worn item to Won't Sell (equipped) - paper-doll hovers of rule-matched gear were the visible lie.")
+    check("Test 128d: live-tooltip adapter routes instance predicates to the liveTooltip* scanners",
+        dcSrc:find("function Decision%.buildTooltipCtx%(tooltip, itemID%)") ~= nil
+            and dcSrc:find("EC_compCache%.getBindTypeFromTooltip%(tooltip, itemID%)") ~= nil
+            and dcSrc:find("EC_compCache%.liveTooltipAffixData%(tooltip, itemID%)") ~= nil
+            and dcSrc:find("EC_compCache%.liveTooltipHasChanceOnHit%(tooltip, itemID%)") ~= nil
+            and dcSrc:find("EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil
+            and dcSrc:find("EC_compCache%.liveTooltipPlayerKnowsTome%(tooltip, itemID%)") ~= nil
+            and dcSrc:find("EC_compCache%.playerHasExtractedProc%(nil, nil, itemID, procLine%)") ~= nil,
+        "a hovered / chat-linked item has NO bag slot, so the tooltip ctx MUST read the item instance off the LIVE tooltip (title-affix, bind line, proc line, tome text). Routing any of these to the bag-slot accessors breaks chat-link tooltips and per-instance affix reads.")
+    check("Test 128e: both adapters share one snapshot helper",
+        dcSrc:find("local function EC_fillSharedCtx%(ctx, DB, ADB, itemID, quality%)") ~= nil
+            and select(2, dcSrc:gsub("EC_fillSharedCtx%(ctx, DB, ADB, itemID, quality%)", "")) >= 3,
+        "memberships + settings + ownership thunks MUST come from the single EC_fillSharedCtx helper (definition + one call per adapter = 3+ occurrences), so the vendor/trace adapter and the tooltip adapter cannot drift on the shared state.")
 end
 
 -- ---------------------------------------------------------------------------

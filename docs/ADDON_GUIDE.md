@@ -860,10 +860,26 @@ emits a visible `traceDrift` step on mismatch (Test 127). If you change
 the core, update the matching narration branch so the story matches
 the verdict.
 
-The tooltip (`EC_AnnotateTooltip`) still hand-mirrors the logic; Stage
-3 makes it render from the core's tokens, retiring the paired-edit
-EC-TRAPs below. Until then the mirror-lockstep rules in this guide
-still apply to the tooltip.
+**Stage 3 (v2.71.2):** the tooltip (`EC_AnnotateTooltip` in
+Tooltip.lua) consumes the core the same way. A second adapter,
+`NS.Decision.buildTooltipCtx(tooltip, itemID)`, serves hovers and chat
+links: there is NO bag/slot for those, so its instance predicates
+(`bindType`, `affixData`, `hasChanceOnHit`, `isTome`, ...) route to the
+`liveTooltip*` scanners instead of the bag-slot accessors. Both
+adapters fill memberships/settings/ownership through one shared helper
+(`EC_fillSharedCtx`) so they cannot drift. The label branches stay
+hand-written (they need the WHY at a granularity one token can't
+carry), guarded two ways: a centralized equipped-honesty fix-up (no
+label may promise a sale of a worn item) and a verdict sentinel that
+appends a visible "(EC label check failed ...)" line when a label
+class contradicts `Decision.sell` on the same ctx (Test 128).
+Delete-side labels (Will Delete previews) are excluded from the
+sentinel until Stage 4 puts the delete decision in the core.
+
+With Stages 1-3 shipped, all three sell surfaces (vendor engine, trace,
+tooltip) read ONE state snapshot and answer to ONE verdict source. The
+remaining hand-maintained parts are the narration/label branches
+(sentinel-guarded) and the delete side (Stage 4).
 
 ### Grey items are always sold, independent of every other setting
 

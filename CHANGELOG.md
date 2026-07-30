@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.71.2
+
+**The tooltip verdict now answers to the same decision core as the vendor and `/ec sellinfo` (classifier Stage 3), plus an honesty fix for worn items.**
+
+- **Tooltip labels are checked against the engine.** The bag-item tooltip used to re-derive the whole sell decision in parallel (the last surface still doing so). Now every check reads from one shared state snapshot - a new live-tooltip adapter serves hovers and chat-linked items, which have no bag slot - and a built-in sentinel adds a small grey "(EC label check failed - please report via /ec bugreport)" line if a label ever contradicts the engine's verdict for the same item.
+- **Fixed: labels could promise a sale of something you're wearing.** Only the Sell List label checked whether the item was equipped; a worn piece of gear that matched a rarity rule could show "Will Sell" on its paper-doll tooltip even though the vendor cycle always refuses equipped items. Every "Will Sell" label now flips to "Won't Sell (equipped)" for worn items.
+- Both decision-core adapters (vendor/trace and tooltip) now fill their shared state through one helper, so they cannot drift apart. New test invariants (Test 128) lock the adapter routing, the sentinel, and the equipped guard.
+- French and German entries included for the new sentinel line.
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.71.1
 
 **`/ec sellinfo` now takes its verdict from the same decision core the vendor uses (classifier Stage 2), fixing one real disagreement found on the way.**

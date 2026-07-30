@@ -324,7 +324,7 @@ function Decision.sell(ctx)
 end
 
 -- ---------------------------------------------------------------------------
--- Adapter: capture everything the core needs from the live game state.
+-- Adapters: capture everything the core needs from the live game state.
 -- ---------------------------------------------------------------------------
 -- Cheap reads are snapshotted; tooltip-backed predicates ride as thunks
 -- so the core pays for them only on the branches that need them (the
@@ -332,6 +332,70 @@ end
 -- their own itemID/itemString caches, so repeated thunk calls are cheap.
 -- DB / ADB resolve at CALL time (EnsureDB rebinds NS.DB per login; this
 -- file loads before Events - the Test 41 load-order trap).
+--
+-- Two adapters share one snapshot helper so they cannot drift:
+--   * buildCtx(bag, slot, junkOnly) - the vendor engine + trace surface;
+--     item-instance predicates read the hidden scan tooltip via the
+--     bag/slot accessors.
+--   * buildTooltipCtx(tooltip, itemID) - the live-tooltip surface
+--     (v2.71.2, classifier Stage 3); there is NO bag/slot for a hovered
+--     or chat-linked item, so instance predicates read the LIVE tooltip
+--     via the liveTooltip* scanners instead. Same per-instance
+--     semantics (the hovered tooltip IS the instance).
+
+-- Shared snapshot: itemID-keyed memberships, the settings the core
+-- reads, and the affix-ownership thunks (none of these depend on how
+-- the item instance is being inspected).
+local function EC_fillSharedCtx(ctx, DB, ADB, itemID, quality)
+    local IsInSet = NS.IsInSet
+    -- memberships / cheap values
+    ctx.whitelistedChar = IsInSet(DB.whitelist, itemID)
+    ctx.whitelistedAccount = (ADB and IsInSet(ADB.whitelist, itemID)) or false
+    ctx.blacklisted = IsInSet(DB.blacklist, itemID)
+    ctx.equipped = IsEquippedItem(itemID) and true or false
+    ctx.isQuestItem = EC_compCache.isQuestItem(itemID)
+    ctx.baselineProtected = (EC_compCache.baselineProtectedIDs and EC_compCache.baselineProtectedIDs[itemID])
+            and true
+        or false
+    ctx.allowedItem = (ADB and ADB.allowedItems and ADB.allowedItems[itemID]) and true or false
+    -- settings snapshot
+    ctx.qualityRule = (quality and DB.qualityRules) and DB.qualityRules[quality] or nil
+    ctx.affixMinSellRank = DB.affixMinSellRank
+    ctx.affixAllowExactDupes = DB.affixAllowExactDupes
+    ctx.keepBoeAffixDupes = DB.keepBoeAffixDupes
+    ctx.keepBoeBelowRankFloor = DB.keepBoeBelowRankFloor
+    ctx.sellKnownRecipes = DB.sellKnownRecipes
+    ctx.sellKnownRecipeQuality = (quality and DB.sellKnownRecipeQualities) and DB.sellKnownRecipeQualities[quality]
+        or false
+    ctx.recipeBindFilter = (quality and DB.sellKnownRecipeBindFilter) and DB.sellKnownRecipeBindFilter[quality]
+        or "any"
+    ctx.sellChanceOnHitKnown = DB.sellChanceOnHitKnown
+    ctx.protectChanceOnHitItems = DB.protectChanceOnHitItems
+    ctx.protectAffixedRareItems = DB.protectAffixedRareItems
+    ctx.protectAllTomes = DB.protectAllTomes
+    ctx.protectUnlearnedTomes = DB.protectUnlearnedTomes
+    -- itemID-keyed thunks (identical for both adapters)
+    function ctx.tomeKind()
+        return EC_compCache.tomeKind(itemID)
+    end
+    function ctx.isExtractableWeaponSlot()
+        return EC_compCache.isExtractableWeaponSlot and EC_compCache.isExtractableWeaponSlot(itemID) or false
+    end
+    function ctx.affixDescKnown(desc)
+        return EC_compCache.playerHasAffixDescription and EC_compCache.playerHasAffixDescription(desc) or false
+    end
+    function ctx.affixRankKnown(name, rank)
+        return EC_compCache.playerHasAffixRank and EC_compCache.playerHasAffixRank(name, rank) or false
+    end
+    function ctx.affixFamilyKnown(name)
+        return EC_compCache.playerHasAffixFamily and EC_compCache.playerHasAffixFamily(name) or false
+    end
+    function ctx.manualAffixAllow(desc)
+        local key = EC_compCache.normaliseAffixDesc and EC_compCache.normaliseAffixDesc(desc)
+        return (key and ADB and ADB.allowedAffixes and ADB.allowedAffixes[key]) and true or false
+    end
+end
+
 function Decision.buildCtx(bag, slot, junkOnly)
     local DB = NS.DB
     local ADB = NS.ADB
@@ -344,7 +408,6 @@ function Decision.buildCtx(bag, slot, junkOnly)
     end
     local _, itemCount, locked = GetContainerItemInfo(bag, slot)
     local name, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
-    local IsInSet = NS.IsInSet
     local ctx = {
         junkOnly = junkOnly and true or false,
         bag = bag,
@@ -358,32 +421,9 @@ function Decision.buildCtx(bag, slot, junkOnly)
         ilvl = ilvl,
         equipLoc = equipLoc,
         sellPrice = sellPrice,
-        -- memberships / cheap values
-        whitelistedChar = IsInSet(DB.whitelist, itemID),
-        whitelistedAccount = (ADB and IsInSet(ADB.whitelist, itemID)) or false,
-        blacklisted = IsInSet(DB.blacklist, itemID),
-        equipped = IsEquippedItem(itemID) and true or false,
-        isQuestItem = EC_compCache.isQuestItem(itemID),
-        baselineProtected = (EC_compCache.baselineProtectedIDs and EC_compCache.baselineProtectedIDs[itemID]) and true or false,
-        allowedItem = (ADB and ADB.allowedItems and ADB.allowedItems[itemID]) and true or false,
-        -- settings snapshot
-        qualityRule = (quality and DB.qualityRules) and DB.qualityRules[quality] or nil,
-        affixMinSellRank = DB.affixMinSellRank,
-        affixAllowExactDupes = DB.affixAllowExactDupes,
-        keepBoeAffixDupes = DB.keepBoeAffixDupes,
-        keepBoeBelowRankFloor = DB.keepBoeBelowRankFloor,
-        sellKnownRecipes = DB.sellKnownRecipes,
-        sellKnownRecipeQuality = (quality and DB.sellKnownRecipeQualities) and DB.sellKnownRecipeQualities[quality]
-            or false,
-        recipeBindFilter = (quality and DB.sellKnownRecipeBindFilter) and DB.sellKnownRecipeBindFilter[quality]
-            or "any",
-        sellChanceOnHitKnown = DB.sellChanceOnHitKnown,
-        protectChanceOnHitItems = DB.protectChanceOnHitItems,
-        protectAffixedRareItems = DB.protectAffixedRareItems,
-        protectAllTomes = DB.protectAllTomes,
-        protectUnlearnedTomes = DB.protectUnlearnedTomes,
     }
-    -- lazy predicate thunks (each backed by a session cache upstream)
+    EC_fillSharedCtx(ctx, DB, ADB, itemID, quality)
+    -- instance predicates: hidden scan tooltip via bag/slot accessors
     function ctx.bindType()
         return EC_compCache.getBindType(bag, slot)
     end
@@ -405,30 +445,71 @@ function Decision.buildCtx(bag, slot, junkOnly)
     function ctx.hasExtractedProc(procLine)
         return EC_compCache.playerHasExtractedProc and EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine) or false
     end
-    function ctx.isExtractableWeaponSlot()
-        return EC_compCache.isExtractableWeaponSlot and EC_compCache.isExtractableWeaponSlot(itemID) or false
-    end
     function ctx.isTome()
         return EC_compCache.itemIsTome(bag, slot, itemID)
-    end
-    function ctx.tomeKind()
-        return EC_compCache.tomeKind(itemID)
     end
     function ctx.knowsTomeSpell()
         return EC_compCache.playerKnowsTomeSpell(bag, slot, itemID)
     end
-    function ctx.affixDescKnown(desc)
-        return EC_compCache.playerHasAffixDescription and EC_compCache.playerHasAffixDescription(desc) or false
+    return ctx
+end
+
+-- v2.71.2 (classifier Stage 3): live-tooltip adapter for the tooltip
+-- annotation surface. The hovered (or chat-linked) instance has no
+-- bag/slot, so the instance predicates read the LIVE tooltip through
+-- the same liveTooltip* scanners EC_AnnotateTooltip has always used -
+-- the verdict describes what the vendor engine would do to this item
+-- as rendered. count=1 / locked=false: a hover is never mid-pickup.
+function Decision.buildTooltipCtx(tooltip, itemID)
+    local DB = NS.DB
+    local ADB = NS.ADB
+    if not DB or not EC_compCache or not itemID then
+        return nil
     end
-    function ctx.affixRankKnown(name, rank)
-        return EC_compCache.playerHasAffixRank and EC_compCache.playerHasAffixRank(name, rank) or false
+    local name, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
+    local ctx = {
+        junkOnly = false,
+        itemID = itemID,
+        count = 1,
+        locked = false,
+        name = name,
+        link = link,
+        quality = quality,
+        ilvl = ilvl,
+        equipLoc = equipLoc,
+        sellPrice = sellPrice,
+    }
+    EC_fillSharedCtx(ctx, DB, ADB, itemID, quality)
+    -- instance predicates: the live tooltip IS the instance
+    function ctx.bindType()
+        return EC_compCache.getBindTypeFromTooltip and EC_compCache.getBindTypeFromTooltip(tooltip, itemID) or "any"
     end
-    function ctx.affixFamilyKnown(name)
-        return EC_compCache.playerHasAffixFamily and EC_compCache.playerHasAffixFamily(name) or false
+    function ctx.downgradeVsEquipped()
+        return EC_compCache.isDowngradeVsEquipped(itemID, ilvl, equipLoc)
     end
-    function ctx.manualAffixAllow(desc)
-        local key = EC_compCache.normaliseAffixDesc and EC_compCache.normaliseAffixDesc(desc)
-        return (key and ADB and ADB.allowedAffixes and ADB.allowedAffixes[key]) and true or false
+    function ctx.affixData()
+        return EC_compCache.liveTooltipAffixData and EC_compCache.liveTooltipAffixData(tooltip, itemID) or nil
+    end
+    function ctx.saleWithinCeiling()
+        return EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)
+    end
+    function ctx.hasChanceOnHit()
+        return EC_compCache.liveTooltipHasChanceOnHit and EC_compCache.liveTooltipHasChanceOnHit(tooltip, itemID)
+            or false
+    end
+    function ctx.chanceProcLine()
+        return EC_compCache.liveTooltipChanceProcLine and EC_compCache.liveTooltipChanceProcLine(tooltip) or nil
+    end
+    function ctx.hasExtractedProc(procLine)
+        return EC_compCache.playerHasExtractedProc and EC_compCache.playerHasExtractedProc(nil, nil, itemID, procLine)
+            or false
+    end
+    function ctx.isTome()
+        return EC_compCache.liveTooltipIsTome and EC_compCache.liveTooltipIsTome(tooltip, itemID) or false
+    end
+    function ctx.knowsTomeSpell()
+        return EC_compCache.liveTooltipPlayerKnowsTome and EC_compCache.liveTooltipPlayerKnowsTome(tooltip, itemID)
+            or false
     end
     return ctx
 end

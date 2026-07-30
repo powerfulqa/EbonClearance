@@ -87,7 +87,7 @@ Player-facing strings are wrapped at the call site as `L["English text"]`
 | File | Owns |
 |------|------|
 | [EbonClearance_Minimap.lua](../EbonClearance_Minimap.lua) | Minimap button, LDB launcher, combat-vendor button. |
-| [EbonClearance_Tooltip.lua](../EbonClearance_Tooltip.lua) | Bag-item tooltip annotations. Deliberately mirrors the decision core in `Decision.lua` (paired edit; see EC-TRAP). Stage 3 of the classifier plan will make it render from the core's tokens instead. |
+| [EbonClearance_Tooltip.lua](../EbonClearance_Tooltip.lua) | Bag-item tooltip annotations. Since v2.71.2 it reads all state through `Decision.buildTooltipCtx` and its labels are guarded by `Decision.sell`'s verdict (equipped-honesty fix-up + sentinel line); only the per-branch label text is local. |
 | [EbonClearance_BagContextMenu.lua](../EbonClearance_BagContextMenu.lua) | Alt+Right-Click bag-item quick-action popup. |
 | [EbonClearance_BugReport.lua](../EbonClearance_BugReport.lua) | Diagnostic snapshot builder + display frame (`/ec bugreport`). |
 | [EbonClearance_HistoryWindow.lua](../EbonClearance_HistoryWindow.lua) | The interactive Sold History window (`/ec history`, v2.57.0): full-session sell/delete log with All/Sold/Deleted filters + search, over `NS.recentSoldLog` / `NS.recentDeletedLog`. |

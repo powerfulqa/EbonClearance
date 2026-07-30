@@ -11,12 +11,12 @@
 -- GameTooltip + ItemRefTooltip.
 --
 -- Moved into this file:
---   * EC_AnnotateTooltip - the per-tooltip body that walks the same
---     decision chain EC_IsSellable runs and produces a humane status
---     line. Mirrors EC_IsSellable rather than calling it (different
---     output: needs to know WHY, not just yes/no). See
---     docs/CODE_REVIEW.md item 6 for the documented parallel-impl
---     tradeoff.
+--   * EC_AnnotateTooltip - the per-tooltip body that produces a humane
+--     status line. Since v2.71.2 (classifier Stage 3) it reads all state
+--     from NS.Decision.buildTooltipCtx and its final label is guarded by
+--     NS.Decision.sell's verdict (a sentinel line surfaces any label
+--     branch that falls behind the core); the per-branch labels remain
+--     hand-written because they need the WHY, not just yes/no.
 --   * EC_ClearTooltipFlag - resets the per-tooltip dedupe flag
 --     (recipe tooltips fire OnTooltipSetItem twice; the flag prevents
 --     duplicate annotation lines).
@@ -34,11 +34,6 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
-
--- Cached API upvalues (v2.68.1): completes the engine-file convention
--- (Events/Process/BagDisplay/Protection all cache their hot globals).
-local GetItemInfo = GetItemInfo
-local IsEquippedItem = IsEquippedItem
 
 -- Set-membership helper. Captures the canonical NS.IsInSet (defined in
 -- EbonClearance_Core.lua); per-call cost is one local read.
@@ -96,10 +91,15 @@ end
 -- and clear the flag when the tooltip is reset.
 local EC_tooltipHooked = false
 
--- EC-TRAP: this deliberately MIRRORS EC_IsSellable (EbonClearance_Events.lua)
--- rather than calling it - it needs the WHY (per-outcome labels), not a
--- yes/no. Do NOT refactor the two into one shared function. See
--- docs/CODE_REVIEW.md item 6.
+-- v2.71.2 (classifier Stage 3): this surface consumes the decision core.
+-- NS.Decision.buildTooltipCtx supplies the ONE state snapshot every read
+-- below uses (instance predicates routed to the liveTooltip* scanners),
+-- and NS.Decision.sell's verdict guards the final label via a sentinel -
+-- a Will Sell label the engine would refuse (or vice versa) surfaces as
+-- a visible mismatch line instead of a silent lie. The per-branch label
+-- selection stays hand-written (it needs the WHY at a granularity a
+-- single winning token can't carry); if you change the core's logic,
+-- update the matching label branch so the label matches the verdict.
 local function EC_AnnotateTooltipInner(tooltip)
     local DB = NS.DB
     local ADB = NS.ADB
@@ -123,14 +123,13 @@ local function EC_AnnotateTooltipInner(tooltip)
         return
     end
 
-    -- Hoisted GetItemInfo: the function used to call it three separate
-    -- times (whitelist branch reading sellPrice, qualityRules branch
-    -- reading quality/ilvl/equipLoc/sellPrice, affix block reading
-    -- quality). All read different subsets of the same cached tuple, so
-    -- a single call up here serves every branch below without changing
-    -- any per-branch nil-handling. Uncached items still surface as
-    -- "Won't Sell (no value)" via the existing sellPrice nil-guards.
-    local _, _, itemQuality, itemILvl, _, _, _, _, itemEquipLoc, _, itemSellPrice = GetItemInfo(id)
+    -- One snapshot for every read below (GetItemInfo included) - the
+    -- live-tooltip sibling of the adapter the vendor engine uses.
+    local ctx = NS.Decision and NS.Decision.buildTooltipCtx(tooltip, id)
+    if not ctx then
+        return
+    end
+    local itemQuality, itemILvl, itemEquipLoc, itemSellPrice = ctx.quality, ctx.ilvl, ctx.equipLoc, ctx.sellPrice
 
     -- EC-TRAP: statusLine is the DISPLAYED verdict and may be translated, so
     -- it can no longer be introspected for logic (a frFR client's "Vente" will
@@ -140,7 +139,7 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- checks read the tag, never the string. Do NOT reintroduce
     -- statusLine:find(...) for control flow.
     local statusLine, statusTag
-    if IsInSet(DB.blacklist, id) then
+    if ctx.blacklisted then
         -- v2.10.0: distinguish "user manually blacklisted this" from "the
         -- auto-protect-equipped path added it". DB.blacklistAuto is stamped
         -- only by the equipment handler / one-shot sync; manual adds don't
@@ -177,14 +176,14 @@ local function EC_AnnotateTooltipInner(tooltip)
     elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
         statusLine = "|cff66ccff[EC]|r |cffff4444" .. L["Will Delete"] .. "|r"
         statusTag = "willdelete"
-    elseif IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id)) then
-        -- Honesty: EC_IsSellable also requires sellPrice > 0 and not currently
+    elseif ctx.whitelistedChar or ctx.whitelistedAccount then
+        -- Honesty: the engine also requires sellPrice > 0 and not currently
         -- equipped. Without these checks the tooltip used to claim "Will Sell"
         -- on items that the merchant cycle correctly refuses (custom items
         -- with no vendor price, or items the player has equipped). Surface
         -- both reasons in warning-yellow so the user sees them at the point
         -- of decision instead of wondering why the cycle skipped them.
-        if IsEquippedItem(id) then
+        if ctx.equipped then
             statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Won't Sell (equipped)"] .. "|r"
             statusTag = "wontsell"
         elseif not (itemSellPrice and itemSellPrice > 0) then
@@ -207,7 +206,7 @@ local function EC_AnnotateTooltipInner(tooltip)
             statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (junk)"] .. "|r"
             statusTag = "willsell"
         elseif quality and quality >= 1 and quality <= 4 and sellPrice and sellPrice > 0 then
-            local rule = DB.qualityRules[quality]
+            local rule = ctx.qualityRule
             if rule and rule.enabled then
                 local rarityName = (quality == 1) and L["White"]
                     or (quality == 2) and L["Green"]
@@ -240,7 +239,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                 else
                     matchesILvl = (cap == 0) or (hasVisibleILvl and ilvl <= cap)
                 end
-                if matchesILvl and EC_compCache.isQuestItem and EC_compCache.isQuestItem(id) then
+                if matchesILvl and ctx.isQuestItem then
                     -- v2.13.x: quest-item safety-net honesty. After the
                     -- v2.13.x narrowing, EC_IsSellable returns false when
                     -- a qualityPass auto-rule would catch a quest-class
@@ -250,12 +249,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                     -- unaffected (whitelist overrides safety net).
                     statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep (quest item)"] .. "|r"
                     statusTag = "keep"
-                elseif
-                    matchesILvl
-                    and EC_compCache.baselineProtectedIDs
-                    and EC_compCache.baselineProtectedIDs[id]
-                    and not (ADB and ADB.allowedItems and ADB.allowedItems[id])
-                then
+                elseif matchesILvl and ctx.baselineProtected and not ctx.allowedItem then
                     -- Baseline profession-tool safety net (Monrad's report).
                     -- Same honesty as the quest-item case: the auto-rule
                     -- sweep would have caught the tool but EC_IsSellable
@@ -272,7 +266,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                     local bindFilter = rule.bindFilter or "any"
                     local bindRejected = false
                     if bindFilter ~= "any" then
-                        local bindType = EC_compCache.getBindTypeFromTooltip(tooltip, id)
+                        local bindType = ctx.bindType()
                         if bindType ~= bindFilter then
                             bindRejected = true
                         end
@@ -394,10 +388,10 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- (not only when the would-vendor chain produced a label). Mirrors
     -- the v2.26.0 chance-on-hit tooltip pass so Epic items with
     -- affixes also show their state.
-    if DB.protectAffixedRareItems then
+    if ctx.protectAffixedRareItems then
         local quality = itemQuality
         if quality and quality >= 3 then
-            local affix = EC_compCache.liveTooltipAffixData(tooltip, id)
+            local affix = ctx.affixData()
             if affix then
                 -- v2.32.x lazy catalog refresh. Pick up any newly-
                 -- learned ExtractionService affixes BEFORE the
@@ -419,9 +413,9 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- stamped at add time; hovering the item now after
                 -- /reload fills in the flag so the panel renders the
                 -- (affix-gated) tag.
-                local onAnyList = IsInSet(DB.whitelist, id)
-                    or (ADB and IsInSet(ADB.whitelist, id))
-                    or IsInSet(DB.blacklist, id)
+                local onAnyList = ctx.whitelistedChar
+                    or ctx.whitelistedAccount
+                    or ctx.blacklisted
                     or IsInSet(DB.deleteList, id)
                 if onAnyList and ADB then
                     ADB.affixedListedItems = ADB.affixedListedItems or {}
@@ -432,8 +426,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                         end
                     end
                 end
-                local affixKey = affix.description and EC_compCache.normaliseAffixDesc(affix.description)
-                local manualAllow = affixKey and ADB and ADB.allowedAffixes and ADB.allowedAffixes[affixKey]
+                local manualAllow = affix.description and ctx.manualAffixAllow(affix.description)
                 -- v2.30.x: compute "does the player know this affix at
                 -- this rank" INDEPENDENTLY of affixAllowExactDupes so the
                 -- "Protected - Affix known" branch can fire even when the
@@ -442,8 +435,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- "known" state into a blanket "Random affix" label
                 -- whenever the dupe-allow flag was off.
                 local playerKnows = affix.description
-                    and EC_compCache.playerHasAffixDescription
-                    and EC_compCache.playerHasAffixDescription(affix.description)
+                    and ctx.affixDescKnown(affix.description)
                     or false
                 -- v2.35.1: family + rank fallback. PE's item-side and
                 -- spell-side strings sometimes disagree at the same rank
@@ -475,8 +467,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                 local playerKnowsRank = (not playerKnows)
                     and affix.name
                     and affix.rank
-                    and EC_compCache.playerHasAffixRank
-                    and EC_compCache.playerHasAffixRank(affix.name, affix.rank)
+                    and ctx.affixRankKnown(affix.name, affix.rank)
                     or false
                 -- v2.45.0: family-name fallback for unranked PE affixes.
                 -- Same shape as the EC_IsSellable affix-protection gate
@@ -490,8 +481,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                     and (not playerKnowsRank)
                     and (not affix.rank)
                     and affix.name
-                    and EC_compCache.playerHasAffixFamily
-                    and EC_compCache.playerHasAffixFamily(affix.name)
+                    and ctx.affixFamilyKnown(affix.name)
                     or false
                 -- v2.37.x diagnostic: log the lookup result so a future
                 -- "rank needed" misfire report can be debugged from the
@@ -524,23 +514,19 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- AND dupe-allow is on, the affix protection releases too
                 -- (matches what the user requested when shipping the
                 -- family + rank fallback).
-                local autoDupe = DB.affixAllowExactDupes and (playerKnows or playerKnowsRank or playerKnowsFamily)
+                local autoDupe = ctx.affixAllowExactDupes and (playerKnows or playerKnowsRank or playerKnowsFamily)
                 -- v2.66.0: track which BoE-keep gate (if any) suppressed a
                 -- would-have-been release, so the "Keep" branch below can
                 -- name the specific reason instead of falling through to
                 -- the generic "Keep (affix rank known/needed)" label.
                 local keptByBoeDupes = false
                 local keptByBoeBelowRank = false
-                -- v2.47.0: bind-type split mirror. When "keep BoE dupes" is on,
-                -- a BoE owned dupe is NOT released (kept for the auction house),
-                -- so the tooltip must not say "Will Sell" for it. Reads the bind
-                -- line off the live tooltip (no bag/slot here). Keep in lockstep
-                -- with EC_IsSellable's autoDupe / autoDupePass gate.
-                if autoDupe
-                    and DB.keepBoeAffixDupes
-                    and EC_compCache.getBindTypeFromTooltip
-                    and EC_compCache.getBindTypeFromTooltip(tooltip, id) ~= "bop"
-                then
+                -- v2.47.0: bind-type split. When "keep BoE dupes" is on,
+                -- a BoE owned dupe is NOT released (kept for the auction
+                -- house), so the tooltip must not say "Will Sell" for it.
+                -- ctx.bindType() reads the bind line off the live tooltip
+                -- (no bag/slot here) - the same gate the decision core runs.
+                if autoDupe and ctx.keepBoeAffixDupes and ctx.bindType() ~= "bop" then
                     autoDupe = false
                     keptByBoeDupes = true
                 end
@@ -549,21 +535,17 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- affixed item is below the player's chosen rank
                 -- floor: the protection releases and the destination
                 -- / will-sell label below takes over.
-                local rankBelow = DB.affixMinSellRank
-                    and DB.affixMinSellRank > 0
+                local rankBelow = ctx.affixMinSellRank
+                    and ctx.affixMinSellRank > 0
                     and affix.rank
-                    and affix.rank < DB.affixMinSellRank
+                    and affix.rank < ctx.affixMinSellRank
                 -- v2.66.0 (Valentine request): BoE-keep for the rank-floor
                 -- sell rule. Mirrors the gate in EC_IsSellable at ~5717.
                 -- When the toggle is on and the item is bind-on-equip,
                 -- the rank-below signal is suppressed so the tooltip
                 -- doesn't say "Will Sell" for an item the vendor path
                 -- will actually keep.
-                if rankBelow
-                    and DB.keepBoeBelowRankFloor
-                    and EC_compCache.getBindTypeFromTooltip
-                    and EC_compCache.getBindTypeFromTooltip(tooltip, id) ~= "bop"
-                then
+                if rankBelow and ctx.keepBoeBelowRankFloor and ctx.bindType() ~= "bop" then
                     rankBelow = false
                     keptByBoeBelowRank = true
                 end
@@ -581,11 +563,9 @@ local function EC_AnnotateTooltipInner(tooltip)
                 -- releases the affix protection here (the tooltip must not say
                 -- "Will Sell"). Explicit Allow Sell (manualAllow) is unaffected
                 -- - it's the user's per-item override, like a Sell List entry.
-                -- Mirror of EC_IsSellable via EC_compCache.affixSaleWithinCeiling.
-                if
-                    EC_compCache.affixSaleWithinCeiling
-                    and not EC_compCache.affixSaleWithinCeiling(itemQuality, itemILvl, itemEquipLoc, id)
-                then
+                -- ctx.saleWithinCeiling() routes to the same shared
+                -- EC_compCache.affixSaleWithinCeiling gate the engine uses.
+                if not ctx.saleWithinCeiling() then
                     autoDupe = false
                     rankBelow = false
                 end
@@ -681,7 +661,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                     end
                 elseif (manualAllow or autoDupe or (rankBelow and (playerKnows or playerKnowsRank or playerKnowsFamily)))
                     and not canSell
-                    and not IsInSet(DB.blacklist, id)
+                    and not ctx.blacklisted
                 then
                     -- v2.57.2: Keep List wins. If the item is already on your
                     -- Keep List it keeps its precise earlier label (Keep / Keep
@@ -767,7 +747,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                             .. "|r"
                         statusTag = "wontsell"
                     end
-                elseif IsInSet(DB.blacklist, id) then -- luacheck: ignore 542
+                elseif ctx.blacklisted then -- luacheck: ignore 542
                     -- v2.59.9 (Serv report): Keep List wins over the affix
                     -- known/needed label. Pre-fix Ashen Band of Endless
                     -- Vengeance (sellPrice=0, on Keep List via
@@ -866,9 +846,8 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- earlier rules produced (Won't Sell (no value) / Keep (equipped) /
     -- Will Sell / etc.). Mirrors the same gate in EC_IsSellable +
     -- describeSellability.
-    local chanceOnHitAppliesToItem = EC_compCache.isExtractableWeaponSlot
-        and EC_compCache.isExtractableWeaponSlot(id)
-    if DB.protectChanceOnHitItems and chanceOnHitAppliesToItem and EC_compCache.liveTooltipHasChanceOnHit(tooltip, id) then
+    local chanceOnHitAppliesToItem = ctx.isExtractableWeaponSlot()
+    if ctx.protectChanceOnHitItems and chanceOnHitAppliesToItem and ctx.hasChanceOnHit() then
         -- Explicit user lists override the safety net. The protection
         -- veto in EC_IsSellable only narrows qualityPass; whitelistPass
         -- (explicit Sell List entry) keeps the item sellable. BuildQueue's
@@ -876,9 +855,9 @@ local function EC_AnnotateTooltipInner(tooltip)
         -- So if the item is on Sell / Account Sell / Delete / Keep, the
         -- earlier annotation chain produced the correct verdict already;
         -- don't overwrite it.
-        local onExplicit = IsInSet(DB.blacklist, id)
-            or IsInSet(DB.whitelist, id)
-            or (ADB and IsInSet(ADB.whitelist, id))
+        local onExplicit = ctx.blacklisted
+            or ctx.whitelistedChar
+            or ctx.whitelistedAccount
             or (IsInSet(DB.deleteList, id) and DB.enableDeletion)
         -- v2.37.0: backfill the chance-on-hit-meta flag for itemIDs
         -- already on a list. Mirrors the affixedListedItems backfill
@@ -908,7 +887,7 @@ local function EC_AnnotateTooltipInner(tooltip)
             -- Explicit list verdict stands; leave statusLine alone.
         elseif affixKept then -- luacheck: ignore 542
             -- Affix protection took the verdict already; leave it.
-        elseif ADB and ADB.allowedItems and ADB.allowedItems[id] then
+        elseif ctx.allowedItem then
             -- Allow Sell is on. If a quality-rule already produced a
             -- "Will Sell (...)" verdict, leave it alone. Otherwise
             -- prompt the user to pick a list.
@@ -947,14 +926,14 @@ local function EC_AnnotateTooltipInner(tooltip)
             -- diverging from /ec sellinfo which correctly reports "vendor
             -- won't accept".
             local procKnown = false
-            if EC_compCache.playerHasExtractedProc and EC_compCache.liveTooltipChanceProcLine then
-                local procLine = EC_compCache.liveTooltipChanceProcLine(tooltip)
+            do
+                local procLine = ctx.chanceProcLine()
                 if procLine then
-                    procKnown = EC_compCache.playerHasExtractedProc(nil, nil, id, procLine)
+                    procKnown = ctx.hasExtractedProc(procLine)
                 end
             end
             local hasSellPriceHere = itemSellPrice and itemSellPrice > 0
-            if procKnown and DB.sellChanceOnHitKnown and hasSellPriceHere then
+            if procKnown and ctx.sellChanceOnHitKnown and hasSellPriceHere then
                 statusLine = "|cff66ccff[EC]|r |cffb6ffb6"
                     .. L["Will Sell (chance-on-hit proc known)"]
                     .. "|r"
@@ -984,35 +963,28 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- recipe out of that veto: the sell opt-in wins over "keep all tomes"
     -- for learned recipes, while non-recipe tomes and unknown recipes stay
     -- protected. Learn-state is read from this character's live tooltip.
-    local recipeSellable = DB.sellKnownRecipes
+    local recipeSellable = ctx.sellKnownRecipes
         and itemSellPrice
         and itemSellPrice > 0
-        and not IsEquippedItem(id)
-        and itemQuality
-        and DB.sellKnownRecipeQualities
-        and DB.sellKnownRecipeQualities[itemQuality]
-        and EC_compCache.liveTooltipIsTome
-        and EC_compCache.tomeKind
-        and EC_compCache.liveTooltipPlayerKnowsTome
-        and EC_compCache.liveTooltipIsTome(tooltip, id)
-        and EC_compCache.tomeKind(id) == "Recipe"
-        and EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
+        and not ctx.equipped
+        and ctx.sellKnownRecipeQuality
+        and ctx.isTome()
+        and ctx.tomeKind() == "Recipe"
+        and ctx.knowsTomeSpell()
         and true
         or false
     -- v2.50.4 fix (Serv report, Plans: Ragesteel Breastplate): also honour
-    -- the per-quality recipe bind-type filter, matching EC_IsSellable's
-    -- recipePass at EbonClearance_Events.lua ~5100. Without this, a
-    -- soulbound Blue recipe with the Blue-recipe filter set to "boe" showed
-    -- "Will Sell (known recipe)" in the tooltip but the vendor cycle
-    -- correctly refused. Uses the live-tooltip bind-type reader since we
-    -- don't have a bag/slot pair here.
+    -- the per-quality recipe bind-type filter, matching the engine's
+    -- recipePass. Without this, a soulbound Blue recipe with the
+    -- Blue-recipe filter set to "boe" showed "Will Sell (known recipe)"
+    -- in the tooltip but the vendor cycle correctly refused.
+    -- ctx.recipeBindFilter snapshots DB.sellKnownRecipeBindFilter for
+    -- this quality; ctx.bindType() is the live-tooltip bind reader
+    -- (no bag/slot pair here).
     if recipeSellable then
-        local recipeBindFilter = DB.sellKnownRecipeBindFilter
-            and DB.sellKnownRecipeBindFilter[itemQuality]
-            or "any"
+        local recipeBindFilter = ctx.recipeBindFilter or "any"
         if recipeBindFilter ~= "any" then
-            local bindType = EC_compCache.getBindTypeFromTooltip
-                and EC_compCache.getBindTypeFromTooltip(tooltip, id) or "any"
+            local bindType = ctx.bindType() or "any"
             if recipeBindFilter ~= bindType then
                 recipeSellable = false
             end
@@ -1028,14 +1000,14 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- EC-TRAP: this predicate matches EC_IsSellable's tome-veto block
     -- + describeSellability's tomeProtection step. Editing any one
     -- without the other two breaks the trace-tooltip-vendor parity.
-    local onSellList = IsInSet(DB.whitelist, id) or (ADB and IsInSet(ADB.whitelist, id))
+    local onSellList = ctx.whitelistedChar or ctx.whitelistedAccount
     local tomeProtected = false
     local tomeHave = false
     local tomeKindLabel
-    if (DB.protectAllTomes or DB.protectUnlearnedTomes)
+    if (ctx.protectAllTomes or ctx.protectUnlearnedTomes)
         and not recipeSellable
         and not onSellList
-        and EC_compCache.liveTooltipIsTome(tooltip, id)
+        and ctx.isTome()
     then
         -- Label the protection accurately. GetItemInfo's class is
         -- "Recipe" for BOTH profession crafting items (Plans /
@@ -1044,25 +1016,23 @@ local function EC_AnnotateTooltipInner(tooltip)
         -- scrolls, PE Tome of Echo). The distinguishing field is the
         -- subtype - profession recipes carry a profession-name
         -- subtype; everything else falls through to "Tome".
-        tomeKindLabel = (EC_compCache.tomeKind and EC_compCache.tomeKind(id)) or L["Tome"]
-        if DB.protectAllTomes then
+        tomeKindLabel = ctx.tomeKind() or L["Tome"]
+        if ctx.protectAllTomes then
             tomeProtected = true
-            tomeHave = EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id) and true or false
-        elseif DB.protectUnlearnedTomes
-            and not EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
-        then
+            tomeHave = ctx.knowsTomeSpell() and true or false
+        elseif ctx.protectUnlearnedTomes and not ctx.knowsTomeSpell() then
             tomeProtected = true
             tomeHave = false
         end
     end
     if tomeProtected then
-        -- Tome protection HARD-VETOES in EC_IsSellable regardless of
+        -- Tome protection HARD-VETOES in the engine regardless of
         -- Sell List membership, so the Keep label is the truth. Keep
         -- List membership stays. Allow Sell override flips to the
         -- destination-list label.
-        if IsInSet(DB.blacklist, id) then -- luacheck: ignore 542
+        if ctx.blacklisted then -- luacheck: ignore 542
             -- Keep List wins; leave the earlier Keep label alone.
-        elseif ADB and ADB.allowedItems and ADB.allowedItems[id] then
+        elseif ctx.allowedItem then
             -- destinationLabel walks the explicit-list precedence chain.
             -- Returns nil when no list claims it; the fallback picks an
             -- existing quality-rule "Will Sell" verdict if there is one,
@@ -1110,7 +1080,7 @@ local function EC_AnnotateTooltipInner(tooltip)
     if recipeSellable
         and statusTag ~= "willsell"
         and statusTag ~= "willdelete"
-        and not IsInSet(DB.blacklist, id)
+        and not ctx.blacklisted
         and not (IsInSet(DB.deleteList, id) and DB.enableDeletion)
     then
         statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (known recipe)"] .. "|r"
@@ -1125,7 +1095,29 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- EC has no rule for.
 
     if statusLine then
+        -- v2.71.2 honesty guard: the engine's equipped veto beats EVERY
+        -- positive signal, but only the Sell List branch above checked
+        -- it. Centralise: no label may promise a sale of an item the
+        -- player is wearing (paper-doll hovers of rule-matched gear were
+        -- the visible case; a worn item with a bag copy is the subtle one).
+        if statusTag == "willsell" and ctx.equipped then
+            statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Won't Sell (equipped)"] .. "|r"
+            statusTag = "wontsell"
+        end
+        -- Drift sentinel (classifier Stage 3): compare the label's class
+        -- against the decision core's verdict on the SAME ctx. The label
+        -- branches above are still hand-maintained; a mismatch means one
+        -- fell behind the core - surface it instead of letting the
+        -- tooltip quietly lie. Delete-side labels are out of the core's
+        -- scope until Stage 4, so they are excluded.
         tooltip:AddLine(statusLine)
+        local skipSentinel = statusTag == "willdelete" or (IsInSet(DB.deleteList, id) and DB.enableDeletion)
+        if not skipSentinel then
+            local verdict = NS.Decision.sell(ctx)
+            if (verdict == "sell") ~= (statusTag == "willsell") then
+                tooltip:AddLine("|cff888888" .. L["(EC label check failed - please report via /ec bugreport)"] .. "|r")
+            end
+        end
     end
     -- v2.37.0 (Borrow B): grey "already known" annotation on tome /
     -- recipe items the current character has already learned.
@@ -1137,13 +1129,7 @@ local function EC_AnnotateTooltipInner(tooltip)
     -- so the annotation doesn't double up. Per-character via the
     -- cache's character-scoped lifecycle (the tooltip scan runs on
     -- THIS character's spellbook + recipe list).
-    if id
-        and EC_compCache.liveTooltipIsTome
-        and EC_compCache.liveTooltipPlayerKnowsTome
-        and EC_compCache.liveTooltipIsTome(tooltip, id)
-        and EC_compCache.liveTooltipPlayerKnowsTome(tooltip, id)
-        and statusTag ~= "tome_have"
-    then
+    if id and ctx.isTome() and ctx.knowsTomeSpell() and statusTag ~= "tome_have" then
         tooltip:AddLine("|cff888888" .. L["Already known by this character"] .. "|r")
     end
     -- Opt-in item-ID annotation. Surfaces the numeric itemID under the
@@ -1163,9 +1149,9 @@ end
 
 -- Frame-spike timing wrapper. Times the annotation body into the shared
 -- tooltip phase counter so /ec spike can attribute a mouseover-storm
--- stutter to tooltip work. The body above is untouched (and, per the
--- EC-TRAP note at its head, deliberately mirrors EC_IsSellable - not
--- merged with it). Falls straight through when the timer is unavailable.
+-- stutter to tooltip work (the ctx build + Decision.sell sentinel are
+-- inside the timed body). Falls straight through when the timer is
+-- unavailable.
 local function EC_AnnotateTooltip(tooltip)
     local prof = EC_compCache.spikeProf
     if not prof then

@@ -308,6 +308,53 @@ check("sellPrice=0: autodupe does not fire for a vendor-refused item",
     isNone(affixed({ affixAllowExactDupes = true, sellPrice = 0,
         affixDescKnown = function() return true end })))
 
+-- ---- delete eligibility (v2.71.3, classifier Stage 4) -----------------------
+-- Decision.deleteEligible(ctx): the Delete-List destruction gate. The
+-- v2.50.2 rescue vetoes (Keep List / ACCOUNT Sell List / equipped) are the
+-- load-bearing part - auto-mark writes to deleteList without the cross-list
+-- conflict guard, so later Keep intent must rescue at destruction time.
+check("module exposes Decision.deleteEligible", type(D.deleteEligible) == "function")
+local function delAs(ctx, wantEligible, wantToken)
+    local eligible, token = D.deleteEligible(ctx)
+    return eligible == wantEligible and token == wantToken,
+        string.format("got eligible=%s token=%s, wanted %s/%s",
+            tostring(eligible), tostring(token), tostring(wantEligible), tostring(wantToken))
+end
+local function deletable(o)
+    o = o or {}
+    o.onDeleteList = (o.onDeleteList == nil) and true or o.onDeleteList
+    if o.affixDisposable == nil then
+        o.affixDisposable = thunkFalse
+    end
+    return makeCtx(o)
+end
+check("empty slot -> false/empty", delAs(deletable({ itemID = NIL }), false, "empty"))
+check("not on Delete List -> false/notOnList", delAs(deletable({ onDeleteList = false }), false, "notOnList"))
+check("listed grey item is eligible", delAs(deletable(), true, "deleteList"))
+check("GOLDEN (v2.50.2 shirt-loss): Keep List rescues a listed item",
+    delAs(deletable({ blacklisted = true }), false, "keepList"))
+check("account Sell List rescues a listed item",
+    delAs(deletable({ whitelistedAccount = true }), false, "sellList"))
+check("character Sell List does NOT rescue (deliberate asymmetry)",
+    delAs(deletable({ whitelistedChar = true }), true, "deleteList"))
+check("equipped rescues a listed item",
+    delAs(deletable({ equipped = true }), false, "equipped"))
+check("locked slot is skipped this tick",
+    delAs(deletable({ locked = true }), false, "locked"))
+check("protected affix vetoes deletion (Rare+, not disposable)",
+    delAs(deletable({ quality = 3, protectAffixedRareItems = true,
+        affixData = function() return { name = "Iron Will", rank = 2 } end }), false, "affixProtected"))
+check("disposable affix releases the veto",
+    delAs(deletable({ quality = 3, protectAffixedRareItems = true,
+        affixData = function() return { name = "Iron Will", rank = 2 } end,
+        affixDisposable = function() return true end }), true, "deleteList"))
+check("affix gate skipped below Rare",
+    delAs(deletable({ quality = 2, protectAffixedRareItems = true,
+        affixData = function() return { name = "Iron Will", rank = 2 } end }), true, "deleteList"))
+check("affix gate skipped when protection is off",
+    delAs(deletable({ quality = 3, protectAffixedRareItems = false,
+        affixData = function() return { name = "Iron Will", rank = 2 } end }), true, "deleteList"))
+
 print()
 if fails > 0 then
     io.stderr:write("RESULT: " .. fails .. " test(s) failed\n")

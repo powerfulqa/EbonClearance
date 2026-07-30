@@ -1,6 +1,16 @@
 # Decision classifier: one sell/delete verdict source behind reason tokens
 
-Status: Stage 0 (design). Target: v2.71.0+ as staged, bisectable releases.
+Status: SHIPPED (Stages 1-4 = v2.71.0 / v2.71.1 / v2.71.2 / v2.71.3).
+Two deliberate divergences from the design below, decided during
+implementation: (1) Stage 3 did NOT make statusTag literally become the
+core token - the tooltip's label nuance lives in none/noSignal cases one
+token can't carry without bloating the core with display fields; instead
+every surface reads one ctx snapshot and its verdict class is guarded by
+a sentinel against the core's answer. (2) The auto-mark scan + its
+tooltip preview stayed on the v2.57.2 shared-gate contract
+(itemProtectedFromAutoMarkDelete) rather than moving into the core -
+they predict a FUTURE marking, not a current decision; only the
+Delete-List destruction gate (deleteEligible) moved.
 Origin: docs/CODE_REVIEW.md audit item 6 (trigger fired twice on 2026-07-11),
 confirmed by the 2026-07-29 competitive review (Tier A1) against a sibling
 addon that ships the working pattern on 3.3.5a: pure, WoW-free decision

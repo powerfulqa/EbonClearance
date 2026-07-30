@@ -324,6 +324,51 @@ function Decision.sell(ctx)
 end
 
 -- ---------------------------------------------------------------------------
+-- Pure core: delete eligibility (v2.71.3, classifier Stage 4).
+-- ---------------------------------------------------------------------------
+-- "Is this Delete-List item instance destroyable right now?" - a faithful
+-- transcription of EC_compCache.deleteListSlotEligible at v2.71.2 (which
+-- now delegates here). Returns eligible (boolean), token, fields.
+--
+-- The v2.50.2 rescue vetoes (the Stickybackpack shirt-loss fix) are the
+-- load-bearing part: the auto-mark scans write to deleteList WITHOUT the
+-- cross-list conflict guard, so any later Keep intent (Keep List, account
+-- Sell List, equipped) must rescue the item at DESTRUCTION time.
+-- EC-TRAP: do NOT collapse these vetoes into the affix gate, and note the
+-- asymmetry is deliberate: the ACCOUNT Sell List vetoes (a cross-character
+-- "I want this" signal) but the character Sell List does not.
+--
+-- Callers gate on DB.enableDeletion themselves (ctx.enableDeletion is in
+-- the snapshot for renderers); this predicate answers eligibility only.
+function Decision.deleteEligible(ctx)
+    if not ctx or not ctx.itemID then
+        return false, "empty"
+    end
+    if not ctx.onDeleteList then
+        return false, "notOnList"
+    end
+    if ctx.blacklisted then
+        return false, "keepList"
+    end
+    if ctx.whitelistedAccount then
+        return false, "sellList"
+    end
+    if ctx.equipped then
+        return false, "equipped"
+    end
+    if not ctx.count or ctx.count <= 0 or ctx.locked then
+        return false, "locked"
+    end
+    if ctx.protectAffixedRareItems and ctx.quality and ctx.quality >= 3 then
+        local affix = ctx.affixData()
+        if affix and not ctx.affixDisposable(affix) then
+            return false, "affixProtected", { affixName = affix.name, affixRank = affix.rank }
+        end
+    end
+    return true, "deleteList"
+end
+
+-- ---------------------------------------------------------------------------
 -- Adapters: capture everything the core needs from the live game state.
 -- ---------------------------------------------------------------------------
 -- Cheap reads are snapshotted; tooltip-backed predicates ride as thunks
@@ -352,6 +397,8 @@ local function EC_fillSharedCtx(ctx, DB, ADB, itemID, quality)
     ctx.whitelistedChar = IsInSet(DB.whitelist, itemID)
     ctx.whitelistedAccount = (ADB and IsInSet(ADB.whitelist, itemID)) or false
     ctx.blacklisted = IsInSet(DB.blacklist, itemID)
+    ctx.onDeleteList = (DB.deleteList and IsInSet(DB.deleteList, itemID)) and true or false
+    ctx.enableDeletion = DB.enableDeletion == true
     ctx.equipped = IsEquippedItem(itemID) and true or false
     ctx.isQuestItem = EC_compCache.isQuestItem(itemID)
     ctx.baselineProtected = (EC_compCache.baselineProtectedIDs and EC_compCache.baselineProtectedIDs[itemID])
@@ -393,6 +440,13 @@ local function EC_fillSharedCtx(ctx, DB, ADB, itemID, quality)
     function ctx.manualAffixAllow(desc)
         local key = EC_compCache.normaliseAffixDesc and EC_compCache.normaliseAffixDesc(desc)
         return (key and ADB and ADB.allowedAffixes and ADB.allowedAffixes[key]) and true or false
+    end
+    -- Delete-side release policy (v2.47.0): manualAllow OR owned dupe
+    -- with a dupe-disposal toggle on OR rank below the floor. ONE shared
+    -- definition (EC_compCache.affixDisposable in Events) serves this
+    -- thunk and the auto-mark scan, so the two cannot drift.
+    function ctx.affixDisposable(affix)
+        return EC_compCache.affixDisposable and EC_compCache.affixDisposable(affix) and true or false
     end
 end
 

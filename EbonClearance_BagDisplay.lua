@@ -1134,16 +1134,30 @@ function EC_compCache.describeSellability(bag, slot)
 
     -- Delete List wins over every sell signal (v2.37.0). Check it first
     -- so the trace agrees with the bag tint + tooltip annotation, and
-    -- with BuildQueue's per-slot dispatch which now checks Delete List
-    -- before the sell branch. When the item is on the Delete List + the
-    -- Enable Deletion master toggle is on, the cycle queues this slot
-    -- as `type = "delete"` and ignores any sell signal further down.
-    local onDeleteList = DB and IsInSet(DB.deleteList, itemID) or false
-    local deletionEnabled = DB and DB.enableDeletion == true
-    local willDelete = onDeleteList and deletionEnabled
-    if willDelete then
-        step("deleteListVerdict", true, L["WILL DELETE - on Delete List, Enable Deletion is on"])
-    elseif onDeleteList then
+    -- with BuildQueue's per-slot dispatch which checks Delete List
+    -- before the sell branch. v2.71.3 (classifier Stage 4): the verdict
+    -- comes from Decision.deleteEligible - the SAME gate BuildQueue and
+    -- auto-delete run - so the trace is finally honest about the v2.50.2
+    -- rescue vetoes (previously it said WILL DELETE for any listed item
+    -- even when the Keep-signal / equipped / affix rescue would skip it).
+    local willDelete = false
+    if ctx.onDeleteList and ctx.enableDeletion then
+        local delEligible, delToken = NS.Decision.deleteEligible(ctx)
+        if delEligible then
+            willDelete = true
+            step("deleteListVerdict", true, L["WILL DELETE - on Delete List, Enable Deletion is on"])
+        elseif delToken == "keepList" then
+            step("deleteListVerdict", true, L["on Delete List but also on your Keep List - Keep List wins, not deleted"])
+        elseif delToken == "sellList" then
+            step("deleteListVerdict", true, L["on Delete List but on your Account Sell List - kept to sell, not deleted"])
+        elseif delToken == "equipped" then
+            step("deleteListVerdict", true, L["on Delete List but currently worn - not deleted"])
+        elseif delToken == "affixProtected" then
+            step("deleteListVerdict", true, L["on Delete List but its affix is protected - not deleted"])
+        else
+            step("deleteListVerdict", true, L["on Delete List but the slot is locked (mid-pickup) - skipped this tick"])
+        end
+    elseif ctx.onDeleteList then
         step(
             "deleteListVerdict",
             true,
@@ -1748,19 +1762,17 @@ function EC_compCache.describeSellability(bag, slot)
         step("chanceOnHitProtection", true, L["n/a"])
     end
 
-    -- Tome / recipe protection. Mirrors EC_IsSellable's tome gate.
-    -- v2.51.2 (Serv report, Pattern: Mooncloth Leggings): narrowed to
-    -- fire ONLY on qualityPass, not whitelistPass - an explicit Sell
-    -- List entry now overrides the tome veto (matches how affix +
-    -- chance-on-hit already behave since v2.20.1). Allow Sell
-    -- (Alt+Right-Click) still exists as a per-item override.
-    -- EC-TRAP: this predicate MUST match EC_IsSellable's tome-veto
-    -- block AND EC_AnnotateTooltip's tome branch - all three parity
-    -- sites use `qualityPass and not whitelistPass and not recipePass
-    -- and (protectAllTomes or protectUnlearnedTomes)`. v2.59.10 (bug-
-    -- hunt): the `not whitelistPass` release was previously missing
-    -- here + in EC_IsSellable, causing the trace to diverge from the
-    -- tooltip (which had the release) for the both-signals-set case.
+    -- Tome / recipe protection narration.
+    -- v2.51.2 (Serv report, Pattern: Mooncloth Leggings): fires ONLY on
+    -- qualityPass, not whitelistPass - an explicit Sell List entry
+    -- overrides the tome veto (matches how affix + chance-on-hit behave
+    -- since v2.20.1). Allow Sell (Alt+Right-Click) still exists as a
+    -- per-item override.
+    -- v2.71.3: the old three-way paired-edit EC-TRAP is retired - the
+    -- authoritative predicate lives in Decision.sell's tome veto, the
+    -- verdict comes from the core, and the drift sentinel flags this
+    -- narration if it falls behind. Keep the branch's shape matching
+    -- the core so the story matches the verdict.
     local tomeProtected = false
     if qualityPass
         and not whitelistPass

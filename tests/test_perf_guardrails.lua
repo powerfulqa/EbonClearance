@@ -3648,15 +3648,19 @@ do
                     and block:find("DB%.affixMinSellRank") ~= nil,
                 "the release decision must cover owned exact-rank dupes AND ranks below the affixMinSellRank floor (so the auto-mark scan clears unsellable below-floor affixes too)"
             )
-            local delStart = eventsSrc:find("function EC_compCache%.deleteListSlotEligible%(")
-            -- v2.50.2: window widened from 1200 to 2500 chars after the
-            -- v2.50.2 Keep-signal + IsEquippedItem rescue gates and their
-            -- header-comment block pushed the affixDisposable call past
-            -- the original 1200-char slice.
-            local delBlock = delStart and eventsSrc:sub(delStart, delStart + 2500) or ""
+            -- v2.71.3 (classifier Stage 4): the eligibility policy moved
+            -- to Decision.deleteEligible; the affix gate now reads
+            -- ctx.affixDisposable(affix), whose adapter thunk routes to
+            -- the SAME shared EC_compCache.affixDisposable helper.
+            local dcf = io.open("EbonClearance_Decision.lua", "rb")
+            local dcSrc59 = dcf and dcf:read("*a") or ""
+            if dcf then
+                dcf:close()
+            end
             check(
                 "deleteListSlotEligible routes its affix gate through affixDisposable",
-                delBlock:find("EC_compCache%.affixDisposable%(affix%)") ~= nil,
+                dcSrc59:find("not ctx%.affixDisposable%(affix%)") ~= nil
+                    and dcSrc59:find("EC_compCache%.affixDisposable%(affix%)") ~= nil,
                 "the delete gate must call the shared helper so it agrees with the scan + EC_IsSellable instead of re-inlining the release logic"
             )
         end
@@ -5464,10 +5468,15 @@ do
 
         check(
             "Test 86a: describeSellability surfaces a Delete-List verdict + WILL DELETE summary",
+            -- v2.71.3 (classifier Stage 4): the WILL DELETE verdict comes
+            -- from Decision.deleteEligible (the same gate BuildQueue
+            -- runs), so the trace is honest about the v2.50.2 rescue
+            -- vetoes instead of claiming WILL DELETE for any listed item.
             bdSrc:find("deleteListVerdict") ~= nil
                 and bdSrc:find("WILL DELETE at the next vendor visit") ~= nil
-                and bdSrc:find("local willDelete = onDeleteList and deletionEnabled") ~= nil,
-            "describeSellability must add a deleteListVerdict step and override the summary with WILL DELETE when the item is on Delete List + Enable Deletion is on. Otherwise /ec sellinfo would silently disagree with the tooltip + cycle."
+                and bdSrc:find("if ctx%.onDeleteList and ctx%.enableDeletion then") ~= nil
+                and bdSrc:find("local delEligible, delToken = NS%.Decision%.deleteEligible%(ctx%)") ~= nil,
+            "describeSellability must derive its deleteListVerdict step + WILL DELETE summary from Decision.deleteEligible so /ec sellinfo agrees with BuildQueue's delete gate (including the Keep-signal / equipped / affix rescues)."
         )
     end
 end
@@ -6412,15 +6421,26 @@ do
         "the shared ownership check must combine all three layers (description, family+rank, family-only) so it recognises exactly the dupes EC_IsSellable releases for selling."
     )
 
-    -- Bound each body to the next function def so the find()s can't bleed
-    -- into a neighbouring helper.
+    -- v2.71.3 (classifier Stage 4): deleteListSlotEligible is now a thin
+    -- delegate (cheap membership pre-gate + Decision.deleteEligible); the
+    -- policy body lives in EbonClearance_Decision.lua.
+    local dcDel
+    do
+        local fh = io.open("EbonClearance_Decision.lua", "rb")
+        dcDel = fh and fh:read("*a") or ""
+        if fh then
+            fh:close()
+        end
+    end
     local delStart = ev:find("function EC_compCache%.deleteListSlotEligible%(")
-    local delEnd = ev:find("function EC_compCache%.executeBagSlotDelete", delStart or 1)
+    local delEnd = ev:find("function EC_compCache%.shouldAnnounceAutoDelete", delStart or 1)
     local delBody = (delStart and delEnd) and ev:sub(delStart, delEnd) or ""
     check(
         "Test 102c: deleteListSlotEligible's affix gate uses the shared affixDisposable helper",
-        delBody:find("EC_compCache%.affixDisposable%(affix%)") ~= nil,
-        "the delete-path affix gate must use the shared affixDisposable release check so it agrees with the mark scan and EC_IsSellable - otherwise a released item (dupe / below-floor) is marked but vetoed at delete time (marked-but-never-deleted)."
+        dcDel:find("not ctx%.affixDisposable%(affix%)") ~= nil
+            and dcDel:find("EC_compCache%.affixDisposable%(affix%)") ~= nil
+            and delBody:find("NS%.Decision%.deleteEligible%(ctx%)") ~= nil,
+        "the delete-path affix gate (Decision.deleteEligible) must use the shared affixDisposable release check via the ctx thunk so it agrees with the mark scan and EC_IsSellable - otherwise a released item (dupe / below-floor) is marked but vetoed at delete time (marked-but-never-deleted)."
     )
 
     -- affixDisposable is the single release decision: Allow-Sell, OR owned dupe
@@ -6482,9 +6502,12 @@ do
     )
     check(
         "Test 102h: deleteListSlotEligible rescues on Keep signal + IsEquippedItem",
-        delBody:find("DB%.blacklist and DB%.blacklist%[id%]") ~= nil
-            and delBody:find("ADB and ADB%.whitelist and ADB%.whitelist%[id%]") ~= nil
-            and delBody:find("IsEquippedItem%(id%)") ~= nil,
+        -- v2.71.3: the rescue vetoes live in Decision.deleteEligible,
+        -- reading the ctx snapshot (blacklisted / whitelistedAccount /
+        -- equipped - each returning its veto token).
+        dcDel:find('if ctx%.blacklisted then\n%s+return false, "keepList"') ~= nil
+            and dcDel:find('if ctx%.whitelistedAccount then\n%s+return false, "sellList"') ~= nil
+            and dcDel:find('if ctx%.equipped then\n%s+return false, "equipped"') ~= nil,
         "v2.50.2 (Stickybackpack shirt-loss report): the auto-mark scans write to deleteList without going through EC_FindAddConflict, so a subsequent Keep-List add via EC_AddItemToList (equipment-set stamp, manual context-menu add, auto-add-equipped) gets silently refused with quiet=true. The destruction gate MUST read Keep signals independently to rescue the item. Also vetoes when IsEquippedItem returns true - a duplicate copy of gear the player is currently wearing shouldn't be destroyed."
     )
     check(
@@ -7413,10 +7436,15 @@ do
     check("Test 117a: shared affix iLvl-ceiling helper exists",
         src:find("function EC_compCache.affixSaleWithinCeiling", 1, true) ~= nil,
         "EC_compCache.affixSaleWithinCeiling MUST exist - it's the single gate the three mirrors call so they agree on whether an affixed item is above the rarity rule's iLvl cap.")
-    local n = select(2, src:gsub("affixSaleWithinCeiling", ""))
-    check("Test 117b: all three mirrors reference the ceiling gate",
-        n >= 4,
-        "Expected the definition + EC_IsSellable + describeSellability + the tooltip to reference affixSaleWithinCeiling (>= 4 mentions); found " .. n .. ". A missing mirror means the trace/tooltip/vendor disagree on an above-cap affix dupe.")
+    check("Test 117b: the ceiling gate is single-sourced through the decision ctx",
+        -- v2.71.3 (classifier Stage 4 cleanup): this pin used to COUNT
+        -- affixSaleWithinCeiling mentions across the three hand-mirrored
+        -- surfaces. Stages 1-3 replaced the mirrors with ONE routing:
+        -- every surface reads ctx.saleWithinCeiling(), whose adapter
+        -- thunk is the only functional caller of the shared helper.
+        src:find("function ctx.saleWithinCeiling()", 1, true) ~= nil
+            and src:find("EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)", 1, true) ~= nil,
+        "the ceiling gate must stay behind the single ctx.saleWithinCeiling thunk (routed to EC_compCache.affixSaleWithinCeiling). Re-inlining per-surface calls reintroduces the mirror-drift class the classifier stages removed.")
     check("Test 117c: EC_IsSellable suppresses affixRankPass + autoDupePass above the ceiling",
         -- v2.71.0: the gate lives in Decision.sell as `not
         -- ctx.saleWithinCeiling()` with the buildCtx thunk routing to the
@@ -8062,11 +8090,17 @@ do
     check("Test 128a: tooltip builds ONE live-tooltip decision ctx",
         ttSrc:find("NS%.Decision and NS%.Decision%.buildTooltipCtx%(tooltip, id%)") ~= nil,
         "EC_AnnotateTooltip MUST read all state through the buildTooltipCtx snapshot so the tooltip and the decision core see identical inputs. Raw DB/EC_compCache re-reads reintroduce the mirror-drift bug class.")
-    check("Test 128b: verdict sentinel compares the label class against Decision.sell",
+    check("Test 128b: verdict sentinel compares the label class against Decision.sell + deleteEligible",
+        -- v2.71.3 (classifier Stage 4): the sentinel covers delete labels
+        -- too. Only the auto-mark PREVIEW (a willdelete label WITHOUT
+        -- Delete-List membership - a prediction about a future marking)
+        -- stays excluded.
         ttSrc:find("local verdict = NS%.Decision%.sell%(ctx%)") ~= nil
             and ttSrc:find('%(verdict == "sell"%) ~= %(statusTag == "willsell"%)') ~= nil
-            and ttSrc:find('skipSentinel = statusTag == "willdelete"') ~= nil,
-        "the label branches are hand-maintained; the sentinel turns a label-vs-engine contradiction into a visible tooltip line asking for a bug report. Delete-side labels are excluded until Stage 4 puts the delete decision in the core.")
+            and ttSrc:find("local willDeleteReal = ctx%.onDeleteList") ~= nil
+            and ttSrc:find('if statusTag == "willdelete" and not ctx%.onDeleteList then') ~= nil
+            and ttSrc:find('mismatch = statusTag ~= "willdelete"') ~= nil,
+        "the label branches are hand-maintained; the sentinel turns a label-vs-engine contradiction into a visible tooltip line asking for a bug report - for sell verdicts (Decision.sell) AND Delete-List verdicts (Decision.deleteEligible).")
     check("Test 128c: centralized equipped-honesty guard on every Will Sell label",
         ttSrc:find('if statusTag == "willsell" and ctx%.equipped then') ~= nil,
         "the engine's equipped veto beats every positive signal, but only the Sell List label branch checked it. The final guard relabels ANY Will Sell on a worn item to Won't Sell (equipped) - paper-doll hovers of rule-matched gear were the visible lie.")
@@ -8083,6 +8117,39 @@ do
         dcSrc:find("local function EC_fillSharedCtx%(ctx, DB, ADB, itemID, quality%)") ~= nil
             and select(2, dcSrc:gsub("EC_fillSharedCtx%(ctx, DB, ADB, itemID, quality%)", "")) >= 3,
         "memberships + settings + ownership thunks MUST come from the single EC_fillSharedCtx helper (definition + one call per adapter = 3+ occurrences), so the vendor/trace adapter and the tooltip adapter cannot drift on the shared state.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 129 (v2.71.3, classifier Stage 4): the delete decision lives in the
+-- core. deleteListSlotEligible is a thin delegate (cheap membership pre-gate
+-- so unlisted slots stay at one table lookup, then Decision.deleteEligible),
+-- and the trace + tooltip render their Will Delete verdicts from the same
+-- gate - so a listed item the v2.50.2 rescues would skip can no longer be
+-- promised a delete on any surface.
+-- ---------------------------------------------------------------------------
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local evSrc = fileSrc("EbonClearance_Events.lua")
+    local ttSrc = fileSrc("EbonClearance_Tooltip.lua")
+    check("Test 129a: deleteListSlotEligible delegates behind a cheap membership pre-gate",
+        evSrc:find("if not %(id and IsInSet%(DB%.deleteList, id%)%) then\n%s+return nil\n%s+end\n%s+.-local ctx = NS%.Decision and NS%.Decision%.buildCtx%(bag, slot, false%)") ~= nil
+            and evSrc:find("if not NS%.Decision%.deleteEligible%(ctx%) then") ~= nil,
+        "the gate runs per slot inside BAG_UPDATE scans and BuildQueue; unlisted slots (the common case) MUST short-circuit on one item-ID read + one table lookup BEFORE the ctx snapshot is built. Removing the pre-gate turns every bag scan into a full snapshot per slot.")
+    check("Test 129b: tooltip Will Delete labels require Decision.deleteEligible",
+        ttSrc:find("elseif ctx%.onDeleteList and ctx%.enableDeletion and NS%.Decision%.deleteEligible%(ctx%) then") ~= nil
+            and ttSrc:find("if ctx%.onDeleteList and ctx%.enableDeletion and NS%.Decision%.deleteEligible%(ctx%) then") ~= nil,
+        "BOTH Will Delete label sites (the main verdict chain and destinationLabel's precedence walk) MUST consult the core's delete gate, so an item rescued by the account Sell List / equipped / affix protections falls through to its real verdict instead of threatening a delete that never fires.")
+    check("Test 129c: affix + tome Keep labels yield to an existing Will Delete verdict",
+        select(2, ttSrc:gsub('ctx%.blacklisted or statusTag == "willdelete"', "")) >= 2,
+        "v2.71.3 (Serv report - Precious's Putrid Collar of Bulwark VI): the affix-protection and tome-protection blocks run AFTER the Will Delete branch and used to overwrite it with Keep (affix rank known) / Keep (learned tome). The engine's delete gate releases an owned affix via affixDisposable (the iLvl ceiling suppresses the SELL path only) and has NO tome veto, so the delete really fires - both blocks MUST leave a willdelete verdict alone, same as the Keep List guard.")
 end
 
 -- ---------------------------------------------------------------------------

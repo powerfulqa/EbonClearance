@@ -876,10 +876,31 @@ class contradicts `Decision.sell` on the same ctx (Test 128).
 Delete-side labels (Will Delete previews) are excluded from the
 sentinel until Stage 4 puts the delete decision in the core.
 
-With Stages 1-3 shipped, all three sell surfaces (vendor engine, trace,
-tooltip) read ONE state snapshot and answer to ONE verdict source. The
-remaining hand-maintained parts are the narration/label branches
-(sentinel-guarded) and the delete side (Stage 4).
+**Stage 4 (v2.71.3):** the delete side. **`NS.Decision.deleteEligible(ctx)`**
+is the pure Delete-List destruction gate (tokens: `deleteList` when
+eligible; `notOnList` / `keepList` / `sellList` / `equipped` / `locked`
+/ `affixProtected` vetoes). The v2.50.2 rescue vetoes (the shirt-loss
+fix) moved into it WITH their EC-TRAP - including the deliberate
+asymmetry that the ACCOUNT Sell List rescues but the character Sell
+List does not. `EC_compCache.deleteListSlotEligible` is now a thin
+delegate that keeps a cheap membership pre-gate (unlisted slots stay at
+one table lookup - it runs per slot in BAG_UPDATE scans) before
+building a ctx. The trace's `deleteListVerdict` step and BOTH tooltip
+Will Delete label sites render from the same gate, so all surfaces are
+now honest about rescued items (previously they said WILL DELETE for
+any listed item), and the tooltip sentinel covers delete labels too.
+`affixDisposable` stays the ONE shared release policy in Events
+(reached via the `ctx.affixDisposable` thunk) because the auto-mark
+scan also consumes it; the auto-mark scan itself and its tooltip
+preview stay on the v2.57.2 shared-gate contract
+(`itemProtectedFromAutoMarkDelete`) - deliberately NOT in the core
+(they predict a future marking, not a current decision).
+
+With Stages 1-4 shipped, every sell AND delete decision reads ONE
+state snapshot and answers to ONE verdict source; the old three-way
+paired-edit EC-TRAPs are retired. The remaining hand-maintained parts
+are the narration/label branches, and the sentinels flag those if they
+fall behind the core.
 
 ### Grey items are always sold, independent of every other setting
 

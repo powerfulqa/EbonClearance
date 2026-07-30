@@ -35,10 +35,6 @@
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
 
--- Set-membership helper. Captures the canonical NS.IsInSet (defined in
--- EbonClearance_Core.lua); per-call cost is one local read.
-local IsInSet = NS.IsInSet
-
 -- Localization lookup. Verdict labels are wrapped at the point they are
 -- built; see the EC-TRAP note on statusTag below for why the displayed
 -- string can no longer be introspected once it may be translated.
@@ -61,22 +57,20 @@ local L = NS.L
 -- Returns (line, tag). tag is an English token the caller uses for logic
 -- (see statusTag below); the line is the localized display string. The
 -- blacklist case returns the caller's current line/tag unchanged.
-local function destinationLabel(id, currentLine, currentTag)
-    local DB = NS.DB
-    local ADB = NS.ADB
-    if not DB then
-        return nil
-    end
-    if IsInSet(DB.blacklist, id) then
+-- v2.71.3 (classifier Stage 4): reads the decision ctx, and the Will
+-- Delete line requires Decision.deleteEligible - a listed item the
+-- v2.50.2 rescues would skip falls through to its real destination.
+local function destinationLabel(ctx, currentLine, currentTag)
+    if ctx.blacklisted then
         return currentLine, currentTag
     end
-    if IsInSet(DB.deleteList, id) and DB.enableDeletion then
+    if ctx.onDeleteList and ctx.enableDeletion and NS.Decision.deleteEligible(ctx) then
         return "|cff66ccff[EC]|r |cffff4444" .. L["Will Delete"] .. "|r", "willdelete"
     end
-    if ADB and ADB.whitelist and IsInSet(ADB.whitelist, id) then
+    if ctx.whitelistedAccount then
         return "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (your Account List)"] .. "|r", "willsell"
     end
-    if IsInSet(DB.whitelist, id) then
+    if ctx.whitelistedChar then
         return "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (your Character List)"] .. "|r", "willsell"
     end
     return nil
@@ -173,7 +167,12 @@ local function EC_AnnotateTooltipInner(tooltip)
             statusLine = "|cff66ccff[EC]|r |cffffb84d" .. L["Keep"] .. "|r"
         end
         statusTag = "keep"
-    elseif IsInSet(DB.deleteList, id) and DB.enableDeletion then
+    elseif ctx.onDeleteList and ctx.enableDeletion and NS.Decision.deleteEligible(ctx) then
+        -- v2.71.3 (classifier Stage 4): the Will Delete label requires the
+        -- core's delete gate, so a listed item the v2.50.2 rescues would
+        -- skip (account Sell List / equipped / protected affix) falls
+        -- through to its real verdict instead of threatening a delete
+        -- that will never fire. (Keep List is the branch above.)
         statusLine = "|cff66ccff[EC]|r |cffff4444" .. L["Will Delete"] .. "|r"
         statusTag = "willdelete"
     elseif ctx.whitelistedChar or ctx.whitelistedAccount then
@@ -416,7 +415,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                 local onAnyList = ctx.whitelistedChar
                     or ctx.whitelistedAccount
                     or ctx.blacklisted
-                    or IsInSet(DB.deleteList, id)
+                    or ctx.onDeleteList
                 if onAnyList and ADB then
                     ADB.affixedListedItems = ADB.affixedListedItems or {}
                     if not ADB.affixedListedItems[id] then
@@ -588,7 +587,7 @@ local function EC_AnnotateTooltipInner(tooltip)
                     -- Keep label unchanged. Returns nil when no list
                     -- claims it, in which case the manualAllow / autoDupe
                     -- branch picks its own fallback.
-                    local newLine, newTag = destinationLabel(id, statusLine, statusTag)
+                    local newLine, newTag = destinationLabel(ctx, statusLine, statusTag)
                     if newLine then
                         statusLine = newLine
                         statusTag = newTag
@@ -747,21 +746,22 @@ local function EC_AnnotateTooltipInner(tooltip)
                             .. "|r"
                         statusTag = "wontsell"
                     end
-                elseif ctx.blacklisted then -- luacheck: ignore 542
+                elseif ctx.blacklisted or statusTag == "willdelete" then -- luacheck: ignore 542
                     -- v2.59.9 (Serv report): Keep List wins over the affix
                     -- known/needed label. Pre-fix Ashen Band of Endless
                     -- Vengeance (sellPrice=0, on Keep List via
                     -- autoAddEquipped, affix Relentless Crits III already
                     -- owned) showed "Keep (affix rank known)" because the
                     -- affix branch overwrote the earlier "Keep (equipped)"
-                    -- verdict set at the top of this function. The sibling
-                    -- branch at line 656 (canSell=true path) already has
-                    -- an `and not IsInSet(DB.blacklist, id)` guard; parity
-                    -- here fixes the canSell=false path where the affix
-                    -- branch had no such guard. Same behaviour Band of the
-                    -- Bone Colossus already had via the destinationLabel
-                    -- Keep-List-wins short-circuit in the canSell=true
-                    -- branch above.
+                    -- verdict set at the top of this function.
+                    -- v2.71.3 (Serv report - Precious's Putrid Collar of
+                    -- Bulwark VI, on the Delete List with an owned affix
+                    -- above the iLvl ceiling): a Will Delete verdict stands
+                    -- too. The ceiling suppresses the SELL release only;
+                    -- the delete gate's affixDisposable release still
+                    -- fires for an owned affix, so the engine deletes the
+                    -- listed item while this branch used to overwrite the
+                    -- label with "Keep (affix rank known)".
                 elseif keptByBoeBelowRank or keptByBoeDupes then
                     -- v2.66.0 (Serv report - Viking Warhammer of Iron Will I
                     -- read "Keep (affix rank known)" when the actual reason
@@ -858,7 +858,7 @@ local function EC_AnnotateTooltipInner(tooltip)
         local onExplicit = ctx.blacklisted
             or ctx.whitelistedChar
             or ctx.whitelistedAccount
-            or (IsInSet(DB.deleteList, id) and DB.enableDeletion)
+            or (ctx.onDeleteList and ctx.enableDeletion)
         -- v2.37.0: backfill the chance-on-hit-meta flag for itemIDs
         -- already on a list. Mirrors the affixedListedItems backfill
         -- above so pre-v2.37 entries get tagged the moment the player
@@ -992,14 +992,14 @@ local function EC_AnnotateTooltipInner(tooltip)
     end
 
     -- v2.51.2 (Serv report, Pattern: Mooncloth Leggings): Sell List
-    -- membership releases the tome veto in EC_IsSellable, so the
-    -- tooltip must not overwrite the earlier "Will Sell" label with a
-    -- tome-protection label. Check both DB.whitelist (per-character)
-    -- and ADB.whitelist (account) since the earlier Sell List branch at
-    -- ~line 175 fires on either.
-    -- EC-TRAP: this predicate matches EC_IsSellable's tome-veto block
-    -- + describeSellability's tomeProtection step. Editing any one
-    -- without the other two breaks the trace-tooltip-vendor parity.
+    -- membership releases the tome veto in the engine, so the tooltip
+    -- must not overwrite the earlier "Will Sell" label with a
+    -- tome-protection label (either Sell List - the earlier branch
+    -- fires on both).
+    -- v2.71.3: the old three-way paired-edit EC-TRAP is retired - the
+    -- authoritative predicate lives in Decision.sell's tome veto and
+    -- the sentinel flags this label branch if it falls behind. Keep the
+    -- branch's shape matching the core so the label matches the verdict.
     local onSellList = ctx.whitelistedChar or ctx.whitelistedAccount
     local tomeProtected = false
     local tomeHave = false
@@ -1026,18 +1026,22 @@ local function EC_AnnotateTooltipInner(tooltip)
         end
     end
     if tomeProtected then
-        -- Tome protection HARD-VETOES in the engine regardless of
-        -- Sell List membership, so the Keep label is the truth. Keep
-        -- List membership stays. Allow Sell override flips to the
-        -- destination-list label.
-        if ctx.blacklisted then -- luacheck: ignore 542
-            -- Keep List wins; leave the earlier Keep label alone.
+        -- Tome protection HARD-VETOES the SELL path in the engine
+        -- regardless of Sell List membership, so the Keep label is the
+        -- truth for sellable tomes. Keep List membership stays. Allow
+        -- Sell override flips to the destination-list label.
+        -- v2.71.3: a Will Delete verdict stands too - the delete gate
+        -- has NO tome veto, so a Delete-Listed tome really is deleted;
+        -- overwriting with "Keep (learned tome)" was the same lie class
+        -- as the affix branch above.
+        if ctx.blacklisted or statusTag == "willdelete" then -- luacheck: ignore 542
+            -- Explicit-list verdict wins; leave the earlier label alone.
         elseif ctx.allowedItem then
             -- destinationLabel walks the explicit-list precedence chain.
             -- Returns nil when no list claims it; the fallback picks an
             -- existing quality-rule "Will Sell" verdict if there is one,
             -- otherwise prompts the user to pick a list.
-            local newLine, newTag = destinationLabel(id, statusLine, statusTag)
+            local newLine, newTag = destinationLabel(ctx, statusLine, statusTag)
             if newLine then
                 statusLine = newLine
                 statusTag = newTag
@@ -1081,7 +1085,7 @@ local function EC_AnnotateTooltipInner(tooltip)
         and statusTag ~= "willsell"
         and statusTag ~= "willdelete"
         and not ctx.blacklisted
-        and not (IsInSet(DB.deleteList, id) and DB.enableDeletion)
+        and not (ctx.onDeleteList and ctx.enableDeletion)
     then
         statusLine = "|cff66ccff[EC]|r |cffb6ffb6" .. L["Will Sell (known recipe)"] .. "|r"
         statusTag = "willsell"
@@ -1111,12 +1115,29 @@ local function EC_AnnotateTooltipInner(tooltip)
         -- tooltip quietly lie. Delete-side labels are out of the core's
         -- scope until Stage 4, so they are excluded.
         tooltip:AddLine(statusLine)
-        local skipSentinel = statusTag == "willdelete" or (IsInSet(DB.deleteList, id) and DB.enableDeletion)
-        if not skipSentinel then
+        -- v2.71.3 (classifier Stage 4): the sentinel now covers delete
+        -- labels too. A "Will Delete" without Delete-List membership is
+        -- the auto-mark PREVIEW (predicts a future marking, out of the
+        -- core's scope) and stays excluded; everything else answers to
+        -- the core: listed + eligible + deletion on MUST read Will
+        -- Delete, and anything else compares its sell class against
+        -- Decision.sell as before.
+        local willDeleteReal = ctx.onDeleteList
+            and ctx.enableDeletion
+            and NS.Decision.deleteEligible(ctx)
+            and true
+            or false
+        local mismatch = false
+        if statusTag == "willdelete" and not ctx.onDeleteList then -- luacheck: ignore 542
+            -- Auto-mark preview; no core decision to compare against.
+        elseif willDeleteReal then
+            mismatch = statusTag ~= "willdelete"
+        else
             local verdict = NS.Decision.sell(ctx)
-            if (verdict == "sell") ~= (statusTag == "willsell") then
-                tooltip:AddLine("|cff888888" .. L["(EC label check failed - please report via /ec bugreport)"] .. "|r")
-            end
+            mismatch = (verdict == "sell") ~= (statusTag == "willsell")
+        end
+        if mismatch then
+            tooltip:AddLine("|cff888888" .. L["(EC label check failed - please report via /ec bugreport)"] .. "|r")
         end
     end
     -- v2.37.0 (Borrow B): grey "already known" annotation on tome /

@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.71.3
+
+**Delete decisions now come from the same core as sell decisions (classifier Stage 4, the final stage), making every surface honest about rescued items.**
+
+- **The Delete-List destruction gate lives in the decision core.** The per-slot eligibility check (with its v2.50.2 rescue vetoes: Keep List, Account Sell List, currently worn, protected affix) is now a pure, runtime-tested function; the engine's gate delegates to it, and bag scans keep their fast path for unlisted slots.
+- **`/ec sellinfo` and the tooltip no longer promise deletes that won't happen.** Both used to say WILL DELETE for any Delete-List item; now they consult the real gate, so a listed item that a rescue protects shows what actually happens instead - the trace names the exact rescue ("on Delete List but currently worn - not deleted"), and the tooltip falls through to the item's real verdict.
+- **The tooltip's built-in label check now covers delete labels too** (the auto-mark "Will Delete (unsellable affix)" preview stays excluded - it predicts a future marking, which is a different question).
+- **Fixed a tooltip lie found during verification** (thanks to the report on Precious's Putrid Collar of Bulwark VI): for a Delete-List item carrying an affix you own whose item level sits above your sell cap, the tooltip overwrote "Will Delete" with "Keep (affix rank known)" while the vendor cycle deleted it anyway. Delete-Listed tomes had the same hole ("Keep (learned tome)"). Both blocks now leave a Will Delete verdict alone, like the Keep List guard always has.
+- 12 new runtime fixtures pin the delete gate (including the deliberate asymmetry that the Account Sell List rescues a listed item but the character Sell List does not), new test invariants (Test 129) lock the delegation and label wiring, and the old three-way "edit all three mirrors together" trap markers are retired - the classifier plan is complete.
+- French and German entries included for the new trace reasons.
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.71.2
 
 **The tooltip verdict now answers to the same decision core as the vendor and `/ec sellinfo` (classifier Stage 3), plus an honesty fix for worn items.**

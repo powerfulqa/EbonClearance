@@ -25,7 +25,7 @@ from `Bindings.xml`.
 | File | Owns |
 |------|------|
 | [EbonClearance_Core.lua](../EbonClearance_Core.lua) | Provenance/fingerprint, shared "junk-drawer" state, `STATE` constants, the `NS` bootstrap, and the `EnsureDB` / `EnsureAccountDB` SavedVariables migrations. Loads first; depends on nothing. |
-| [EbonClearance_Decision.lua](../EbonClearance_Decision.lua) | The sell/keep decision core (v2.71.0). `NS.Decision.sell(ctx)` is PURE (no WoW API, no DB) and returns `verdict, reasonToken, fields`; `NS.Decision.buildCtx(bag, slot, junkOnly)` adapts live game state into a ctx with lazy thunks. `EC_IsSellable` in Events delegates here. Runtime-tested by `tests/test_decision.lua`. |
+| [EbonClearance_Decision.lua](../EbonClearance_Decision.lua) | The sell/keep/delete decision core (v2.71.0-v2.71.3). `NS.Decision.sell(ctx)` and `NS.Decision.deleteEligible(ctx)` are PURE (no WoW API, no DB) and return verdicts + reason tokens; two adapters (`buildCtx` for bag slots, `buildTooltipCtx` for hovers/chat links) share one snapshot helper. `EC_IsSellable` + `deleteListSlotEligible` in Events delegate here. Runtime-tested by `tests/test_decision.lua`. |
 | [EbonClearance_Companion.lua](../EbonClearance_Companion.lua) | The Greedy Scavenger companion: summon/dismiss, chat + speech-bubble filtering, pet-check OnUpdate. |
 | [EbonClearance_Protection.lua](../EbonClearance_Protection.lua) | What to *keep*: PE roguelite affix + chance-on-hit detection and the affix-data cache. |
 | [EbonClearance_Vendor.lua](../EbonClearance_Vendor.lua) | The vendor cycle: `BuildQueue` / `DoNextAction` / `worker`, plus the `EC_Effective*` pacing helpers. |

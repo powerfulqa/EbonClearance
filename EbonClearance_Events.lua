@@ -5749,65 +5749,39 @@ function EC_compCache.affixDisposable(affix)
 end
 
 -- v2.42.0: shared Delete-List eligibility predicate. Returns (itemID, count,
--- quality) when the bag slot holds a Delete-List item eligible for destruction
--- (on the list, not locked, not Keep-protected, not equipped, and not affix-
--- protected), else nil. Used by both BuildQueue's delete branch and the
--- auto-delete-on-pickup scan so vendor-delete and auto-delete apply identical
--- policy with zero drift.
---
--- v2.50.2 (Stickybackpack shirt-loss report): destruction now vetoes on any
--- Keep signal or IsEquippedItem, not just affix protection. The pre-v2.50.2
--- comment claimed "the Delete List is explicit user intent" - but the
--- auto-mark scans (runAutoMarkAffixDupes / runAutoMarkResilience) write
--- directly to deleteList without going through EC_FindAddConflict, so any
--- later Keep intent (Keep-List add, equipment-set stamp, auto-add-equipped)
--- routed through EC_AddItemToList is silently REFUSED with quiet=true and
--- the user never sees a warning. Reading Keep signals at destruction time
--- rescues the item without needing to untangle the cross-intent guard's
--- quiet-mode behaviour. Matches the blacklist > deleteList precedence
--- already documented for /ec clean.
--- EC-TRAP: do NOT restore the "Delete List is explicit user intent" claim
--- and do NOT collapse these vetoes back into the affix gate. Auto-mark
--- inserts break the pure-user-intent assumption.
+-- quality) when the bag slot holds a Delete-List item eligible for destruction,
+-- else nil. Used by BuildQueue's delete branch, DoNextAction's drain-time
+-- re-validation, and the auto-delete-on-pickup scan so vendor-delete and
+-- auto-delete apply identical policy with zero drift.
+-- v2.71.3 (classifier Stage 4): now a thin delegate - the eligibility policy
+-- (the v2.50.2 Keep-signal / equipped rescues and the v2.47.0 affix gate)
+-- lives in NS.Decision.deleteEligible, with its rationale + EC-TRAPs.
 function EC_compCache.deleteListSlotEligible(bag, slot)
     local DB = NS.DB
     if not (DB and DB.deleteList) then
         return nil
     end
+    -- Cheap membership pre-gate BEFORE building a decision ctx: this
+    -- predicate runs per slot inside the BAG_UPDATE scans and BuildQueue,
+    -- and unlisted slots (the overwhelming majority) must stay at one
+    -- item-ID read + one table lookup. Only listed slots pay for the
+    -- snapshot.
     local id = GetContainerItemID(bag, slot)
     if not (id and IsInSet(DB.deleteList, id)) then
         return nil
     end
-    -- v2.50.2: Keep-signal + equipped rescue vetoes. Consulted before the
-    -- affix gate so the cheapest checks short-circuit first.
-    if DB.blacklist and DB.blacklist[id] then
+    -- v2.71.3 (classifier Stage 4): the eligibility policy lives in the
+    -- decision core. The v2.50.2 rescue vetoes (Keep List / account Sell
+    -- List / equipped - the Stickybackpack shirt-loss fix) and the
+    -- v2.47.0 affixDisposable gate moved there WITH their EC-TRAPs.
+    local ctx = NS.Decision and NS.Decision.buildCtx(bag, slot, false)
+    if not ctx then
         return nil
     end
-    local ADB = NS.ADB
-    if ADB and ADB.whitelist and ADB.whitelist[id] then
+    if not NS.Decision.deleteEligible(ctx) then
         return nil
     end
-    if IsEquippedItem(id) then
-        return nil
-    end
-    local _, count, locked = GetContainerItemInfo(bag, slot)
-    if not (count and count > 0) or locked then
-        return nil
-    end
-    local _, _, quality = GetItemInfo(id)
-    if DB.protectAffixedRareItems and quality and quality >= 3 then
-        local affix = EC_compCache.bagSlotAffixData(bag, slot)
-        if affix then
-            -- v2.47.0: the release decision (Allow Sell / owned dupe with a
-            -- dupe-disposal toggle on / rank below the floor) is the shared
-            -- affixDisposable helper, so this gate, the auto-mark-dupes scan,
-            -- and EC_IsSellable all agree on what's protected vs disposable.
-            if not EC_compCache.affixDisposable(affix) then
-                return nil -- affix-protected
-            end
-        end
-    end
-    return id, count, quality
+    return ctx.itemID, ctx.count, ctx.quality
 end
 
 -- v2.42.0: shared destructive delete of one bag slot. Picks the item up,

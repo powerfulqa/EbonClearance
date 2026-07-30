@@ -111,6 +111,12 @@ local function historyBuildList(filter, search, rarityFilter)
     for _, e in ipairs(deleted) do
         consider(e, "deleted")
     end
+    -- v2.70.0: items SAVED by drain-time re-validation (a rule changed
+    -- mid-run). Shown under the All filter only - the Sold/Deleted radio
+    -- filters exclude them via the action checks in consider().
+    for _, e in ipairs(NS.recentSavedLog or {}) do
+        consider(e, "saved")
+    end
     -- Exact newest-first by insertion sequence (loggedAt only has 1 s
     -- granularity, so it would tie during a fast farm burst).
     table.sort(rows, function(a, b)
@@ -119,10 +125,18 @@ local function historyBuildList(filter, search, rarityFilter)
     return rows, soldN, deletedN
 end
 
--- One display line for a row. Sold = green verb, Deleted = red verb; the item
--- link renders in its own quality colour; the reason trails in grey.
+-- One display line for a row. Sold = green verb, Deleted = red verb,
+-- Kept (v2.70.0 drain-time save) = gold verb; the item link renders in its
+-- own quality colour; the reason trails in grey.
 local function historyRowText(e)
-    local verb = (e.action == "sold") and ("|cffb6ffb6" .. L["Sold"] .. "|r") or ("|cffff4444" .. L["Deleted"] .. "|r")
+    local verb
+    if e.action == "sold" then
+        verb = "|cffb6ffb6" .. L["Sold"] .. "|r"
+    elseif e.action == "saved" then
+        verb = "|cffffd700" .. L["Kept"] .. "|r"
+    else
+        verb = "|cffff4444" .. L["Deleted"] .. "|r"
+    end
     return string.format(
         "|cff888888[%s]|r %s %dx %s  |cff888888- %s|r",
         tostring(e.loggedAt or "?"),

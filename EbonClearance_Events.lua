@@ -6629,6 +6629,40 @@ NS.recentDeletedLog = EC_recentDeletedLog
 NS.recentSoldLogMax = EC_RECENT_SOLD_LOG_MAX
 NS.recentDeletedLogMax = EC_RECENT_DELETED_LOG_MAX
 
+-- v2.70.0 (competitive-review A4): items SAVED by drain-time re-validation.
+-- When a rule or protection changes while the vendor worker is mid-burst,
+-- the re-check in DoNextAction skips the destructive call and records the
+-- item here so Sold History and /ec bugreport can say WHY nothing
+-- happened. Rare by nature (needs a settings change during a run), so the
+-- cap is small. Same ring + seq discipline as the sold/deleted logs; on
+-- NS/EC_compCache rather than new locals (main chunk is at the Lua 5.1
+-- 200-locals cap). kind is "sell" or "delete" (which action was skipped).
+NS.recentSavedLog = {}
+EC_compCache.savedLogWrites = 0
+function EC_compCache.logRecentSaved(itemID, count, kind, reason)
+    if not itemID then
+        return
+    end
+    EC_compCache.savedLogWrites = EC_compCache.savedLogWrites + 1
+    local idx = ((EC_compCache.savedLogWrites - 1) % 200) + 1
+    local _, link = GetItemInfo(itemID)
+    EC_historySeq = EC_historySeq + 1
+    EC_compCache.historySeq = EC_historySeq
+    NS.recentSavedLog[idx] = {
+        itemID = itemID,
+        itemName = link or ("item:" .. tostring(itemID)),
+        count = count or 1,
+        kind = kind or "?",
+        reason = reason or "?",
+        loggedAt = date("%H:%M:%S"),
+        seq = EC_historySeq,
+    }
+    EC_compCache.historyDirty = true
+    -- Always announce: a mid-run save means the user JUST changed a rule
+    -- and is watching; one line confirms the change took effect in time.
+    PrintNicef(L["|cffffd700Kept|r %s - %s"], link or ("item:" .. tostring(itemID)), reason or "?")
+end
+
 -- v2.59.4: Process Bags cast log. Session ring buffer of successful
 -- Disenchant / Milling / Prospecting / Pick Lock / Convert casts, one
 -- entry per successful spell resolution. Captured pre-cast on the
@@ -6692,6 +6726,10 @@ function NS.ClearSessionHistory()
     -- again (a stale cursor would leave holes ipairs stops at).
     EC_compCache.soldLogWrites = 0
     EC_compCache.deletedLogWrites = 0
+    -- v2.70.0: the saved-items log clears with the rest of the session
+    -- history (same Clear button contract).
+    wipe(NS.recentSavedLog)
+    EC_compCache.savedLogWrites = 0
 end
 
 -- Session sell/delete history. Opens the interactive Sold History window
@@ -7256,6 +7294,11 @@ local function BuildQueue(junkOnly)
     wipe(queue)
     queueIndex = 1
     goldThisVendoring = 0
+    -- v2.70.0 (competitive-review A4): stash the run's junkOnly context so
+    -- DoNextAction can re-run EC_IsSellable with the SAME merchant-mode
+    -- restriction at drain time. On EC_compCache (main chunk is at the
+    -- Lua 5.1 200-locals cap).
+    EC_compCache.runJunkOnly = junkOnly and true or false
     -- Single bag walk that produces both the sell and delete queue entries.
     --
     -- v2.37.0 reversed the per-slot dispatch order. Pre-v2.37.0 the sell
@@ -7461,6 +7504,21 @@ local function DoNextAction()
     end
 
     if action.type == "sell" then
+        -- v2.70.0 (competitive-review A4): drain-time re-validation. The
+        -- queue was built at StartRun; the user can change a rule while the
+        -- worker is mid-burst (Turbo runs up to 80 actions). Re-run the
+        -- full sell predicate against CURRENT settings immediately before
+        -- the destructive call; when it no longer passes, the item is
+        -- SAVED - logged with a reason so Sold History and /ec bugreport
+        -- show why nothing happened. Cheap second run: every tooltip-backed
+        -- cache is warm from BuildQueue. Deliberately does NOT write the
+        -- vendor-refusal mark (nothing was attempted).
+        if not EC_IsSellable(action.bag, action.slot, EC_compCache.runJunkOnly) then
+            EC_compCache.logRecentSaved(action.itemID, action.count, "sell",
+                L["Rules changed during the run - no longer matches a sell rule."])
+            queueIndex = queueIndex + 1
+            return
+        end
         -- v2.9.0: bracket the worker-path UseContainerItem so the
         -- manual-sell hook (installed at ADDON_LOADED) skips this call.
         -- The counters below own the attribution for the worker path.
@@ -7494,6 +7552,18 @@ local function DoNextAction()
         -- v2.51.0: recent-sold ring buffer for /ec bugreport.
         EC_LogRecentSold(action.itemID, soldCount, "worker", soldCopper, action.reason)
     elseif action.type == "delete" then
+        -- v2.70.0 (competitive-review A4): drain-time re-validation, delete
+        -- side. deleteListSlotEligible IS the full live gate (Keep/Sell
+        -- list vetoes, equipped, affix protection, quest) - re-run it so a
+        -- protection toggled mid-burst saves the item, with the reason
+        -- logged. EC-TRAP: reuse the shared helper, do NOT inline a subset
+        -- of its checks here (the same drift rule as the auto-delete scans).
+        if not EC_compCache.deleteListSlotEligible(action.bag, action.slot) then
+            EC_compCache.logRecentSaved(action.itemID, action.count, "delete",
+                L["Protection changed during the run - delete skipped."])
+            queueIndex = queueIndex + 1
+            return
+        end
         EC_compCache.executeBagSlotDelete(action.bag, action.slot, action.itemID, action.count, action.quality, false)
     end
 

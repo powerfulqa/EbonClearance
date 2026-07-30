@@ -7919,6 +7919,31 @@ do
         ev2:find('ITEM_BIND_ON_PICKUP or "Binds when picked up"', 1, true) ~= nil
             and ev2:find('ITEM_BIND_ON_EQUIP or "Binds when equipped"', 1, true) ~= nil,
         "getBindTypeFromTooltip must match the same client-localized globals as the bag-scan path, with the enUS strings only as nil-fallbacks.")
+
+    -- -----------------------------------------------------------------------
+    -- Test 126 (v2.70.0, competitive-review A4): drain-time re-validation.
+    -- The vendor queue is built at StartRun; the worker must re-run the
+    -- FULL gates against current settings immediately before each
+    -- destructive call, so a rule changed mid-burst saves the item, with
+    -- the reason logged (NS.recentSavedLog, surfaced by Sold History +
+    -- /ec bugreport). The re-check must come BEFORE UseContainerItem /
+    -- executeBagSlotDelete and must NOT write the vendor-refusal mark.
+    -- -----------------------------------------------------------------------
+    local doNext = ev2:match("local function DoNextAction%(%)(.-)\nend")
+    check("Test 126a: sell drain re-runs EC_IsSellable before UseContainerItem",
+        doNext ~= nil
+            and doNext:find("if not EC_IsSellable%(action%.bag, action%.slot, EC_compCache%.runJunkOnly%) then") ~= nil
+            and (doNext:find("EC_IsSellable%(action") or 0) < (doNext:find("UseContainerItem%(action") or 0),
+        "the sell action must re-validate against CURRENT settings (with the run's junkOnly context, stashed by BuildQueue) before the destructive call; a rule toggled mid-burst must save the item.")
+    check("Test 126b: delete drain re-runs deleteListSlotEligible before executeBagSlotDelete",
+        doNext ~= nil
+            and doNext:find("if not EC_compCache%.deleteListSlotEligible%(action%.bag, action%.slot%) then") ~= nil,
+        "the delete action must re-run the shared live gate (Keep/Sell vetoes, equipped, affix protection) before executing - reuse deleteListSlotEligible, never an inlined subset.")
+    check("Test 126c: saved items are ring-logged with reasons",
+        ev2:find("function EC_compCache%.logRecentSaved%(") ~= nil
+            and ev2:find("savedLogWrites %- 1%) %% 200") ~= nil
+            and ev2:find("NS.recentSavedLog", 1, true) ~= nil,
+        "drain-time saves must land in NS.recentSavedLog (seq-stamped ring, cap 200) so Sold History and /ec bugreport can show why nothing happened.")
 end
 
 -- ---------------------------------------------------------------------------

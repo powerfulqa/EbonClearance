@@ -764,6 +764,32 @@ local function EC_BuildBugReport()
     end
     add("")
 
+    -- v2.70.0 (competitive-review A4): items SAVED by drain-time
+    -- re-validation - the worker re-checked the rules right before the
+    -- destructive call and a mid-run settings change vetoed it. Rare;
+    -- ring-capped at 200; ordered by seq like the sibling logs.
+    add("--- Recent Saved (rules changed mid-run) ---")
+    do
+        local rv = NS.recentSavedLog or {}
+        local cap = NS.bugReportRecentMax or 20
+        if #rv == 0 then
+            add("  (none this session)")
+        else
+            local slice = newestBySeq(rv, cap)
+            for i = 1, #slice do
+                local e = slice[i]
+                add(string.format("  [%s] %d x%d %s (%s) - %s",
+                    tostring(e.loggedAt),
+                    tonumber(e.itemID) or 0,
+                    tonumber(e.count) or 1,
+                    tostring(e.itemName),
+                    tostring(e.kind),
+                    tostring(e.reason or "?")))
+            end
+        end
+    end
+    add("")
+
     -- v2.59.4: Process Bags cast log. Fills the visibility gap in the
     -- previous ring buffers - Recent Sold covered vendor sells, Recent
     -- Deleted covered auto-delete + vendor-cycle deletes, but the

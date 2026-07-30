@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.70.0
+
+**Safety: rule changes now take effect mid-run. The vendor worker re-checks every item against your current settings right before selling or deleting it.**
+
+Previously the sell/delete queue was decided when the merchant cycle started; if you unticked a rule or added a Keep List entry while the worker was mid-burst (Turbo runs up to 80 actions), the queued action still executed against the old settings. Now (pattern proven by a sibling addon in the ecosystem, adopted from the competitive review):
+
+- **Every queued sell re-runs the full sell decision** immediately before the vendor call, with the run's merchant-mode context. If it no longer matches a rule, the item is kept.
+- **Every queued delete re-runs the full live protection gate** (Keep/Sell lists, equipped, affix protection, quest) immediately before the delete.
+- **Saved items are visible, not silent:** a gold "Kept" chat line fires immediately (you just changed a rule - the line confirms it took effect in time), the Sold History window shows Kept rows with the reason under the All filter, and `/ec bugreport` gains a "Recent Saved (rules changed mid-run)" section.
+- A skipped item never counts as a vendor refusal, so the anti-wedge machinery is unaffected. Locked by a new test invariant (Test 126).
+
+French and German translations for the new lines included. No new settings, no schema change, downgrade-safe.
+
 ### v2.69.0
 
 **Bind filters now work on French and German clients, one shared item scan instead of three, and the third-audit performance batch.**

@@ -481,20 +481,21 @@ end
 -- allow list before letting a chance-on-hit item through the
 -- quality-rule sweep. Without this branch the v2.26.0 schema field
 -- exists but no code reads it, and items stay protected forever.
+-- v2.71.0: the decision body moved to EbonClearance_Decision.lua
+-- (NS.Decision.sell + buildCtx); the core reads ctx.allowedItem, the
+-- adapter fills it from ADB.allowedItems.
 do
-    local fnStart = src:find("local function EC_IsSellable%(", 1)
-    if not fnStart then
-        check("EC_IsSellable references ADB.allowedItems in the chance-on-hit branch",
-              false, "EC_IsSellable not found")
-    else
-        local fnEnd = src:find("\nend", fnStart) or fnStart + 8000
-        local body = src:sub(fnStart, fnEnd)
-        local gateOK = body:find("allowedItems") ~= nil
-            and body:find("itemHasChanceOnHit") ~= nil
-        check("EC_IsSellable chance-on-hit branch consults ADB.allowedItems",
-              gateOK,
-              "the chance-on-hit gate must release qualityPass when the itemID is in the allow list")
+    local fh = io.open("EbonClearance_Decision.lua", "rb")
+    local dc = fh and fh:read("*a") or ""
+    if fh then
+        fh:close()
     end
+    local gateOK = dc:find("if not ctx%.allowedItem and not knownProcPass then") ~= nil
+        and dc:find("ADB%.allowedItems") ~= nil
+        and dc:find("itemHasChanceOnHit") ~= nil
+    check("EC_IsSellable chance-on-hit branch consults ADB.allowedItems",
+          gateOK,
+          "the chance-on-hit gate (Decision.sell) must release via ctx.allowedItem when the itemID is in the allow list, and the buildCtx adapter must fill ctx.allowedItem from ADB.allowedItems")
 end
 
 -- ---------------------------------------------------------------------------
@@ -607,12 +608,17 @@ do
           unifiedFlag,
           "the unified flag is what lets the sellNow row and the list-row hiding share the same gate")
 
-    -- EC_IsSellable affix branch must read allowedAffixes (the
+    -- The sell decision's affix branch must read allowedAffixes (the
     -- affix-keyed list, NOT allowedItems) as a manual override path
-    -- alongside the v2.23.0 affixAllowExactDupes auto-detect.
-    local sellStart = src:find("local function EC_IsSellable%(", 1)
-    local sellEnd = sellStart and src:find("\nend", sellStart + 100) or nil
-    local sellBody = sellStart and sellEnd and src:sub(sellStart, sellEnd) or ""
+    -- alongside the v2.23.0 affixAllowExactDupes auto-detect. v2.71.0:
+    -- the branch lives in EbonClearance_Decision.lua (core reads
+    -- ctx.manualAffixAllow; the buildCtx adapter fills it from
+    -- ADB.allowedAffixes).
+    local dfh = io.open("EbonClearance_Decision.lua", "rb")
+    local sellBody = dfh and dfh:read("*a") or ""
+    if dfh then
+        dfh:close()
+    end
     local affixBranchReadsAllow = sellBody:find("protectAffixedRareItems") ~= nil
         and sellBody:find("allowedAffixes") ~= nil
     check("EC_IsSellable affix branch consults ADB.allowedAffixes (affix-keyed)",
@@ -4022,6 +4028,7 @@ do
         return s
     end
     local ev = fileSrc("EbonClearance_Events.lua")
+    local dc = fileSrc("EbonClearance_Decision.lua")
     local proc = fileSrc("EbonClearance_Process.lua")
     local tt = fileSrc("EbonClearance_Tooltip.lua")
     local bd = fileSrc("EbonClearance_BagDisplay.lua")
@@ -4030,7 +4037,7 @@ do
         ev:find("DB%.affixMinSellRank%s*=%s*0") ~= nil,
         "the schema must default to 0 (off) so existing v2.43.x saves see no behaviour change on upgrade")
     check("Test 92b: EC_IsSellable adds rankBelow to the affix veto",
-        ev:find("if not %(manualAllow or autoDupe or rankBelow%) then") ~= nil,
+        dc:find("if not %(manualAllow or autoDupe or rankBelow%) then") ~= nil,
         "the sell-path veto must accept rankBelow as a third release condition alongside manualAllow and autoDupe; without this the slider has no effect on the auto-rule sweep")
     check("Test 92c: delete path honours the rankBelow floor (via shared affixDisposable)",
         ev:find("affix%.rank < DB%.affixMinSellRank") ~= nil,
@@ -4050,9 +4057,9 @@ do
             and pp:find("DB%.affixMinSellRank = v") ~= nil,
         "the Item Protection panel must surface DB.affixMinSellRank via an NS.AddSlider widget with the setter writing the new value; without this UI the player has no way to change the floor")
     check("Test 92i: EC_IsSellable adds affixRankPass + autoDupePass to the positive-signal check",
-        ev:find("affixRankPass") ~= nil
-            and ev:find("autoDupePass") ~= nil
-            and ev:find("isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass") ~= nil,
+        dc:find("affixRankPass") ~= nil
+            and dc:find("autoDupePass") ~= nil
+            and dc:find("isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass") ~= nil,
         "BOTH the slider and the 'Allow selling affixes you already have' toggle must be standalone sell rules, not release-only levers. Without affixRankPass + autoDupePass in the positive-signal check, affixed Rare/Epic items would still need isJunk / qualityPass / whitelistPass to fire - which broke the user's mental model (Murlocked iterations: the slider IS the sell rule; 'Allow selling' IS the sell rule). Both must appear together so the two toggles behave symmetrically.")
     check("Test 92j: tooltip distinguishes rankBelowOnly with a Will Sell label",
         tt:find("rankBelowOnly") ~= nil
@@ -4068,7 +4075,7 @@ do
             local n, pat = 0, "isJunk or qualityPass or whitelistPass or affixRankPass or autoDupePass"
             local s, e = 1, nil
             while true do
-                s, e = ev:find(pat, s, true)
+                s, e = dc:find(pat, s, true)
                 if not s then break end
                 n = n + 1
                 s = e + 1
@@ -4421,20 +4428,22 @@ do
             and fr:find('%["Keep %(affix needed%)"%] =') ~= nil,
         "new English keys 'Keep (affix known)' and 'Keep (affix needed)' must have matching entries in fr/de (empty or translated) so the locale-integrity test sees them on its next pass.")
     local ev = fileSrc("EbonClearance_Events.lua")
+    local dc = fileSrc("EbonClearance_Decision.lua")
     local proc = fileSrc("EbonClearance_Process.lua")
     check("Test 99f: playerHasAffixFamily returns true on family-key presence",
         prot:find("return ranks ~= nil") ~= nil
             and prot:find("families%[fc%.family%]%[fc%.rank%] = true") ~= nil,
         "v2.45.0 widened the family-only lookup. Pre-v2.45.0 the check required next(ranks) ~= nil which rejected unranked affixes (their ranks table stays empty because parseAffixNameRank returns rank=nil and the scan only inserts rank entries when frank is a number). Without the widening, an extracted Resurgence (family in spellbook, ranks table empty) reports playerHasAffixFamily false and items with that affix never release via autoDupe. The per-rank insert (families[fc.family][fc.rank] = true) stays in place for ranked affixes - playerHasAffixRank still works.")
     check("Test 99g: EC_IsSellable autoDupe release uses family-name fallback for unranked",
-        ev:find("local familyKnown = %(not descKnown%)") ~= nil
-            and ev:find("and %(not affix%.rank%)") ~= nil
-            and ev:find("playerHasAffixFamily%(affix%.name%)") ~= nil
-            and ev:find("descKnown or rankKnown or familyKnown") ~= nil,
-        "the affix-protection autoDupe release must use playerHasAffixFamily(affix.name) as the third fallback for unranked items. PE injects different wording on item-side and spell-side for transferred procs, so description-text match misses even when the player has the affix extracted; family-name match catches it. Gated on (not affix.rank) so ranked affixes still use the strict (family, rank) check.")
+        dc:find("local familyKnown = %(not descKnown%)") ~= nil
+            and dc:find("and %(not affix%.rank%)") ~= nil
+            and dc:find("ctx%.affixFamilyKnown%(affix%.name%)") ~= nil
+            and dc:find("descKnown or rankKnown or familyKnown") ~= nil
+            and dc:find("playerHasAffixFamily") ~= nil,
+        "the affix-protection autoDupe release (Decision.sell) must use ctx.affixFamilyKnown(affix.name) as the third fallback for unranked items, with the buildCtx adapter routing the thunk to EC_compCache.playerHasAffixFamily. PE injects different wording on item-side and spell-side for transferred procs, so description-text match misses even when the player has the affix extracted; family-name match catches it. Gated on (not affix.rank) so ranked affixes still use the strict (family, rank) check.")
     check("Test 99h: autoDupePass positive signal also uses family-name fallback",
-        ev:find("playerHasAffixFamily%(affixForRank%.name%)") ~= nil
-            and ev:find("autoDupePass = %(descKnown or rankKnown or familyKnown%)") ~= nil,
+        dc:find("ctx%.affixFamilyKnown%(affixForRank%.name%)") ~= nil
+            and dc:find("autoDupePass = %(descKnown or rankKnown or familyKnown%)") ~= nil,
         "the autoDupePass positive sell signal (separate from the affix-protection release) must also honour familyKnown so the v2.44.0 'Allow selling affixes you already have' toggle treats unranked extracted affixes as sellable. Without this, the toggle effectively does nothing for transferred-proc weapons.")
     check("Test 99i: Process Bags affix-guard routes through EC_compCache.playerOwnsAffix (v2.59.4 correction)",
         proc:find("EC_compCache%.playerOwnsAffix%(affix%)") ~= nil
@@ -6534,14 +6543,17 @@ do
     )
 
     -- The bind gate must drop the release for non-soulbound items. Count the
-    -- occurrences of the gate in EC_IsSellable: it appears at BOTH the
+    -- occurrences of the gate in Decision.sell (v2.71.0: the decision body
+    -- moved to EbonClearance_Decision.lua): it appears at BOTH the
     -- autoDupePass site and the veto autoDupe site.
-    local _, gateCount = ev:gsub('DB%.keepBoeAffixDupes and EC_compCache%.getBindType%(bag, slot%) ~= "bop"', "")
+    local dc = fileSrc("EbonClearance_Decision.lua")
+    local _, gateCount = dc:gsub('ctx%.keepBoeAffixDupes and ctx%.bindType%(%) ~= "bop"', "")
     check(
         "Test 103b: EC_IsSellable gates BOTH dupe-release sites on bind type",
         gateCount >= 2
-            and ev:find("autoDupePass = false") ~= nil
-            and ev:find("autoDupe = false") ~= nil,
+            and dc:find("autoDupePass = false") ~= nil
+            and dc:find("autoDupe = false") ~= nil
+            and dc:find("EC_compCache%.getBindType%(bag, slot%)") ~= nil,
         "the keepBoeAffixDupes bind gate must clear BOTH autoDupePass (positive signal) AND the veto autoDupe; gating only one lets a BoE dupe that also matches a quality rule slip through the veto and sell."
     )
 
@@ -6600,8 +6612,17 @@ do
             and ev:find('if v ~= "any" and v ~= "boe" and v ~= "bop" then') ~= nil,
         "EnsureDB MUST seed the table with 'any' so existing users get no behaviour change. The value-validation step coerces hand-edited bogus values back to 'any' (downgrade-safe, same shape as v2.10.0's quality-rule bindFilter).")
     check("Test 104b: recipePass predicate gates on DB.sellKnownRecipeBindFilter via getBindType, after recipePass = true",
-        ev:find("recipePass = true\n.-local recipeBindFilter = DB%.sellKnownRecipeBindFilter") ~= nil
-            and ev:find('if recipeBindFilter ~= "any" then\n%s*local bindType = EC_compCache%.getBindType%(bag, slot%)\n%s*if recipeBindFilter ~= bindType then\n%s*recipePass = false') ~= nil,
+        (function()
+            -- v2.71.0: the recipePass predicate lives in Decision.sell
+            -- (EbonClearance_Decision.lua); the buildCtx adapter snapshots
+            -- DB.sellKnownRecipeBindFilter into ctx.recipeBindFilter and
+            -- ctx.bindType() routes to EC_compCache.getBindType.
+            local dc = fileSrc("EbonClearance_Decision.lua")
+            return dc:find("recipePass = true\n%s*local recipeBindFilter = ctx%.recipeBindFilter or \"any\"") ~= nil
+                and dc:find('if recipeBindFilter ~= "any" and recipeBindFilter ~= ctx%.bindType%(%) then\n%s*recipePass = false') ~= nil
+                and dc:find("DB%.sellKnownRecipeBindFilter") ~= nil
+                and dc:find("EC_compCache%.getBindType%(bag, slot%)") ~= nil
+        end)(),
         "the gate MUST run AFTER the recipePass = true assignment so it CAN disqualify the slot. If the filter check ran before the assignment, the gate would be inert. The bind-type lookup MUST go through EC_compCache.getBindType (the same helper the quality rules use) so 'no bind line at all' reads as 'any' consistently across both sell-rule surfaces, and a 'BoE only' filter doesn't sweep up reagents masquerading as recipes.")
     check("Test 104c: Merchant panel surfaces a Bind dropdown per recipe-quality row (moved from Protection/Keep in v2.49.3)",
         mp:find('"EbonClearanceSellKnownRecipeQ" %.%. q %.%. "BindDD"') ~= nil
@@ -6972,7 +6993,7 @@ do
                 and fileSrc("EbonClearance_ItemHighlightingPanel.lua"):find('L%["Random affix items %(purple%)"%]') == nil,
             "v2.51.3 (Serv request): prep-rename before the v2.52.0 companion 'Needed Affix items' tint lands. The affix row in SELL_BORDER_CATEGORIES now reads 'Known Affix items (purple)' so the panel reads as a natural pair with the incoming Needed Affix row. Locale template keys migrated in both frFR and deDE. Behavior unchanged (still fires on any bag item carrying a random affix).")
         check("Test 110o: v2.51.2 + v2.59.10 tome-protection veto explicitly releases on whitelistPass across all three parity sites",
-            ev:find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and %(DB%.protectAllTomes") ~= nil
+            fileSrc("EbonClearance_Decision.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and %(ctx%.protectAllTomes") ~= nil
                 and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and DB\n        and %(DB%.protectAllTomes") ~= nil
                 and fileSrc("EbonClearance_Tooltip.lua"):find("and not onSellList") ~= nil
                 and fileSrc("EbonClearance_Tooltip.lua"):find("local onSellList = IsInSet%(DB%.whitelist, id%)") ~= nil,
@@ -7021,11 +7042,16 @@ do
     end
     local ev = fileSrc("EbonClearance_Events.lua")
     local bd = fileSrc("EbonClearance_BagDisplay.lua")
+    -- v2.71.0: the decision body lives in EbonClearance_Decision.lua
+    -- (Decision.sell reads ctx.*; buildCtx routes the thunks to the same
+    -- EC_compCache helpers).
+    local dc = fileSrc("EbonClearance_Decision.lua")
     check("Test 109a: EC_IsSellable chance-on-hit gate fires on all four auto-rule pass signals",
-        ev:find("if %(qualityPass or affixRankPass or autoDupePass or recipePass%)%s+and DB%.protectChanceOnHitItems%s+and EC_compCache%.itemHasChanceOnHit") ~= nil,
+        dc:find("if %(qualityPass or affixRankPass or autoDupePass or recipePass%)%s+and ctx%.protectChanceOnHitItems%s+and ctx%.hasChanceOnHit%(%)") ~= nil
+            and dc:find("EC_compCache%.itemHasChanceOnHit") ~= nil,
         "the gate MUST include affixRankPass, autoDupePass, recipePass alongside qualityPass. Without them, a rank-below-floor affix or an owned-dupe affix or a known recipe on a chance-on-hit-proc item bypasses the protection - Neretzek regression.")
     check("Test 109b: EC_IsSellable chance-on-hit block clears all four auto-rule pass signals when firing",
-        ev:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
+        dc:find("qualityPass = false\n%s+affixRankPass = false\n%s+autoDupePass = false\n%s+recipePass = false") ~= nil,
         "the block MUST clear all four pass signals (not just qualityPass) so the recheck at the end of EC_IsSellable correctly rejects the item. Clearing only qualityPass leaves the other three signals set - the recheck ORs across all of them and returns true.")
     check("Test 109c: BagDisplay trace chance-on-hit gate covers all five signals + weapon-slot rule + clears the four rule signals",
         bd:find("hasChanceOnHitLine and isWeaponForChanceOnHit and %(qualityPass or affixRankPass or autoDupePass or recipePass or knownProcPass%)") ~= nil
@@ -7037,10 +7063,10 @@ do
     -- hasSellPrice; mirror in the trace and tooltip.
     local tt = fileSrc("EbonClearance_Tooltip.lua")
     check("Test 109d: EC_IsSellable affixRankPass gates on hasSellPrice AND junkOnly",
-        ev:find("local affixRankPass = not junkOnly\n%s+and hasSellPrice\n%s+and DB%.affixMinSellRank") ~= nil,
+        dc:find("local affixRankPass = not junkOnly\n%s+and hasSellPrice\n%s+and ctx%.affixMinSellRank") ~= nil,
         "affixRankPass is a SELL signal - firing it for a sellPrice=0 item makes EC lie about the outcome (vendor will refuse). The hasSellPrice prefix ensures the sell path only fires for items the vendor will accept. The v2.47.0 autoMarkAffixDupes toggle covers the deletion flow for owned unsellable-affix dupes as a separate code path (runAutoMarkAffixDupes in BAG_UPDATE). v2.49.0 adds the not-junkOnly gate too (Serv report, Windrunner Legguards at a normal merchant in goblin mode).")
     check("Test 109e: EC_IsSellable autoDupePass gates on hasSellPrice AND junkOnly",
-        ev:find("if not junkOnly and hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil,
+        dc:find("if not junkOnly and hasSellPrice and ctx%.affixAllowExactDupes and affixForRank then") ~= nil,
         "same shape as affixRankPass: autoDupePass is a SELL signal so it must not fire for items the vendor won't buy AND must respect merchant-mode restrictions. Keep in lockstep with the affixRankPass gate on the line above.")
     check("Test 109f: BagDisplay trace mirrors both hasSellPrice gates",
         bd:find("local affixRankPass = hasSellPrice\n%s+and DB and DB%.affixMinSellRank") ~= nil
@@ -7116,11 +7142,21 @@ do
             and prot:find("EC_compCache%.getExtractionCatalog%(%)") ~= nil,
         "the release gate MUST check equipLoc (only weapons pass PE's extraction system) + walk the learned-affix catalog (via EC_compCache.getExtractionCatalog, the v2.56.0 resilience accessor) for the mapped spellID with learned=true. Trinkets / jewelry chance-on-hit items stay under blanket protection.")
     check("Test 110e: EC_IsSellable computes knownProcPass as a positive sell signal",
-        ev:find("local knownProcPass = false") ~= nil
-            and ev:find("DB%.sellChanceOnHitKnown") ~= nil
-            and ev:find("EC_compCache%.playerHasExtractedProc%(bag, slot, itemID, procLine%)") ~= nil
-            and ev:find("or knownProcPass%) then") ~= nil
-            and ev:find("if not %(ADB%.allowedItems and ADB%.allowedItems%[itemID%]%) and not knownProcPass then") ~= nil,
+        (function()
+            -- v2.71.0: the decision body lives in EbonClearance_Decision.lua
+            -- (core reads ctx thunks; buildCtx routes them to the same
+            -- EC_compCache helpers and fills ctx.allowedItem from
+            -- ADB.allowedItems).
+            local dc = fileSrc("EbonClearance_Decision.lua")
+            return dc:find("local knownProcPass = false") ~= nil
+                and dc:find("ctx%.sellChanceOnHitKnown") ~= nil
+                and dc:find("DB%.sellChanceOnHitKnown") ~= nil
+                and dc:find("ctx%.hasExtractedProc%(procLine%)") ~= nil
+                and dc:find("EC_compCache%.playerHasExtractedProc") ~= nil
+                and dc:find("or knownProcPass%) then") ~= nil
+                and dc:find("if not ctx%.allowedItem and not knownProcPass then") ~= nil
+                and dc:find("ADB%.allowedItems") ~= nil
+        end)(),
         "EC_IsSellable's chance-on-hit toggle is a POSITIVE sell signal (v2.49.0 Serv report on Nightfall). knownProcPass MUST: be added to both the initial and exit positive-signal gates (isJunk / qualityPass / whitelistPass / affixRankPass / autoDupePass / recipePass / knownProcPass), and re-used as the release trigger inside the chance-on-hit protection block (mirrors the affix side's DB.affixAllowExactDupes semantics from v2.44.0). Without this, the toggle only released a veto and Nightfall (proc extracted, Epic rule off) would never sell.")
     check("Test 110f: Tooltip surfaces Keep + Will Sell (chance-on-hit proc known) labels",
         tt:find('L%["Keep %(chance%-on%-hit proc known%)"%]') ~= nil
@@ -7206,9 +7242,12 @@ do
             and prot:find("if itemID\n%s+and EC_compCache%.liveTooltipIsTome\n%s+and EC_compCache%.liveTooltipIsTome%(tooltip, itemID%)") ~= nil,
         "v2.49.1 fix (Serv report, Plans: Frost Tiger Blade): a recipe's tooltip embeds the crafted item's stats, including any 'Chance on hit:' line from the resulting weapon. Without a tome-gate on both variants of itemHasChanceOnHit, the recipe gets classified as chance-on-hit and the protection block in EC_IsSellable clears recipePass, silently killing 'Sell Known Recipes' on any recipe whose crafted item has a chance-on-hit proc. Both the bag-slot variant (itemHasChanceOnHit) and the live-tooltip variant (liveTooltipHasChanceOnHit) MUST early-return false when the item is a tome, since recipes/tomes aren't equippable and can't themselves BE chance-on-hit weapons.")
     check("Test 110k: affixRankPass / autoDupePass / knownProcPass respect junkOnly at a disallowed merchant",
-        ev:find("local affixRankPass = not junkOnly") ~= nil
-            and ev:find("if not junkOnly and hasSellPrice and DB%.affixAllowExactDupes and affixForRank then") ~= nil
-            and ev:find("if not junkOnly\n%s+and hasSellPrice\n%s+and DB%.sellChanceOnHitKnown") ~= nil,
+        (function()
+            local dc = fileSrc("EbonClearance_Decision.lua")
+            return dc:find("local affixRankPass = not junkOnly") ~= nil
+                and dc:find("if not junkOnly and hasSellPrice and ctx%.affixAllowExactDupes and affixForRank then") ~= nil
+                and dc:find("if not junkOnly\n%s+and hasSellPrice\n%s+and ctx%.sellChanceOnHitKnown") ~= nil
+        end)(),
         "Serv reported (Windrunner Legguards at a normal merchant with Merchant Mode = goblin): three positive sell signals - affixRankPass, autoDupePass, knownProcPass - bypassed the junkOnly gate that qualityPass, whitelistPass, and recipePass all honour. Result: at a disallowed merchant, items with rank-below-floor affixes or known-dupe affixes (or v2.49.0's known chance-on-hit procs) sold anyway. Every positive signal that fires on non-grey items MUST honour junkOnly so the merchant-mode restriction actually holds. isJunk (grey items) stays exempt - grey is always sold at any merchant per the ADDON_GUIDE 'Grey items are always sold' invariant.")
     check("Test 110h: EC_ScanLootDelta unequip guard subtracts equipped snapshot decreases",
         -- v2.68.1: the snapshot is a wipe-and-fill double-buffer now
@@ -7361,7 +7400,12 @@ do
         n >= 4,
         "Expected the definition + EC_IsSellable + describeSellability + the tooltip to reference affixSaleWithinCeiling (>= 4 mentions); found " .. n .. ". A missing mirror means the trace/tooltip/vendor disagree on an above-cap affix dupe.")
     check("Test 117c: EC_IsSellable suppresses affixRankPass + autoDupePass above the ceiling",
-        src:find("not EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)", 1, true) ~= nil,
+        -- v2.71.0: the gate lives in Decision.sell as `not
+        -- ctx.saleWithinCeiling()` with the buildCtx thunk routing to the
+        -- shared EC_compCache.affixSaleWithinCeiling helper - both halves
+        -- pinned so neither the clear nor the shared-helper routing can drift.
+        src:find("if (affixRankPass or autoDupePass) and not ctx.saleWithinCeiling() then", 1, true) ~= nil
+            and src:find("EC_compCache.affixSaleWithinCeiling(quality, ilvl, equipLoc, itemID)", 1, true) ~= nil,
         "EC_IsSellable MUST clear affixRankPass and autoDupePass when the item is above its rarity rule's iLvl ceiling, so the cap protects high gear from the affix path (the Bizzaro near item-loss).")
     -- v2.59.9 (Serv report): the ceiling gate must also veto affix-sales
     -- when the item is an iLvl UPGRADE over equipped and autoProtectUpgrades

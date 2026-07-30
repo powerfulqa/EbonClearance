@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.71.0
+
+**Internal: the sell/keep decision now lives in one testable core. No behaviour change.**
+
+Every "should this item sell?" question used to be answered by a 500-line function inside the event hub, with the tooltip and `/ec sellinfo` trace each hand-copying its logic. This release extracts the decision into a new file, `EbonClearance_Decision.lua` (Stage 1 of the decision-classifier plan from the competitive review):
+
+- **`NS.Decision.sell(ctx)` is a pure function** - it reads only a plain context table, no game API calls - and returns a verdict (`sell` / `keep` / `none`) plus a reason token (`junk`, `quality`, `whitelist_char`, `affixrank`, `tomeProtected`, `chanceonhit`, ...). The vendor engine's `EC_IsSellable` is now a thin delegate that builds the context and translates the answer back; every caller and every decision is unchanged.
+- **The sell logic finally has runtime tests.** Because the core runs under plain Lua, the new `tests/test_decision.lua` suite (the 11th) exercises it directly with fixture items: every reason token, the grey-always-sold guarantee, the merchant-mode and sell-price gates on every signal, and regression fixtures for the past field incidents (the v2.57.2 iLvl-ceiling near item-loss, the Mooncloth Sell-List-vs-tome case, the Nightfall known-proc case, the v2.60.0 non-weapon proc rule). Previously all sell-logic tests were pattern matches against the source text; now the behaviour itself is executed on every push.
+- Scan cost is unchanged: the expensive tooltip-backed checks ride as lazy callbacks and only run on the branches that need them, exactly as before.
+- Next stages (separate releases): the `/ec sellinfo` trace and the tooltip render from the core's reason tokens instead of hand-mirroring the logic.
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.70.0
 
 **Safety: rule changes now take effect mid-run. The vendor worker re-checks every item against your current settings right before selling or deleting it.**

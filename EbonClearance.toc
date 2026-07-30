@@ -8,6 +8,7 @@
 
 Bindings.xml
 EbonClearance_Core.lua
+EbonClearance_Decision.lua
 EbonClearance_Locale.lua
 EbonClearance_Locale_frFR.lua
 EbonClearance_Locale_deDE.lua

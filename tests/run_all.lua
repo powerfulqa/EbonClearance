@@ -11,6 +11,7 @@
 -- Add a new suite here and it runs locally and in CI automatically.
 
 local TESTS = {
+    "tests/test_decision.lua",
     "tests/test_layout_reactivity.lua",
     "tests/test_perf_guardrails.lua",
     "tests/test_comment_hygiene.lua",

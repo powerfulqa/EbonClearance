@@ -25,6 +25,7 @@ from `Bindings.xml`.
 | File | Owns |
 |------|------|
 | [EbonClearance_Core.lua](../EbonClearance_Core.lua) | Provenance/fingerprint, shared "junk-drawer" state, `STATE` constants, the `NS` bootstrap, and the `EnsureDB` / `EnsureAccountDB` SavedVariables migrations. Loads first; depends on nothing. |
+| [EbonClearance_Decision.lua](../EbonClearance_Decision.lua) | The sell/keep decision core (v2.71.0). `NS.Decision.sell(ctx)` is PURE (no WoW API, no DB) and returns `verdict, reasonToken, fields`; `NS.Decision.buildCtx(bag, slot, junkOnly)` adapts live game state into a ctx with lazy thunks. `EC_IsSellable` in Events delegates here. Runtime-tested by `tests/test_decision.lua`. |
 | [EbonClearance_Companion.lua](../EbonClearance_Companion.lua) | The Greedy Scavenger companion: summon/dismiss, chat + speech-bubble filtering, pet-check OnUpdate. |
 | [EbonClearance_Protection.lua](../EbonClearance_Protection.lua) | What to *keep*: PE roguelite affix + chance-on-hit detection and the affix-data cache. |
 | [EbonClearance_Vendor.lua](../EbonClearance_Vendor.lua) | The vendor cycle: `BuildQueue` / `DoNextAction` / `worker`, plus the `EC_Effective*` pacing helpers. |
@@ -86,7 +87,7 @@ Player-facing strings are wrapped at the call site as `L["English text"]`
 | File | Owns |
 |------|------|
 | [EbonClearance_Minimap.lua](../EbonClearance_Minimap.lua) | Minimap button, LDB launcher, combat-vendor button. |
-| [EbonClearance_Tooltip.lua](../EbonClearance_Tooltip.lua) | Bag-item tooltip annotations. Deliberately mirrors `EC_IsSellable` (paired edit; see EC-TRAP). |
+| [EbonClearance_Tooltip.lua](../EbonClearance_Tooltip.lua) | Bag-item tooltip annotations. Deliberately mirrors the decision core in `Decision.lua` (paired edit; see EC-TRAP). Stage 3 of the classifier plan will make it render from the core's tokens instead. |
 | [EbonClearance_BagContextMenu.lua](../EbonClearance_BagContextMenu.lua) | Alt+Right-Click bag-item quick-action popup. |
 | [EbonClearance_BugReport.lua](../EbonClearance_BugReport.lua) | Diagnostic snapshot builder + display frame (`/ec bugreport`). |
 | [EbonClearance_HistoryWindow.lua](../EbonClearance_HistoryWindow.lua) | The interactive Sold History window (`/ec history`, v2.57.0): full-session sell/delete log with All/Sold/Deleted filters + search, over `NS.recentSoldLog` / `NS.recentDeletedLog`. |
@@ -115,7 +116,7 @@ anything that looks like dead code or a bug.
 
 | I want to... | Open |
 |--------------|------|
-| Change what counts as sellable / keepable | `Protection.lua` (+ the Vendor predicates) |
+| Change what counts as sellable / keepable | `Decision.lua` (the sell/keep core; add a fixture in `tests/test_decision.lua`) + `Protection.lua` for detection helpers |
 | Change vendor pacing / per-run cap | `Vendor.lua` (`EC_Effective*` helpers) |
 | Add a profession-processing rule | `Process.lua` |
 | Add a settings checkbox | the relevant `*Panel.lua` + an `EnsureDB` default in `Core.lua` |
@@ -131,7 +132,7 @@ anything that looks like dead code or a bug.
 From the repo root:
 
 ```
-lua tests/run_all.lua          # all ten invariant suites in one shot
+lua tests/run_all.lua          # all eleven invariant suites in one shot
 luac -p EbonClearance_*.lua     # syntax check every shipped file (luac5.1 in CI)
 luacheck *.lua                  # 0 warnings expected (runs in CI; see CLAUDE.md)
 ```

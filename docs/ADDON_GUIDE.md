@@ -822,9 +822,41 @@ construct, mark it the same way: `-- EC-TRAP: <what it looks like>. Do NOT
 If you add a new migration, put it with the others at the top of
 `EnsureDB()` and write the order dependency into the comment.
 
+### The sell/keep decision core (v2.71.0, `EbonClearance_Decision.lua`)
+
+Since v2.71.0 the entire sell/keep decision lives in
+`EbonClearance_Decision.lua` (Stage 1 of the decision-classifier plan,
+`docs/specs/2026-07-29-decision-classifier-design.md`; CODE_REVIEW item 6):
+
+- **`NS.Decision.sell(ctx)`** is the PURE core: it reads only the ctx
+  table (plain values + caller-supplied thunks) - no WoW API, no `DB`,
+  no `EC_compCache`. It returns `verdict, reasonToken, fields` where
+  verdict is `"sell" | "keep" | "none"`. Tokens are append-only once
+  shipped; renderers must tolerate unknown tokens.
+- **`NS.Decision.buildCtx(bag, slot, junkOnly)`** is the adapter: it
+  snapshots cheap live reads and wraps the tooltip-backed predicates
+  (`bindType`, `affixData`, `hasChanceOnHit`, `isTome`, ...) as lazy
+  thunks routed to the existing `EC_compCache` accessors, so scan cost
+  and short-circuit behaviour are unchanged.
+- **`EC_IsSellable` in `EbonClearance_Events.lua` is a thin delegate**
+  (buildCtx -> sell -> translate to the legacy return shape +
+  `EC_compCache.lastSellSignal`). Callers are unchanged.
+
+Because the core is WoW-free it loads under stock lua5.1, which is what
+makes `tests/test_decision.lua` the addon's first RUNTIME coverage of
+the sell logic. **New sell/keep behaviour MUST land with a fixture
+there** - the static pattern pins in `test_perf_guardrails.lua` still
+guard the source shape, but the fixtures are what prove the behaviour.
+
+The trace (`describeSellability`) and tooltip (`EC_AnnotateTooltip`)
+still hand-mirror the logic in Stage 1; Stages 2-3 of the plan make
+them render from the core's tokens, retiring the paired-edit EC-TRAPs
+below. Until then the mirror-lockstep rules in this guide still apply.
+
 ### Grey items are always sold, independent of every other setting
 
-In `EC_IsSellable`, positive sell signals are ORed together in the initial
+In the decision core (`Decision.sell`; historically `EC_IsSellable`),
+positive sell signals are ORed together in the initial
 gate and the exit-gate recheck. As of v2.49.0 the signals are:
 
 - `isJunk` (grey `quality == 0 and hasSellPrice`)
@@ -845,7 +877,9 @@ sold at a normal merchant in goblin mode) where `affixRankPass`,
 `autoDupePass`, and `knownProcPass` were missing this gate; if you add a
 new positive signal, mirror the `not junkOnly` prefix from `qualityPass`
 and add a `check("Test 110k: ...")` line so a future regression fails at
-CI. Test 110k currently pins the three fixed gates.
+CI. Test 110k currently pins the three fixed gates, and since v2.71.0
+`tests/test_decision.lua` also exercises them at runtime (the
+"merchant mode (junkOnly) + sell-price gates" fixture block).
 
 Do not combine the passes into "one cleaner check." You will silently
 break either the grey-always-sold invariant OR the merchant-mode
@@ -1634,8 +1668,10 @@ each re-derive the verdict (they deliberately mirror, not call, the engine
 - see "Grey items are always sold"). If you change the rule, change all
 four or they drift:
 
-1. `EC_IsSellable` (EbonClearance_Events.lua) - computes `recipePass`; the
-   tome-veto gate carries `and not recipePass` to carve out learned recipes.
+1. The decision core (`Decision.sell` in EbonClearance_Decision.lua;
+   `EC_IsSellable` in Events delegates to it since v2.71.0) - computes
+   `recipePass`; the tome-veto gate carries `and not recipePass` to
+   carve out learned recipes.
 2. `describeSellability` (EbonClearance_BagDisplay.lua) - the `/ec sellinfo`
    trace; emits the `knownRecipeRule` step and excludes `recipePass` items
    from the `tomeProtection` veto step.
@@ -1665,7 +1701,8 @@ sell with `protectAllTomes` on).
 
 The v2.51.2 fix narrows all three parity sites to gate on `qualityPass` only:
 
-- `EC_IsSellable` (`EbonClearance_Events.lua` ~5348) - drops `or whitelistPass`.
+- The decision core (`Decision.sell` in `EbonClearance_Decision.lua`
+  since v2.71.0; originally `EC_IsSellable`) - drops `or whitelistPass`.
 - `describeSellability` (`EbonClearance_BagDisplay.lua`) - matching narrowing
   in the `tomeProtection` step so `/ec sellinfo` and the vendor agree.
 - `EC_AnnotateTooltip` (`EbonClearance_Tooltip.lua` ~886) - adds an
@@ -3361,7 +3398,7 @@ Per docs/CODE_REVIEW.md item 4, the planned split shape is:
 | `EbonClearance_Core.lua` | Namespace, constants, API caches, forward decls, EnsureDB / EnsureAccountDB, EC_Delay, EC_compCache |
 | `EbonClearance_Companion.lua` | Scavenger / Goblin Merchant lifecycle, chat filters, mount handler, stuck detection |
 | `EbonClearance_Protection.lua` | Affix detection, chance-on-hit detection, bind-type cache, process cache |
-| `EbonClearance_Vendor.lua` | EC_IsSellable, BuildQueue, DoNextAction, vendor worker, auto-repair |
+| `EbonClearance_Vendor.lua` | EC_IsSellable, BuildQueue, DoNextAction, vendor worker, auto-repair (v2.71.0 update: the EC_IsSellable decision body moved to `EbonClearance_Decision.lua` instead - see "The sell/keep decision core"; the cycle mechanics remain the Vendor.lua target) |
 | `EbonClearance_Process.lua` | Process Bags engine, hold-key-to-drain |
 | `EbonClearance_BagDisplay.lua` | Sell-border hooks, /ec sellinfo, auto-open driver, Fast Loot driver |
 | `EbonClearance_UI.lua` | CreateListUI + helpers, all Interface Options panels, minimap, LDB, bug-report |

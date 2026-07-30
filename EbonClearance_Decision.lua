@@ -343,7 +343,7 @@ function Decision.buildCtx(bag, slot, junkOnly)
         return { itemID = nil }
     end
     local _, itemCount, locked = GetContainerItemInfo(bag, slot)
-    local _, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
+    local name, link, quality, ilvl, _, _, _, _, equipLoc, _, sellPrice = GetItemInfo(itemID)
     local IsInSet = NS.IsInSet
     local ctx = {
         junkOnly = junkOnly and true or false,
@@ -352,6 +352,7 @@ function Decision.buildCtx(bag, slot, junkOnly)
         itemID = itemID,
         count = itemCount,
         locked = locked,
+        name = name,
         link = link,
         quality = quality,
         ilvl = ilvl,

@@ -870,6 +870,7 @@ NS.RegisterLocale("deDE", {
     ["|cff00ff00WILL SELL at the next vendor visit|r"] = "|cff00ff00WIRD beim nächsten Händlerbesuch VERKAUFT|r",
     ["|cffffb84dwon't sell - no rule matched|r"] = "|cffffb84dwird nicht verkauft - keine Regel greift|r",
     ["|cffff4444won't sell - protected|r"] = "|cffff4444wird nicht verkauft - geschützt|r",
+    ["internal: this explanation disagrees with the engine's verdict - the verdict above is what will happen. Please report this item via /ec bugreport."] = "Intern: Diese Erklärung widerspricht dem Urteil der Engine - das obige Urteil ist, was passieren wird. Bitte melde dieses Item per /ec bugreport.",
     ["|cffff4444won't sell|r"] = "|cffff4444wird nicht verkauft|r",
     ["|cffff4444No items in any bag to inspect.|r"] = "|cffff4444Keine Gegenstände in einer Tasche zum Prüfen.|r",
     ["|cffffff00=== Sellability trace: bag %d slot %d ===|r"] = "|cffffff00=== Verkäuflichkeits-Analyse: Tasche %d Platz %d ===|r",

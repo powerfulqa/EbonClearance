@@ -6567,8 +6567,9 @@ do
 
     check(
         "Test 103d: /ec sellinfo trace mirrors the bind-type gate",
-        bd:find('DB%.keepBoeAffixDupes') ~= nil
-            and bd:find('EC_compCache%.getBindType%(bag, slot%) ~= "bop"') ~= nil,
+        -- v2.71.1 (classifier Stage 2): the trace reads the toggle + bind
+        -- type from the shared decision ctx instead of raw DB/cache reads.
+        bd:find('ctx%.keepBoeAffixDupes and ctx%.bindType%(%) ~= "bop"') ~= nil,
         "the trace must reflect the kept-BoE-dupe outcome so /ec sellinfo agrees with the merchant cycle and the tooltip (Broyo debugs with sellinfo)."
     )
 
@@ -6840,8 +6841,12 @@ do
         local bd107i = fileSrc("EbonClearance_BagDisplay.lua")
         local tt107i = fileSrc("EbonClearance_Tooltip.lua")
         check("Test 107i: recipe bind-filter gate mirrored in describeSellability trace + tooltip recipeSellable",
-            bd107i:find("DB%.sellKnownRecipeBindFilter") ~= nil
-                and bd107i:find("EC_compCache%.getBindType%(bag, slot%)") ~= nil
+            -- v2.71.1 (classifier Stage 2): the trace reads the filter +
+            -- bind type from the shared decision ctx (adapter routes them
+            -- to DB.sellKnownRecipeBindFilter / EC_compCache.getBindType -
+            -- pinned by Test 104b against Decision.lua).
+            bd107i:find("local recipeBindFilter = ctx%.recipeBindFilter") ~= nil
+                and bd107i:find("local bindType = ctx%.bindType%(%)") ~= nil
                 and bd107i:find("passedBindFilter") ~= nil
                 and tt107i:find("DB%.sellKnownRecipeBindFilter") ~= nil
                 and tt107i:find("EC_compCache%.getBindTypeFromTooltip%(tooltip, id%)") ~= nil,
@@ -6994,7 +6999,7 @@ do
             "v2.51.3 (Serv request): prep-rename before the v2.52.0 companion 'Needed Affix items' tint lands. The affix row in SELL_BORDER_CATEGORIES now reads 'Known Affix items (purple)' so the panel reads as a natural pair with the incoming Needed Affix row. Locale template keys migrated in both frFR and deDE. Behavior unchanged (still fires on any bag item carrying a random affix).")
         check("Test 110o: v2.51.2 + v2.59.10 tome-protection veto explicitly releases on whitelistPass across all three parity sites",
             fileSrc("EbonClearance_Decision.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and %(ctx%.protectAllTomes") ~= nil
-                and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and DB\n        and %(DB%.protectAllTomes") ~= nil
+                and fileSrc("EbonClearance_BagDisplay.lua"):find("if qualityPass\n        and not whitelistPass\n        and not recipePass\n        and %(ctx%.protectAllTomes") ~= nil
                 and fileSrc("EbonClearance_Tooltip.lua"):find("and not onSellList") ~= nil
                 and fileSrc("EbonClearance_Tooltip.lua"):find("local onSellList = IsInSet%(DB%.whitelist, id%)") ~= nil,
             "v2.51.2 intent + v2.59.10 completion (Serv report, Pattern: Mooncloth Leggings id=14497): the tome-protection HARD veto used to fire on `(qualityPass or whitelistPass)` which was inconsistent with the chance-on-hit narrowing. v2.51.2 narrowed to `qualityPass` alone but forgot the both-signals case (Sell List + rarity rule = still vetoed). v2.59.10 (bug-hunt): explicit `and not whitelistPass` release in EC_IsSellable + describeSellability so all three surfaces match the tooltip's `and not onSellList` guard exactly.")
@@ -7069,8 +7074,10 @@ do
         dc:find("if not junkOnly and hasSellPrice and ctx%.affixAllowExactDupes and affixForRank then") ~= nil,
         "same shape as affixRankPass: autoDupePass is a SELL signal so it must not fire for items the vendor won't buy AND must respect merchant-mode restrictions. Keep in lockstep with the affixRankPass gate on the line above.")
     check("Test 109f: BagDisplay trace mirrors both hasSellPrice gates",
-        bd:find("local affixRankPass = hasSellPrice\n%s+and DB and DB%.affixMinSellRank") ~= nil
-            and bd:find("if hasSellPrice and DB and DB%.affixAllowExactDupes and affixDataForTrace then") == nil
+        -- v2.71.1 (classifier Stage 2): the trace reads the settings from
+        -- the shared decision ctx.
+        bd:find("local affixRankPass = hasSellPrice\n%s+and ctx%.affixMinSellRank") ~= nil
+            and bd:find("if hasSellPrice and ctx%.affixAllowExactDupes and affixDataForTrace then") == nil
             and bd:find("autoDupePass = hasSellPrice and ownsAffix") ~= nil,
         "the trace MUST mirror EC_IsSellable's gates. autoDupePass in the trace uses a slightly different shape (compute ownsAffix regardless, then gate the pass on hasSellPrice) so the trace can still show 'you own this affix but item has no vendor value' as a NEGATIVE step - helpful diagnostic for the player.")
     check("Test 109g: Tooltip gates the affix-release Will Sell relabel on hasSellPrice",
@@ -7766,15 +7773,18 @@ do
                 and bdSrc:find("or recipePass or knownProcPass", 1, true) ~= nil,
             "The `positiveSignal` local at the end of describeSellability MUST include knownProcPass so the /ec sellinfo summary matches EC_IsSellable's exit recheck at Events.lua:5816. Pre-v2.59.10 a Rare weapon with an extracted chance-on-hit proc + sellChanceOnHitKnown ON + no other positive signal made the trace print 'won't sell - no rule matched' while the vendor sold + tooltip promised the sale.")
         check("Test 123b: describeSellability computes knownProcPass locally with the same gates as EC_IsSellable",
+            -- v2.71.1 (classifier Stage 2): the gates read from the shared
+            -- decision ctx (adapter routes the thunks to the same
+            -- EC_compCache helpers - pinned by Test 110e against Decision.lua).
             bdSrc:find("local knownProcPass = false") ~= nil
-                and bdSrc:find("DB%.sellChanceOnHitKnown") ~= nil
-                and bdSrc:find("DB%.protectChanceOnHitItems") ~= nil
-                and bdSrc:find("EC_compCache%.itemHasChanceOnHit") ~= nil
-                and bdSrc:find("EC_compCache%.playerHasExtractedProc") ~= nil,
+                and bdSrc:find("ctx%.sellChanceOnHitKnown") ~= nil
+                and bdSrc:find("ctx%.protectChanceOnHitItems") ~= nil
+                and bdSrc:find("ctx%.hasChanceOnHit%(%)") ~= nil
+                and bdSrc:find("ctx%.hasExtractedProc%(procLine%)") ~= nil,
             "describeSellability MUST compute knownProcPass with the same gates EC_IsSellable uses (hasSellPrice, sellChanceOnHitKnown, protectChanceOnHitItems, itemHasChanceOnHit, chanceProcLine, playerHasExtractedProc). Any drift here means the trace can lie about the vendor's actual decision.")
         check("Test 123c: describeSellability autoDupe ownership chain is 3-layer (descKnown / rankKnown / familyKnown)",
             bdSrc:find("local familyKnown = %(not descKnown%)") ~= nil
-                and bdSrc:find("EC_compCache%.playerHasAffixFamily%(affixDataForTrace%.name%)") ~= nil
+                and bdSrc:find("ctx%.affixFamilyKnown%(affixDataForTrace%.name%)") ~= nil
                 and bdSrc:find("local ownsAffix = %(descKnown or rankKnown or familyKnown%)") ~= nil,
             "describeSellability's autoDupePass MUST use the 3-layer ownership chain (description text / family+rank / family-only) to match EC_IsSellable at Events.lua:5514-5532 and EC_AnnotateTooltip at Tooltip.lua:484-490. The v2.45.0 family-only fallback catches unranked PE affixes whose spell-side text doesn't match the item-side text; without it the trace disagrees with vendor+tooltip.")
 
@@ -7988,6 +7998,34 @@ do
             and ev2:find("savedLogWrites %- 1%) %% 200") ~= nil
             and ev2:find("NS.recentSavedLog", 1, true) ~= nil,
         "drain-time saves must land in NS.recentSavedLog (seq-stamped ring, cap 200) so Sold History and /ec bugreport can show why nothing happened.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 127 (v2.71.1, classifier Stage 2): describeSellability consumes the
+-- decision core. The trace's SUMMARY renders from NS.Decision.sell's verdict
+-- (never from its own narration), every state read goes through the shared
+-- buildCtx snapshot, and a drift sentinel surfaces any narration branch that
+-- falls behind the core instead of letting the story contradict the verdict.
+-- ---------------------------------------------------------------------------
+do
+    local fh = io.open("EbonClearance_BagDisplay.lua", "rb")
+    local bdSrc = fh and fh:read("*a") or ""
+    if fh then
+        fh:close()
+    end
+    check("Test 127a: describeSellability builds ONE decision ctx and takes its verdict from Decision.sell",
+        bdSrc:find("NS%.Decision and NS%.Decision%.buildCtx%(bag, slot, false%)") ~= nil
+            and bdSrc:find("local verdict, verdictToken = NS%.Decision%.sell%(ctx%)") ~= nil
+            and bdSrc:find('local wouldSell = verdict == "sell"') ~= nil,
+        "the trace summary MUST render from the core's verdict so /ec sellinfo structurally cannot disagree with the vendor engine about the outcome. If wouldSell is re-derived from the narration locals, the pre-Stage-2 mirror-drift bug class returns.")
+    check("Test 127b: drift sentinel compares the narration's conclusion against the core verdict",
+        bdSrc:find("local traceWouldSell = positiveSignal and not vetoed and not ctx%.locked") ~= nil
+            and bdSrc:find("if traceWouldSell ~= wouldSell then") ~= nil
+            and bdSrc:find('step%("traceDrift"') ~= nil,
+        "the narration is still hand-maintained until Stages 3-4; the sentinel turns a silent story-vs-verdict contradiction into a visible trace line asking for a bug report. Removing it un-alarms exactly the drift class that caused the v2.59.10 and familyKnown incidents.")
+    check("Test 127c: affix-protection release uses the 3-layer ownership chain (familyKnown drift fix)",
+        bdSrc:find("local autoDupe = ctx%.affixAllowExactDupes and %(descKnown or rankKnown or familyKnown%)") ~= nil,
+        "v2.71.1 drift fix found during the Stage 2 conversion: the trace's affix-protection veto released autoDupe on descKnown/rankKnown only, missing the v2.45.0 family-only fallback the engine + tooltip have. An unranked family-owned dupe read 'won't sell - protected' in /ec sellinfo while the vendor sold it.")
 end
 
 -- ---------------------------------------------------------------------------

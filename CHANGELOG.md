@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.71.1
+
+**`/ec sellinfo` now takes its verdict from the same decision core the vendor uses (classifier Stage 2), fixing one real disagreement found on the way.**
+
+- **The trace's WILL SELL / WON'T SELL verdict is now the engine's own answer.** Previously the Sell Info popup re-derived the whole decision in parallel and could drift from what the vendor actually did (it has, twice). Now every check reads from the same state snapshot the vendor uses and the final verdict comes straight from the decision core; the per-step explanation lines are still written per branch, and a built-in sentinel adds a visible "this explanation disagrees with the engine - please report it" line if a narration branch ever falls behind.
+- **Fixed a live disagreement found during the conversion:** for an item carrying an unranked affix you already own (with "Allow selling affixes you already have" on), the trace said "won't sell - protected" while the vendor correctly sold it. The trace's protection step was missing the family-name ownership fallback the engine and tooltip have had since v2.45.0.
+- **Small label improvement:** items kept by chance-on-hit protection now summarise as "won't sell - protected" instead of "won't sell - no rule matched", matching the tooltip's Keep label and the step text.
+- New test invariants (Test 127) lock the verdict-from-core wiring, the drift sentinel, and the fixed ownership chain. French and German entries included for the new sentinel line.
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.71.0
 
 **Internal: the sell/keep decision now lives in one testable core. No behaviour change.**

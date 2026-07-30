@@ -848,10 +848,22 @@ the sell logic. **New sell/keep behaviour MUST land with a fixture
 there** - the static pattern pins in `test_perf_guardrails.lua` still
 guard the source shape, but the fixtures are what prove the behaviour.
 
-The trace (`describeSellability`) and tooltip (`EC_AnnotateTooltip`)
-still hand-mirror the logic in Stage 1; Stages 2-3 of the plan make
-them render from the core's tokens, retiring the paired-edit EC-TRAPs
-below. Until then the mirror-lockstep rules in this guide still apply.
+**Stage 2 (v2.71.1):** the trace (`describeSellability` in
+BagDisplay.lua) now consumes the core: it builds ONE ctx via
+`NS.Decision.buildCtx(bag, slot, false)` for every read, and its
+summary renders from `NS.Decision.sell`'s verdict - the trace
+structurally cannot disagree with the vendor about the OUTCOME. The
+per-step narration is still derived branch by branch (a single winning
+token can't explain every non-winning step), so a **drift sentinel**
+compares the narration's own conclusion against the core verdict and
+emits a visible `traceDrift` step on mismatch (Test 127). If you change
+the core, update the matching narration branch so the story matches
+the verdict.
+
+The tooltip (`EC_AnnotateTooltip`) still hand-mirrors the logic; Stage
+3 makes it render from the core's tokens, retiring the paired-edit
+EC-TRAPs below. Until then the mirror-lockstep rules in this guide
+still apply to the tooltip.
 
 ### Grey items are always sold, independent of every other setting
 

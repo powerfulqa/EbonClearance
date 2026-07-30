@@ -30,7 +30,7 @@ from `Bindings.xml`.
 | [EbonClearance_Protection.lua](../EbonClearance_Protection.lua) | What to *keep*: PE roguelite affix + chance-on-hit detection and the affix-data cache. |
 | [EbonClearance_Vendor.lua](../EbonClearance_Vendor.lua) | The vendor cycle: `BuildQueue` / `DoNextAction` / `worker`, plus the `EC_Effective*` pacing helpers. |
 | [EbonClearance_Process.lua](../EbonClearance_Process.lua) | The Process Bags engine: Disenchant / Mill / Prospect / Lockpick. |
-| [EbonClearance_BagDisplay.lua](../EbonClearance_BagDisplay.lua) | Bag-slot sell-border tint + the sellinfo inspector (host bag UI adapter). |
+| [EbonClearance_BagDisplay.lua](../EbonClearance_BagDisplay.lua) | Bag-slot sell-border tint + the sellinfo inspector (host bag UI adapter). Since v2.71.1 the inspector's verdict comes from `Decision.sell`; only the per-step narration is local. |
 
 ### Event hub & comms
 

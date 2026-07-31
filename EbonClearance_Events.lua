@@ -396,6 +396,66 @@ local PER_CHAR_FIELDS = {
     -- collapsed. Matches the processCollapsedModes precedent. See
     -- docs/specs/2026-05-26-help-faq-panel-design.md.
     helpSectionsCollapsed = true,
+    -- v2.72.0 settings profiles: WHICH settings profile this character
+    -- uses. The profile BODIES live at the top-level
+    -- EbonClearanceDB.settingsProfiles[name] (account-wide, so alts can
+    -- share one by pointing at it); only the pointer is per-character.
+    activeSettingsProfile = true,
+}
+
+-- v2.72.0 settings profiles: the selling-behaviour fields that live in a
+-- named settings profile instead of the account-wide top level. The DB
+-- proxy routes reads/writes of these through the character's active
+-- profile (see EC_DBBuildProxy), so every existing `DB.<field>` call
+-- site - panels, the decision core, the vendor cycle - works unchanged.
+-- Scope decision (Serv, 2026-07-30): selling behaviour + vendor-visit
+-- actions + pacing ONLY. Master enable, looting/scavenger behaviour,
+-- visual preferences, locale, lists, and stats stay account-wide or
+-- per-character exactly as before.
+-- Top-level copies of these fields freeze at migration time as the
+-- downgrade safety net + the seed for the "Default" profile (the same
+-- model PER_CHAR_FIELDS established in v2.34).
+-- Hangs off EC_compCache (not a main-chunk local): the Events main
+-- chunk is AT the 200-locals cap.
+EC_compCache.settingsProfileFields = {
+    -- merchant / rules
+    merchantMode = true,
+    qualityRules = true,
+    -- deletion + auto-mark
+    enableDeletion = true,
+    autoDeleteOnPickup = true,
+    autoDeleteGreyOnLoot = true,
+    announceAutoDelete = true,
+    announceAutoDeleteQualities = true,
+    autoMarkResilience = true,
+    autoMarkAffixDupes = true,
+    autoMarkKnownUnsellableRecipes = true,
+    automarkProtectHighILvl = true,
+    -- protections
+    protectAffixedRareItems = true,
+    protectChanceOnHitItems = true,
+    sellChanceOnHitKnown = true,
+    protectUnlearnedTomes = true,
+    protectAllTomes = true,
+    autoAddEquipped = true,
+    autoProtectUpgrades = true,
+    autoProtectEquipmentSets = true,
+    -- affix rules
+    affixAllowExactDupes = true,
+    affixMinSellRank = true,
+    keepBoeAffixDupes = true,
+    keepBoeBelowRankFloor = true,
+    -- recipes
+    sellKnownRecipes = true,
+    sellKnownRecipeQualities = true,
+    sellKnownRecipeBindFilter = true,
+    -- vendor-visit actions + pacing
+    repairGear = true,
+    repairUseGuildBank = true,
+    vendorInterval = true,
+    maxItemsPerRun = true,
+    fastMode = true,
+    turboMode = true,
 }
 
 local function EC_DBCharKey()
@@ -414,19 +474,45 @@ local function EC_DBDeepCopy(t)
 end
 
 local function EC_DBBuildProxy(charNamespace)
+    local SPF = EC_compCache.settingsProfileFields
+    -- Resolve this character's settings-profile body. Falls back to
+    -- "Default" when the pointer names a profile that no longer exists
+    -- (safety net; the delete path also repoints stale pointers), and
+    -- to nil pre-migration so the read drops through to the top-level
+    -- legacy values.
+    local function activeSettings()
+        local profiles = rawget(EbonClearanceDB, "settingsProfiles")
+        if not profiles then
+            return nil
+        end
+        return profiles[charNamespace.activeSettingsProfile or "Default"] or profiles.Default
+    end
     return setmetatable({}, {
         __index = function(_, k)
             if PER_CHAR_FIELDS[k] then
                 return charNamespace[k]
+            end
+            if SPF[k] then
+                local p = activeSettings()
+                if p then
+                    return p[k]
+                end
             end
             return rawget(EbonClearanceDB, k)
         end,
         __newindex = function(_, k, v)
             if PER_CHAR_FIELDS[k] then
                 charNamespace[k] = v
-            else
-                rawset(EbonClearanceDB, k, v)
+                return
             end
+            if SPF[k] then
+                local p = activeSettings()
+                if p then
+                    p[k] = v
+                    return
+                end
+            end
+            rawset(EbonClearanceDB, k, v)
         end,
     })
 end
@@ -837,9 +923,35 @@ local function EnsureDB()
         end
     end
 
+    -- v2.72.0 settings-profile migration. Runs BEFORE the proxy build so
+    -- it reads the RAW top-level values. One-shot seed: the "Default"
+    -- profile is a deep copy of the current account-wide selling
+    -- settings, and every character starts pointed at it - zero
+    -- behaviour change on upgrade. The top-level copies freeze from here
+    -- on (downgrade safety net, same model as the v2.34 partition); all
+    -- live reads/writes route through the proxy into the active profile.
+    -- Fresh installs seed an empty Default that the nil-default blocks
+    -- below fill through the proxy.
+    if type(EbonClearanceDB.settingsProfiles) ~= "table" then
+        EbonClearanceDB.settingsProfiles = {}
+    end
+    if type(EbonClearanceDB.settingsProfiles.Default) ~= "table" then
+        local def = {}
+        for f in pairs(EC_compCache.settingsProfileFields) do
+            if EbonClearanceDB[f] ~= nil then
+                def[f] = EC_DBDeepCopy(EbonClearanceDB[f])
+            end
+        end
+        EbonClearanceDB.settingsProfiles.Default = def
+    end
+    if type(charNS.activeSettingsProfile) ~= "string" then
+        charNS.activeSettingsProfile = "Default"
+    end
+
     -- DB is a metatable proxy so existing call sites (`DB.foo`) keep
     -- working unchanged. Per-character fields route to chars[charKey];
-    -- everything else stays on the top-level (account-wide) table.
+    -- settings-profile fields route to the character's active settings
+    -- profile; everything else stays on the top-level (account-wide) table.
     DB = EC_DBBuildProxy(charNS)
     -- Mirror the live DB binding onto the namespace so split files can
     -- read NS.DB inline at call time. Same proxy; both names alias it.
@@ -2602,6 +2714,144 @@ NS.SaveProfile = EC_SaveProfile
 NS.LoadProfile = EC_LoadProfile
 NS.DeleteProfile = EC_DeleteProfile
 NS.RenameProfile = EC_RenameProfile
+
+-- ===========================================================================
+-- v2.72.0 settings profiles (management).
+-- ---------------------------------------------------------------------------
+-- Unlike the list profiles above (per-character snapshots that Load COPIES
+-- into the live lists), a settings profile is a LIVE body: the DB proxy
+-- resolves every selling-behaviour read/write through the character's
+-- active profile, so "Use" just moves the per-character pointer. Bodies
+-- live at the top-level EbonClearanceDB.settingsProfiles[name] so alts
+-- share a profile by pointing at the same name.
+-- Defined directly on NS (no main-chunk locals - the 200-locals cap).
+
+-- Re-fires the option panels + bag borders after the active settings
+-- change under a panel's feet (same repaint set Quickstart uses).
+function NS.RepaintAfterSettingsSwitch()
+    if NS.RefreshSellBorders then
+        NS.RefreshSellBorders()
+    end
+    local panels = {
+        "EbonClearanceOptionsMain",
+        "EbonClearanceOptionsMerchant",
+        "EbonClearanceOptionsBlacklistSettings",
+        "EbonClearanceOptionsDeletionSettings",
+        "EbonClearanceOptionsSettingsProfiles",
+    }
+    for _, panelName in ipairs(panels) do
+        local p = _G[panelName]
+        if p and p.inited and p.GetScript and p:GetScript("OnShow") then
+            p:GetScript("OnShow")(p)
+        end
+    end
+end
+
+-- Snapshot the character's CURRENT selling settings under `name` and
+-- switch to it (mirror of EC_SaveProfile's save-then-activate shape).
+function NS.SaveSettingsProfile(name)
+    local ok, cleaned = EC_ValidateProfileName(name)
+    if not ok then
+        return false, cleaned
+    end
+    local profiles = EbonClearanceDB and EbonClearanceDB.settingsProfiles
+    if not profiles then
+        return false, L["Settings profiles are not ready yet."]
+    end
+    local snap = {}
+    for f in pairs(EC_compCache.settingsProfileFields) do
+        -- Reads route through the proxy, so this snapshots the values
+        -- the character is actually using right now.
+        snap[f] = EC_DBDeepCopy(DB[f])
+    end
+    profiles[cleaned] = snap
+    DB.activeSettingsProfile = cleaned
+    return true, string.format(L['Saved settings as "|cffffff00%s|r" - this character now uses it.'], cleaned)
+end
+
+-- Point this character at an existing settings profile.
+function NS.UseSettingsProfile(name)
+    local profiles = EbonClearanceDB and EbonClearanceDB.settingsProfiles
+    if not (profiles and name and profiles[name]) then
+        return false, string.format(L['No settings profile named "|cffffff00%s|r".'], tostring(name))
+    end
+    if DB.activeSettingsProfile == name then
+        return true, string.format(L['Already using settings profile "|cffffff00%s|r".'], name)
+    end
+    DB.activeSettingsProfile = name
+    -- Re-run the idempotent bootstrap so a profile saved by an older
+    -- version picks up nil-defaults for fields added since (the defaults
+    -- write through the proxy into the newly-active profile).
+    EnsureDB()
+    NS.RepaintAfterSettingsSwitch()
+    return true, string.format(L['This character now uses settings profile "|cffffff00%s|r".'], name)
+end
+
+function NS.DeleteSettingsProfile(name)
+    if name == "Default" then
+        return false, L["The Default settings profile cannot be deleted."]
+    end
+    local profiles = EbonClearanceDB and EbonClearanceDB.settingsProfiles
+    if not (profiles and name and profiles[name]) then
+        return false, string.format(L['No settings profile named "|cffffff00%s|r".'], tostring(name))
+    end
+    profiles[name] = nil
+    -- Note whether THIS character used it before the walk below repoints
+    -- every namespace (the walk includes ours).
+    local repointedSelf = DB.activeSettingsProfile == name
+    -- Repoint every character that used it back to Default (the proxy
+    -- also falls back to Default at read time, but a live pointer to a
+    -- dead profile should not persist).
+    local chars = EbonClearanceDB.chars
+    if chars then
+        for _, charNS in pairs(chars) do
+            if charNS.activeSettingsProfile == name then
+                charNS.activeSettingsProfile = "Default"
+            end
+        end
+    end
+    if repointedSelf then
+        -- Covers the transient pre-login namespace too (not in chars).
+        DB.activeSettingsProfile = "Default"
+        NS.RepaintAfterSettingsSwitch()
+        return true,
+            string.format(L['Deleted settings profile "|cffffff00%s|r" - this character is back on Default.'], name)
+    end
+    return true, string.format(L['Deleted settings profile "|cffffff00%s|r".'], name)
+end
+
+function NS.RenameSettingsProfile(oldName, newName)
+    if oldName == "Default" then
+        return false, L["The Default settings profile cannot be renamed."]
+    end
+    local ok, cleaned = EC_ValidateProfileName(newName)
+    if not ok then
+        return false, cleaned
+    end
+    local profiles = EbonClearanceDB and EbonClearanceDB.settingsProfiles
+    if not (profiles and oldName and profiles[oldName]) then
+        return false, string.format(L['No settings profile named "|cffffff00%s|r".'], tostring(oldName))
+    end
+    if profiles[cleaned] then
+        return false, string.format(L['A settings profile named "|cffffff00%s|r" already exists.'], cleaned)
+    end
+    profiles[cleaned] = profiles[oldName]
+    profiles[oldName] = nil
+    local wasSelf = DB.activeSettingsProfile == oldName
+    local chars = EbonClearanceDB.chars
+    if chars then
+        for _, charNS in pairs(chars) do
+            if charNS.activeSettingsProfile == oldName then
+                charNS.activeSettingsProfile = cleaned
+            end
+        end
+    end
+    if wasSelf then
+        -- Covers the transient pre-login namespace too (not in chars).
+        DB.activeSettingsProfile = cleaned
+    end
+    return true, string.format(L['Renamed settings profile "|cffffff00%s|r" to "|cffffff00%s|r".'], oldName, cleaned)
+end
 
 local function CopperToColoredText(copper)
     if not copper or copper < 0 then
@@ -7341,6 +7591,26 @@ StaticPopupDialogs["EC_CONFIRM_RESET_SESSION"] = {
     preferredIndex = 3,
 }
 
+-- v2.72.0: confirm popups triggered from inside the Interface Options
+-- window can spawn UNDER it - the options frame is toplevel
+-- (click-raises above same-strata siblings) and sits high enough that
+-- FULLSCREEN_DIALOG was still not above it in the field. TOOLTIP is the
+-- strata this codebase already uses for pop-outs that must beat the
+-- settings window (NS.RaiseTooltipAboveWindows precedent). Raise while
+-- shown and restore on hide - scoped per-show because Blizzard REUSES
+-- the StaticPopup1..4 frames for its own dialogs; a permanent strata
+-- change would leak onto those.
+EC_compCache.popupRaiseOnShow = function(self)
+    self._ecPrevStrata = self:GetFrameStrata()
+    self:SetFrameStrata("TOOLTIP")
+end
+EC_compCache.popupRaiseOnHide = function(self)
+    if self._ecPrevStrata then
+        self:SetFrameStrata(self._ecPrevStrata)
+        self._ecPrevStrata = nil
+    end
+end
+
 StaticPopupDialogs["EC_CONFIRM_DELETE_PROFILE"] = {
     text = L['Delete profile "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r'],
     button1 = YES,
@@ -7350,6 +7620,27 @@ StaticPopupDialogs["EC_CONFIRM_DELETE_PROFILE"] = {
             data()
         end
     end,
+    OnShow = EC_compCache.popupRaiseOnShow,
+    OnHide = EC_compCache.popupRaiseOnHide,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- v2.72.0: deleting a settings profile repoints every character that
+-- used it back to Default, so spell that out in the prompt.
+StaticPopupDialogs["EC_CONFIRM_DELETE_SPROFILE"] = {
+    text = L['Delete settings profile "|cffffff00%s|r"?\n|cffaaaaaaCharacters using it switch to Default. This cannot be undone.|r'],
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    OnShow = EC_compCache.popupRaiseOnShow,
+    OnHide = EC_compCache.popupRaiseOnHide,
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,
@@ -7365,6 +7656,8 @@ StaticPopupDialogs["EC_CONFIRM_CLEAR_PROFILE"] = {
             data()
         end
     end,
+    OnShow = EC_compCache.popupRaiseOnShow,
+    OnHide = EC_compCache.popupRaiseOnHide,
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,
@@ -7527,6 +7820,7 @@ InterfaceOptions_AddCategory(_G["EbonClearanceOptionsDeletion"]) -- Delete List
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsDeletionSettings"]) -- Delete Settings
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProcessBags"]) -- Process Bags
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsProfiles"]) -- Profiles
+InterfaceOptions_AddCategory(_G["EbonClearanceOptionsSettingsProfiles"]) -- Settings Profiles (v2.72.0)
 InterfaceOptions_AddCategory(_G["EbonClearanceOptionsImportExport"]) -- Import/Export
 
 -- v2.11.0 reactive panel layout. The Interface Options frame is user-
@@ -8063,6 +8357,53 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             end
         else
             PrintNice(L["Usage: /ec profile save|load|delete|list <name>"])
+        end
+        return
+    elseif cmd == "sprofile" or cmd == "sprofiles" then
+        -- v2.72.0 settings profiles (selling behaviour per character).
+        local sub, arg = rest:match("^(%S+)%s*(.*)")
+        sub = (sub or ""):lower()
+        arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+        if sub == "save" and arg ~= "" then
+            EnsureDB()
+            local _, result = NS.SaveSettingsProfile(arg)
+            PrintNice(result)
+        elseif sub == "use" and arg ~= "" then
+            EnsureDB()
+            local _, result = NS.UseSettingsProfile(arg)
+            PrintNice(result)
+        elseif sub == "delete" and arg ~= "" then
+            EnsureDB()
+            local _, result = NS.DeleteSettingsProfile(arg)
+            PrintNice(result)
+        elseif sub == "list" or sub == "" then
+            EnsureDB()
+            PrintNice(L["Settings Profiles:"])
+            local profiles = EbonClearanceDB.settingsProfiles or {}
+            local names = {}
+            for name in pairs(profiles) do
+                if type(name) == "string" then
+                    names[#names + 1] = name
+                end
+            end
+            table.sort(names, function(a, b)
+                return a:lower() < b:lower()
+            end)
+            local chars = EbonClearanceDB.chars or {}
+            for i = 1, #names do
+                local users = 0
+                for _, charNS in pairs(chars) do
+                    if (charNS.activeSettingsProfile or "Default") == names[i] then
+                        users = users + 1
+                    end
+                end
+                local tag = (names[i] == (DB.activeSettingsProfile or "Default")) and L[" |cff00ff00(this character)|r"]
+                    or ""
+                PrintNicef(L["  |cffffff00%s|r - used by %d character(s)%s"], names[i], users, tag)
+            end
+        else
+            PrintNice(L["Usage: /ec sprofile save|use|delete|list <name>"])
         end
         return
     end

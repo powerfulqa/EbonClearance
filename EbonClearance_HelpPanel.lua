@@ -141,9 +141,15 @@ local function EC_buildHelpEntries()
     },
     {
         id = "what-are-profiles",
-        q = L["What are Profiles? (and how are they different from Quickstart?)"],
-        a = L["Profiles are named snapshots of your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r. Save your current lists as a profile, then later swap to a different one in a single click. Quickstart presets are different: they configure the addon's |cffffd870behaviour|r (speed, auto-sell rules, protections) but never touch your lists. The two systems are complementary - profiles for lists, Quickstart for settings. Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>."],
+        q = L["What are List Profiles? (and how are they different from Quickstart?)"],
+        a = L["List profiles are named snapshots of your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r. Save your current lists as a profile, then later swap to a different one in a single click. Quickstart presets are different: they configure the addon's |cffffd870behaviour|r (speed, auto-sell rules, protections) but never touch your lists. For per-character behaviour, see Settings Profiles. Slash commands: /ec profile save <name>, /ec profile load <name>, /ec profile list, /ec profile delete <name>."],
         panel = "EbonClearanceOptionsProfiles",
+    },
+    {
+        id = "what-are-settings-profiles",
+        q = L["What are Settings Profiles?"],
+        a = L["A settings profile holds a character's selling behaviour: merchant mode, rarity rules, protections, affix and recipe settings, deletion toggles, and vendor speed. Each character picks one on the Settings Profiles panel. Characters on the same profile share it live - change a setting on one and every character using that profile follows. To give one character its own settings, save a new profile there and press Use. Item lists, stats, looting, and visual options are not part of a settings profile. Slash command: /ec sprofile."],
+        panel = "EbonClearanceOptionsSettingsProfiles",
     },
     {
         id = "what-is-import-export",

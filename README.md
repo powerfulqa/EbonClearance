@@ -13,6 +13,7 @@ Sells what you don't want. Keeps what you do. Knows the difference because it re
 
 - **Per-rarity auto-sell rules** (Common / Uncommon / Rare / Epic). Caps follow your equipped iLvl, or set a fixed max. Bind-type filter per rarity.
 - **Sell, Keep, and Delete lists**, per-character and account-wide. Bulk-add from your bags by colour, switch lists by activity with saved profiles.
+- **Settings profiles (v2.72.0).** Each character picks a named profile holding its selling behaviour - merchant mode, rarity rules, protections, affix and recipe settings, deletion toggles, vendor speed. Alts on the same profile share it live; save a new profile to give one alt its own rules. (Before v2.72.0, these settings were silently shared account-wide.)
 - **Sell known recipes** you've already learned, opt-in and per-rarity (Common / Uncommon / Rare / Epic). Per-rarity bind-type filter too (Any / BoE only / BoP only) so you can sell BoE patterns alts won't use while keeping the BoP ones. Learn-state is read per-character, so each alt only sells the patterns it already knows; unlearned ones stay safe.
 - **Tooltip says what will happen** before you vendor. `/ec sellinfo` traces every decision, and Alt+Right-Click → **Sell Info** gives the same trace for one item, so "why isn't this selling?" is one click away.
 
@@ -44,7 +45,8 @@ Per-character on/off: tick / untick the **Enable EbonClearance** checkbox at the
 All settings live under `/ec`, which opens the scrollable config panel. Highlights:
 
 - **Lists.** Sell List, Account Sell List, Keep List, Delete List. One "Add item" field takes an item ID or a name (exact, or part of a name to add matching items from your bags); the Sell Lists also have by-quality bulk-add buttons. Rows show the item icon and a quality-colored name; hover a row for the item tooltip. Filter the view by name or rarity, and sort by name. The Delete List has an optional "auto-delete on pickup" toggle (off by default) that destroys listed items the moment they're looted, to cut vendor trips while farming. It can also auto-mark soulbound affix duplicates you already own that have no vendor value (off by default), leaving sellable dupes for the merchant. Also on the Delete Settings panel: **Auto-delete grey items on loot** (opt-in, off by default) destroys grey (quality 0) drops the moment they hit your bags for players who prioritise bag space over vendor copper (it skips keep-listed items, equipped gear, quest items, and pauses while a merchant is open). The main EbonClearance panel adds **Warn about conflicting addons** (on by default), which shows a popup at login (naming the detected addon) when a conflicting bag-management addon is running alongside EC.
-- **Profiles.** Save / load / rename / clear. Default profile is locked empty.
+- **List Profiles.** Save / load / rename / clear the Sell + Keep list pairs. Default profile is locked empty.
+- **Settings Profiles.** Named selling-behaviour profiles each character picks independently (see above). Save the current settings under a name, press **Use** on another character to share them, or keep alts on different profiles. Deleting a profile moves its users back to Default. Item lists, stats, looting, and visual options are not included.
 - **Merchant Settings.** Per-rarity quality thresholds with `Use equipped iLvl` or fixed-max-iLvl cap, per-rarity bind-type filter, merchant target (Goblin / normal vendors / both), Fast Mode toggle, vendor sell speed, summon delay. Also here: **Sell recipes you already know** (opt-in, per-rarity with a bind-type filter), which auto-sells learned profession recipes (unless "keep all tomes" is on, which wins).
 - **Keep Settings.** Auto-protect equipped gear, looted upgrades, equipment-manager sets, affixed Rare/Epic items (including unranked Project Ebonhold transferred procs like Vampirism / Resurgence), chance-on-hit items, tomes / recipes (with optional extension to already-known items). Affix-sell controls: "Allow selling affixes you already have" (with an opt-in sub-option **"Keep bind-on-equip ones (auction them yourself)"** - vendors only the soulbound dupes, keeps the BoE ones for the auction house) and a **"Sell affixes below rank" floor** (ranges 0 - VI as of v2.52.0, for Project Ebonhold's rank VI affix scaling). New in v2.49.0: **Sell known chance-on-hit procs (experimental)** - once you've extracted a weapon's proc at the Anvil, extra copies of that weapon auto-sell (v2.49.1's autolearn grows the coverage from your own extractions).
 - **Scavenger Settings.** Summon controls, chat / speech-bubble mute, auto-loot cycle threshold, auto-open containers, Fast Loot.
@@ -72,6 +74,10 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec profile save <name>` | Save the current Sell List as a named profile |
 | `/ec profile load <name>` | Load a saved profile into the active Sell List |
 | `/ec profile delete <name>` | Delete a saved profile |
+| `/ec sprofile list` | Show all settings profiles and who uses them |
+| `/ec sprofile save <name>` | Save this character's selling settings as a named profile and use it |
+| `/ec sprofile use <name>` | Switch this character to a settings profile |
+| `/ec sprofile delete <name>` | Delete a settings profile (users switch to Default) |
 | `/ec clean` | Report any item IDs present in more than one list |
 | `/ec clean apply` | Auto-resolve list conflicts using precedence Keep List > Delete List > Sell List |
 | `/ec clean upgrades` | Report stale `Keep (upgrade)` Keep List entries that are no longer above your equipped iLvl (v2.33.1+ auto-cleans these on every bag update; this command is now mainly for one-shot inspection) |

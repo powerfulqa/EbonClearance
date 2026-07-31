@@ -4787,6 +4787,15 @@ do
         srcCode:find("EC_compCache%.pendingFreshInstallSync%s*=%s*true") ~= nil,
         "after dropping legacy auto entries, the live equipment sync must re-add the gear this character is currently wearing under their own login. The pendingFreshInstallSync flag is consumed by the PLAYER_LOGIN handler with a 2 s settle delay."
     )
+
+    -- v2.72.0 settings profiles: the per-character POINTER is in the
+    -- partition (the profile bodies are deliberately top-level so alts
+    -- can share them).
+    check(
+        "PER_CHAR_FIELDS includes activeSettingsProfile (v2.72.0)",
+        src:find("activeSettingsProfile%s*=%s*true") ~= nil,
+        "the settings-profile pointer MUST be per-character - it is the whole point of the feature (alts share or diverge by pointing at different profiles). If it falls out of PER_CHAR_FIELDS it becomes account-wide and every alt snaps to the same profile again."
+    )
 end
 
 -- ---------------------------------------------------------------------------
@@ -8150,6 +8159,75 @@ do
     check("Test 129c: affix + tome Keep labels yield to an existing Will Delete verdict",
         select(2, ttSrc:gsub('ctx%.blacklisted or statusTag == "willdelete"', "")) >= 2,
         "v2.71.3 (Serv report - Precious's Putrid Collar of Bulwark VI): the affix-protection and tome-protection blocks run AFTER the Will Delete branch and used to overwrite it with Keep (affix rank known) / Keep (learned tome). The engine's delete gate releases an owned affix via affixDisposable (the iLvl ceiling suppresses the SELL path only) and has NO tome veto, so the delete really fires - both blocks MUST leave a willdelete verdict alone, same as the Keep List guard.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 130 (v2.72.0): per-character settings profiles - the structural
+-- invariants of the settings-profile partition. Profile BODIES live at the
+-- top-level EbonClearanceDB.settingsProfiles[name] (account-wide so alts can
+-- share one); the per-character activeSettingsProfile pointer picks which one
+-- applies; the DB proxy routes every settings-profile field through the
+-- active body so call sites stay `DB.<field>`. Top-level copies freeze at
+-- migration as the downgrade safety net (the v2.34 partition model).
+-- ---------------------------------------------------------------------------
+do
+    local fh = io.open("EbonClearance_Events.lua", "rb")
+    local ev130 = fh and fh:read("*a") or ""
+    if fh then
+        fh:close()
+    end
+    check("Test 130a: settingsProfileFields registry exists on EC_compCache with the scope-defining fields",
+        ev130:find("EC_compCache%.settingsProfileFields = {") ~= nil
+            and ev130:find("merchantMode = true") ~= nil
+            and ev130:find("qualityRules = true") ~= nil
+            and ev130:find("enableDeletion = true") ~= nil
+            and ev130:find("protectAffixedRareItems = true") ~= nil
+            and ev130:find("sellKnownRecipeBindFilter = true") ~= nil
+            and ev130:find("turboMode = true") ~= nil,
+        "the field registry is the single source of what a settings profile carries (selling behaviour + vendor-visit actions + pacing - the 2026-07-30 scope decision). It hangs off EC_compCache because the Events main chunk is at the 200-locals cap. Master enable, looting/scavenger, visual, locale, lists, and stats are deliberately NOT in it.")
+    check("Test 130b: DB proxy routes settings-profile fields through the active profile with a Default fallback",
+        ev130:find("local SPF = EC_compCache%.settingsProfileFields") ~= nil
+            and ev130:find("local function activeSettings%(%)") ~= nil
+            and ev130:find('profiles%[charNamespace%.activeSettingsProfile or "Default"%] or profiles%.Default') ~= nil
+            and ev130:find("if SPF%[k%] then") ~= nil,
+        "reads AND writes of settings fields must route through the character's active profile body, falling back to Default when the pointer names a deleted profile and to the raw top level pre-migration. Without the proxy branch, call sites would need a mass rewrite and settings would silently stay account-wide.")
+    check("Test 130c: EnsureDB seeds the Default profile from the top level BEFORE building the proxy",
+        (function()
+            local seedPos = ev130:find('if type%(EbonClearanceDB%.settingsProfiles%) ~= "table" then')
+            local defSeed = ev130:find("EbonClearanceDB%.settingsProfiles%.Default = def")
+            local proxyPos = ev130:find("DB = EC_DBBuildProxy%(charNS%)")
+            local pointerSeed = ev130:find('if type%(charNS%.activeSettingsProfile%) ~= "string" then')
+            return seedPos ~= nil
+                and defSeed ~= nil
+                and proxyPos ~= nil
+                and pointerSeed ~= nil
+                and seedPos < proxyPos
+                and defSeed < proxyPos
+                and pointerSeed < proxyPos
+        end)(),
+        "the one-shot migration must deep-copy the RAW top-level selling settings into settingsProfiles.Default and point the character at it BEFORE the proxy is built - after the proxy exists, DB.<field> reads route into the profile, so a later seed would copy the wrong (already-routed) values. Zero behaviour change on upgrade depends on this ordering.")
+    check("Test 130d: management functions exist and Use re-bootstraps + repaints",
+        ev130:find("function NS%.SaveSettingsProfile%(name%)") ~= nil
+            and ev130:find("function NS%.UseSettingsProfile%(name%)") ~= nil
+            and ev130:find("function NS%.DeleteSettingsProfile%(name%)") ~= nil
+            and ev130:find("function NS%.RenameSettingsProfile%(oldName, newName%)") ~= nil
+            and ev130:find("DB%.activeSettingsProfile = name\n%s+%-%-[^\n]*\n%s+%-%-[^\n]*\n%s+%-%-[^\n]*\n%s+EnsureDB%(%)\n%s+NS%.RepaintAfterSettingsSwitch%(%)") ~= nil,
+        "UseSettingsProfile MUST re-run the idempotent EnsureDB after moving the pointer (a profile saved by an older version needs nil-defaults for fields added since - the defaults write through the proxy into the newly-active profile) and then repaint the settings panels + borders, or the UI keeps showing the previous profile's values.")
+    check("Test 130e: deleting a settings profile repoints every character and protects Default",
+        ev130:find('if name == "Default" then\n%s+return false, L%["The Default settings profile cannot be deleted%."%]') ~= nil
+            and ev130:find('charNS%.activeSettingsProfile = "Default"') ~= nil,
+        "Default is the migration baseline AND the proxy's fallback target - deleting it would strand every pointer. Deleting any other profile must walk EbonClearanceDB.chars and repoint users to Default so no character keeps a live pointer to a dead profile.")
+    local ppf = io.open("EbonClearance_ProfilesPanel.lua", "rb")
+    local pp130 = ppf and ppf:read("*a") or ""
+    if ppf then
+        ppf:close()
+    end
+    check("Test 130f: Settings Profiles panel registered centrally, /ec sprofile wired",
+        ev130:find('InterfaceOptions_AddCategory%(_G%["EbonClearanceOptionsSettingsProfiles"%]%)') ~= nil
+            and ev130:find('cmd == "sprofile"') ~= nil
+            and pp130:find('CreateFrame%("Frame", "EbonClearanceOptionsSettingsProfiles"') ~= nil
+            and pp130:find("InterfaceOptions_AddCategory") == nil,
+        "the panel lives in EbonClearance_ProfilesPanel.lua but MUST be registered centrally in Events (no panel self-registers - the central block owns sidebar order), and the /ec sprofile save|use|delete|list command family must exist alongside /ec profile.")
 end
 
 -- ---------------------------------------------------------------------------

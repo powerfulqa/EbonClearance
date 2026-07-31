@@ -34,8 +34,13 @@ local EC_compCache = NS.compCache
 local L = NS.L
 
 -- ============================================================
+-- v2.72.0: relabelled "List Profiles" in the sidebar + header to pair
+-- with the new Settings Profiles panel. The internal frame name
+-- EbonClearanceOptionsProfiles stays unchanged (help-link panel
+-- pointers, /ec deep-links, and saved Interface Options layout keep
+-- working - the Keep Settings rename precedent, Test 104e).
 local ProfilesPanel = CreateFrame("Frame", "EbonClearanceOptionsProfiles", InterfaceOptionsFramePanelContainer)
-ProfilesPanel.name = "Profiles"
+ProfilesPanel.name = "List Profiles"
 ProfilesPanel.parent = "EbonClearance"
 
 ProfilesPanel:SetScript("OnShow", function(self)
@@ -45,11 +50,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
             self:RefreshProfileList()
         end
     end, function(self)
-        local heading = NS.MakeHeader(self, L["Profiles"], -16)
+        local heading = NS.MakeHeader(self, L["List Profiles"], -16)
         NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-profiles")
         local descLabel = NS.MakeLabel(
             self,
-            L["Profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots."],
+            L["List profiles save and restore your |cffb6ffb6Sell List|r and |cffb6ffb6Keep List|r as a named pair. Switching profiles overwrites the live character lists with the saved snapshot. Handy for swapping between farming spots. For your selling behaviour (rules, protections, speed), see |cffb6ffb6Settings Profiles|r."],
             16,
             -44
         )
@@ -357,6 +362,300 @@ ProfilesPanel:SetScript("OnShow", function(self)
         end)
 
         self:RefreshProfileList()
+    end)
+end)
+
+-- ============================================================
+-- Settings Profiles panel (v2.72.0)
+-- ============================================================
+-- Selling-behaviour profiles. Unlike the list profiles above (snapshots
+-- that Load copies into the live lists), a settings profile is LIVE:
+-- each character points at one, and its selling settings read/write
+-- through it. "Use" moves this character's pointer; editing any setting
+-- edits the profile every pointing character follows.
+local SettingsProfilesPanel =
+    CreateFrame("Frame", "EbonClearanceOptionsSettingsProfiles", InterfaceOptionsFramePanelContainer)
+SettingsProfilesPanel.name = "Settings Profiles"
+SettingsProfilesPanel.parent = "EbonClearance"
+
+SettingsProfilesPanel:SetScript("OnShow", function(self)
+    local DB = NS.DB
+    EC_compCache.initPanel(self, function(self)
+        if self.RefreshSettingsProfileList then
+            self:RefreshSettingsProfileList()
+        end
+    end, function(self)
+        local heading = NS.MakeHeader(self, L["Settings Profiles"], -16)
+        NS.AddHelpIcon(self, heading, "LEFT", "RIGHT", 8, 0, "what-are-settings-profiles")
+        local descLabel = NS.MakeLabel(
+            self,
+            L["A settings profile holds this character's |cffb6ffb6selling behaviour|r: merchant mode, rarity rules, protections, affix and recipe settings, deletion toggles, and vendor speed. Each character picks one profile. Characters on the same profile share it live - change a setting on one and every character using that profile follows."],
+            16,
+            -44
+        )
+        local clarifyLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        clarifyLabel:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -8)
+        EC_compCache.setPanelWidth(clarifyLabel, 32)
+        clarifyLabel:SetJustifyH("LEFT")
+        clarifyLabel:SetJustifyV("TOP")
+        if clarifyLabel.SetWordWrap then
+            clarifyLabel:SetWordWrap(true)
+        end
+        clarifyLabel:SetText(
+            L["|cffaaaaaaItem lists, stats, looting, and visual options are not part of a settings profile. To give one character its own settings, save a new profile here and press Use on it.|r"]
+        )
+
+        local activeLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        activeLabel:SetPoint("TOPLEFT", clarifyLabel, "BOTTOMLEFT", 0, -16)
+        EC_compCache.setPanelWidth(activeLabel, 16)
+        activeLabel:SetJustifyH("LEFT")
+        self.activeLabel = activeLabel
+
+        local saveLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        saveLabel:SetPoint("TOPLEFT", activeLabel, "BOTTOMLEFT", 0, -10)
+        saveLabel:SetText(L["Save current settings as:"])
+
+        local saveInput = CreateFrame("EditBox", "EbonClearanceSettingsProfileSaveInput", self, "InputBoxTemplate")
+        saveInput:SetAutoFocus(false)
+        saveInput:SetSize(150, 20)
+        saveInput:SetPoint("LEFT", saveLabel, "RIGHT", 8, 0)
+        saveInput:SetMaxLetters(30)
+        saveInput:SetText("")
+        NS.StyleInputBox(saveInput)
+
+        local saveBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+        saveBtn:SetSize(80, 22)
+        saveBtn:SetPoint("LEFT", saveInput, "RIGHT", 8, 0)
+        saveBtn:SetText(L["Save"])
+
+        local statusFS = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        statusFS:SetPoint("TOPLEFT", saveLabel, "BOTTOMLEFT", 0, -10)
+        EC_compCache.setPanelWidth(statusFS, 16)
+        statusFS:SetJustifyH("LEFT")
+        statusFS:SetText("")
+        self.statusFS = statusFS
+
+        local listLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        listLabel:SetPoint("TOPLEFT", statusFS, "BOTTOMLEFT", 0, -8)
+        listLabel:SetText(L["Saved Settings Profiles"])
+
+        local scrollBg = CreateFrame("Frame", nil, self)
+        scrollBg:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -4)
+        scrollBg:SetSize(NS.GetPanelWidth() - 42, 160)
+        scrollBg:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 12,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        scrollBg:SetBackdropColor(0, 0, 0, 0.6)
+        scrollBg:SetBackdropBorderColor(0.4, 0.35, 0.25, 1)
+        EC_compCache.registerWidth(scrollBg, 42)
+
+        local scroll =
+            CreateFrame("ScrollFrame", "EbonClearanceSettingsProfileListScroll", scrollBg, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 6, -6)
+        scroll:SetPoint("BOTTOMRIGHT", -28, 6)
+
+        local content = CreateFrame("Frame", nil, scroll)
+        content:SetSize(NS.GetPanelWidth() - 76, 1)
+        EC_compCache.registerWidth(content, 76)
+        scroll:SetScrollChild(content)
+        NS.HookScrollbarAutoHide(scroll)
+
+        local rowPool = {}
+        local activeRows = 0
+
+        local function GetRow(index)
+            if rowPool[index] then
+                return rowPool[index]
+            end
+            local row = CreateFrame("Frame", nil, content)
+            row:SetHeight(22)
+
+            local delBtn =
+                CreateFrame("Button", "EbonClearanceSettingsProfileDel_" .. index, content, "UIPanelButtonTemplate")
+            delBtn:SetSize(58, 18)
+            delBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+            delBtn:SetText(L["Delete"])
+
+            local useBtn =
+                CreateFrame("Button", "EbonClearanceSettingsProfileUse_" .. index, content, "UIPanelButtonTemplate")
+            useBtn:SetSize(52, 18)
+            useBtn:SetPoint("RIGHT", delBtn, "LEFT", -4, 0)
+            useBtn:SetText(L["Use"])
+
+            local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+            text:SetPoint("LEFT", row, "LEFT", 2, 0)
+            text:SetPoint("RIGHT", useBtn, "LEFT", -4, 0)
+            text:SetJustifyH("LEFT")
+
+            row.text = text
+            row.useBtn = useBtn
+            row.delBtn = delBtn
+            rowPool[index] = row
+            return row
+        end
+
+        local function HideAllRows()
+            for i = 1, activeRows do
+                if rowPool[i] then
+                    rowPool[i]:Hide()
+                    rowPool[i].useBtn:Hide()
+                    rowPool[i].delBtn:Hide()
+                end
+            end
+            activeRows = 0
+        end
+
+        local renameLabel = self:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        renameLabel:SetPoint("TOPLEFT", scroll, "BOTTOMLEFT", 0, -12)
+        renameLabel:SetText(L["Rename this character's profile:"])
+
+        local renameInput = CreateFrame("EditBox", "EbonClearanceSettingsProfileRenameInput", self, "InputBoxTemplate")
+        renameInput:SetAutoFocus(false)
+        renameInput:SetSize(150, 20)
+        renameInput:SetPoint("LEFT", renameLabel, "RIGHT", 8, 0)
+        renameInput:SetMaxLetters(30)
+        renameInput:SetText("")
+        NS.StyleInputBox(renameInput)
+
+        local renameBtn = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+        renameBtn:SetSize(70, 22)
+        renameBtn:SetPoint("LEFT", renameInput, "RIGHT", 8, 0)
+        renameBtn:SetText(L["Rename"])
+
+        -- Field-assignment form (closes over the panel `self`; see the
+        -- matching note on RefreshProfileList above).
+        self.RefreshSettingsProfileList = function()
+            HideAllRows()
+
+            local activeName = DB.activeSettingsProfile or "Default"
+            activeLabel:SetText(L["This character uses: "] .. "|cff00ff00" .. activeName .. "|r")
+
+            local profiles = (EbonClearanceDB and EbonClearanceDB.settingsProfiles) or {}
+            local chars = (EbonClearanceDB and EbonClearanceDB.chars) or {}
+            local names = {}
+            for name in pairs(profiles) do
+                if type(name) == "string" then
+                    names[#names + 1] = name
+                end
+            end
+            table.sort(names, function(a, b)
+                return a:lower() < b:lower()
+            end)
+
+            local shown = 0
+            local rowY = -4
+            for i = 1, #names do
+                local pName = names[i]
+                shown = shown + 1
+                local row = GetRow(shown)
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, rowY)
+                row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, rowY)
+
+                local users = 0
+                for _, charNS in pairs(chars) do
+                    if (charNS.activeSettingsProfile or "Default") == pName then
+                        users = users + 1
+                    end
+                end
+                local isActive = (pName == activeName)
+                local label
+                if isActive and users > 1 then
+                    label = string.format(L["|cff00ff00%s|r  |cff888888(this character + %d more)|r"], pName, users - 1)
+                elseif isActive then
+                    label = string.format(L["|cff00ff00%s|r  |cff888888(this character)|r"], pName)
+                else
+                    label = string.format(L["|cffffff00%s|r  |cff888888(%d character(s))|r"], pName, users)
+                end
+                row.text:SetText(label)
+
+                row.useBtn:SetScript("OnClick", function()
+                    local ok, msg = NS.UseSettingsProfile(pName)
+                    statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+                    if ok then
+                        NS.PrintNice(msg)
+                        PlaySound("igMainMenuOptionCheckBoxOn")
+                    end
+                    self:RefreshSettingsProfileList()
+                end)
+
+                row.delBtn:SetScript("OnClick", function()
+                    local dialog = StaticPopup_Show("EC_CONFIRM_DELETE_SPROFILE", pName)
+                    if dialog then
+                        dialog.data = function()
+                            local ok, msg = NS.DeleteSettingsProfile(pName)
+                            statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+                            if ok then
+                                NS.PrintNice(msg)
+                                PlaySound("igMainMenuOptionCheckBoxOn")
+                            end
+                            self:RefreshSettingsProfileList()
+                        end
+                    end
+                end)
+
+                row:Show()
+                if isActive then
+                    row.useBtn:Hide()
+                else
+                    row.useBtn:Show()
+                end
+                if pName == "Default" then
+                    row.delBtn:Hide()
+                else
+                    row.delBtn:Show()
+                end
+                rowY = rowY - 22
+            end
+
+            activeRows = shown
+            content:SetHeight(math.max(1, (shown * 22) + 8))
+        end
+
+        saveBtn:SetScript("OnClick", function()
+            local name = saveInput:GetText()
+            local ok, msg = NS.SaveSettingsProfile(name)
+            statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+            if ok then
+                NS.PrintNice(msg)
+                PlaySound("igMainMenuOptionCheckBoxOn")
+                saveInput:SetText("")
+                self:RefreshSettingsProfileList()
+            else
+                PlaySound("igMainMenuOptionCheckBoxOff")
+            end
+        end)
+
+        saveInput:SetScript("OnEnterPressed", function()
+            saveBtn:Click()
+            saveInput:ClearFocus()
+        end)
+
+        renameBtn:SetScript("OnClick", function()
+            local newName = renameInput:GetText()
+            local ok, msg = NS.RenameSettingsProfile(DB.activeSettingsProfile or "Default", newName)
+            statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
+            if ok then
+                NS.PrintNice(msg)
+                PlaySound("igMainMenuOptionCheckBoxOn")
+                renameInput:SetText("")
+                self:RefreshSettingsProfileList()
+            else
+                PlaySound("igMainMenuOptionCheckBoxOff")
+            end
+        end)
+
+        renameInput:SetScript("OnEnterPressed", function()
+            renameBtn:Click()
+            renameInput:ClearFocus()
+        end)
+
+        self:RefreshSettingsProfileList()
     end)
 end)
 

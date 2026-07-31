@@ -5,6 +5,22 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.72.0
+
+**Per-character settings: each character now picks a Settings Profile for its selling behaviour.**
+
+Until now, every behaviour setting - merchant mode, rarity rules, protections, affix and recipe settings, deletion toggles, vendor speed - was silently shared by every character on the account: flip a toggle on one alt and all of them changed. Now:
+
+- **Settings Profiles** (new panel under Profiles, and `/ec sprofile`): a named profile holds a character's selling behaviour. Each character picks one. Characters on the same profile share it live - change a setting on one and every character using that profile follows. To give one character its own rules, save a new profile there and press **Use**.
+- **Nothing changes on upgrade**: your current settings become the "Default" profile and every character starts on it - identical behaviour to yesterday until you deliberately fork a profile.
+- Item lists, stats, looting/scavenger behaviour, and visual options are deliberately NOT in a settings profile - lists stay per-character as before, the rest stays account-wide.
+- Deleting a profile moves its users back to Default; Default itself can't be deleted or renamed. Renames follow every character that uses the profile.
+- Under the hood this is the same proven partition the per-character lists use (a third proxy route), so every panel, the decision core, and the vendor engine read the new storage with zero call-site changes. New test invariants (Test 130a-f) lock the schema, migration ordering, and management functions; French and German translations included.
+- **The existing Profiles panel is now called "List Profiles"** so the pair reads naturally: List Profiles hold your Sell + Keep lists, Settings Profiles hold your selling behaviour. Same panel, same slash commands, nothing else changed.
+- **Fixed: the profile Delete/Clear confirmation popups could open underneath the settings window.** They now always appear on top.
+
+Schema addition is additive and downgrade-safe: older versions read the frozen pre-migration values.
+
 ### v2.71.3
 
 **Delete decisions now come from the same core as sell decisions (classifier Stage 4, the final stage), making every surface honest about rescued items.**

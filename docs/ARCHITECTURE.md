@@ -56,7 +56,7 @@ One file per panel (or closely-related pair). All register centrally in
 [KeepDeletePanels](../EbonClearance_KeepDeletePanels.lua) ·
 [ProtectionPanel](../EbonClearance_ProtectionPanel.lua) ·
 [ItemHighlightingPanel](../EbonClearance_ItemHighlightingPanel.lua) ·
-[ProfilesPanel](../EbonClearance_ProfilesPanel.lua) ·
+[ProfilesPanel](../EbonClearance_ProfilesPanel.lua) (hosts List Profiles, Settings Profiles, and Import/Export) ·
 [StatsPanel](../EbonClearance_StatsPanel.lua) ·
 [GuildPanel](../EbonClearance_GuildPanel.lua) ·
 [ServerStatsPanel](../EbonClearance_ServerStatsPanel.lua) ·

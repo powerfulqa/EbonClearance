@@ -1127,11 +1127,17 @@ local function BuildMainPanel(panel, content)
             label = "|cffffff00/ec disable|r  " .. L["Turn EbonClearance off"],
         },
         { heading = L["Profiles"] },
-        { run = "profile list", label = "|cffffff00/ec profile list|r  " .. L["Show your saved profiles"] },
+        { run = "profile list", label = "|cffffff00/ec profile list|r  " .. L["Show your saved List Profiles"] },
         {
             prefill = "/ec profile ",
             label = "|cffffff00/ec profile [save|load|delete] <name>|r  "
-                .. L["Manage profiles by name |cffaaaaaa(or use the Profiles panel)|r"],
+                .. L["Manage List Profiles by name |cffaaaaaa(or use the List Profiles panel)|r"],
+        },
+        { run = "sprofile list", label = "|cffffff00/ec sprofile list|r  " .. L["Show your Settings Profiles"] },
+        {
+            prefill = "/ec sprofile ",
+            label = "|cffffff00/ec sprofile [save|use|delete] <name>|r  "
+                .. L["Manage Settings Profiles by name |cffaaaaaa(or use the Settings Profiles panel)|r"],
         },
         { heading = L["Lists cleanup"] },
         {

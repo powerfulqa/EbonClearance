@@ -216,6 +216,9 @@ local function EC_BuildBugReport()
     add("")
 
     add("--- Settings ---")
+    -- v2.72.0: name the settings profile these values come from (the
+    -- selling-behaviour fields below are per-profile now).
+    add("Settings Profile: " .. tostring(DB.activeSettingsProfile or "Default"))
     add("Enabled: " .. tostring(DB.enabled))
     add("Merchant Mode: " .. tostring(DB.merchantMode))
     add("Repair Gear: " .. tostring(DB.repairGear))

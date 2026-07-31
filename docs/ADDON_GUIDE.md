@@ -110,6 +110,36 @@ automatically. Test 66 in
 [`tests/test_perf_guardrails.lua`](../tests/test_perf_guardrails.lua)
 locks the partition's structural invariants.
 
+**Settings profiles (v2.72.0)** add a third proxy route on the same
+model. The selling-behaviour fields enumerated in
+`EC_compCache.settingsProfileFields` (merchant mode, quality rules,
+deletion + auto-mark toggles, protections, affix + recipe settings,
+repair, pacing) read/write through
+`EbonClearanceDB.settingsProfiles[<name>]`, where `<name>` is the
+character's per-char `activeSettingsProfile` pointer (falls back to
+`Default`, which `EnsureDB` seeds once from the pre-migration top-level
+values). Profile bodies are top-level so alts share one by pointing at
+the same name; the top-level field copies freeze at migration as the
+downgrade safety net. Consequences for contributors:
+
+- **Adding a new selling-behaviour setting**: add the `EnsureDB`
+  nil-default as always (it seeds through the proxy into the active
+  profile) AND add the field name to
+  `EC_compCache.settingsProfileFields` if it should be per-profile.
+  A field left out stays account-wide - that is a valid choice for
+  looting/visual/master-enable settings, deliberate scope per the
+  2026-07-30 decision.
+- **Switching profiles** must go through `NS.UseSettingsProfile` - it
+  re-runs the idempotent `EnsureDB` (so an old profile picks up
+  nil-defaults for fields added since) and repaints via
+  `NS.RepaintAfterSettingsSwitch`.
+- Management: `NS.SaveSettingsProfile` / `NS.UseSettingsProfile` /
+  `NS.DeleteSettingsProfile` / `NS.RenameSettingsProfile` (bodies in
+  Events, consumed by the Settings Profiles panel + `/ec sprofile`).
+  Delete repoints every character that used the profile back to
+  Default; Default itself cannot be deleted or renamed (it is also the
+  proxy's stale-pointer fallback). Test 130 locks all of this.
+
 We do not use `Dependencies`, `OptionalDeps`, `LoadOnDemand`, or
 `LoadManagers`.
 
@@ -188,11 +218,19 @@ never collide.
 
 ### Saved variables shape
 
-`EbonClearanceDB` is one flat table per character. Fields fall into
-four groups:
+`EbonClearanceDB` is a single account-wide table, partitioned three
+ways since v2.34/v2.72.0: per-character fields live under
+`chars[<char>-<realm>]` (the `PER_CHAR_FIELDS` proxy route), the
+selling-behaviour settings live under `settingsProfiles[<name>]` (the
+`EC_compCache.settingsProfileFields` proxy route - see "Settings
+profiles" below), and everything else sits at the top level. Fields
+fall into these groups:
 
 - **Lists**: `whitelist`, `blacklist`, `deleteList`, `enableOnlyListedChars`.
-- **Profiles**: `whitelistProfiles`, `blacklistProfiles`, `activeProfileName`.
+- **Profiles**: `whitelistProfiles`, `blacklistProfiles`,
+  `activeProfileName` (list snapshots, per-character), plus
+  `settingsProfiles` (top-level bodies) + `activeSettingsProfile`
+  (per-character pointer) for the v2.72.0 settings profiles.
 - **Settings**: `enabled`, `summonGreedy`, `summonDelay`,
   `vendorInterval`, `maxItemsPerRun`, `fastMode`, `merchantMode`,
   `autoLootCycle`, `bagFullThreshold`, `autoOpenContainers`,

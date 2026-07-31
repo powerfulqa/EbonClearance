@@ -915,6 +915,10 @@ NS.RegisterLocale("frFR", {
     ['Delete settings profile "|cffffff00%s|r"?\n|cffaaaaaaCharacters using it switch to Default. This cannot be undone.|r'] = 'Supprimer le profil de réglages "|cffffff00%s|r" ?\n|cffaaaaaaLes personnages qui l\'utilisent passeront sur Default. Irréversible.|r',
     ["Usage: /ec sprofile save|use|delete|list <name>"] = "Usage : /ec sprofile save|use|delete|list <nom>",
 
+    -- v2.73.2 auto-mark preview bind gate
+    ["rank %d below floor of %d, but item has no vendor value and is not soulbound - auto-mark only trashes soulbound items (auction it, or delete by hand)"] = "rang %d sous ton seuil de %d, mais l'objet n'a pas de valeur marchande et n'est pas lié - le marquage auto ne détruit que les objets liés (vends-le aux enchères ou supprime-le à la main)",
+    ["you own this affix, but item has no vendor value and is not soulbound - auto-mark only trashes soulbound items (auction it, or delete by hand)"] = "tu possèdes cet affixe, mais l'objet n'a pas de valeur marchande et n'est pas lié - le marquage auto ne détruit que les objets liés (vends-le aux enchères ou supprime-le à la main)",
+
     -- v2.73.0 external-action attribution
     ["Deleted outside EbonClearance - by you or another addon"] = "Supprimé hors d'EbonClearance - par toi ou un autre addon",
 

@@ -1328,6 +1328,16 @@ function EC_compCache.describeSellability(bag, slot)
                             ctx.affixMinSellRank,
                             EC_autoMarkProtectionSuffix(protectReason)
                         )
+                    elseif ctx.bindType() ~= "bop" then
+                        -- v2.73.2: the real scan only marks SOULBOUND
+                        -- unsellable dupes; a BoE dupe is auctionable and
+                        -- is deliberately spared. Say so instead of
+                        -- promising a marking that never comes.
+                        tipMsg = string.format(
+                            L["rank %d below floor of %d, but item has no vendor value and is not soulbound - auto-mark only trashes soulbound items (auction it, or delete by hand)"],
+                            affixDataForTrace.rank,
+                            ctx.affixMinSellRank
+                        )
                     else
                         tipMsg = string.format(
                             L["rank %d below floor of %d, but item has no vendor value; auto-mark is on so this item will be marked for deletion on the next bag update"],
@@ -1427,6 +1437,10 @@ function EC_compCache.describeSellability(bag, slot)
                     L["you own this affix, but item has no vendor value; %s"],
                     EC_autoMarkProtectionSuffix(protectReason)
                 )
+            elseif ctx.bindType() ~= "bop" then
+                -- v2.73.2: same bind gate as the scan (see the
+                -- affixRankRule branch above).
+                tipMsg = L["you own this affix, but item has no vendor value and is not soulbound - auto-mark only trashes soulbound items (auction it, or delete by hand)"]
             else
                 tipMsg = L["you own this affix, but item has no vendor value; auto-mark is on so this item will be marked for deletion on the next bag update"]
             end

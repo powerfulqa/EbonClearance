@@ -5,6 +5,12 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.73.2
+
+**Fix: no more false "Will Delete (unsellable affix)" on bind-on-equip dupes.**
+
+The auto-mark scan only trashes soulbound unsellable affix dupes - a BoE dupe is auctionable, so it's deliberately spared. But the tooltip preview and the `/ec sellinfo` tips didn't check the bind, so a BoE dupe (reported: Cuffs of the Shadow Ascendant of Fortified by Pain II) showed "Will Delete (unsellable affix)" and "will be marked on the next bag update" while sitting through every scan untouched. Both surfaces now apply the scan's bind gate: the tooltip shows the truthful "Won't Sell (no value)", and the trace explains that auto-mark only trashes soulbound items and suggests auctioning or deleting by hand. Locked by a new invariant (Test 118e); French and German lines included.
+
 ### v2.73.1
 
 **Chance-on-hit coverage pass: four new proc pairings and three new never-extractable weapons, all Anvil-verified.**

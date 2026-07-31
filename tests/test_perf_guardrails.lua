@@ -7506,6 +7506,26 @@ do
     check("Test 118d: the scan force-refreshes equipment-set membership each pass",
         src:find("if EC_compCache.syncEquipmentSets then\n        EC_compCache.syncEquipmentSets(true)", 1, true) ~= nil,
         "runAutoMarkAffixDupes MUST re-sync equipment sets every scan (not only lazy-prime when nil), or a set member added/edited after login can be auto-marked on a stale cache.")
+    -- v2.73.2 (Serv report - Cuffs of the Shadow Ascendant of Fortified by
+    -- Pain II, BoE): the scan's soulbound gate must be mirrored by BOTH
+    -- preview surfaces, or they threaten a delete that never happens.
+    check("Test 118e: the Will-Delete previews apply the scan's soulbound gate",
+        (function()
+            local tt = io.open("EbonClearance_Tooltip.lua", "rb")
+            local ttSrc = tt and tt:read("*a") or ""
+            if tt then
+                tt:close()
+            end
+            local bd = io.open("EbonClearance_BagDisplay.lua", "rb")
+            local bdSrc = bd and bd:read("*a") or ""
+            if bd then
+                bd:close()
+            end
+            return src:find('soulbound = EC_compCache.getBindType(e.bag, e.slot) == "bop"', 1, true) ~= nil
+                and ttSrc:find('and not autoMarkProtected\n%s+and ctx%.bindType%(%) == "bop"') ~= nil
+                and select(2, bdSrc:gsub('elseif ctx%.bindType%(%) ~= "bop" then', "")) >= 2
+        end)(),
+        "runAutoMarkAffixDupes only marks SOULBOUND unsellable dupes (a BoE dupe is auctionable and deliberately spared). The tooltip's 'Will Delete (unsellable affix)' preview and BOTH trace tip sites (affixRankRule + alreadyHaveAffixRule) MUST apply the same bind gate, or a BoE dupe reads as doomed while sitting through every scan untouched.")
 end
 
 -- ---------------------------------------------------------------------------

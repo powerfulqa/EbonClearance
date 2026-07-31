@@ -707,11 +707,17 @@ local function EC_AnnotateTooltipInner(tooltip)
                     if EC_compCache.itemProtectedFromAutoMarkDelete then
                         autoMarkProtected, protectReason = EC_compCache.itemProtectedFromAutoMarkDelete(id)
                     end
+                    -- v2.73.2 (Serv report - Cuffs of the Shadow Ascendant of
+                    -- Fortified by Pain II, BoE): the real scan only marks
+                    -- SOULBOUND unsellable dupes (a BoE dupe is auctionable);
+                    -- the preview must apply the same bind gate or it
+                    -- threatens a delete that never happens.
                     if
                         DB.autoMarkAffixDupes
                         and DB.enableDeletion
                         and DB.protectAffixedRareItems
                         and not autoMarkProtected
+                        and ctx.bindType() == "bop"
                     then
                         statusLine = "|cff66ccff[EC]|r |cffff8040"
                             .. L["Will Delete (unsellable affix)"]

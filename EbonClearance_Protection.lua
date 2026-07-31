@@ -1455,7 +1455,7 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     [12797] = "Frostguard",                 -- Chilled
     [2099]  = "Dwarven Hand Cannon",        -- Flaming Cannonball
     [12590] = "Felstriker",
-    [12794] = "Masterwork Stormhammer",
+    [12794] = "Masterwork Stormhammer", -- vanilla "Chain Lightning" (16921); looks like Thunderfury but Anvil refuses
     [21856] = "Neretzek, The Blood Drinker",
     [13953] = "Silent Fang",
     [1263]  = "Brain Hacker",
@@ -1750,6 +1750,14 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     -- so a wrong hardcoded ID can't mask a real autolearn event.
     -- Hammer of Destiny (31322)   -> vanilla proc "Destiny Fulfilled" (38284)
     -- Greatsword of Forlorn Visions (28367) -> vanilla proc "Armor Buff" (34199)
+    -- v2.73.1 (Serv Anvil check + wowhead, 2026-07-31): both register
+    -- "already known" at the Anvil, so they ARE extractable, but the
+    -- Anvil UI names no affix and neither proc text maps to a unique
+    -- 700xxx family. Vanilla proc IDs recorded below are NOT PE affix
+    -- ids (the Arcanite Champion lesson above); Allow Sell is the
+    -- per-item release meanwhile.
+    -- Destiny (647)      -> vanilla proc "Destiny" (17152), +200 Strength for 10 sec
+    -- Windreaper (15853) -> vanilla proc "Windreaper" (20586), Nature DoT 2 sec x 20 sec
     -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
     -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
     -- spell, not the PE affix id EC matches in learnedAffixes (in-game

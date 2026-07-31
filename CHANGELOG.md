@@ -5,6 +5,13 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.73.3
+
+**Documentation catch-up: the README and in-game Help now match the addon.**
+
+- README gains the five diagnostic commands it was missing (`/ec affixdump`, `/ec affixfind`, `/ec procdump`, `/ec realmtest`, `/ec servertest`), the Target Goblin Merchant key binding, and mentions of Turbo Mode and auto-repair (with the guild-bank funding option); the Process Bags bullet now says which of its settings are per-character vs shared.
+- The in-game Help entry for Import/Export no longer overclaims: the "Full settings pack" exports your per-rarity merchant rules plus all four lists - not "everything". For carrying full selling behaviour between characters, it now points at Settings Profiles. French and German answers updated to match.
+
 ### v2.73.2
 
 **Fix: no more false "Will Delete (unsellable affix)" on bind-on-equip dupes.**

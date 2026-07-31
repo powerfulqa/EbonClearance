@@ -154,7 +154,7 @@ local function EC_buildHelpEntries()
     {
         id = "what-is-import-export",
         q = L["What does Import / Export do?"],
-        a = L["Import/Export packs your EbonClearance setup into a copyable text string you can share with another character or another player. Export writes the current setup (Sell List, Keep List, Delete List, and account-wide settings) into the export box; copy it with Ctrl+C. Import reads a pasted string and applies it. Tick 'Full settings pack' to include protection toggles + merchant rules + everything, not just the lists."],
+        a = L["Import/Export packs your EbonClearance setup into a copyable text string you can share with another character or another player. Export writes a single list (pick Character or Account Sell List) into the export box; copy it with Ctrl+C. Import reads a pasted string and applies it, merging or replacing. Tick 'Full settings pack' to export your per-rarity merchant rules plus all four lists (Sell, Account Sell, Keep, Delete) in one string. Other settings aren't in the pack - to carry your full selling behaviour between characters, use Settings Profiles instead."],
         panel = "EbonClearanceOptionsImportExport",
     },
     {

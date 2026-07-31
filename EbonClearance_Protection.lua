@@ -1518,6 +1518,18 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     -- Fire - PE has no Nature-around-caster affix.
     [1727]  = "Sword of Decay",
     [9453]  = "Toxic Revenger",
+    -- v2.73.1 (Serv Anvil verification, 2026-07-31): three more items
+    -- the Anvil refuses. Fiery War Axe is the cautionary one: its
+    -- "Hurls a fiery ball" proc text is a VERBATIM Pyromancy match
+    -- (its sibling Taran Icebreaker with near-identical text IS
+    -- extractable), yet the Anvil refuses this itemID - one more proof
+    -- that PE registers extraction per item and proc text is never
+    -- sufficient evidence. Fang of the Crystal Spider's attack/cast
+    -- slow and Darkspear's party crit-rating buff have no PE affix
+    -- family at all.
+    [870]   = "Fiery War Axe",
+    [13218] = "Fang of the Crystal Spider",
+    [30418] = "Darkspear (Purple Glow)",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 
@@ -1744,6 +1756,32 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     -- /ec sellinfo confirmed a 16916 pairing did not register). Left deferred
     -- so the v2.49.1 autolearn captures the real affix id when it is extracted
     -- at the Anvil; hardcoding the wrong id here would only mask that.
+    -- v2.73.1 (captureproc dump + Serv Anvil verification, 2026-07-31):
+    -- four weapons whose proc text matches the engrave-affix spellbook
+    -- AND whose Anvil check registered "already known".
+    -- Darkwater Talwar: "Sends a shadowy bolt at the enemy causing 25
+    --   Shadow damage" - Affliction verbatim (same family as
+    --   Nightblade / Shadowblade / Skeletal Club and co).
+    -- Taran Icebreaker: "Hurls a fiery ball ... additional damage over
+    --   8 sec" - Pyromancy verbatim (same as Burning War Axe). Its
+    --   sibling Fiery War Axe with near-identical text was Anvil-REFUSED
+    --   and sits in NEVER_EXTRACTABLE - per-item registration, always.
+    -- Hammer of the Northern Wind: "Launches a bolt of frost at the
+    --   enemy ... slowing movement speed" - Glaciation verbatim
+    --   ("launch a bolt of frost ... reducing movement speed"; same
+    --   family as Winter's Bite).
+    -- Bashguuder: "Punctures target's armor lowering it by 200" -
+    --   Rending ("chance to reduce the target's armor"; same
+    --   puncture-armor wording as Vibroblade, same 200-armor stacking
+    --   proc as Annihilator).
+    -- Destiny (647) and Windreaper (15853) are Anvil-confirmed
+    -- extractable AND already known, but neither proc text matches a
+    -- 700xxx family uniquely - deferred (like Arcanite Champion above)
+    -- until the Anvil's displayed affix name pins their spellIDs.
+    [810]   = { spellID = 700085, family = "Glaciation", item = "Hammer of the Northern Wind" },
+    [2915]  = { spellID = 700084, family = "Pyromancy",  item = "Taran Icebreaker" },
+    [11121] = { spellID = 700086, family = "Affliction", item = "Darkwater Talwar" },
+    [13204] = { spellID = 700081, family = "Rending",    item = "Bashguuder" },
 }
 NS.chanceProcConfirmedItems = EC_CHANCE_PROC_CONFIRMED_ITEMS
 

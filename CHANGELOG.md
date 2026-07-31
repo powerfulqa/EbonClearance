@@ -5,6 +5,14 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.73.1
+
+**Chance-on-hit coverage pass: four new proc pairings and three new never-extractable weapons, all Anvil-verified.**
+
+- **Now recognised as "proc known"** (so spare copies auto-sell with "Sell known chance-on-hit procs" on): Darkwater Talwar (Affliction), Taran Icebreaker (Pyromancy), Hammer of the Northern Wind (Glaciation), Bashguuder (Rending). Each is a proc-text match against the engraving spellbook AND registered "already known" at the Anvil.
+- **Now recognised as never-extractable** (so they skip the chance-on-hit keep rule entirely and follow your normal sell rules, like Brain Hacker already does): Fiery War Axe, Fang of the Crystal Spider, Darkspear (Purple Glow). Fiery War Axe is the instructive one - its proc text is word-for-word the same family as Taran Icebreaker, which IS extractable; the server registers extraction per item, so only the Anvil settles it.
+- Destiny and Windreaper are extractable and already known at the Anvil, but their pairing needs the affix name the Anvil displays - they stay safely protected until that's captured.
+
 ### v2.73.0
 
 **Sold History now records deletes that happened outside EbonClearance, so a missing item can always be traced.**

@@ -5,6 +5,12 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.72.1
+
+**Fix: the vendor summary no longer counts deletions as sales.**
+
+A merchant visit that only executed Delete List items announced "Sold 7 items... Money Collected: 0g 0s 0c" (reported with Winterfall Firewater at a normal vendor). The run summary now counts sells and deletes separately: "Sold 3 and deleted 7 items", or "Deleted 7 Delete List items. Nothing sold." when nothing sold. French and German lines included. No behaviour change - the same items sold and deleted before and after; only the chat line was lying.
+
 ### v2.72.0
 
 **Per-character settings: each character now picks a Settings Profile for its selling behaviour.**

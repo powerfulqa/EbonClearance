@@ -7150,7 +7150,24 @@ local function FinishRun()
     -- v2.38.1: helper writes to DB + ADB.accountStats.
     EC_BumpStat("totalCopper", goldThisVendoring or 0)
     EC_session.copper = EC_session.copper + (goldThisVendoring or 0)
-    EC_batchTotalSold = EC_batchTotalSold + #queue
+    -- v2.72.1 (Serv report, Winterfall Firewater at Mei Francis): the
+    -- batch counter used to add the WHOLE queue as "Sold", so a run of
+    -- pure Delete-List actions announced "Sold 7 items ... 0g 0s 0c".
+    -- Count sells and deletes separately so the summary tells the truth.
+    -- (Counter lives on EC_compCache - the main chunk is at the
+    -- 200-locals cap.)
+    do
+        local sold, deleted = 0, 0
+        for i = 1, #queue do
+            if queue[i].type == "delete" then
+                deleted = deleted + 1
+            else
+                sold = sold + 1
+            end
+        end
+        EC_batchTotalSold = EC_batchTotalSold + sold
+        EC_compCache.batchTotalDeleted = (EC_compCache.batchTotalDeleted or 0) + deleted
+    end
     EC_batchTotalGold = EC_batchTotalGold + (goldThisVendoring or 0)
     -- v2.37.0: attribute the auto-cycle haul to the current zone so the
     -- Stats panel's "Top Zones" rollup tracks worker sells too.
@@ -7158,9 +7175,46 @@ local function FinishRun()
         EC_compCache.attributeCopperToZone(goldThisVendoring)
     end
 
+    -- One summary builder for the mid-run and final lines below, so the
+    -- three exit paths can't drift on wording. Deletes get their own
+    -- phrasing; the classic sold-only lines are unchanged.
+    local function EC_BatchSummary(final)
+        local deleted = EC_compCache.batchTotalDeleted or 0
+        if final then
+            if deleted > 0 and EC_batchTotalSold > 0 then
+                return string.format(
+                    L["Vendoring complete! Sold |cffffff00%d|r and deleted |cffff4444%d|r items. |cffb6ffb6Money Collected:|r %s"],
+                    EC_batchTotalSold,
+                    deleted,
+                    CopperToColoredText(EC_batchTotalGold)
+                )
+            elseif deleted > 0 then
+                return string.format(
+                    L["Vendoring complete! Deleted |cffff4444%d|r Delete List items. Nothing sold."],
+                    deleted
+                )
+            end
+            return string.format(
+                L["Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s"],
+                EC_batchTotalSold,
+                CopperToColoredText(EC_batchTotalGold)
+            )
+        end
+        if deleted > 0 and EC_batchTotalSold > 0 then
+            return string.format(
+                L["Sold |cffffff00%d|r and deleted |cffff4444%d|r so far. Checking for more..."],
+                EC_batchTotalSold,
+                deleted
+            )
+        elseif deleted > 0 then
+            return string.format(L["Deleted |cffff4444%d|r so far. Checking for more..."], deleted)
+        end
+        return string.format(L["Sold |cffffff00%d|r items so far. Checking for more..."], EC_batchTotalSold)
+    end
+
     -- Check if merchant is still open - delay re-scan so server can process sold items
     if MerchantFrame and MerchantFrame:IsShown() then
-        PrintNicef(L["Sold |cffffff00%d|r items so far. Checking for more..."], EC_batchTotalSold)
+        PrintNice(EC_BatchSummary(false))
         EC_Delay(1.0, function()
             if not MerchantFrame or not MerchantFrame:IsShown() then
                 return
@@ -7173,11 +7227,7 @@ local function FinishRun()
                 worker:Show()
             else
                 -- Nothing left - print final summary
-                PrintNicef(
-                    L["Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s"],
-                    EC_batchTotalSold,
-                    CopperToColoredText(EC_batchTotalGold)
-                )
+                PrintNice(EC_BatchSummary(true))
                 -- v2.13.3: hoisted EC_SummonGreedyWithDelay out of an
                 -- if/else where both branches called it unconditionally.
                 -- Only the lootCycleState transition was branch-specific.
@@ -7202,11 +7252,7 @@ local function FinishRun()
     end
 
     -- All done - print final summary
-    PrintNicef(
-        L["Vendoring complete! Sold |cffffff00%d|r items. |cffb6ffb6Money Collected:|r %s"],
-        EC_batchTotalSold,
-        CopperToColoredText(EC_batchTotalGold)
-    )
+    PrintNice(EC_BatchSummary(true))
 
     if DB and DB.autoLootCycle then
         EC_compCache.lootCycleState = STATE.IDLE
@@ -9686,6 +9732,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         EC_merchantReminderPending = false
         EC_batchTotalSold = 0
         EC_batchTotalGold = 0
+        EC_compCache.batchTotalDeleted = 0
         EC_keepBagsFlag = true
         -- v2.9.0: snapshot bag contents BEFORE StartRun fires its first sell.
         -- The hooksecurefunc on UseContainerItem reads this map to attribute

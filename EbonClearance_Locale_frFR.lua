@@ -914,6 +914,12 @@ NS.RegisterLocale("frFR", {
     ['Renamed settings profile "|cffffff00%s|r" to "|cffffff00%s|r".'] = 'Profil de réglages "|cffffff00%s|r" renommé en "|cffffff00%s|r".',
     ['Delete settings profile "|cffffff00%s|r"?\n|cffaaaaaaCharacters using it switch to Default. This cannot be undone.|r'] = 'Supprimer le profil de réglages "|cffffff00%s|r" ?\n|cffaaaaaaLes personnages qui l\'utilisent passeront sur Default. Irréversible.|r',
     ["Usage: /ec sprofile save|use|delete|list <name>"] = "Usage : /ec sprofile save|use|delete|list <nom>",
+
+    -- v2.72.1 honest vendor summaries (deletes counted separately)
+    ["Vendoring complete! Sold |cffffff00%d|r and deleted |cffff4444%d|r items. |cffb6ffb6Money Collected:|r %s"] = "Vente terminée ! |cffffff00%d|r vendus et |cffff4444%d|r supprimés. |cffb6ffb6Or récolté :|r %s",
+    ["Vendoring complete! Deleted |cffff4444%d|r Delete List items. Nothing sold."] = "Vente terminée ! |cffff4444%d|r objets de la liste de suppression supprimés. Rien de vendu.",
+    ["Sold |cffffff00%d|r and deleted |cffff4444%d|r so far. Checking for more..."] = "|cffffff00%d|r vendus et |cffff4444%d|r supprimés pour l'instant. Recherche d'autres objets...",
+    ["Deleted |cffff4444%d|r so far. Checking for more..."] = "|cffff4444%d|r supprimés pour l'instant. Recherche d'autres objets...",
     ["|cffff4444won't sell|r"] = "|cffff4444ne sera pas vendu|r",
     ["|cffff4444No items in any bag to inspect.|r"] = "|cffff4444Aucun objet à inspecter dans les sacs.|r",
     ["|cffffff00=== Sellability trace: bag %d slot %d ===|r"] = "|cffffff00=== Trace de vendabilité : sac %d emplacement %d ===|r",

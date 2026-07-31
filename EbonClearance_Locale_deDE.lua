@@ -916,6 +916,12 @@ NS.RegisterLocale("deDE", {
     ['Renamed settings profile "|cffffff00%s|r" to "|cffffff00%s|r".'] = 'Einstellungsprofil "|cffffff00%s|r" in "|cffffff00%s|r" umbenannt.',
     ['Delete settings profile "|cffffff00%s|r"?\n|cffaaaaaaCharacters using it switch to Default. This cannot be undone.|r'] = 'Einstellungsprofil "|cffffff00%s|r" löschen?\n|cffaaaaaaCharaktere, die es verwenden, wechseln zu Default. Das kann nicht rückgängig gemacht werden.|r',
     ["Usage: /ec sprofile save|use|delete|list <name>"] = "Verwendung: /ec sprofile save|use|delete|list <Name>",
+
+    -- v2.72.1 honest vendor summaries (deletes counted separately)
+    ["Vendoring complete! Sold |cffffff00%d|r and deleted |cffff4444%d|r items. |cffb6ffb6Money Collected:|r %s"] = "Verkauf abgeschlossen! |cffffff00%d|r verkauft und |cffff4444%d|r gelöscht. |cffb6ffb6Gold erhalten:|r %s",
+    ["Vendoring complete! Deleted |cffff4444%d|r Delete List items. Nothing sold."] = "Verkauf abgeschlossen! |cffff4444%d|r Gegenstände der Löschliste gelöscht. Nichts verkauft.",
+    ["Sold |cffffff00%d|r and deleted |cffff4444%d|r so far. Checking for more..."] = "Bisher |cffffff00%d|r verkauft und |cffff4444%d|r gelöscht. Suche nach mehr...",
+    ["Deleted |cffff4444%d|r so far. Checking for more..."] = "Bisher |cffff4444%d|r gelöscht. Suche nach mehr...",
     ["|cffff4444won't sell|r"] = "|cffff4444wird nicht verkauft|r",
     ["|cffff4444No items in any bag to inspect.|r"] = "|cffff4444Keine Gegenstände in einer Tasche zum Prüfen.|r",
     ["|cffffff00=== Sellability trace: bag %d slot %d ===|r"] = "|cffffff00=== Verkäuflichkeits-Analyse: Tasche %d Platz %d ===|r",

@@ -8231,6 +8231,49 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 131 (v2.73.0): external-action attribution. Cursor deletes that
+-- EbonClearance did NOT perform (a player drag-delete, another addon) land in
+-- the deleted-history ring with source="external" and a neutral reason, so
+-- "your addon deleted my item" reports can be answered from the log. The
+-- hooks are hooksecurefunc only (never a global replacement), EC subtracts
+-- its own deletes via the stamped pendingDelete, and external rows never
+-- touch a stat counter.
+-- ---------------------------------------------------------------------------
+do
+    local fh = io.open("EbonClearance_Events.lua", "rb")
+    local ev131 = fh and fh:read("*a") or ""
+    if fh then
+        fh:close()
+    end
+    check("Test 131a: external-action hooks use hooksecurefunc, installed once",
+        ev131:find('hooksecurefunc%("PickupContainerItem"') ~= nil
+            and ev131:find('hooksecurefunc%("DeleteCursorItem"') ~= nil
+            and ev131:find("if EC_compCache%.externalActionHooksInstalled then") ~= nil
+            and ev131:find("EC_compCache%.installExternalActionHooksOnce%(%)") ~= nil,
+        "both hooks MUST be hooksecurefunc (a global replacement of cursor APIs carries taint risk - the exact defect this review flagged in a competitor) behind a hookedOnce guard, and the installer must actually be called at load.")
+    check("Test 131b: EC subtracts its own deletes via the stamped pendingDelete",
+        ev131:find("pd%.itemID == cp%.itemID") ~= nil
+            and ev131:find("pd%.bag == cp%.bag") ~= nil
+            and ev131:find("pd%.slot == cp%.slot") ~= nil
+            and ev131:find("%(GetTime%(%) %- %(pd%.at or 0%)%) < 1") ~= nil
+            and ev131:find("itemID = itemID, at = GetTime%(%)") ~= nil,
+        "executeBagSlotDelete arms pendingDelete with an `at` stamp immediately before its own DeleteCursorItem; the hook must match bag+slot+itemID within a 1 s window. Without the freshness window, a lingering popup-less pendingDelete would swallow a later MANUAL delete of the same item from the same slot; without the triple match, EC's own deletes would double-log as external.")
+    check("Test 131c: external rows are logged but never counted",
+        (function()
+            local hookStart = ev131:find('hooksecurefunc%("DeleteCursorItem"')
+            if not hookStart then
+                return false
+            end
+            local hookEnd = ev131:find("\nend\n", hookStart) or (hookStart + 2000)
+            local body = ev131:sub(hookStart, hookEnd)
+            return body:find('EC_LogRecentDeleted%(cp%.itemID, cp%.count, "external"') ~= nil
+                and body:find("EC_BumpStat") == nil
+                and body:find("EC_session%.deleted") == nil
+        end)(),
+        "the DeleteCursorItem hook MUST log source=external into the deleted ring and MUST NOT bump lifetime or session stats - these are not EbonClearance actions; the row exists precisely to prove that. Counting them would inflate the odometer with other actors' work.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

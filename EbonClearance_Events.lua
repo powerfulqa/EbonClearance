@@ -5830,6 +5830,70 @@ function EC_manualSell.installHookOnce()
     end)
 end
 
+-- ===========================================================================
+-- v2.73.0 external-action attribution (competitive review Tier A,
+-- owner-promoted 2026-07-31).
+-- ---------------------------------------------------------------------------
+-- Sold History only recorded EbonClearance's own actions, so a manual
+-- drag-delete (or another addon's cursor delete) left no trail and the
+-- "your addon deleted my item" report class could not be answered from
+-- inside the game. Two hooksecurefunc hooks (never a global replacement
+-- - house convention) attribute cursor deletes EC did not perform:
+--
+--   * PickupContainerItem remembers what landed on the cursor. The hook
+--     fires after the pickup; GetCursorInfo is the truth for WHAT is
+--     held, the (still-locked) slot supplies the count.
+--   * DeleteCursorItem logs the remembered item as source="external"
+--     UNLESS the delete was EC's own: executeBagSlotDelete arms
+--     EC_compCache.pendingDelete (bag/slot/itemID + an `at` stamp)
+--     immediately before its DeleteCursorItem call, so the hook
+--     subtracts self by matching all three fields within a 1 s window
+--     (the window guards against a stale pendingDelete from an earlier
+--     popup-less delete matching a later manual delete of the same
+--     item in the same slot).
+--
+-- External rows carry a neutral reason, are EXCLUDED from every stat
+-- counter (these are not EC actions - the row exists to prove that),
+-- and surface in the Sold History window + /ec bugreport's Recent
+-- Deleted section via the existing ring. State + installer live on
+-- EC_compCache (the Events main chunk is at the 200-locals cap).
+function EC_compCache.installExternalActionHooksOnce()
+    if EC_compCache.externalActionHooksInstalled then
+        return
+    end
+    EC_compCache.externalActionHooksInstalled = true
+    hooksecurefunc("PickupContainerItem", function(bag, slot)
+        local kind, cursorItemID = GetCursorInfo()
+        if kind == "item" and cursorItemID then
+            local count
+            if bag and slot and GetContainerItemID(bag, slot) == cursorItemID then
+                local _, slotCount = GetContainerItemInfo(bag, slot)
+                count = slotCount
+            end
+            EC_compCache.lastCursorPickup = { itemID = cursorItemID, count = count or 1, bag = bag, slot = slot }
+        else
+            EC_compCache.lastCursorPickup = nil
+        end
+    end)
+    hooksecurefunc("DeleteCursorItem", function()
+        local cp = EC_compCache.lastCursorPickup
+        EC_compCache.lastCursorPickup = nil
+        if not cp then
+            return
+        end
+        local pd = EC_compCache.pendingDelete
+        local ours = pd
+            and pd.itemID == cp.itemID
+            and pd.bag == cp.bag
+            and pd.slot == cp.slot
+            and (GetTime() - (pd.at or 0)) < 1
+        if ours then
+            return -- executeBagSlotDelete already logged + counted it
+        end
+        EC_LogRecentDeleted(cp.itemID, cp.count, "external", L["Deleted outside EbonClearance - by you or another addon"])
+    end)
+end
+
 local EC_IsMerchantAllowed -- forward declaration for FinishRun
 -- `running` is forward-declared at the top of the file.
 local queue = {}
@@ -6067,7 +6131,10 @@ function EC_compCache.executeBagSlotDelete(bag, slot, itemID, count, quality, an
         EC_compCache.pendingDelete = nil
         return false
     end
-    EC_compCache.pendingDelete = { bag = bag, slot = slot, itemID = itemID }
+    -- The `at` stamp lets the v2.73.0 external-delete hook subtract this
+    -- self-delete even when pendingDelete lingers (popup-less deletes
+    -- never consume it).
+    EC_compCache.pendingDelete = { bag = bag, slot = slot, itemID = itemID, at = GetTime() }
     DeleteCursorItem()
     ClearCursor()
     local delCount = count or 1
@@ -9324,6 +9391,7 @@ f:SetScript("OnEvent", function(self, event, ...)
             if NS.InstallBagContextHookOnce then NS.InstallBagContextHookOnce() end
             if EC_manualSell and EC_manualSell.installHookOnce then
                 EC_manualSell.installHookOnce()
+        EC_compCache.installExternalActionHooksOnce()
             end
             -- v2.49.1: prime the extraction catalog snapshot so the first
             -- LEARNED_SPELL_IN_TAB event correctly diffs against login

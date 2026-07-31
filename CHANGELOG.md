@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.73.0
+
+**Sold History now records deletes that happened outside EbonClearance, so a missing item can always be traced.**
+
+When you drag-delete an item yourself, or another addon destroys one, the deleted-history log used to stay silent - and if the item mattered, the addon had no way to prove it wasn't the one that removed it. Now (adopted from the competitive review, the last Tier A item):
+
+- **Any cursor delete EbonClearance didn't perform lands in Sold History** with the label "Deleted outside EbonClearance - by you or another addon", newest-first like everything else, searchable, and visible in `/ec bugreport`'s Recent Deleted section with an `(external)` tag.
+- **These rows never touch your statistics** - they're not EbonClearance actions; the row exists to prove that.
+- EbonClearance recognises its own deletes (including popup-less grey deletes) and never double-logs them.
+- Built with the addon's standard non-invasive hooks - no game functions are replaced. French and German lines included. No new settings.
+
 ### v2.72.1
 
 **Fix: the vendor summary no longer counts deletions as sales.**

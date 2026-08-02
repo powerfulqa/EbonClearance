@@ -191,10 +191,31 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- Two-anchor SetPoint hack (iter 1) didn't visibly move it
         -- either. Accept the inline position - matches the Scavenger
         -- slider [?] pattern (also inline).
-        NS.AddHelpIcon(content, modeDD, "LEFT", "RIGHT", 4, 2, "gate-merchant-mode")
+        local modeHelp = NS.AddHelpIcon(content, modeDD, "LEFT", "RIGHT", 4, 2, "gate-merchant-mode")
 
         self.RefreshMerchantModeDropDown = function()
             UIDropDownMenu_SetText(modeDD, GetModeText(DB.merchantMode))
+        end
+
+        -- v2.74.0: two of the three modes exist only to include or exclude
+        -- the Goblin Merchant companion, so on a realm without it the whole
+        -- choice collapses to "All Merchants". Hide the row rather than
+        -- offer a dropdown where two options are unreachable and one is
+        -- named after a pet the player cannot summon.
+        --
+        -- The stored DB.merchantMode is deliberately NOT rewritten - the
+        -- same account may play on a realm that does have the companion,
+        -- and silently clobbering their choice there would be worse than
+        -- ignoring it here. EC_IsMerchantAllowed applies the same gate at
+        -- decision time, so a stored "goblin" cannot strand the player with
+        -- a vendor cycle that never sells anything.
+        local merchantModeShown = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+        if not merchantModeShown then
+            modeLabel:Hide()
+            modeDD:Hide()
+            if modeHelp then
+                modeHelp:Hide()
+            end
         end
 
         local repairCB =
@@ -202,7 +223,10 @@ MerchantPanel:SetScript("OnShow", function(self)
         -- Shifted up 14 px (was -110) to follow the removed grey-junk line above
         -- the dropdown; preserves the original visual gap between dropdown and
         -- this checkbox.
-        repairCB:SetPoint("TOPLEFT", 16, -96)
+        -- v2.74.0: absolute anchor, so it does not follow the hidden
+        -- dropdown row on its own. Pull it up into that row's slot when the
+        -- dropdown is gone, otherwise the panel opens with a dead band.
+        repairCB:SetPoint("TOPLEFT", 16, merchantModeShown and -96 or -76)
         repairCB:SetChecked(DB.repairGear)
         local rt = _G[repairCB:GetName() .. "Text"]
         if rt then

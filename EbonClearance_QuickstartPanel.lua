@@ -1260,37 +1260,49 @@ local function buildPanel(self, content)
             { value = "wearingUpgradesSets", label = L["All of the above + items in my saved gear sets"] },
         }, refresh)
 
-        lastAnchor = makeRadioGroup(
-            content,
-            lastAnchor,
-            "safetyNets",
-            L["Q8. Project Ebonhold safety nets (affix-protected items, chance-on-hit procs)?"],
-            {
-                { value = "all", label = L["All on (recommended for PE)"] },
-                { value = "critical", label = L["Only critical (affix protection on, chance-on-hit off)"] },
-                { value = "off", label = L["Off - I'll decide what to keep myself"] },
-            },
-            refresh
-        )
+        -- v2.74.0: both affix questions are skipped outright on a realm
+        -- without the affix system. Skipping beats hiding here: every group
+        -- chains off `lastAnchor`, so an un-built group leaves no gap and
+        -- needs no re-anchor. Q8 goes too even though one of its three
+        -- writes (protectChanceOnHitItems) is generic - its prompt is
+        -- PE-specific, and that toggle stays available in Keep Settings.
+        --
+        -- The makeRadioGroup calls stay textually intact inside the branch:
+        -- the Quickstart default-label invariant parses this source for a
+        -- "(default)"-tagged option under affixRankFloor.
+        if EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible() then
+            lastAnchor = makeRadioGroup(
+                content,
+                lastAnchor,
+                "safetyNets",
+                L["Q8. Project Ebonhold safety nets (affix-protected items, chance-on-hit procs)?"],
+                {
+                    { value = "all", label = L["All on (recommended for PE)"] },
+                    { value = "critical", label = L["Only critical (affix protection on, chance-on-hit off)"] },
+                    { value = "off", label = L["Off - I'll decide what to keep myself"] },
+                },
+                refresh
+            )
 
-        -- v2.44.0: affix-rank floor follow-up. Lives right after the
-        -- safety-nets question because both shape affix-protection
-        -- behaviour. Default ("off") keeps everything; advanced
-        -- presets opt into selling low ranks.
-        lastAnchor = makeRadioGroup(
-            content,
-            lastAnchor,
-            "affixRankFloor",
-            L["Q8b. Auto-sell low-rank affixed items? (Useful once you've collected the high ranks.)"],
-            {
-                { value = "off", label = L["No - keep them all (default)"] },
-                { value = "belowIII", label = L["Sell ranks I and II (keep III-VI)"] },
-                { value = "belowIV", label = L["Sell ranks I-III (keep IV-VI)"] },
-                { value = "belowV", label = L["Sell ranks I-IV (keep V-VI)"] },
-                { value = "belowVI", label = L["Sell ranks I-V (keep only VI)"] },
-            },
-            refresh
-        )
+            -- v2.44.0: affix-rank floor follow-up. Lives right after the
+            -- safety-nets question because both shape affix-protection
+            -- behaviour. Default ("off") keeps everything; advanced
+            -- presets opt into selling low ranks.
+            lastAnchor = makeRadioGroup(
+                content,
+                lastAnchor,
+                "affixRankFloor",
+                L["Q8b. Auto-sell low-rank affixed items? (Useful once you've collected the high ranks.)"],
+                {
+                    { value = "off", label = L["No - keep them all (default)"] },
+                    { value = "belowIII", label = L["Sell ranks I and II (keep III-VI)"] },
+                    { value = "belowIV", label = L["Sell ranks I-III (keep IV-VI)"] },
+                    { value = "belowV", label = L["Sell ranks I-IV (keep V-VI)"] },
+                    { value = "belowVI", label = L["Sell ranks I-V (keep only VI)"] },
+                },
+                refresh
+            )
+        end
 
         lastAnchor = makeRadioGroup(content, lastAnchor, "tomes", L["Q9. Tome / recipe protection"], {
             { value = "unlearned", label = L["Protect tomes I haven't learned yet (recommended)"] },

@@ -110,16 +110,33 @@ CharPanel:SetScript("OnShow", function(self)
         -- Category display order matches the tooltip annotation
         -- priority order: Delete first (highest visibility), then the
         -- two Sell lists, then Junk, then per-rarity rule.
-        local SELL_BORDER_CATEGORIES = {
+        local ALL_SELL_BORDER_CATEGORIES = {
             { key = "delete", label = L["Delete List (red)"] },
             { key = "keep", label = L["Keep List (white)"] },
             { key = "accountSell", label = L["Account Sell List (green)"] },
             { key = "charSell", label = L["Character Sell List (cyan)"] },
-            { key = "affix", label = L["Known Affix items (purple)"] },
-            { key = "affixneeded", label = L["Needed Affix items (gold)"] },
+            { key = "affix", label = L["Known Affix items (purple)"], pe = true },
+            { key = "affixneeded", label = L["Needed Affix items (gold)"], pe = true },
             { key = "junk", label = L["Junk - greys (low-alpha grey)"] },
             { key = "rule", label = L["Quality rule match (gold)"] },
         }
+        -- v2.74.0: drop the two affix tints on a realm without the affix
+        -- system - bagSlotWillSellCategory can never return them there.
+        -- Filtered into a new list rather than skipped inside the row loop
+        -- below, because that loop keys its first-row indent and its
+        -- column-alignment bookkeeping off `i == 1`. Row creation is
+        -- build-time only (panels never rebuild), which is safe here: the
+        -- two live signals peFeaturesVisible reads are both accurate before
+        -- the first panel build.
+        local SELL_BORDER_CATEGORIES = {}
+        do
+            local peOn = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+            for _, cat in ipairs(ALL_SELL_BORDER_CATEGORIES) do
+                if peOn or not cat.pe then
+                    SELL_BORDER_CATEGORIES[#SELL_BORDER_CATEGORIES + 1] = cat
+                end
+            end
+        end
         local catSwatchUpdaters = {}
         -- v2.66.1 iter (Serv report): buttons in this list used to float
         -- right of each row's label + swatch, so the varying label widths

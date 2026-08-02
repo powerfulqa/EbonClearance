@@ -19,6 +19,11 @@
 
 local NS = select(2, ...)
 local EC_compCache = NS.compCache
+
+-- v2.74.0 readability pass. Pixels between an entry's question and its
+-- answer. Used by BOTH the answer's anchor and the entry-height maths in
+-- apply(); they must agree or entries overlap in the y-walk.
+local ANSWER_GAP = 7
 local L = NS.L
 
 -- ---------------------------------------------------------------------------
@@ -36,8 +41,75 @@ local L = NS.L
 -- capture the client locale once, leaving Help in English after a live
 -- /ec locale override until /reload. Rebuilt on each panel show / search /
 -- OpenHelpEntry - cheap (~18 entries), never a per-frame path.
+-- v2.74.0: entries that only mean anything when the affix / proc-extraction
+-- system is present. Filtered out of the built list below on a realm without
+-- it, so the FAQ doesn't document settings the player cannot see.
+--
+-- Chance-on-hit protection is in this set: "keep it until you extract the
+-- proc" has no reading where extraction does not exist, so the toggle is
+-- hidden and the protection is inert there (see Decision.lua's ctx gate).
+-- Alt+Right-Click Allow Sell goes with it - with neither affix nor proc
+-- protection running, it has nothing left to release.
+--
+-- The Scavenger entries are here because that whole panel drives the
+-- companion pets. scav-auto-open and scav-fast-loot are NOT: those two
+-- moved to the Process Bags panel in v2.74.0 precisely because they are
+-- stock looting behaviour that works on any realm.
+local EC_PE_HELP_IDS = {
+    ["tshoot-affix-rank"] = true,
+    ["affix-fallback"] = true,
+    ["known-vs-needed-affix"] = true,
+    ["share-chance-on-hit-knowledge"] = true,
+    ["gate-affix-protection"] = true,
+    ["gate-allow-rank-dupes"] = true,
+    ["gate-delete-unsellable-dupes"] = true,
+    ["gate-affix-rank-floor"] = true,
+    ["gate-keep-boe-below-rank"] = true,
+    ["gate-keep-boe-dupes"] = true,
+    ["gate-automark-protect-hilvl"] = true,
+    ["gate-sell-known-chance-on-hit"] = true,
+    ["autolearn-what-is-it"] = true,
+    ["autolearn-command-help"] = true,
+    ["label-keep-protected"] = true,
+    ["label-affix-rank-known"] = true,
+    ["label-affix-rank-needed"] = true,
+    ["label-affix-known"] = true,
+    ["label-affix-needed"] = true,
+    ["label-keep-boe-below-rank-label"] = true,
+    ["label-keep-boe-affix-known-label"] = true,
+    ["label-keep-chance-on-hit-known"] = true,
+    ["label-will-sell-chance-on-hit-known"] = true,
+    ["label-list-affix-gated"] = true,
+    ["label-will-sell-affix-dupe"] = true,
+    ["label-will-delete-unsellable-affix"] = true,
+    ["bug-affix-debug"] = true,
+    ["bug-scan-debug"] = true,
+    ["bug-capture-proc"] = true,
+    -- Chance-on-hit protection and its Allow Sell escape (v2.74.0).
+    ["gate-chance-on-hit"] = true,
+    ["label-chance-on-hit"] = true,
+    ["gate-manual-allow-sell"] = true,
+    ["label-override-no-rule"] = true,
+    ["label-list-hit-proc"] = true,
+    -- The companion panel and the "Sell at" merchant-mode choice, both of
+    -- which only mean something where the companion pets exist. The six
+    -- scav-* entries are covered by pe = true on the section marker, so they
+    -- are not repeated here.
+    ["gate-merchant-mode"] = true,
+    ["tshoot-goblin-not-summoning"] = true,
+    ["bubble-mute-diag"] = true,
+}
+
+-- Deliberately left visible even though their text mentions PE features:
+--   * tshoot-allow-sell-gate - it lists three protection triggers and one of
+--     them (tome / recipe) is still live, so the entry still answers the
+--     question. Over-listing a trigger is far better than hiding a working
+--     explanation.
+--   * what-does-ec-do, session-loot, rule-summary and friends - incidental
+--     prose mentions inside otherwise generic entries.
+
 local function EC_buildHelpEntries()
-    return {
+    local entries = {
     -- ===================================================================
     -- Section 1: Getting started
     -- ===================================================================
@@ -112,7 +184,7 @@ local function EC_buildHelpEntries()
     {
         id = "stats-character-vs-account",
         q = L["Character view vs Account view in the Stats panel?"],
-        a = L["The toggle at the top of the Stats panel picks which totals to show. |cffb6ffb6Character|r shows just the currently logged-in character's lifetime totals - the original behaviour. |cffb6ffb6Account|r shows the same fields summed across every character on this account that has used EbonClearance. Account totals start at zero on v2.38.1 install and count forward; older per-character history stays on each character's own Character view. The Account view's Best Gold/Hour ribbon names which character set the record. |cffffd870Reset Lifetime|r is view-aware: in Character view it clears just this character; in Account view it clears just the account ledger, leaving every character's own totals intact."],
+        a = L["The toggle at the top of the Stats panel picks which totals to show. |cffb6ffb6Character|r shows just the currently logged-in character's lifetime totals - the original behaviour. |cffb6ffb6Account|r shows the same fields summed across every character on this account that has used EbonClearance.\n\nAccount totals start at zero on v2.38.1 install and count forward; older per-character history stays on each character's own Character view. The Account view's Best Gold/Hour ribbon names which character set the record.\n\n|cffffd870Reset Lifetime|r is view-aware: in Character view it clears just this character; in Account view it clears just the account ledger, leaving every character's own totals intact."],
         panel = "EbonClearanceOptionsStats",
     },
     {
@@ -124,19 +196,19 @@ local function EC_buildHelpEntries()
     {
         id = "session-loot",
         q = L["What is the Loot Log window?"],
-        a = L["A window that lists what you've looted and how much. It counts what you actually loot - your own loot, the auto-loot cycle, and the Greedy Scavenger's haul - and ignores items you buy from a vendor, take from the mailbox, withdraw from the bank, or receive from quests. Open it with the |cffb6ffb6Loot Log|r button on the main settings page or the Stats panel, by typing /ec loot, or with a key you bind under Key Bindings > EbonClearance. Each row shows how many you looted, that stack's vendor value (quantity x sell price), and that value's share of your total looted gold - so you can see which drops actually earn and which are dead weight (a worthless drop shows a grey dash and 0%, the cue to filter or auto-delete it). Sort by Name, Count, or Gold (click again to flip the order) - Count and Gold differ when a high-volume drop is low-value. Use Show: to filter by rarity and the Search box to find an item by name, and drag the bottom-right corner to resize. Filtering rebases the totals, so narrowing to Epics shows each Epic's share of your Epics. |cffb6ffb6Right-click a row to hide that item|r - hidden items drop out of the list AND the totals, so the remaining shares rebase (handy when a high-volume filler like cloth is skewing the percentages); the |cffb6ffb6Unhide All|r button restores them. Hold |cffb6ffb6Alt|r and hover a row for a plain-English read on what EbonClearance will do with that item. Three views: |cffb6ffb6Session|r (looted since login; resets on /reload or Reset Session Stats), |cffb6ffb6Character|r (this character's lifetime), and |cffb6ffb6Account|r (a running total across all your characters). Counts are tallied per item, so the window stays light no matter how long you farm. Clear wipes whichever view you're looking at."],
+        a = L["A window that lists what you've looted and how much. It counts what you actually loot - your own loot, the auto-loot cycle, and the Greedy Scavenger's haul - and ignores items you buy from a vendor, take from the mailbox, withdraw from the bank, or receive from quests.\n\nOpen it with the |cffb6ffb6Loot Log|r button on the main settings page or the Stats panel, by typing /ec loot, or with a key you bind under Key Bindings > EbonClearance.\n\nEach row shows how many you looted, that stack's vendor value (quantity x sell price), and that value's share of your total looted gold - so you can see which drops actually earn and which are dead weight (a worthless drop shows a grey dash and 0%, the cue to filter or auto-delete it). Sort by Name, Count, or Gold (click again to flip the order) - Count and Gold differ when a high-volume drop is low-value. Use Show: to filter by rarity and the Search box to find an item by name, and drag the bottom-right corner to resize. Filtering rebases the totals, so narrowing to Epics shows each Epic's share of your Epics.\n\n|cffb6ffb6Right-click a row to hide that item|r - hidden items drop out of the list AND the totals, so the remaining shares rebase (handy when a high-volume filler like cloth is skewing the percentages); the |cffb6ffb6Unhide All|r button restores them. Hold |cffb6ffb6Alt|r and hover a row for a plain-English read on what EbonClearance will do with that item.\n\nThree views: |cffb6ffb6Session|r (looted since login; resets on /reload or Reset Session Stats), |cffb6ffb6Character|r (this character's lifetime), and |cffb6ffb6Account|r (a running total across all your characters). Counts are tallied per item, so the window stays light no matter how long you farm. Clear wipes whichever view you're looking at."],
         panel = "EbonClearanceOptionsStats",
     },
     {
         id = "guild-sharing",
         q = L["What is the Stats - Guild panel?"],
-        a = L["Stats - Guild pools data from guildmates (and group members) who also run EbonClearance and have opted in: their best farming zones, combined totals, and most-sold items. It is anonymous by default and guild/group only - nothing is shared server-wide. Two boxes on the panel: 'Share my farming data with my guild' turns your sharing on (off by default), and 'Show my name with my shared data' optionally attaches your name (only available while sharing is on). The view is a live snapshot taken when you open the panel or click Refresh - it is not saved, so it reflects whoever is online and sharing right now. Your own lifetime stats keep growing as usual; the guild view just re-pools everyone's current totals each time you look."],
+        a = L["Stats - Guild pools data from guildmates (and group members) who also run EbonClearance and have opted in: their best farming zones, combined totals, and most-sold items. It is anonymous by default and guild/group only - nothing is shared server-wide.\n\nTwo boxes on the panel: 'Share my farming data with my guild' turns your sharing on (off by default), and 'Show my name with my shared data' optionally attaches your name (only available while sharing is on).\n\nThe view is a live snapshot taken when you open the panel or click Refresh - it is not saved, so it reflects whoever is online and sharing right now. Your own lifetime stats keep growing as usual; the guild view just re-pools everyone's current totals each time you look."],
         panel = "EbonClearanceOptionsGuild",
     },
     {
         id = "server-stats",
         q = L["What is the Stats - Server panel?"],
-        a = L["Stats - Server is a live, anonymous 'odometer' for the whole realm: the combined gold vendored, items sold, items deleted, and items processed by everyone running EbonClearance who is online and sharing right now, plus the realm's busiest farming zones and most-sold items, and a count of how many users are sharing. It never shows names and is not a ranking - just community totals for fun. Sharing is on by default so you can see and contribute to the tally; uncheck 'Share my totals with the realm' on the panel if you'd rather stay out. Because a realm has no addon-message channel, this uses a hidden chat channel, which takes one of your 10 chat-channel slots while sharing is on. The numbers reflect who is online and sharing at that moment, not an all-time server record, so they rise and fall as people log in and out. Sharing also puts you on the realm channel, so your normal update alerts (the version-check toggle on the main page) will then tell you about a newer EbonClearance seen anywhere on the realm, not just your guild or group."],
+        a = L["Stats - Server is a live, anonymous 'odometer' for the whole realm: the combined gold vendored, items sold, items deleted, and items processed by everyone running EbonClearance who is online and sharing right now, plus the realm's busiest farming zones and most-sold items, and a count of how many users are sharing. It never shows names and is not a ranking - just community totals for fun.\n\nSharing is on by default so you can see and contribute to the tally; uncheck 'Share my totals with the realm' on the panel if you'd rather stay out.\n\nBecause a realm has no addon-message channel, this uses a hidden chat channel, which takes one of your 10 chat-channel slots while sharing is on. The numbers reflect who is online and sharing at that moment, not an all-time server record, so they rise and fall as people log in and out.\n\nSharing also puts you on the realm channel, so your normal update alerts (the version-check toggle on the main page) will then tell you about a newer EbonClearance seen anywhere on the realm, not just your guild or group."],
         panel = "EbonClearanceOptionsServer",
     },
     {
@@ -274,7 +346,7 @@ local function EC_buildHelpEntries()
     {
         id = "session-history",
         q = L["What did EbonClearance just sell or delete? (/ec history)"],
-        a = L["Opens the Sold History window: everything the addon has sold or deleted this session, newest first, each line showing the item, how many, and the rule that decided it (Sell List, Auto-sell by rarity, Junk, Delete List, and so on). It records the WHOLE session, not just the last few, so nothing is lost during a long farm. It also records deletes that happened OUTSIDE EbonClearance (you dragging an item off your bags, or another addon) so a missing item can always be traced - those lines say so and never count in your stats. Use the All / Sold / Deleted buttons, the Show: rarity filter and the search box to narrow a busy list (they all combine), and the Copy button to grab it for a Discord paste. Three ways in: the |cffb6ffb6Sold History|r button on the main panel, /ec history, or Alt+Right-Click any bag item and pick Sold History. Session-only - it clears on /reload and is never saved. For the full step-by-step on a specific item still in your bags, use /ec sellinfo instead."],
+        a = L["Opens the Sold History window: everything the addon has sold or deleted this session, newest first, each line showing the item, how many, and the rule that decided it (Sell List, Auto-sell by rarity, Junk, Delete List, and so on). It records the WHOLE session, not just the last few, so nothing is lost during a long farm. It also records deletes that happened OUTSIDE EbonClearance (you dragging an item off your bags, or another addon) so a missing item can always be traced - those lines say so and never count in your stats.\n\nUse the All / Sold / Deleted buttons, the Show: rarity filter and the search box to narrow a busy list (they all combine), and the Copy button to grab it for a Discord paste.\n\nThree ways in: the |cffb6ffb6Sold History|r button on the main panel, /ec history, or Alt+Right-Click any bag item and pick Sold History. Session-only - it clears on /reload and is never saved. For the full step-by-step on a specific item still in your bags, use /ec sellinfo instead."],
         panel = nil,
     },
     {
@@ -287,6 +359,14 @@ local function EC_buildHelpEntries()
         id = "bubble-mute-diag",
         q = L["A Scavenger speech bubble got past the mute. (/ec bubbles)"],
         a = L["Type /ec bubbles for a copyable report of what the mute recorded from chat and which bubble texts it saw on screen, each marked HIDDEN or MISS. Run it within a minute of seeing the stray bubble and paste the report when filing a bug - it shows exactly why the bubble slipped through. Session-only - it clears on /reload."],
+        panel = nil,
+    },
+    {
+        -- v2.74.0. Deliberately NOT in EC_PE_HELP_IDS: the players who need
+        -- this answer are exactly the ones the affix filter applies to.
+        id = "affix-options-missing",
+        q = L["Where did the affix settings go?"],
+        a = L["EbonClearance only shows the affix and chance-on-hit extraction settings when it finds the affix system on your realm. On a server without it those options cannot do anything, so they are left out instead of shown greyed. Nothing else changes: junk selling, your Sell / Keep / Delete lists, quality rules, tome protection, Process Bags and bag highlighting all work the same. If you are on Project Ebonhold and they are missing, type /reload."],
         panel = nil,
     },
     {
@@ -304,7 +384,7 @@ local function EC_buildHelpEntries()
     {
         id = "share-chance-on-hit-knowledge",
         q = L["Can I share chance-on-hit proc knowledge with my guild?"],
-        a = L["Yes, v2.53.0 added opt-in guild sharing. Turn on |cffb6ffb6Share my chance-on-hit knowledge with my guild (anonymous)|r on the Stats - Guild panel. Your addon replies to guildmate requests with the pairings you've learned (from anvil extractions or the seed catalog). Guildmates who've opted in do the same, so your local knowledge grows without you having to extract everything yourself. Wire traffic is anonymous - the addon never stores who sent what, only the pairings themselves. Local-wins merge: a received pair only writes to your catalog if you don't already have that itemID, so a corrupt sender can't overwrite your good records. See /ec bugreport's Proc Pairings Shared This Session section for a per-session merge log."],
+        a = L["Yes, v2.53.0 added opt-in guild sharing. Turn on |cffb6ffb6Share my chance-on-hit knowledge with my guild (anonymous)|r on the Stats - Guild panel.\n\nYour addon replies to guildmate requests with the pairings you've learned (from anvil extractions or the seed catalog). Guildmates who've opted in do the same, so your local knowledge grows without you having to extract everything yourself.\n\nWire traffic is anonymous - the addon never stores who sent what, only the pairings themselves. Local-wins merge: a received pair only writes to your catalog if you don't already have that itemID, so a corrupt sender can't overwrite your good records. See /ec bugreport's Proc Pairings Shared This Session section for a per-session merge log."],
         panel = "EbonClearanceOptionsGuild",
     },
     {
@@ -430,7 +510,7 @@ local function EC_buildHelpEntries()
     {
         id = "gate-delete-unsellable-dupes",
         q = L["Auto-mark unsellable affixes for deletion"],
-        a = L["Off by default. Turn on and EbonClearance puts soulbound affixed items with no vendor price onto your Delete List (one chat line per item). Two kinds get caught: items with an affix you already own at that rank, and items below your 'Sell affixes below rank' setting. These are the leftovers a vendor won't buy that would otherwise clog your bags forever. Heads-up: if you use the rank floor, low-rank affixed items you can't sell WILL be deleted. Never touches items with a vendor price (those get sold normally), a rank you're still collecting, Keep List / equipped / quest / gear-set items, high item-level gear (iLvl 200+ by default - see the 'Protect high-iLvl items' toggle on Keep Settings), tomes, or profession tools. Deletes at a vendor, or instantly if 'Auto-delete on pickup' is on."],
+        a = L["Off by default. Turn on and EbonClearance puts soulbound affixed items with no vendor price onto your Delete List (one chat line per item). Two kinds get caught: items with an affix you already own at that rank, and items below your 'Sell affixes below rank' setting. These are the leftovers a vendor won't buy that would otherwise clog your bags forever.\n\nHeads-up: if you use the rank floor, low-rank affixed items you can't sell WILL be deleted.\n\nNever touches items with a vendor price (those get sold normally), a rank you're still collecting, Keep List / equipped / quest / gear-set items, high item-level gear (iLvl 200+ by default - see the 'Protect high-iLvl items' toggle on Keep Settings), tomes, or profession tools. Deletes at a vendor, or instantly if 'Auto-delete on pickup' is on."],
         panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
@@ -538,13 +618,13 @@ local function EC_buildHelpEntries()
     {
         id = "gate-auto-mark-resilience",
         q = L["Auto-mark PvP gear for deletion"],
-        a = L["Some PvP gear with Resilience can't be vendored (no sell price), so unwanted pieces just sit in your bags. Turn this on and EbonClearance scans your bags for items with a Resilience tooltip line AND no vendor price, and adds them to the Delete List automatically. Resilience items that DO have a vendor price are left alone - they'll sell through your normal rules instead, so you keep the gold. From there, the existing deletion pipeline handles the marked items: the next vendor visit destroys them (if 'Enable Deletion' is on), or they go instantly if you also have 'Auto-delete on pickup' on. The toggle requires deletion to be enabled. Items already on the Keep List are skipped so you can still keep a specific piece if needed."],
+        a = L["Some PvP gear with Resilience can't be vendored (no sell price), so unwanted pieces just sit in your bags. Turn this on and EbonClearance scans your bags for items with a Resilience tooltip line AND no vendor price, and adds them to the Delete List automatically.\n\nResilience items that DO have a vendor price are left alone - they'll sell through your normal rules instead, so you keep the gold.\n\nFrom there, the existing deletion pipeline handles the marked items: the next vendor visit destroys them (if 'Enable Deletion' is on), or they go instantly if you also have 'Auto-delete on pickup' on. The toggle requires deletion to be enabled. Items already on the Keep List are skipped so you can still keep a specific piece if needed."],
         panel = "EbonClearanceOptionsDeletionSettings",
     },
     {
         id = "gate-announce-auto-delete",
         q = L["Announce auto-deletions in chat"],
-        a = L["When EbonClearance auto-deletes a Delete-List item the moment it hits your bags, or auto-marks a piece of unsellable Resilience gear for deletion, it normally prints one chat line per event so you can see what just happened. Turn this off if you find the chat noise unwelcome. The toggle silences only those two lines; the manual vendor-cycle summary, the session stats, and the lifetime totals are unaffected, and your Delete List itself still tracks every destroyed item. v2.60.0 added a per-rarity multi-select filter under the master toggle: pick which rarities (Poor / Common / Uncommon / Rare / Epic) should still print. Master off silences everything; master on lets each rarity's tick decide - so you can see Rare + Epic deletions but silence the Greens and Greys that flood the chat while farming."],
+        a = L["When EbonClearance auto-deletes a Delete-List item the moment it hits your bags, or auto-marks a piece of unsellable Resilience gear for deletion, it normally prints one chat line per event so you can see what just happened. Turn this off if you find the chat noise unwelcome.\n\nThe toggle silences only those two lines; the manual vendor-cycle summary, the session stats, and the lifetime totals are unaffected, and your Delete List itself still tracks every destroyed item.\n\nv2.60.0 added a per-rarity multi-select filter under the master toggle: pick which rarities (Poor / Common / Uncommon / Rare / Epic) should still print. Master off silences everything; master on lets each rarity's tick decide - so you can see Rare + Epic deletions but silence the Greens and Greys that flood the chat while farming."],
         panel = "EbonClearanceOptionsDeletionSettings",
     },
 
@@ -790,7 +870,7 @@ local function EC_buildHelpEntries()
     {
         id = "process-keybind",
         q = L["Can I keep casting without using the mouse?"],
-        a = L["Yes. Open |cffffd870Esc menu > Key Bindings|r, find the |cffb6ffb6EbonClearance|r section, and bind |cffb6ffb6Process Next|r to a key. Each press fires one cast (WoW doesn't auto-repeat keybinds, so holding the key does nothing - press it again for the next item). The queue runs in a fixed order: |cffb6ffb6Disenchant|r first, then |cffb6ffb6Mill|r, then |cffb6ffb6Prospect|r, then |cffb6ffb6Pick Locks|r. Within each section items sort by quality (Disenchant) or name. Use the |cffb6ffb6>|r arrow next to the Cast button to skip past every remaining entry of the current mode and jump to the next mode (handy when you want to mill before clearing Disenchant junk). See the |cffffd870swirl|r entry for why the button briefly stays inert between casts."],
+        a = L["Yes. Open |cffffd870Esc menu > Key Bindings|r, find the |cffb6ffb6EbonClearance|r section, and bind |cffb6ffb6Process Next|r to a key. Each press fires one cast (WoW doesn't auto-repeat keybinds, so holding the key does nothing - press it again for the next item).\n\nThe queue runs in a fixed order: |cffb6ffb6Disenchant|r first, then |cffb6ffb6Mill|r, then |cffb6ffb6Prospect|r, then |cffb6ffb6Pick Locks|r. Within each section items sort by quality (Disenchant) or name.\n\nUse the |cffb6ffb6>|r arrow next to the Cast button to skip past every remaining entry of the current mode and jump to the next mode (handy when you want to mill before clearing Disenchant junk). See the |cffffd870swirl|r entry for why the button briefly stays inert between casts."],
         panel = "EbonClearanceOptionsProcessBags",
     },
     {
@@ -808,14 +888,26 @@ local function EC_buildHelpEntries()
     {
         id = "process-convert",
         q = L["Convert mode (Crystallized / Motes)"],
-        a = L["Any stack of 10+ Crystallized Fire (or Crystallized Earth / Air / Water / Shadow / Life) shows up in the Convert section of Process Bags. Click Process Next (or use the keybind) and EbonClearance right-clicks the stack, which the game converts to 1 Eternal of the same school. Same flow for the BC-era 10-stack Motes (Mote of Fire / Earth / Air / Water / Life / Mana / Shadow), which condense to Primals. No profession required. WoW 3.3.5a's security model doesn't let an addon fire this automatically (the OnUse casts a server-side spell, which is taint-restricted), so it goes through the same one-click-per-cast secure button as Mill and Prospect. To opt a specific itemID out of the Convert queue, add it to your Keep List / Sell List / Delete List - the standard Process Bags vetoes apply."],
+        a = L["Any stack of 10+ Crystallized Fire (or Crystallized Earth / Air / Water / Shadow / Life) shows up in the Convert section of Process Bags. Click Process Next (or use the keybind) and EbonClearance right-clicks the stack, which the game converts to 1 Eternal of the same school. Same flow for the BC-era 10-stack Motes (Mote of Fire / Earth / Air / Water / Life / Mana / Shadow), which condense to Primals. No profession required.\n\nWoW 3.3.5a's security model doesn't let an addon fire this automatically (the OnUse casts a server-side spell, which is taint-restricted), so it goes through the same one-click-per-cast secure button as Mill and Prospect.\n\nTo opt a specific itemID out of the Convert queue, add it to your Keep List / Sell List / Delete List - the standard Process Bags vetoes apply."],
         panel = "EbonClearanceOptionsProcessBags",
     },
 
     -- ===================================================================
     -- Section 6: Scavenger & looting
     -- ===================================================================
-    { section = "scavenger", title = L["Scavenger & looting"] },
+    {
+        id = "scav-auto-open",
+        q = L["Auto-open lootable containers"],
+        a = L["When on, EbonClearance opens lootable containers sitting in your bags (gift bags, treasure pouches, and similar) so you don't have to right-click each one. Lockboxes that need a key or a lockpick are skipped, and it pauses during combat. Set it on the Process Bags panel."],
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    {
+        id = "scav-fast-loot",
+        q = L["Fast Loot (instant corpse looting)"],
+        a = L["Speeds up looting from corpses, fishing, gift bags, dungeons, and mailboxes by draining the loot window the instant it opens. It uses your game's |cffffff00Auto Loot|r setting, so turn Auto Loot on for the full effect. Set it on the Process Bags panel."],
+        panel = "EbonClearanceOptionsProcessBags",
+    },
+    { section = "scavenger", title = L["Scavenger"], pe = true },
 
     {
         id = "scav-summon",
@@ -851,18 +943,6 @@ local function EC_buildHelpEntries()
         id = "scav-bag-threshold",
         q = L["Bag slots remaining before selling"],
         a = L["The free-bag-slot trigger for the auto-loot cycle. When your free slots drop to this number, EbonClearance summons the Goblin Merchant so the Scavenger can keep selling. Lower = let bags fill more before acting; higher = act sooner. Has no effect unless the auto-loot cycle is on."],
-        panel = "EbonClearanceOptionsScavenger",
-    },
-    {
-        id = "scav-auto-open",
-        q = L["Auto-open lootable containers"],
-        a = L["When on, EbonClearance opens lootable containers sitting in your bags (gift bags, treasure pouches, and similar) so you don't have to right-click each one. Lockboxes that need a key or a lockpick are skipped, and it pauses during combat."],
-        panel = "EbonClearanceOptionsScavenger",
-    },
-    {
-        id = "scav-fast-loot",
-        q = L["Fast Loot (instant corpse looting)"],
-        a = L["Speeds up looting from corpses, fishing, gift bags, dungeons, and mailboxes by draining the loot window the instant it opens. It uses your game's |cffffff00Auto Loot|r setting, so turn Auto Loot on for the full effect. The Greedy Scavenger's own looting is already instant, so this mainly helps your manual looting."],
         panel = "EbonClearanceOptionsScavenger",
     },
 
@@ -933,6 +1013,36 @@ local function EC_buildHelpEntries()
         urlLabel = L["Copy project link"],
     },
     }
+    if EC_compCache.peFeaturesVisible and not EC_compCache.peFeaturesVisible() then
+        local kept = {}
+        for i = 1, #entries do
+            local e = entries[i]
+            -- Entries opt out by id; a whole section opts out with pe = true
+            -- on its marker (the companion section, whose every entry needs
+            -- the pets).
+            if not ((e.id and EC_PE_HELP_IDS[e.id]) or (e.section and e.pe)) then
+                kept[#kept + 1] = e
+            end
+        end
+        -- Second pass: drop any section marker that now has nothing under it,
+        -- so a section whose entries were all filtered doesn't render as a
+        -- lone clickable header with an empty body. Written generically so a
+        -- future section that empties out is covered without another edit.
+        local out = {}
+        for i = 1, #kept do
+            local e = kept[i]
+            if e.section then
+                local nxt = kept[i + 1]
+                if nxt and not nxt.section then
+                    out[#out + 1] = e
+                end
+            else
+                out[#out + 1] = e
+            end
+        end
+        return out
+    end
+    return entries
 end
 
 -- ---------------------------------------------------------------------------
@@ -1222,7 +1332,10 @@ HelpPanel:SetScript("OnShow", function(self)
         local currentSectionCollapsed = false
         local HEADER_H = 22
         local HEADER_GAP = 6
-        local ENTRY_GAP = 10
+        -- v2.74.0: 10 -> 16. With answers now leaded and multi-paragraph, a
+        -- 10px gap made consecutive entries run together; the entry boundary
+        -- has to read as bigger than the gap inside an entry.
+        local ENTRY_GAP = 16
 
         for _, item in ipairs(items) do
             if item.kind == "section" then
@@ -1500,12 +1613,24 @@ HelpPanel:SetScript("OnShow", function(self)
                 end
                 qfs:SetText(string.format("|cff4db8ff%s|r", entry.q or ""))
 
-                -- Answer below question. 3px gap matches BarWarden.
+                -- Answer below the question. v2.74.0 widened the gap from 3
+                -- to 7 so the question reads as a heading rather than as the
+                -- first line of the answer. ANSWER_GAP is shared with the
+                -- height maths in apply() below - change both or entries
+                -- overlap.
                 local afs = e:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                afs:SetPoint("TOPLEFT", qfs, "BOTTOMLEFT", 0, -3)
+                afs:SetPoint("TOPLEFT", qfs, "BOTTOMLEFT", 0, -ANSWER_GAP)
                 afs:SetJustifyH("LEFT")
                 if afs.SetWordWrap then
                     afs:SetWordWrap(true)
+                end
+                -- v2.74.0: leading. Several answers are long, and at the
+                -- default zero spacing they render as a solid block that is
+                -- genuinely hard to read. 3px between wrapped lines costs a
+                -- little height and buys a lot of legibility. GetStringHeight
+                -- accounts for spacing, so apply()'s maths still holds.
+                if afs.SetSpacing then
+                    afs:SetSpacing(3)
                 end
                 afs:SetText(entry.a or "")
 
@@ -1572,7 +1697,7 @@ HelpPanel:SetScript("OnShow", function(self)
                     local qh = qfs:GetStringHeight() or 12
                     local ah = afs:GetStringHeight() or 12
                     local bh = btn and 28 or 0 -- 22 button + 6 gap
-                    e:SetHeight(qh + 3 + ah + bh)
+                    e:SetHeight(qh + ANSWER_GAP + ah + bh)
                 end
 
                 items[#items + 1] = {

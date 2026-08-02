@@ -12,9 +12,10 @@
 --     bagSlotAffixData, bagSlotHasAffix, liveTooltipAffixData,
 --     liveTooltipHasAffix).
 --   * v2.23.0+ PE engraving / affix-catalog integration
---     (knownAffixDescriptions table, peDetected, refreshKnownAffixes,
---     refreshExtractionIfDirty, playerHasAffixDescription, the
---     procIdToDescription cache, knownExtractionVersion counter).
+--     (knownAffixDescriptions table, peDetected, peFeaturesVisible,
+--     refreshKnownAffixes, refreshExtractionIfDirty,
+--     playerHasAffixDescription, the procIdToDescription cache,
+--     knownExtractionVersion counter).
 --   * v2.20.0+ PE chance-on-hit detection (lineLooksLikeChanceProc,
 --     itemHasChanceOnHit, liveTooltipHasChanceOnHit, chanceOnHitCache).
 --   * v2.26.0 PE Anvil bridge (findLearnedAffixForItem,
@@ -805,6 +806,39 @@ function EC_compCache.getExtractionCatalog()
     return nil
 end
 
+-- Should the PE-only options be shown at all? Used by every panel that
+-- owns an affix / proc-extraction widget so a realm without the affix
+-- system doesn't present settings that can never do anything.
+--
+-- peDetected() alone is NOT sufficient: it tests the PE ADDON global,
+-- but the affix system doesn't need that addon. refreshKnownAffixes
+-- walks the player's SPELLBOOK for engraving spells, which is
+-- server-side truth, and the ExtractionService merge is additive on top.
+-- A player on PE without the PE addon has fully working affix
+-- protection, so gating the UI on peDetected() alone would hide live
+-- features from them. Three signals, OR'd, covers all three cases.
+--
+-- Latches once true: the spellbook walk is chunked across frames and
+-- lands after the first panel build, so an early "no" must not stick.
+-- simulateExtractionAbsent is checked FIRST so /ec affixfallback can
+-- preview the non-PE layout on a PE client (the only way to eyeball it
+-- without a second realm).
+-- The latch lives on EC_compCache rather than a file-scope local: Lua 5.1
+-- caps main-chunk locals at 200 and this file is close to the line.
+EC_compCache.peSurfacesSeen = false
+function EC_compCache.peFeaturesVisible()
+    if EC_compCache.simulateExtractionAbsent then
+        return false
+    end
+    if not EC_compCache.peSurfacesSeen then
+        local known = EC_compCache.knownAffixDescriptions
+        EC_compCache.peSurfacesSeen = EC_compCache.peDetected()
+            or EC_compCache.getExtractionCatalog() ~= nil
+            or (type(known) == "table" and next(known) ~= nil)
+    end
+    return EC_compCache.peSurfacesSeen and true or false
+end
+
 -- v2.26.0: dirty-check counter for the ExtractionService merge step.
 -- Bumps when the count of `learned==true` records in
 -- _G.ExtractionService.learnedAffixes changes; lets the BAG_UPDATE
@@ -1530,6 +1564,12 @@ local EC_CHANCE_PROC_NEVER_EXTRACTABLE = {
     [870]   = "Fiery War Axe",
     [13218] = "Fang of the Crystal Spider",
     [30418] = "Darkspear (Purple Glow)",
+    -- v2.74.0 (Anvil verification, 2026-08-01): Heartrazor. Found
+    -- via /ec sellinfo on a "Heartrazor of Iron Will III" whose PE affix
+    -- was already owned - the affix rule was happy to release it and
+    -- chance-on-hit protection was the only thing still holding it, for
+    -- a proc that cannot be learned from this item at all.
+    [29962] = "Heartrazor",
 }
 NS.chanceProcNeverExtractable = EC_CHANCE_PROC_NEVER_EXTRACTABLE
 

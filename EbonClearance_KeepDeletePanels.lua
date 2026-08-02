@@ -106,8 +106,12 @@ DeletionSettingsPanel.parent = "EbonClearance"
 DeletionSettingsPanel:SetScript("OnShow", function(self)
     local DB = NS.DB
     EC_compCache.initPanel(self, function(self)
-        -- Settings are DB-backed; nothing to refresh on re-show. Following
-        -- the panel-refresh contract (empty refresh callback is fine).
+        -- Settings are DB-backed; nothing to refresh on re-show, except the
+        -- affix-system visibility gate (v2.74.0), which has to re-evaluate
+        -- in case the PE addon loaded late or /ec affixfallback was flipped.
+        if self.UpdatePEVisibility then
+            self.UpdatePEVisibility()
+        end
     end, function(_, content)
         -- v2.59.8 (Serv report): the panel is now scroll-wrapped so
         -- wrapped checkbox labels (v2.59.8's reactive-width fix) can't
@@ -571,6 +575,30 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
                 EC_compCache.bagUpdateFrame:Show()
             end
         end)
+
+        -- v2.74.0: the unsellable-affix auto-mark only ever marks items
+        -- whose affix the player owns, so on a realm without the affix
+        -- system it can never fire. Hide it rather than offer a dead
+        -- toggle. A hidden frame keeps its rect, so knownRecipeCB is
+        -- re-pointed at resilienceNote to close the gap; both notes sit
+        -- at the same +26 child indent, so the offsets are unchanged.
+        local function UpdatePEVisibility()
+            local show = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+            if show then
+                affixDupeCB:Show()
+                affixDupeNote:Show()
+            else
+                affixDupeCB:Hide()
+                affixDupeNote:Hide()
+            end
+            knownRecipeCB:ClearAllPoints()
+            knownRecipeCB:SetPoint("TOPLEFT", show and affixDupeNote or resilienceNote, "BOTTOMLEFT", -26, -8)
+        end
+        -- Stash on the panel frame, not `self`: this build callback rebinds
+        -- `self` to the scroll content (see the top of the block), and the
+        -- refresh callback is handed the panel.
+        DeletionSettingsPanel.UpdatePEVisibility = UpdatePEVisibility
+        UpdatePEVisibility()
 
         -- v2.59.8: size the scroll content to the last widget so the
         -- scroll bar knows the full extent. Announced last-widget is

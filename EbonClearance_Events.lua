@@ -7463,6 +7463,16 @@ EC_IsMerchantAllowed = function()
     -- EnsureDB default of "both" (All Merchants) so a missing-DB call here
     -- gives the same answer as a freshly-initialised DB.
     local mode = DB and DB.merchantMode or "both"
+    -- v2.74.0: "goblin" and "any" only mean something where the Goblin
+    -- Merchant companion exists - one requires it, the other excludes it.
+    -- On a realm without it, collapse to "both" (All Merchants). Without
+    -- this, a stored "goblin" would silently sell nothing at every vendor,
+    -- with the dropdown that set it now hidden. Left as a runtime gate
+    -- rather than a DB rewrite so the setting survives for realms that do
+    -- have the pet.
+    if EC_compCache.peFeaturesVisible and not EC_compCache.peFeaturesVisible() then
+        return true
+    end
     if mode == "any" then
         -- "any": only normal merchants (not the Goblin Merchant pet).
         local targetName = UnitExists("target") and UnitName("target") or ""

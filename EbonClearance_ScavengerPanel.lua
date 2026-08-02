@@ -6,8 +6,14 @@
 -- Stage 8e-iii of the multi-stage file split (docs/CODE_REVIEW.md item 4).
 -- The Scavenger Settings UI panel: companion automation toggles
 -- (summon Greedy / dismiss in combat / mute chat / bubble killer /
--- auto-loot cycle / bag-full threshold / auto-open containers / fast
--- loot driver) and the summon-delay slider.
+-- auto-loot cycle / bag-full threshold) and the summon-delay slider.
+--
+-- v2.74.0: "auto-open lootable containers" and "Fast Loot" moved OUT to
+-- EbonClearance_ProcessBagsPanel.lua. Neither depends on the companion
+-- pets - they are stock 3.3.5a looting - and everything left here does,
+-- so this panel now hides itself wholesale on a realm without the pets
+-- (see UpdatePEVisibility in the build body). Leaving the two loot
+-- toggles here would have taken them down with it.
 --
 -- Moved into this file:
 --   * local ScavengerPanel = CreateFrame(...) frame creation
@@ -54,14 +60,15 @@ ScavengerPanel:SetScript("OnShow", function(self)
         if self.threshSlider then
             self.threshSlider:SetValue(DB.bagFullThreshold or 2)
         end
-        if self.autoOpenCB then
-            self.autoOpenCB:SetChecked(DB.autoOpenContainers)
-        end
-        if self.fastLootCB then
-            self.fastLootCB:SetChecked(DB.fastLoot)
+        -- autoOpenCB / fastLootCB moved to the Process Bags panel in
+        -- v2.74.0; their re-show sync lives there now.
+        if self.UpdatePEVisibility then
+            self.UpdatePEVisibility()
         end
     end, function(self, content)
-        NS.MakeHeader(content, L["Scavenger Settings"], -16)
+        -- Captured so UpdatePEVisibility can keep the header on screen while
+        -- hiding everything under it (v2.74.0).
+        local header = NS.MakeHeader(content, L["Scavenger Settings"], -16)
         NS.MakeLabel(
             content,
             L["Manages your |cffff7f7fGreedy Scavenger|r. Turn on the loot cycle to keep looting and selling automatically while your bags fill up."],
@@ -258,82 +265,13 @@ ScavengerPanel:SetScript("OnShow", function(self)
             "scav-bag-threshold"
         )
 
-        local autoOpenCB = NS.AddCheckbox(
-            content,
-            "EbonClearanceAutoOpenCB",
-            threshSlider,
-            L["Auto-open lootable containers from your bags"],
-            function()
-                return DB.autoOpenContainers
-            end,
-            function(v)
-                DB.autoOpenContainers = v
-            end,
-            -16
-        )
-        self.autoOpenCB = autoOpenCB
-        do
-            local t = _G[autoOpenCB:GetName() .. "Text"]
-            if t then
-                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-auto-open")
-            end
-        end
-
-        local autoOpenNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        autoOpenNote:SetPoint("TOPLEFT", autoOpenCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(autoOpenNote, 60)
-        autoOpenNote:SetJustifyH("LEFT")
-        if autoOpenNote.SetWordWrap then
-            autoOpenNote:SetWordWrap(true)
-        end
-        autoOpenNote:SetText(L["|cff888888Lockboxes that need a key or lockpick are skipped. Paused during combat.|r"])
-
-        -- v2.16.0: Fast Loot. When on AND Blizzard's auto-loot CVar is
-        -- effectively enabled (autoLootDefault XOR'd with the
-        -- AUTOLOOTTOGGLE modifier), EC drains every slot in the loot
-        -- window the moment LOOT_READY fires - the loot frame flashes
-        -- briefly or skips entirely, and BoP-bind popups are auto-
-        -- confirmed for items that would otherwise interrupt the drain.
-        -- Pairs well with the auto-loot cycle for fast farming.
-        local fastLootCB = NS.AddCheckbox(
-            content,
-            "EbonClearanceFastLootCB",
-            autoOpenNote,
-            L["Fast Loot (instant corpse looting)"],
-            function()
-                return DB.fastLoot
-            end,
-            function(v)
-                DB.fastLoot = v
-            end,
-            -10
-        )
-        -- AddCheckbox anchors at (0, yOff) from its anchor's BOTTOMLEFT, and
-        -- our anchor (autoOpenNote) is itself indented +26 to align with the
-        -- auto-open checkbox label. Back-shift the x by -26 to put fastLootCB
-        -- on the panel's left margin, level with autoOpenCB above. Same trick
-        -- the Keep Settings panel uses to keep its toggle stack
-        -- left-aligned beneath each toggle's wrapped explanatory note.
-        fastLootCB:ClearAllPoints()
-        fastLootCB:SetPoint("TOPLEFT", autoOpenNote, "BOTTOMLEFT", -26, -10)
-        self.fastLootCB = fastLootCB
-        do
-            local t = _G[fastLootCB:GetName() .. "Text"]
-            if t then
-                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-fast-loot")
-            end
-        end
-
-        local fastLootNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        fastLootNote:SetPoint("TOPLEFT", fastLootCB, "BOTTOMLEFT", 26, -2)
-        EC_compCache.setPanelWidth(fastLootNote, 60)
-        fastLootNote:SetJustifyH("LEFT")
-        if fastLootNote.SetWordWrap then
-            fastLootNote:SetWordWrap(true)
-        end
-        fastLootNote:SetText(
-            L["|cff888888Speeds up looting from corpses, fishing, gift bags, dungeons, and mailboxes. Uses your |cffffff00Auto Loot|r|cff888888 setting. |cffff7f7fGreedy Scavenger|r|cff888888 looting is already instant.|r"]
-        )
+        -- v2.74.0: "Auto-open lootable containers" and "Fast Loot" moved to
+        -- the Process Bags panel. Neither has anything to do with the
+        -- companion pets - they are stock looting behaviour that works on
+        -- any realm - and this panel goes dark where the pets do not exist,
+        -- which would have taken them with it. Their DB fields
+        -- (autoOpenContainers, fastLoot) and every runtime consumer are
+        -- unchanged; only the widgets moved.
 
         -- v2.10.0: the v2.9.0 editable companion-name input boxes were removed
         -- from this panel after in-game testing showed the click-to-focus path
@@ -347,10 +285,9 @@ ScavengerPanel:SetScript("OnShow", function(self)
         -- to override either name they can edit DB.scavengerName /
         -- DB.merchantName directly via /run on a single character.
 
-        -- Discoverability hint for the right-click context menu. Lives on this
-        -- panel because both v2.3.0 bag-action features cluster here.
+        -- Discoverability hint for the right-click context menu.
         local rightClickHint = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        rightClickHint:SetPoint("TOPLEFT", fastLootNote, "BOTTOMLEFT", 0, -16)
+        rightClickHint:SetPoint("TOPLEFT", threshSlider, "BOTTOMLEFT", 0, -24)
         EC_compCache.setPanelWidth(rightClickHint, 60)
         rightClickHint:SetJustifyH("LEFT")
         if rightClickHint.SetWordWrap then
@@ -359,6 +296,58 @@ ScavengerPanel:SetScript("OnShow", function(self)
         rightClickHint:SetText(
             L["|cffffb84dTip:|r |cff888888Alt+Right-Click any bag item to Sell, Keep, Delete, or override protection.|r"]
         )
+
+        -- v2.74.0: every remaining control on this panel drives the
+        -- companion pets, so on a realm without them the panel has nothing
+        -- to configure. Hide the lot and leave one line saying so and where
+        -- the two loot options went.
+        --
+        -- Enumerating children / regions instead of tracking each widget:
+        -- this is the whole-panel case, and doing it structurally means a
+        -- control added here later is covered without anyone remembering to
+        -- register it. The header and the placeholder are the only regions
+        -- deliberately excluded.
+        local unavailableNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        unavailableNote:SetPoint("TOPLEFT", 16, -80)
+        EC_compCache.setPanelWidth(unavailableNote, 60)
+        unavailableNote:SetJustifyH("LEFT")
+        if unavailableNote.SetWordWrap then
+            unavailableNote:SetWordWrap(true)
+        end
+        unavailableNote:SetText(
+            L["|cff888888This realm has no Scavenger or Goblin Merchant companion, so there is nothing to set up here. Auto-open containers and Fast Loot moved to the Process Bags panel.|r"]
+        )
+        unavailableNote:Hide()
+
+        local function UpdatePEVisibility()
+            local show = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+            local kids = { content:GetChildren() }
+            for i = 1, #kids do
+                if show then
+                    kids[i]:Show()
+                else
+                    kids[i]:Hide()
+                end
+            end
+            local regions = { content:GetRegions() }
+            for i = 1, #regions do
+                local r = regions[i]
+                if r ~= header and r ~= unavailableNote then
+                    if show then
+                        r:Show()
+                    else
+                        r:Hide()
+                    end
+                end
+            end
+            if show then
+                unavailableNote:Hide()
+            else
+                unavailableNote:Show()
+            end
+        end
+        self.UpdatePEVisibility = UpdatePEVisibility
+        UpdatePEVisibility()
 
         -- Size the scroll content to fit the bottom-most widget so the scrollbar
         -- range matches actual content (no excess empty space at the bottom).

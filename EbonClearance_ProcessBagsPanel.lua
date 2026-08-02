@@ -842,6 +842,14 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         if self.UpdateDEDropdownText then
             self:UpdateDEDropdownText()
         end
+        -- v2.74.0: the two looting toggles moved here from the Scavenger
+        -- panel; re-sync them on re-show like every other DB-backed box.
+        if self.autoOpenCB then
+            self.autoOpenCB:SetChecked(DB.autoOpenContainers)
+        end
+        if self.fastLootCB then
+            self.fastLootCB:SetChecked(DB.fastLoot)
+        end
         -- Reset the armed cursor so re-opening the panel starts fresh
         -- rather than honouring a stale skip from a previous session.
         EC_compCache.armedIndex = 1
@@ -856,7 +864,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         end
         local desc = NS.MakeLabel(
             content,
-            L["Disenchant, mill, prospect, or pick locks in bulk. |cffffd870Left-click|r a row to select it. |cffffd870Right-click|r a row to hide it (|cffffb84dClear Ignored|r brings them back). Click |cffffb84dProcess Next|r to cast on the selected row."],
+            L["Disenchant, mill, prospect, or pick locks in bulk. |cffffd870Left-click|r a row to pick it, |cffffd870right-click|r to hide it (|cffffb84dClear Ignored|r restores), then |cffffb84dProcess Next|r to cast."],
             16,
             -44
         )
@@ -874,7 +882,7 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
 
         local keepTip = NS.MakeLabel(
             content,
-            L["|cff888888Items on your Keep List are hidden here - the Keep List wins over Process Bags. Remove an item from the Keep List to make it processable.|r"],
+            L["|cff888888Items on your Keep List are hidden here. Remove one from the Keep List to process it.|r"],
             16,
             -44
         )
@@ -1038,8 +1046,70 @@ ProcessBagsPanel:SetScript("OnShow", function(self)
         -- just above the bottom button strip; a UIPanelScrollFrame
         -- inside it holds the section headers + item rows.
 
+        -- v2.74.0: looting options, moved here from the Scavenger panel.
+        -- Neither depends on the companion pets - they are stock 3.3.5a
+        -- looting behaviour - and the Scavenger panel goes dark on a realm
+        -- without the pets, which would have taken them with it. This panel
+        -- is the bag-utility home, and "open the containers sitting in your
+        -- bags" is the same family as disenchant / mill / prospect.
+        --
+        -- Sits between skillGroup and the list chrome: the list is elastic
+        -- (anchored top to this block and bottom to the button strip), so
+        -- the cost is ~2 list rows rather than an overflow.
+        local lootTitle = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        lootTitle:SetPoint("TOPLEFT", skillGroup, "BOTTOMLEFT", 0, -10)
+        lootTitle:SetText("|cffffd870" .. L["Looting"] .. "|r")
+
+        local autoOpenCB = NS.AddCheckbox(
+            content,
+            "EbonClearanceAutoOpenCB",
+            lootTitle,
+            L["Auto-open lootable containers from your bags"],
+            function()
+                return DB.autoOpenContainers
+            end,
+            function(v)
+                DB.autoOpenContainers = v
+            end,
+            -6
+        )
+        self.autoOpenCB = autoOpenCB
+        do
+            local t = _G[autoOpenCB:GetName() .. "Text"]
+            if t then
+                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-auto-open")
+            end
+        end
+
+        -- v2.16.0: Fast Loot. When on AND Blizzard's auto-loot CVar is
+        -- effectively enabled (autoLootDefault XOR'd with the
+        -- AUTOLOOTTOGGLE modifier), EC drains every slot in the loot
+        -- window the moment LOOT_READY fires - the loot frame flashes
+        -- briefly or skips entirely, and BoP-bind popups are auto-
+        -- confirmed for items that would otherwise interrupt the drain.
+        local fastLootCB = NS.AddCheckbox(
+            content,
+            "EbonClearanceFastLootCB",
+            autoOpenCB,
+            L["Fast Loot (instant corpse looting)"],
+            function()
+                return DB.fastLoot
+            end,
+            function(v)
+                DB.fastLoot = v
+            end,
+            -4
+        )
+        self.fastLootCB = fastLootCB
+        do
+            local t = _G[fastLootCB:GetName() .. "Text"]
+            if t then
+                NS.AddHelpIcon(content, t, "LEFT", "RIGHT", 6, 0, "scav-fast-loot")
+            end
+        end
+
         local scrollBg = CreateFrame("Frame", nil, content)
-        scrollBg:SetPoint("TOPLEFT", skillGroup, "BOTTOMLEFT", -4, -12)
+        scrollBg:SetPoint("TOPLEFT", fastLootCB, "BOTTOMLEFT", -4, -10)
         scrollBg:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -12, 62)
         scrollBg:SetBackdrop({
             bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",

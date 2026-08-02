@@ -430,11 +430,27 @@ GuildPanel:SetScript("OnShow", function(self)
             end
         end)
 
+        -- v2.74.0: the shared payload is itemID-to-affix-spellID pairings,
+        -- so on a realm without the affix system there is nothing to pool
+        -- and nothing a peer could send that this client could act on.
+        -- Hide the pair; a hidden frame keeps its rect, so zonesHeader is
+        -- re-pointed at nameCB to close the gap (nameCB and procShareBtn
+        -- sit at different indents, hence the different x-offset).
+        local procShareOn = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+        if not procShareOn then
+            procShareCB:Hide()
+            procShareBtn:Hide()
+        end
+
         -- ---- Guild's Best Farming Zones ----
         local zonesHeader = content:CreateFontString(
             nil, "ARTWORK", "GameFontNormalLarge"
         )
-        zonesHeader:SetPoint("TOPLEFT", procShareBtn, "BOTTOMLEFT", -26, -16)
+        if procShareOn then
+            zonesHeader:SetPoint("TOPLEFT", procShareBtn, "BOTTOMLEFT", -26, -16)
+        else
+            zonesHeader:SetPoint("TOPLEFT", nameCB, "BOTTOMLEFT", 0, -16)
+        end
         zonesHeader:SetText(L["Guild's Best Farming Zones"])
 
         -- Pre-create a fixed pool of 5 zone rows + 1 empty-state row.

@@ -417,7 +417,17 @@ local function EC_fillSharedCtx(ctx, DB, ADB, itemID, quality)
     ctx.recipeBindFilter = (quality and DB.sellKnownRecipeBindFilter) and DB.sellKnownRecipeBindFilter[quality]
         or "any"
     ctx.sellChanceOnHitKnown = DB.sellChanceOnHitKnown
-    ctx.protectChanceOnHitItems = DB.protectChanceOnHitItems
+    -- v2.74.0: chance-on-hit protection means "keep this until you extract
+    -- the proc", which only has a reading where extraction exists. On a
+    -- realm without the affix system there is no release path at all, so
+    -- leaving the stored setting on (it defaults ON) would wedge every proc
+    -- weapon in bags forever. Treat it as off there. The checkbox is hidden
+    -- to match, so this is not a setting the player can see and disagree
+    -- with. EC-TRAP: do NOT "simplify" this back to a bare DB read - the
+    -- hidden checkbox and this gate have to move together, or the toggle
+    -- becomes unreachable while still protecting.
+    local procProtectionApplies = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+    ctx.protectChanceOnHitItems = (DB.protectChanceOnHitItems and procProtectionApplies) and true or false
     ctx.protectAffixedRareItems = DB.protectAffixedRareItems
     ctx.protectAllTomes = DB.protectAllTomes
     ctx.protectUnlearnedTomes = DB.protectUnlearnedTomes

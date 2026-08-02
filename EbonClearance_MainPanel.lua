@@ -1184,37 +1184,45 @@ local function BuildMainPanel(panel, content)
                 .. L["Diagnostic: dump the scan tooltip lines for a bag slot"],
         },
         {
+            pe = true,
             run = "captureproc",
             label = "|cffffff00/ec captureproc|r  "
                 .. L["Diagnostic: dump chance-on-hit items + engrave-affix spells + PE catalog (for future auto-sell)"],
         },
         {
+            pe = true,
             prefill = "/ec autolearnsim ",
             label = "|cffffff00/ec autolearnsim <itemID> <spellID>|r  "
                 .. L["Simulate an autolearn event for a bag item + PE spell (diagnostic)"],
         },
         {
+            pe = true,
             run = "autolearnpeek",
             label = "|cffffff00/ec autolearnpeek|r  "
                 .. L["Dump the chance-on-hit autolearn state (author + autolearn + ambiguous)"],
         },
         {
+            pe = true,
             run = "affixdebug status",
             label = "|cffffff00/ec affixdebug status|r  " .. L["Show recording state + row count"],
         },
         {
+            pe = true,
             run = "affixdebug on",
             label = "|cffffff00/ec affixdebug on|r  " .. L["Start recording affix events for a bug report"],
         },
         {
+            pe = true,
             run = "affixdebug off",
             label = "|cffffff00/ec affixdebug off|r  " .. L["Stop recording"],
         },
         {
+            pe = true,
             run = "affixdebug dump",
             label = "|cffffff00/ec affixdebug dump|r  " .. L["Open the event-log window"],
         },
         {
+            pe = true,
             run = "affixdebug clear",
             label = "|cffffff00/ec affixdebug clear|r  " .. L["Wipe recorded rows"],
         },
@@ -1232,6 +1240,7 @@ local function BuildMainPanel(panel, content)
             label = "|cffffff00/ec spike|r  " .. L["Show recent frame hitches EC caused, and which part was busiest"],
         },
         {
+            pe = true,
             prefill = "/ec affixfallback ",
             label = "|cffffff00/ec affixfallback on||off|r  "
                 .. L["Check affix protection still works from your spellbook if PE's data is gone"],
@@ -1268,7 +1277,20 @@ local function BuildMainPanel(panel, content)
     -- or unindenting after a heading. cmdHeader lives at x=0; any command
     -- label or heading label lives at x=LABEL_COL_X.
     local prevX = 0
-    for i, row in ipairs(SLASH_ROWS) do
+    -- v2.74.0: the affix / proc-extraction diagnostics are dropped from the
+    -- printed reference on a realm without the affix system. Skipped rather
+    -- than hidden so the anchor chain closes the gap on its own. The
+    -- commands still work if typed; this list is a cheat sheet, not a gate.
+    local rows = {}
+    do
+        local peOn = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+        for _, row in ipairs(SLASH_ROWS) do
+            if peOn or not row.pe then
+                rows[#rows + 1] = row
+            end
+        end
+    end
+    for i, row in ipairs(rows) do
         if row.heading then
             -- Section divider: thin gold line spanning the full content
             -- width + a gold GameFontNormal label indented into the label

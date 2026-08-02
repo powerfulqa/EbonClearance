@@ -112,6 +112,97 @@ check(
     "The /ec affixfallback on|off|status command must exist so the fallback can be toggled and verified."
 )
 
+-- 7. (v2.74.0) The UI visibility gate exists and is derived from more than
+-- the PE addon global. peDetected() alone is a false negative for a player on
+-- the affix realm WITHOUT the PE addon: their affix protection still works
+-- (the spellbook walk is server-side truth), so hiding the options on that
+-- signal alone would remove live features. peFeaturesVisible must therefore
+-- also consult the catalog accessor and the known-affix map, and must honour
+-- the simulate switch so the non-PE layout is previewable in-game.
+check(
+    "peFeaturesVisible defined and multi-sourced",
+    prot:find("function EC_compCache.peFeaturesVisible()", 1, true) ~= nil
+        and prot:match("peFeaturesVisible%(%).-simulateExtractionAbsent.-return false") ~= nil
+        and prot:match("peFeaturesVisible%(%).-peDetected%(%)") ~= nil
+        and prot:match("peFeaturesVisible%(%).-getExtractionCatalog%(%)") ~= nil
+        and prot:match("peFeaturesVisible%(%).-knownAffixDescriptions") ~= nil,
+    "EC_compCache.peFeaturesVisible() must exist, short-circuit on simulateExtractionAbsent, and OR peDetected() with getExtractionCatalog() and the known-affix map."
+)
+
+-- 8. (v2.74.0) Every panel that owns a PE-only widget consults the gate, so a
+-- new affix setting can't ship visible-on-every-realm by omission.
+local PE_PANELS = {
+    "EbonClearance_ProtectionPanel.lua",
+    "EbonClearance_KeepDeletePanels.lua",
+    "EbonClearance_ItemHighlightingPanel.lua",
+    "EbonClearance_GuildPanel.lua",
+    "EbonClearance_QuickstartPanel.lua",
+    "EbonClearance_MainPanel.lua",
+    "EbonClearance_HelpPanel.lua",
+    "EbonClearance_MerchantPanel.lua", -- the Goblin/normal/all "Sell at" dropdown
+    "EbonClearance_ScavengerPanel.lua", -- the whole companion panel
+}
+local missingGate = {}
+for _, path in ipairs(PE_PANELS) do
+    if not read(path):find("peFeaturesVisible", 1, true) then
+        missingGate[#missingGate + 1] = path
+    end
+end
+check(
+    "every PE-bearing panel consults peFeaturesVisible",
+    #missingGate == 0,
+    "These panels own PE-only widgets but never gate them: " .. table.concat(missingGate, ", ")
+)
+
+-- 9. (v2.74.0) Hiding a setting is not enough when the setting defaults ON
+-- and the thing that would switch it off is now invisible. Two toggles are in
+-- that position, and each needs a matching runtime gate or the player is left
+-- with behaviour they can see but cannot reach:
+--   * protectChanceOnHitItems - defaults ON, and off-affix-realm there is no
+--     extraction to release a proc weapon, so every one would be wedged.
+--   * merchantMode - a stored "goblin" would sell at no vendor at all once
+--     the dropdown that set it is gone.
+check(
+    "hidden-but-defaulted toggles have matching runtime gates",
+    read("EbonClearance_Decision.lua"):match("peFeaturesVisible.-ctx%.protectChanceOnHitItems") ~= nil
+        and ev:match("EC_IsMerchantAllowed = function%(%).-peFeaturesVisible") ~= nil,
+    "Decision's ctx must force protectChanceOnHitItems off, and EC_IsMerchantAllowed must fall through to all-merchants, when peFeaturesVisible() is false."
+)
+
+-- 10. (v2.74.0) The two stock looting toggles must NOT live on the companion
+-- panel, which goes dark on a realm without the pets. They are plain 3.3.5a
+-- looting behaviour and moved to the bag-utility panel; putting them back
+-- would silently remove them from every non-companion realm.
+check(
+    "stock looting toggles are off the companion panel",
+    read("EbonClearance_ScavengerPanel.lua"):find("EbonClearanceAutoOpenCB", 1, true) == nil
+        and read("EbonClearance_ScavengerPanel.lua"):find("EbonClearanceFastLootCB", 1, true) == nil
+        and read("EbonClearance_ProcessBagsPanel.lua"):find("EbonClearanceAutoOpenCB", 1, true) ~= nil
+        and read("EbonClearance_ProcessBagsPanel.lua"):find("EbonClearanceFastLootCB", 1, true) ~= nil,
+    "Auto-open containers and Fast Loot belong on the Process Bags panel, not the Scavenger panel."
+)
+
+-- 11. (v2.74.0) The Help filter must handle whole sections, not just single
+-- entries, and must not leave a section header standing over nothing. The
+-- companion section is the live case: every one of its entries needs the pets,
+-- so the marker carries pe = true and the header goes with them.
+check(
+    "help filter drops PE sections and never leaves an empty header",
+    read("EbonClearance_HelpPanel.lua"):find("e.section and e.pe", 1, true) ~= nil
+        and read("EbonClearance_HelpPanel.lua"):match('section = "scavenger".-pe = true') ~= nil
+        and read("EbonClearance_HelpPanel.lua"):match("if nxt and not nxt%.section then") ~= nil,
+    "EC_buildHelpEntries must honour pe = true on a section marker and drop any section left with no entries under it."
+)
+
+-- 12. (v2.74.0) The dead "PE addon not detected" grey-out note is gone. The
+-- widget it annotated is hidden outright now, so the string was unreachable;
+-- leaving it would be a second, contradictory story about the same state.
+check(
+    "stale PE-not-detected note removed from the panel",
+    read("EbonClearance_ProtectionPanel.lua"):find("Project Ebonhold addon not detected", 1, true) == nil,
+    "ProtectionPanel should no longer grey-and-explain the PE-absent case; peFeaturesVisible hides those widgets instead."
+)
+
 print()
 if fails > 0 then
     io.stderr:write("RESULT: " .. fails .. " test(s) failed\n")

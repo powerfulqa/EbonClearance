@@ -20,7 +20,8 @@
 --
 -- Cross-file dependencies satisfied by NS:
 --   * NS.compCache (Core) - initPanel, setPanelWidth, registerWidth,
---     syncEquipped, checkBagsForUpgrades, syncEquipmentSets, peDetected
+--     syncEquipped, checkBagsForUpgrades, syncEquipmentSets,
+--     peFeaturesVisible (the affix-settings visibility gate)
 --   * NS.DB captured at OnShow entry
 --   * NS.MakeHeader / NS.MakeLabel (8e-i)
 --   * NS.FitScrollContent (8e-ii)
@@ -102,6 +103,11 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end
         if self.UpdateAllTomeEnabled then
             self:UpdateAllTomeEnabled()
+        end
+        -- v2.74.0: re-evaluated on every re-show, so a PE addon that loads
+        -- late (or a /ec affixfallback flip) is picked up without a rebuild.
+        if self.UpdatePEVisibility then
+            self.UpdatePEVisibility()
         end
     end, function(self, content)
         -- Auto-protect handlers used to refresh `self.listUI` directly because
@@ -234,12 +240,30 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- protection runs at sell/delete time only). No Keep List
         -- entries are stamped - if the user wants the protected items
         -- on the Keep List explicitly, they Alt+Right-Click to add.
-        local autoAffixCB = CreateFrame(
+        -- Every widget below that only means something when the affix
+        -- system is present. UpdatePEVisibility (defined at the end of
+        -- this build, once the whole chain exists) hides the run when
+        -- EC_compCache.peFeaturesVisible() is false and re-anchors the
+        -- widgets that chain off the end of it.
+        --
+        -- Checkbox label FontStrings are children of their checkbox and
+        -- hide with it, so they are not collected here. The [?] help
+        -- icons ARE collected: NS.AddHelpIcon parents them to `content`,
+        -- not to the label, so they would otherwise float in the gap.
+        local peWidgets = {}
+        local function markPE(w)
+            if w then
+                peWidgets[#peWidgets + 1] = w
+            end
+            return w
+        end
+
+        local autoAffixCB = markPE(CreateFrame(
             "CheckButton",
             "EbonClearanceProtectAffixedRareCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
-        )
+        ))
         autoAffixCB:SetPoint("TOPLEFT", autoSetCB, "BOTTOMLEFT", 0, -10)
         autoAffixCB:SetChecked(DB.protectAffixedRareItems)
         local aaText = _G[autoAffixCB:GetName() .. "Text"]
@@ -266,7 +290,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         self.autoAffixCB = autoAffixCB
         if aaText then
-            NS.AddHelpIcon(content, aaText, "LEFT", "RIGHT", 6, 0, "gate-affix-protection")
+            markPE(NS.AddHelpIcon(content, aaText, "LEFT", "RIGHT", 6, 0, "gate-affix-protection"))
         end
 
         -- v2.23.0 child toggle: exact-rank duplicate gate on the affix
@@ -275,12 +299,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- (affixName, rank) pairs the player owns. When ON AND a bag
         -- item's affix matches exact rank, the protection releases the
         -- item to the normal sell / DE rules. Inert without PE.
-        local dupeAffixCB = CreateFrame(
+        local dupeAffixCB = markPE(CreateFrame(
             "CheckButton",
             "EbonClearanceAffixAllowExactDupesCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
-        )
+        ))
         -- Indent further right than the parent toggle so the child sits
         -- a column to the right. (Pre-Task 15 this used the parent's
         -- explanatory note as an indented anchor; the note is gone now,
@@ -312,18 +336,20 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         self.dupeAffixCB = dupeAffixCB
         if daText then
-            NS.AddHelpIcon(content, daText, "LEFT", "RIGHT", 6, 0, "gate-allow-rank-dupes")
+            markPE(NS.AddHelpIcon(content, daText, "LEFT", "RIGHT", 6, 0, "gate-allow-rank-dupes"))
         end
 
         -- Status / explainer FontString. Carries both:
-        --   * The disabled-state status messages ("PE not detected" /
-        --     "Turn on affix protection above").
+        --   * The disabled-state status message ("Turn on affix
+        --     protection above"). v2.74.0 dropped the second arm ("PE not
+        --     detected") - that state now hides the whole affix run
+        --     instead of greying it, so the note is unreachable there.
         --   * v2.44.0 active-state explainer that the toggle is an
         --     independent sell rule (real player feedback: the
         --     toggle and the rank slider felt like they were
         --     fighting; making each one's note explain its scope
         --     resolves the confusion at the point of toggling).
-        local dupeAffixNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        local dupeAffixNote = markPE(content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"))
         dupeAffixNote:SetPoint("TOPLEFT", dupeAffixCB, "BOTTOMLEFT", 26, -2)
         EC_compCache.setPanelWidth(dupeAffixNote, 86)
         dupeAffixNote:SetJustifyH("LEFT")
@@ -348,7 +374,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- already handles multi-char (`VI` = V + I = 6) so only the
         -- slider range needs widening. Existing SavedVariables with
         -- affixMinSellRank = 6 pass EnsureDB's unbounded clamp fine.
-        local rankSlider = NS.AddSlider(
+        local rankSlider = markPE(NS.AddSlider(
             content,
             "EbonClearanceAffixMinSellRankSlider",
             dupeAffixNote,
@@ -371,7 +397,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
             end,
             -14,
             "%d"
-        )
+        ))
         -- v2.44.0: align the slider with dupeAffixCB. AddSlider anchors
         -- to its anchor's BOTTOMLEFT at the anchor's x position;
         -- dupeAffixNote sits at +26 from dupeAffixCB (its own indent
@@ -423,7 +449,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         if NS.AddHelpIcon then
             local sliderText = _G["EbonClearanceAffixMinSellRankSliderText"]
             if sliderText then
-                NS.AddHelpIcon(content, sliderText, "LEFT", "RIGHT", 6, 0, "gate-affix-rank-floor")
+                markPE(NS.AddHelpIcon(content, sliderText, "LEFT", "RIGHT", 6, 0, "gate-affix-rank-floor"))
             end
         end
 
@@ -432,7 +458,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- between the two affix-sell rules is visible at both points
         -- of toggling, not only in the Rule Summary. Hidden when the
         -- slider is Off (0) since there's nothing to explain.
-        local rankSliderNote = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        local rankSliderNote = markPE(content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"))
         rankSliderNote:SetPoint("TOPLEFT", rankSlider, "BOTTOMLEFT", 0, -6)
         EC_compCache.setPanelWidth(rankSliderNote, 86)
         rankSliderNote:SetJustifyH("LEFT")
@@ -460,12 +486,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- keepBoeCB for the owned-dupe rule below. When on, BoE items
         -- with rank below the floor are kept for auction; soulbound
         -- items in the same band still sell.
-        local keepBoeRankCB = CreateFrame(
+        local keepBoeRankCB = markPE(CreateFrame(
             "CheckButton",
             "EbonClearanceKeepBoeBelowRankFloorCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
-        )
+        ))
         keepBoeRankCB:SetPoint("TOPLEFT", rankSliderNote, "BOTTOMLEFT", 0, -8)
         keepBoeRankCB:SetChecked(DB.keepBoeBelowRankFloor)
         local kbrText = _G[keepBoeRankCB:GetName() .. "Text"]
@@ -486,7 +512,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         self.keepBoeRankCB = keepBoeRankCB
         if kbrText then
-            NS.AddHelpIcon(content, kbrText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-below-rank")
+            markPE(NS.AddHelpIcon(content, kbrText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-below-rank"))
         end
 
         -- v2.47.0 sub-toggle of "Allow selling affixes you already have":
@@ -495,12 +521,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- to soulbound items. Default off (preserves the existing behaviour of
         -- selling all owned dupes regardless of bind). Asked for by Broyo: he
         -- wants soulbound dupes vendored but BoE dupes kept to auction.
-        local keepBoeCB = CreateFrame(
+        local keepBoeCB = markPE(CreateFrame(
             "CheckButton",
             "EbonClearanceKeepBoeAffixDupesCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
-        )
+        ))
         -- Sits in the child column (rankSliderNote is already at the child
         -- indent), below the rank-slider note - grouped with the affix-sell
         -- controls it relates to.
@@ -531,7 +557,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         self.keepBoeCB = keepBoeCB
         if kbText then
-            NS.AddHelpIcon(content, kbText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-dupes")
+            markPE(NS.AddHelpIcon(content, kbText, "LEFT", "RIGHT", 6, 0, "gate-keep-boe-dupes"))
         end
 
         -- v2.66.0 (Serv follow-up): the two BoE sub-toggles were both
@@ -561,12 +587,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- unconditional either way. Lives here in Keep Settings for
         -- consistency with the other "Protect X" toggles - though it
         -- specifically affects the Delete Settings auto-mark scan.
-        local protectHiILvlCB = CreateFrame(
+        local protectHiILvlCB = markPE(CreateFrame(
             "CheckButton",
             "EbonClearanceAutoMarkProtectHighILvlCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
-        )
+        ))
         -- v2.66.0 (Serv follow-up): keepBoeCB moved UP to sit directly
         -- under its dupeAffix parent, so protectHiILvlCB (and every
         -- widget chained below it) followed keepBoeCB up and overlapped
@@ -591,17 +617,20 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         self.protectHiILvlCB = protectHiILvlCB
         if protectHiILvlText then
-            NS.AddHelpIcon(content, protectHiILvlText, "LEFT", "RIGHT", 6, 0, "gate-automark-protect-hilvl")
+            markPE(NS.AddHelpIcon(content, protectHiILvlText, "LEFT", "RIGHT", 6, 0, "gate-automark-protect-hilvl"))
         end
 
-        -- Greys-out the child CB when the parent toggle is off OR when PE
-        -- isn't detected, and swaps in a status line for that case.
-        -- Called on init, on the parent CB's OnClick, and on every
-        -- refresh-callback fire.
+        -- Greys-out the child CB when the parent toggle is off, and swaps
+        -- in a status line for that case. Called on init, on the parent
+        -- CB's OnClick, and on every refresh-callback fire.
+        --
+        -- v2.74.0: the "PE not detected" arm is gone. Whole-run
+        -- visibility moved to UpdatePEVisibility below, which HIDES these
+        -- widgets instead of greying them, so the disabled state here only
+        -- ever means "the parent toggle is off".
         local function UpdateDupeAffixEnabled()
-            local peOn = EC_compCache.peDetected and EC_compCache.peDetected()
             local parentOn = DB.protectAffixedRareItems == true
-            if peOn and parentOn then
+            if parentOn then
                 dupeAffixCB:Enable()
                 if rankSlider and rankSlider.Enable then
                     rankSlider:Enable()
@@ -679,13 +708,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 if daText then
                     daText:SetTextColor(0.5, 0.5, 0.5)
                 end
-                if not peOn then
-                    dupeAffixNote:SetText(
-                        L["|cffff4040Project Ebonhold addon not detected. This option needs PE to know which affixes you have.|r"]
-                    )
-                else
-                    dupeAffixNote:SetText(L["|cff888888Turn on the affix protection above to use this option.|r"])
-                end
+                dupeAffixNote:SetText(L["|cff888888Turn on the affix protection above to use this option.|r"])
                 -- v2.44.0: collapse the rank-slider explainer when
                 -- the parent toggle is off (the slider has no effect).
                 if rankSliderNote then
@@ -699,9 +722,9 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                     kbText:SetTextColor(0.5, 0.5, 0.5)
                 end
                 -- v2.66.0: grey the "keep BoE below rank floor" sub-option
-                -- too. Without PE detected OR without the parent affix
-                -- protection on, the rank slider is inert; keep its
-                -- companion toggle visually consistent.
+                -- too. Without the parent affix protection on, the rank
+                -- slider is inert; keep its companion toggle visually
+                -- consistent.
                 if keepBoeRankCB and keepBoeRankCB.Disable then
                     keepBoeRankCB:Disable()
                 end
@@ -735,12 +758,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- base itemID. Same gate-at-decision-time design as the affix
         -- toggle. No quality filter because chance-on-hit is a stable
         -- per-itemID property and extraction works regardless of rarity.
-        local procCB = CreateFrame(
+        local procCB = markPE(CreateFrame(
             "CheckButton",
             "EbonClearanceProtectChanceOnHitCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
-        )
+        ))
         -- v2.23.0: anchor moved from autoAffixNote to dupeAffixNote so the
         -- new child toggle sits between the affix toggle and the chance-
         -- on-hit toggle visually.
@@ -771,7 +794,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end
         self.procCB = procCB
         if pcText then
-            NS.AddHelpIcon(content, pcText, "LEFT", "RIGHT", 6, 0, "gate-chance-on-hit")
+            markPE(NS.AddHelpIcon(content, pcText, "LEFT", "RIGHT", 6, 0, "gate-chance-on-hit"))
         end
 
         -- v2.26.0 child toggle: exact-proc duplicate gate on the chance-
@@ -802,12 +825,12 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         -- the 700xxx family stay protected regardless. Labelled
         -- "(experimental)" because seed-map keywords are hand-curated
         -- and may need iteration.
-        local sellKnownProcCB = CreateFrame(
+        local sellKnownProcCB = markPE(CreateFrame(
             "CheckButton",
             "EbonClearanceSellChanceOnHitKnownCB",
             content,
             "InterfaceOptionsCheckButtonTemplate"
-        )
+        ))
         sellKnownProcCB:SetPoint("TOPLEFT", procCB, "BOTTOMLEFT", 26, -4)
         sellKnownProcCB:SetChecked(DB.sellChanceOnHitKnown)
         local skpText = _G[sellKnownProcCB:GetName() .. "Text"]
@@ -825,7 +848,7 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
         end)
         self.sellKnownProcCB = sellKnownProcCB
         if skpText then
-            NS.AddHelpIcon(content, skpText, "LEFT", "RIGHT", 6, 0, "gate-sell-known-chance-on-hit")
+            markPE(NS.AddHelpIcon(content, skpText, "LEFT", "RIGHT", 6, 0, "gate-sell-known-chance-on-hit"))
         end
 
         -- Grey the child when the parent is off (same pattern as the
@@ -960,6 +983,43 @@ BlacklistSettingsPanel:SetScript("OnShow", function(self)
                 NS.RefreshSellBorders()
             end
         end)
+
+        -- v2.74.0: show / hide the affix + proc-extraction run as a block.
+        -- On a realm without the affix system those settings can never do
+        -- anything, so they are removed rather than left greyed.
+        --
+        -- The run is contiguous - autoAffixCB through sellKnownProcCB,
+        -- including the chance-on-hit pair - so the tome section is the
+        -- only thing chaining off the far end, and one re-anchor closes
+        -- the whole gap.
+        --
+        -- Hiding alone is not enough: a hidden frame keeps its rect, so
+        -- the chain would leave the run's full height as blank space. The
+        -- live anchor uses -26 to un-indent from sellKnownProcCB (a child-
+        -- column widget); autoSetCB already sits at the parent column, so
+        -- the replacement offset is 0.
+        --
+        -- Defined here rather than beside UpdateDupeAffixEnabled because
+        -- it needs unlearnedTomeCB, created further down the build.
+        local function UpdatePEVisibility()
+            local show = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+            for i = 1, #peWidgets do
+                local w = peWidgets[i]
+                if show then
+                    w:Show()
+                else
+                    w:Hide()
+                end
+            end
+            unlearnedTomeCB:ClearAllPoints()
+            if show then
+                unlearnedTomeCB:SetPoint("TOPLEFT", sellKnownProcCB, "BOTTOMLEFT", -26, -10)
+            else
+                unlearnedTomeCB:SetPoint("TOPLEFT", autoSetCB, "BOTTOMLEFT", 0, -10)
+            end
+        end
+        self.UpdatePEVisibility = UpdatePEVisibility
+        UpdatePEVisibility()
 
         -- v2.49.3: "Sell recipes you already know" (+ per-rarity gates and
         -- bind dropdowns) moved to Merchant Settings - it is a sell rule,

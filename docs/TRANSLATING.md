@@ -42,6 +42,7 @@ The addon reads your client's language (`GetLocale()`) at login and uses the mat
 - **Keep color codes exactly.** Sequences like `|cffb6ffb6` ... `|r` are color markup, not words. Copy them verbatim, keep them balanced (every `|cff......` needs its `|r`). Translate only the words between them.
 - **No em dashes.** Use a plain hyphen with spaces ( - ), a comma, or a period. (This is a project-wide rule.)
 - **Watch length.** German especially runs longer than English. If a translated label looks cut off in-game, shorten the wording. Most panels reflow, but fixed-width checkboxes and buttons can clip.
+- **Paragraph breaks (`\n\n`) are yours to place.** Some long Help answers contain `\n\n`, which renders as a blank line between paragraphs. Where the key has them, the break points were chosen for the English sentence flow, so **do not** feel obliged to put yours in the same places - put them where your translation's paragraphs actually fall, or leave them out. The only hard rule is the one above: don't edit the key. As of v2.74.0 the eleven longest English answers have breaks and the French and German values do not yet; adding them is a welcome, purely cosmetic contribution.
 
 ## Checking your work
 

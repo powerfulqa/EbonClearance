@@ -128,7 +128,55 @@ scoped to be a single-session change unless flagged otherwise.
 > (file split) was added post-v2.29.0 audit when the 200-locals cap
 > became a recurring active constraint; it shipped across multiple
 > stages and moved to Resolved in v2.37.4. Active now: 1 chat-filter,
-> 3 TUNING, 4 luacheck CI reconciliation (v2.43.0).
+> 3 TUNING. 4 (luacheck CI reconciliation) shipped and moved to Resolved.
+> 5 was raised and resolved inside v2.74.0; it stays written up because the
+> latent shape matters if the proc layer is ever re-enabled off-affix-realm.
+
+### 5. Chance-on-hit protection is stripped from 30 vanilla weapons on a realm without the affix system - RESOLVED by side effect (v2.74.0)
+
+**No longer reachable.** v2.74.0 turned the whole chance-on-hit protection
+layer off on a realm without the affix system (`Decision.lua` forces
+`ctx.protectChanceOnHitItems` false via `peFeaturesVisible()`), so the
+`clearedByProc` block never runs there and `isExtractableWeaponSlot` is never
+consulted. With the protection uniformly off, the 30-itemID table can no
+longer single out those weapons for *worse* treatment than every other proc
+weapon: they all obey normal quality / list rules.
+
+Kept on record because the underlying shape is still latent - if the
+protection layer is ever re-enabled off-affix-realm, the bug returns exactly
+as described below, and the fix at that point is to gate the table itself.
+The original finding:
+
+`EC_CHANCE_PROC_NEVER_EXTRACTABLE` (`EbonClearance_Protection.lua`) is a
+table of 30 vanilla itemIDs recording Anvil-verified truth: "the PE Anvil
+refuses extraction on these". `EC_compCache.isExtractableWeaponSlot` returns
+`false` for any itemID in that set, **unconditionally, with no affix-system
+gate**, and that helper is the outer gate on chance-on-hit protection in the
+decision core (`EbonClearance_Decision.lua`, the `clearedByProc` block).
+
+On PE this is correct: extraction cannot happen, so protection has no
+reading and the item should obey normal rules. On a realm without the affix
+system the same line means something else entirely - protection is removed
+from Fiery War Axe, Felstriker, Silent Fang, Brain Hacker, Phantom Blade,
+Dazzling Longsword, Sword of Decay, Toxic Revenger, Blazing Rapier, Dwarven
+Hand Cannon and ~20 more. Several are uncommon quality, and the q2 rarity
+rule is enabled for fresh installs, so those weapons are auto-vendored while
+"Keep items with chance-on-hit procs" is on and appears to be protecting
+them.
+
+Related, same shape and same patch: `EC_EXTRACTABLE_EQUIP_LOCS` narrows
+chance-on-hit protection to weapon slots (the v2.60.0 Anvil rule), so proc
+trinkets and rings get no protection anywhere.
+
+How v2.74.0 closed it: rather than gating the two tables, the whole
+protection layer is switched off where extraction does not exist, which
+subsumes both. `EC_EXTRACTABLE_EQUIP_LOCS` narrowing protection to weapon
+slots is moot for the same reason - there is no protection to narrow. If the
+layer is ever re-enabled off-affix-realm, gate both tables on
+`EC_compCache.peFeaturesVisible()` and add `tests/test_decision.lua` fixtures
+covering an affix-realm and a non-affix-realm context.
+
+---
 
 ## Audit decisions (won't fix)
 
@@ -420,7 +468,7 @@ If the file does eventually split, the original guidance still
 applies: introduce `local EC = {}` in `EbonClearance_Core.lua`, load
 it first, and have each feature file attach to it.
 
-### Split [`EC_petCheckFrame`](../EbonClearance.lua) OnUpdate - DONE (v2.4.0)
+### Split [`EC_petCheckFrame`](../EbonClearance_Events.lua) OnUpdate - DONE (v2.4.0)
 
 Done in `refactor/perf-and-quality-pass`. Helpers extracted:
 `EC_TickGoblinSummon`, `EC_TickGoblinTarget`, `EC_TickMerchantReminder`,

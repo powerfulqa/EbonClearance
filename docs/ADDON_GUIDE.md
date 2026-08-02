@@ -44,7 +44,7 @@ internet tutorial disagree, follow the guide.
 10. **No external libraries.** No Ace3, no LibStub, no LDB. See the
     Ace3 decision record below for the reasoning and escape hatch.
 11. **Doc links never use `#L<n>` line anchors.** Link to the file by
-    name (e.g. `[CreateListUI](../EbonClearance.lua)`) and let readers
+    name (e.g. `[CreateListUI](../EbonClearance_ListWidget.lua)`) and let readers
     `grep` for the symbol. Line numbers shift on every refactor; symbol
     names don't.
 12. **Do not remove attribution markers.** `LICENSE` §2 lists five
@@ -379,9 +379,9 @@ InterfaceOptions_AddCategory(MyPanel)
 
 **Reactive layout (v2.11.0+).** Panels are no longer width-frozen at
 their first OnShow. The
-[`InterfaceOptionsFramePanelContainer:HookScript("OnSizeChanged", ...)`](../EbonClearance.lua)
-near the bottom of the file calls
-[`EC_compCache.refreshLayouts`](../EbonClearance.lua) on every resize,
+[`InterfaceOptionsFramePanelContainer:HookScript("OnSizeChanged", ...)`](../EbonClearance_Events.lua)
+near the bottom of the event hub calls
+[`EC_compCache.refreshLayouts`](../EbonClearance_PanelInfra.lua) on every resize,
 which walks `EC_compCache.widthRegistry.widgets` and re-applies
 `SetWidth(EC_PANEL_WIDTH - x)` to each, then re-fits scroll content for
 each `(content, lastWidget)` pair on `widthRegistry.scrollFits`.
@@ -395,17 +395,17 @@ EC_compCache.setPanelWidth(widget, x)        -- SetWidth + register in one call
 EC_compCache.registerWidth(widget, x)        -- register only
 ```
 
-[`MakeLabel`](../EbonClearance.lua) and
-[`EC_WrapPanelInScrollFrame`](../EbonClearance.lua) register their
+[`MakeLabel`](../EbonClearance_PanelWidgets.lua) and
+[`EC_WrapPanelInScrollFrame`](../EbonClearance_PanelInfra.lua) register their
 widgets automatically;
-[`EC_FitScrollContent`](../EbonClearance.lua) registers itself the
+[`NS.FitScrollContent`](../EbonClearance_PanelInfra.lua) registers itself the
 first time it's called per panel. List widgets created via
-[`CreateListUI`](../EbonClearance.lua) and
-[`CreateNameListUI`](../EbonClearance.lua) install their own
+[`CreateListUI`](../EbonClearance_ListWidget.lua) install their own
 `box:OnSizeChanged` hook so internal rows track via the registered
-content frame.
+content frame. (`CreateNameListUI` was removed; only `CreateListUI`
+remains.)
 
-**Panels using CreateListUI / CreateNameListUI MUST anchor BOTTOMRIGHT
+**Panels using CreateListUI MUST anchor BOTTOMRIGHT
 to the panel** so the box itself stretches with the panel:
 
 ```lua
@@ -594,7 +594,80 @@ Not wired into CI, but enforce in review:
   walk in `refreshKnownAffixes` is the independent primary source; the ExtractionService merge is
   an additive `if catalog then` step. Diagnostics (`/ec captureproc`, `/ec procdump`,
   `/ec bugreport`) intentionally read the raw global to report true live state. Invariants in
-  `tests/test_affix_resilience.lua`.
+  `tests/test_affix_resilience.lua`. Since v2.74.0 the switch also drives the PE-only UI gate
+  below, so `/ec affixfallback on` + `/reload` previews the panel layout a player on a realm
+  without the affix system sees.
+
+### PE-only UI visibility: `EC_compCache.peFeaturesVisible()` (v2.74.0)
+
+`EC_compCache.peFeaturesVisible()` (Protection.lua, next to `getExtractionCatalog`) is the single
+predicate every panel uses to decide whether to draw affix / proc-extraction settings. On a realm
+without the affix system those options can never do anything, so they are omitted rather than
+greyed.
+
+**Do not gate this on `peDetected()` alone.** `peDetected()` tests `_G.ProjectEbonhold`, the PE
+*addon*. The affix system does not need it: `refreshKnownAffixes` walks the player's spellbook for
+`"engrave this affix"` tooltips, which is server-side truth, and the ExtractionService merge is
+additive on top. A player on PE who does not run the PE addon has fully working affix protection,
+so gating the UI on the addon global alone is a false negative that hides live features from them.
+The predicate therefore ORs three live signals - `peDetected()`, `getExtractionCatalog() ~= nil`,
+and a non-empty `knownAffixDescriptions` - and latches once true, because the spellbook walk is
+chunked across frames and lands after the first panel build. `simulateExtractionAbsent` is checked
+first, so `/ec affixfallback` can force the hidden layout.
+
+**Adding a new affix-dependent setting?** Gate it, or CI fails: `tests/test_affix_resilience.lua`
+asserts every panel file that owns a PE-only widget mentions `peFeaturesVisible`.
+
+Two mechanisms are in use, picked by how the panel builds:
+
+- **Hide plus re-anchor** for hand-written anchor chains (ProtectionPanel, KeepDeletePanels,
+  GuildPanel). A hidden frame keeps its rect, so hiding alone leaves the run's full height as blank
+  space - the first widget below the run must be re-pointed at the last one still visible. Watch
+  two traps: `[?]` help icons are parented to `content`, not to the checkbox label, so they must be
+  hidden explicitly (ProtectionPanel collects them via a local `markPE` helper); and indent is
+  encoded in the anchor's x-offset, so re-pointing at a widget in a different column changes it.
+- **Skip at build** for data-driven loops that carry their own anchor (ItemHighlightingPanel's
+  category rows, MainPanel's slash rows, HelpPanel's entries, QuickstartPanel's radio groups). The
+  loop closes the gap for free. Prefer this where it applies.
+
+Panels build once and never rebuild, but their `initPanel` refresh callback runs on every re-show;
+the hide-and-re-anchor panels re-evaluate there so a late PE load is picked up without a `/reload`.
+The skip-at-build panels need a `/reload`, which is acceptable because both signals that matter at
+build time are accurate before the first panel opens.
+
+**Do NOT gate `InterfaceOptions_AddCategory` on this predicate.** Registration is main-chunk code in
+`Events.lua`, and `EbonClearance` sorts before `ProjectEbonhold`, so the PE global is very likely
+still nil at that moment. Gating registration would hide panels from every PE user. Panel *bodies*
+are safe because they build lazily on first OnShow, long after login. The Scavenger panel is the
+whole-panel case and handles it by hiding its children and regions with a placeholder line, not by
+skipping registration.
+
+**Hiding a setting that defaults ON requires a matching runtime gate.** Otherwise the stored value
+keeps driving behaviour with the off-switch invisible. Two live examples, both pinned by
+`tests/test_affix_resilience.lua`:
+
+- `protectChanceOnHitItems` - the adapter in `Decision.lua` forces `ctx.protectChanceOnHitItems`
+  false when the predicate is false. Without it, proc weapons would be kept forever (nothing can
+  release them where extraction does not exist) with no visible toggle.
+- `merchantMode` - `EC_IsMerchantAllowed` returns true unconditionally when the predicate is false.
+  Without it, a stored `"goblin"` would sell at no vendor at all. The DB value is deliberately not
+  rewritten, so the choice survives for realms that do have the companion.
+
+The Scavenger panel is also why `autoOpenContainers` and `fastLoot` live on **Process Bags** since
+v2.74.0: both are stock 3.3.5a looting with no companion dependency, and leaving them on a panel
+that goes dark would have removed them from every non-companion realm.
+
+**The Help panel filters alongside the settings.** `EC_PE_HELP_IDS` in
+[EbonClearance_HelpPanel.lua](../EbonClearance_HelpPanel.lua) lists entry ids to drop; a whole
+section opts out with `pe = true` on its marker; and a second pass drops any section header left
+with no entries under it. If you hide a setting, add its FAQ entry to that list in the same patch,
+or the Help panel documents a control the player cannot see. The reverse trap matters too: the
+`affix-options-missing` entry explaining *why* the settings vanished must never be filtered.
+
+When judging an entry, hide it only if the feature it describes is gone. An entry that merely
+*mentions* a PE feature while answering a still-live question stays: `tshoot-allow-sell-gate` lists
+three protection triggers and one of them (tome / recipe) still fires, so over-listing a trigger
+beats hiding a working explanation.
 - `/ec rules` - plain-English summary of every active rule + the
   precedence EC uses to decide DELETE / SELL / KEEP. Same surface as
   the "Current Rules" button on the Main panel. Surfaces explicit

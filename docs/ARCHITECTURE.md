@@ -103,7 +103,14 @@ anything that looks like dead code or a bug.
 - **One event frame.** It lives in `Events.lua`. Features do not create their own.
 - **Cross-file state goes through `NS`.** New globals are not added.
 - **SavedVariables change only via `EnsureDB` / `EnsureAccountDB`** nil-default
-  migrations (downgrade-safe, additive). Both live in `Core.lua`.
+  migrations (downgrade-safe, additive). Both live in `Events.lua` (the
+  `EnsureDB` body around the per-char field list; `Core.lua` owns the namespace
+  shape, not the migrations).
+- **PE-only settings gate on `EC_compCache.peFeaturesVisible()`** (Protection),
+  never on `peDetected()` alone, and never at
+  `InterfaceOptions_AddCategory` time. Hiding a setting that defaults ON also
+  needs a runtime gate, or the stored value keeps driving behaviour with the
+  off-switch invisible. Full rules in ADDON_GUIDE.
 - **Chat output only through `PrintNice` / `PrintNicef`.** Never
   `DEFAULT_CHAT_FRAME:AddMessage` directly.
 - **Panel width only through `EC_compCache`** (PanelInfra), or it freezes at
@@ -119,7 +126,8 @@ anything that looks like dead code or a bug.
 | Change what counts as sellable / keepable | `Decision.lua` (the sell/keep core; add a fixture in `tests/test_decision.lua`) + `Protection.lua` for detection helpers |
 | Change vendor pacing / per-run cap | `Vendor.lua` (`EC_Effective*` helpers) |
 | Add a profession-processing rule | `Process.lua` |
-| Add a settings checkbox | the relevant `*Panel.lua` + an `EnsureDB` default in `Core.lua` |
+| Add a settings checkbox | the relevant `*Panel.lua` + an `EnsureDB` default in `Events.lua` |
+| Hide a setting on a realm without the affix system | gate it on `EC_compCache.peFeaturesVisible()`, add its FAQ entry to `EC_PE_HELP_IDS` in `HelpPanel.lua`, and add a runtime gate too if it defaults ON |
 | Add a whole new options panel | new `*Panel.lua` + register it centrally in `Events.lua` |
 | React to a new game event | `RegisterEvent` + a branch in `Events.lua` (not a new frame) |
 | Add a `/ec` subcommand | the slash handler in `Events.lua` (and a row in `README.md`) |

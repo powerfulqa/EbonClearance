@@ -860,8 +860,19 @@ local function lootEnsureWindow()
         win:SetMaxResize(700, 820)
     end
     win:RegisterForDrag("LeftButton")
-    win:SetScript("OnDragStart", win.StartMoving)
-    win:SetScript("OnDragStop", win.StopMovingOrSizing)
+    -- v2.75.0 (fresh-audit follow-up): pause the per-frame rebuild while the
+    -- window is being dragged. During a Scavenger loot burst lootWindowDirty
+    -- flips constantly, so the OnUpdate below would rebuild the row list ~once a
+    -- second mid-drag and hitch the move. Refresh once when the drag ends.
+    win:SetScript("OnDragStart", function(self)
+        self._lootDragging = true
+        self:StartMoving()
+    end)
+    win:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        self._lootDragging = false
+        lootRefresh(self)
+    end)
     win:Hide()
     win.scope = "session"
     win.sortKey = "gold" -- "name" | "count" | "gold"
@@ -1111,6 +1122,10 @@ local function lootEnsureWindow()
     -- (one script call/sec, gated on visibility).
     win:SetScript("OnUpdate", function(self, elapsed)
         if not self:IsShown() then
+            return
+        end
+        -- v2.75.0: skip the rebuild while dragging (OnDragStop refreshes once).
+        if self._lootDragging then
             return
         end
         self._lootTick = (self._lootTick or 0) + elapsed

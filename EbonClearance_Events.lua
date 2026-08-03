@@ -361,6 +361,15 @@ NS.PET_NAME_LC = PET_NAME_LC
 -- Test 66 in tests/test_perf_guardrails.lua locks the structural
 -- invariants of this partition.
 local PER_CHAR_FIELDS = {
+    -- v2.75.0 (fresh-audit fix): the master Enable/Disable flag. The README,
+    -- the panel checkbox, and /ec enable|disable have always described this as
+    -- per-character ("skip the addon on alts"), but the flag was routed to the
+    -- account-wide top level, so disabling on one alt disabled every character.
+    -- Making it per-character matches the documented behaviour. Existing saves
+    -- migrate: a character namespace that predates this seeds `enabled` from the
+    -- frozen account-wide value (see the seed block in EnsureDB), so a player
+    -- who had EC disabled account-wide is never silently re-enabled.
+    enabled = true,
     blacklist = true,
     blacklistAuto = true,
     whitelist = true,
@@ -495,7 +504,17 @@ local function EC_DBBuildProxy(charNamespace)
             if SPF[k] then
                 local p = activeSettings()
                 if p then
-                    return p[k]
+                    local v = p[k]
+                    if v ~= nil then
+                        return v
+                    end
+                    -- v2.75.0 (fresh-audit fix): the active profile exists but
+                    -- lacks this field (a settings-profile field added AFTER the
+                    -- profile was created - the "future-field trap"). Fall
+                    -- through to the frozen top-level legacy value instead of
+                    -- returning nil, matching the pre-migration fallback the
+                    -- design intended. EnsureDB then writes the nil-default back
+                    -- into the profile through __newindex on its next pass.
                 end
             end
             return rawget(EbonClearanceDB, k)
@@ -921,6 +940,18 @@ local function EnsureDB()
         if EbonClearanceDB.autoAddEquipped then
             EC_compCache.pendingFreshInstallSync = true
         end
+    end
+
+    -- v2.75.0 (fresh-audit fix): `enabled` became a PER_CHAR_FIELDS field. A
+    -- character namespace created before this change has no `enabled` key, so
+    -- the proxy would read nil and EnsureDB would default it to true - silently
+    -- re-enabling a player who had EbonClearance disabled account-wide. Seed it
+    -- once from the frozen top-level (account-wide) value so that state carries
+    -- across per character. Newly-migrated / fresh characters were already
+    -- seeded by the PER_CHAR_FIELDS copy loop above; this only fills the gap for
+    -- namespaces that predate the field.
+    if charNS.enabled == nil and type(EbonClearanceDB.enabled) == "boolean" then
+        charNS.enabled = EbonClearanceDB.enabled
     end
 
     -- v2.72.0 settings-profile migration. Runs BEFORE the proxy build so
@@ -1472,10 +1503,11 @@ local function EnsureDB()
     if type(DB.enabled) ~= "boolean" then
         DB.enabled = true
     end
-    -- v2.30.x: decommission the per-character enable filter. The minimap
-    -- toggle (DB.enabled) already covers the per-character disable use
-    -- case; the dedicated allowlist added little value and lived behind a
-    -- UI panel that's been repurposed for Item Highlighting settings.
+    -- v2.30.x: decommission the per-character enable filter. The Enable
+    -- toggle (DB.enabled) covers the per-character disable use case - and as
+    -- of v2.75.0 it is genuinely per-character (a PER_CHAR_FIELDS field), so
+    -- that claim now holds; the dedicated allowlist added little value and
+    -- lived behind a UI panel that's been repurposed for Item Highlighting.
     -- Force the flag false on every load so existing users with the
     -- filter previously enabled don't end up locked out of the addon on
     -- characters not in their old DB.allowedChars set. DB.allowedChars
@@ -2749,6 +2781,18 @@ end
 
 -- Snapshot the character's CURRENT selling settings under `name` and
 -- switch to it (mirror of EC_SaveProfile's save-then-activate shape).
+-- v2.75.0 (fresh-audit fix): returns the cleaned profile name if a profile with
+-- that (validated) name already exists, else nil. Lets the Profiles panel raise
+-- an overwrite confirmation before Save replaces an existing profile's body.
+function NS.SettingsProfileExists(name)
+    local ok, cleaned = EC_ValidateProfileName(name)
+    if not ok then
+        return nil
+    end
+    local profiles = EbonClearanceDB and EbonClearanceDB.settingsProfiles
+    return (profiles and profiles[cleaned] ~= nil) and cleaned or nil
+end
+
 function NS.SaveSettingsProfile(name)
     local ok, cleaned = EC_ValidateProfileName(name)
     if not ok then
@@ -3605,6 +3649,29 @@ function EC_compCache.scanBagItem(bag, slot)
     return EC_scanTooltip
 end
 
+-- v2.75.0: the same scan, by itemID instead of bag slot. SetHyperlink
+-- works for ANY item, including ones the player has never owned, which is
+-- what lets the pair cross-check read a candidate weapon's proc line
+-- without holding it (the Anvil needs the physical item; this does not).
+--
+-- Subject to the same SetOwner-before-Set invariant as scanBagItem above -
+-- see that comment. Returns nil when the client has no data for the ID
+-- yet; SetHyperlink itself is what asks the server for it, so a caller
+-- that gets nil should try again on a later pass rather than conclude the
+-- item has no proc.
+function EC_compCache.scanItemID(itemID)
+    if not itemID then
+        return nil
+    end
+    EC_scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    EC_scanTooltip:ClearLines()
+    EC_scanTooltip:SetHyperlink("item:" .. itemID)
+    if not GetItemInfo(itemID) then
+        return nil
+    end
+    return EC_scanTooltip
+end
+
 -- Forward declaration so the debounce frame's OnUpdate closure below
 -- can resolve the name. Without this, Lua's lexical scoping resolves
 -- the reference to the (nil) global at closure-creation time and the
@@ -3748,6 +3815,11 @@ EC_compCache.bagUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
     -- included) is the "bag update" phase.
     local _spikeT0 = EC_prof and EC_prof()
     EC_StampEvent("bagUpdate")
+    -- v2.75.0 (fresh-audit fix): resolve any deferred external-delete candidate
+    -- now that the bag burst has settled and the cursor is likely clear.
+    if EC_compCache.confirmPendingExternalDelete then
+        EC_compCache.confirmPendingExternalDelete()
+    end
     -- v2.63.0: the shared bag snapshot is now acquired LAZILY - the first
     -- scanner below that actually runs builds it via
     -- EC_compCache.acquireFlushSnapshot() and later scanners in this same
@@ -5890,8 +5962,48 @@ function EC_compCache.installExternalActionHooksOnce()
         if ours then
             return -- executeBagSlotDelete already logged + counted it
         end
-        EC_LogRecentDeleted(cp.itemID, cp.count, "external", L["Deleted outside EbonClearance - by you or another addon"])
+        -- v2.75.0 (fresh-audit 2026-08-03): DeleteCursorItem also fires when the
+        -- Blizzard confirmation popup is RAISED for a rare/epic/quest item, not
+        -- only when the delete completes - which is exactly why EC's own
+        -- good-item deletes need HookDeletePopupOnce. Logging here recorded a
+        -- false "Deleted outside EbonClearance" row that stayed forever if the
+        -- player then clicked Cancel. Defer: remember the candidate and its
+        -- current in-bag count, and let the settled bag flush confirm the item
+        -- actually left the bags before writing the row. GetItemCount excludes
+        -- the on-cursor item, so a completed delete leaves the count unchanged
+        -- while a cancel returns the item and raises it.
+        EC_compCache.pendingExternalDelete = {
+            itemID = cp.itemID,
+            count = cp.count,
+            bagCount = (GetItemCount and GetItemCount(cp.itemID)) or 0,
+            at = GetTime(),
+        }
     end)
+end
+
+-- v2.75.0 (fresh-audit fix): confirm-or-drop a deferred external-delete
+-- candidate. Called from the settled bag flush. While the delete popup is still
+-- open the item sits on the cursor - wait. Once the cursor clears, an unchanged
+-- in-bag count means the item was really destroyed (log it); a raised count
+-- means the player cancelled and it returned to the bags (drop it). Expires
+-- after 30 s so a popup left open forever cannot leak a stale candidate.
+function EC_compCache.confirmPendingExternalDelete()
+    local pe = EC_compCache.pendingExternalDelete
+    if not pe then
+        return
+    end
+    if GetTime() - (pe.at or 0) > 30 then
+        EC_compCache.pendingExternalDelete = nil
+        return
+    end
+    if GetCursorInfo and GetCursorInfo() == "item" then
+        return -- popup still open / item still held; re-check next settle
+    end
+    EC_compCache.pendingExternalDelete = nil
+    local nowCount = (GetItemCount and GetItemCount(pe.itemID)) or 0
+    if nowCount <= (pe.bagCount or 0) then
+        EC_LogRecentDeleted(pe.itemID, pe.count, "external", L["Deleted outside EbonClearance - by you or another addon"])
+    end
 end
 
 local EC_IsMerchantAllowed -- forward declaration for FinishRun
@@ -5952,11 +6064,13 @@ end
 -- qualityPass / whitelistPass) into one combined check -- you will silently
 -- break the grey-always-sold guarantee that users and docs rely on.
 -- Blacklist and IsEquippedItem are the only things that can veto a sale.
--- EC-TRAP: (1) do NOT combine isJunk / qualityPass / whitelistPass into
+-- EC-TRAP: do NOT combine isJunk / qualityPass / whitelistPass into
 -- "one cleaner check" - that breaks the grey-always-sold guarantee (see
--- ADDON_GUIDE "Grey items are always sold"). (2) EC_AnnotateTooltip in
--- EbonClearance_Tooltip.lua deliberately MIRRORS this logic instead of
--- calling it; do NOT unify them. See docs/CODE_REVIEW.md item 6.
+-- ADDON_GUIDE "Grey items are always sold").
+-- (Historical note: this trap once also forbade unifying EC_AnnotateTooltip
+-- with this logic. That was RETIRED in v2.71.2 - the tooltip now renders from
+-- the shared decision core, so the DECISION is unified; only the label
+-- formatting is still per-surface. See docs/CODE_REVIEW.md item 6.)
 -- v2.71.0 (decision-classifier Stage 1): EC_IsSellable is now a thin
 -- delegate over the pure decision core in EbonClearance_Decision.lua.
 -- The 500-line decision body moved there VERBATIM (see the spec at
@@ -7470,7 +7584,10 @@ EC_IsMerchantAllowed = function()
     -- with the dropdown that set it now hidden. Left as a runtime gate
     -- rather than a DB rewrite so the setting survives for realms that do
     -- have the pet.
-    if EC_compCache.peFeaturesVisible and not EC_compCache.peFeaturesVisible() then
+    -- v2.75.0 SAFETY: peFeaturesActive (real PE presence), NOT peFeaturesVisible
+    -- (which honours the /ec affixfallback UI preview). The layout preview must
+    -- never widen merchant targeting on a live realm.
+    if EC_compCache.peFeaturesActive and not EC_compCache.peFeaturesActive() then
         return true
     end
     if mode == "any" then
@@ -7755,6 +7872,25 @@ StaticPopupDialogs["EC_CONFIRM_DELETE_PROFILE"] = {
 -- used it back to Default, so spell that out in the prompt.
 StaticPopupDialogs["EC_CONFIRM_DELETE_SPROFILE"] = {
     text = L['Delete settings profile "|cffffff00%s|r"?\n|cffaaaaaaCharacters using it switch to Default. This cannot be undone.|r'],
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        if type(data) == "function" then
+            data()
+        end
+    end,
+    OnShow = EC_compCache.popupRaiseOnShow,
+    OnHide = EC_compCache.popupRaiseOnHide,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- v2.75.0 (fresh-audit fix): saving over an existing same-name settings
+-- profile used to overwrite it silently (delete had a confirm, save did not).
+StaticPopupDialogs["EC_CONFIRM_OVERWRITE_SPROFILE"] = {
+    text = L['Overwrite settings profile "|cffffff00%s|r"?\n|cffaaaaaaIts saved settings are replaced with this character\'s current ones. This cannot be undone.|r'],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)
@@ -8796,6 +8932,29 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
             NS.ShowCaptureProcDump()
         else
             PrintNice("|cffff4444Capture-proc helper unavailable.|r")
+        end
+        return
+    elseif cmd == "pairaudit" then
+        -- v2.75.0: check every recorded chance-on-hit itemID against the
+        -- client's item data. Catches an itemID typo in the hand-entered
+        -- pairing tables, which is otherwise invisible - the wrong weapon
+        -- just gets released or protected with no error.
+        if NS.ShowProcPairAudit then
+            NS.ShowProcPairAudit()
+        else
+            PrintNice("|cffff4444Pair-audit helper unavailable.|r")
+        end
+        return
+    elseif cmd == "paircheck" then
+        -- v2.75.0: read candidate weapons' real proc lines straight from
+        -- the client, including items the player has never owned, so a
+        -- community-sourced pairing can be corroborated without the Anvil
+        -- (which needs the physical item). Candidates live in the
+        -- diagnostic only; nothing in the sell path reads them.
+        if NS.ShowProcPairCheck then
+            NS.ShowProcPairCheck()
+        else
+            PrintNice("|cffff4444Pair cross-check helper unavailable.|r")
         end
         return
     end

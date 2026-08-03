@@ -97,6 +97,8 @@ All settings live under `/ec`, which opens the scrollable config panel. Highligh
 | `/ec processdebug` | Diagnostic: open a copyable window listing every Process Bags gate (recognised profession spells, per-slot scan results) for bug reports |
 | `/ec scandebug <bag> <slot>` | Diagnostic: dump the hidden scan-tooltip lines for a bag slot (for "this item silently sells despite having an affix or proc" reports) |
 | `/ec captureproc` | Diagnostic: dump every bag item's chance-on-hit line + every extracted-affix spell tooltip + the full PE learnedAffixes catalog, for building the runtime chance-on-hit-proc translation table |
+| `/ec pairaudit` | Diagnostic: check every recorded chance-on-hit itemID against your client's item data and report any row whose ID points at a different item than the one it is recorded under (catches a typo in the hand-entered pairing tables, which is otherwise invisible) |
+| `/ec paircheck` | Diagnostic: read candidate chance-on-hit weapons' real proc lines from the client - including items you have never owned - so a community-sourced pairing can be corroborated against the affix description without needing the item in hand for an Anvil check. Candidates live in the diagnostic only; nothing in the sell path reads them |
 | `/ec autolearnsim <itemID> <spellID>` | Diagnostic: simulate an autolearn event (needs item in bags). |
 | `/ec autolearnpeek` | Dump the chance-on-hit autolearn state (author + autolearn + ambiguous). |
 | `/ec perf` | Show EbonClearance's memory, CPU, cache and list sizes |

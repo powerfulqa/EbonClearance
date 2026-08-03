@@ -7235,6 +7235,25 @@ do
             and prot:find("%[2825%]  = { spellID = 700121") ~= nil
             and prot:find("if itemID and EC_CHANCE_PROC_CONFIRMED_ITEMS%[itemID%] then") ~= nil,
         "the confirmed-items table wins over the keyword map for weapons whose PE spellID has been observed directly via /ec captureproc. Ships with 8 itemID -> spellID mappings verified via Serv's captureproc dump: Axe of the Deep Woods 811 -> Wilds, Bow of Searing Arrows 2825 -> Fire Blast, Blackblade of Shahram 12592 -> Shahram, Hammer of the Titans 12796 -> Concussion, Annihilator 12798 -> Rending, Alcor's Sunrazor 14555 -> Incineration, Electrified Dagger 19100 -> Wilds, Nightfall 19169 -> Vulnerability. The v2.49.1 autolearn will grow ADB.chanceProcMap dynamically alongside this stable seed layer.")
+    check("Test 110j2: v2.75.0 community pairings present; Destiny now Anvil-confirmed; controls stay rejected",
+        prot:find("%[934%]   = { spellID = 700092, family = \"Frailty\"") ~= nil
+            and prot:find("%[2164%]  = { spellID = 700090, family = \"Execution\"") ~= nil
+            and prot:find("%[7717%]  = { spellID = 700120, family = \"Bladestorm\"") ~= nil
+            and prot:find("%[13148%] = { spellID = 700096, family = \"Permafrost\"") ~= nil
+            and prot:find("%[19019%] = { spellID = 700104, family = \"Thunderfury\"") ~= nil
+            -- The control row must NOT have been flipped to the community
+            -- list's claim: it files Bite of Serra'kis under Concussion
+            -- (700078, a stun) when the item's proc is a Nature poison DoT.
+            and prot:find("%[6904%]  = { spellID = 700079, family = \"Venom\"") ~= nil
+            -- v2.75.0: Destiny (647) is now PAIRED to Resurgence (700097),
+            -- Anvil-confirmed by Serv owning Resurgence (only Destiny grants
+            -- it). Its proc TEXT does not match - the Anvil is the proof. This
+            -- flips the earlier "held back, looks like The Untamed Blade" call.
+            and prot:find("%[647%]   = { spellID = 700097, family = \"Resurgence\"") ~= nil
+            -- Gut Ripper (2164) and Gutgore Ripper (17071) are different
+            -- weapons. The latter is Anvil-refused and must stay refused.
+            and prot:find("%[17071%] = \"Gutgore Ripper\"") ~= nil,
+        "v2.75.0 added five pairings from the community Ebonhold affix list (Stalvan's Reaper 934 -> Frailty, Gut Ripper 2164 -> Execution, Ravager 7717 -> Bladestorm, Chillpike 13148 -> Permafrost, Thunderfury 19019 -> Thunderfury), corroborated by the list plus each item's real proc line via /ec paircheck (lower grade than Anvil-verified rows). Plus Destiny 647 -> Resurgence 700097, which IS Anvil-grade: Serv owns Resurgence (only Destiny grants it) so the Anvil refuses to re-extract Destiny - that 'already known' state is the confirmation, even though Destiny's on-hit Strength proc text does not resemble the Resurgence affix. This test also pins the two controls that must NOT drift: [6904] stays Venom (the list wrongly files Bite of Serra'kis under Concussion, a stun, while its proc is a Nature poison DoT), and Gutgore Ripper [17071] stays never-extractable (a DIFFERENT weapon from Gut Ripper 2164, easy to conflate by name).")
     check("Test 111a: EnsureAccountDB initialises chance-proc autolearn tables",
         ev:find('if type%(ADB%.chanceProcConfirmedItems%) ~= "table" then') ~= nil
             and ev:find("ADB%.chanceProcConfirmedItems = {}") ~= nil
@@ -8278,19 +8297,98 @@ do
             and ev131:find("%(GetTime%(%) %- %(pd%.at or 0%)%) < 1") ~= nil
             and ev131:find("itemID = itemID, at = GetTime%(%)") ~= nil,
         "executeBagSlotDelete arms pendingDelete with an `at` stamp immediately before its own DeleteCursorItem; the hook must match bag+slot+itemID within a 1 s window. Without the freshness window, a lingering popup-less pendingDelete would swallow a later MANUAL delete of the same item from the same slot; without the triple match, EC's own deletes would double-log as external.")
-    check("Test 131c: external rows are logged but never counted",
+    check("Test 131c: external delete DEFERS at the hook, logs source=external in the confirm, never counted",
         (function()
-            local hookStart = ev131:find('hooksecurefunc%("DeleteCursorItem"')
-            if not hookStart then
+            local hookStart = ev131:find('hooksecurefunc("DeleteCursorItem"', 1, true)
+            local confirmStart = ev131:find("function EC_compCache.confirmPendingExternalDelete()", 1, true)
+            if not hookStart or not confirmStart then
                 return false
             end
-            local hookEnd = ev131:find("\nend\n", hookStart) or (hookStart + 2000)
-            local body = ev131:sub(hookStart, hookEnd)
-            return body:find('EC_LogRecentDeleted%(cp%.itemID, cp%.count, "external"') ~= nil
-                and body:find("EC_BumpStat") == nil
-                and body:find("EC_session%.deleted") == nil
+            -- The hook must DEFER (set pendingExternalDelete) and NOT log
+            -- synchronously - DeleteCursorItem also fires at popup-raise.
+            local hookBody = ev131:sub(hookStart, confirmStart)
+            local defers = hookBody:find("EC_compCache.pendingExternalDelete = {", 1, true) ~= nil
+                and hookBody:find("EC_LogRecentDeleted", 1, true) == nil
+            -- The confirm logs source=external and bumps no stat.
+            local confirmBody = ev131:sub(confirmStart, confirmStart + 1500)
+            local logsCleanly = confirmBody:find('EC_LogRecentDeleted(pe.itemID, pe.count, "external"', 1, true) ~= nil
+                and confirmBody:find("EC_BumpStat", 1, true) == nil
+                and confirmBody:find("EC_session.deleted", 1, true) == nil
+            return defers and logsCleanly
         end)(),
-        "the DeleteCursorItem hook MUST log source=external into the deleted ring and MUST NOT bump lifetime or session stats - these are not EbonClearance actions; the row exists precisely to prove that. Counting them would inflate the odometer with other actors' work.")
+        "The DeleteCursorItem hook fires at popup-RAISE too, so it must DEFER (set pendingExternalDelete), not log synchronously - else a cancelled rare/epic/quest delete writes a false 'Deleted outside' row that never clears. The confirm logs source=external and must NOT bump any stat.")
+    check("Test 131d: deferred external delete is confirmed only when the item really left the bags",
+        (function()
+            local confirmStart = ev131:find("function EC_compCache.confirmPendingExternalDelete()", 1, true)
+            if not confirmStart then
+                return false
+            end
+            local body = ev131:sub(confirmStart, confirmStart + 1500)
+            local gated = body:find('GetCursorInfo() == "item"', 1, true) ~= nil -- wait while held / popup open
+                and body:find("nowCount <= (pe.bagCount or 0)", 1, true) ~= nil -- count didn't return = real delete
+                and body:find("> 30", 1, true) ~= nil -- stale candidate expiry
+            -- ...and the confirm is actually driven from the settled bag flush.
+            local flushT0 = ev131:find('EC_StampEvent("bagUpdate")', 1, true) or 1
+            local calledFromFlush = ev131:find("EC_compCache.confirmPendingExternalDelete()", flushT0, true) ~= nil
+            return gated and calledFromFlush
+        end)(),
+        "confirmPendingExternalDelete must wait while the item is on the cursor (popup open), log only when the in-bag count did NOT return (real delete vs cancel), expire stale candidates, and run from the settled bag flush.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 132 (v2.75.0, fresh-audit fix): the master Enable/Disable flag is
+-- per-character. The README, the panel checkbox, and /ec enable|disable have
+-- always described it as per-character ("skip the addon on alts"), but the flag
+-- was routed to the account-wide top level, so disabling on one alt disabled
+-- every character. It must be a PER_CHAR_FIELDS field AND migrate existing saves
+-- (seed from the frozen account-wide value) so a player who disabled EC
+-- account-wide is never silently re-enabled.
+-- ---------------------------------------------------------------------------
+do
+    local fh = io.open("EbonClearance_Events.lua", "rb")
+    local ev132 = fh and fh:read("*a") or ""
+    if fh then
+        fh:close()
+    end
+    local pcfStart = ev132:find("local PER_CHAR_FIELDS = {", 1, true)
+    local pcfEnd = pcfStart and ev132:find("\n}", pcfStart) or nil
+    local pcfBody = (pcfStart and pcfEnd) and ev132:sub(pcfStart, pcfEnd) or ""
+    check("Test 132a: `enabled` is a per-character field",
+        pcfBody:find("\n    enabled = true,", 1, true) ~= nil,
+        "The master Enable flag must be in PER_CHAR_FIELDS so disabling on an alt does not disable every character (the README + panel + /ec enable|disable have always promised per-character).")
+    check("Test 132b: existing saves seed per-character `enabled` from the frozen account value",
+        ev132:find('charNS.enabled == nil and type(EbonClearanceDB.enabled) == "boolean"', 1, true) ~= nil,
+        "A character namespace predating the change has no `enabled` key; without seeding it from the frozen top-level value, EnsureDB would default it true and silently re-enable a player who had EC disabled account-wide.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Test 133 (v2.75.0, fresh-audit follow-up): the Sold History and Loot Log
+-- windows pause their per-frame row rebuild while being dragged. During a live
+-- session both refresh ~once a second as the logs change; rebuilding mid-drag
+-- hitched the move (Serv report). OnDragStart sets a dragging flag, the OnUpdate
+-- early-returns on it, and OnDragStop clears it and refreshes once.
+-- ---------------------------------------------------------------------------
+do
+    local function readf(p)
+        local fh = io.open(p, "rb")
+        local s = fh and fh:read("*a") or ""
+        if fh then
+            fh:close()
+        end
+        return s
+    end
+    local hw = readf("EbonClearance_HistoryWindow.lua")
+    local sp = readf("EbonClearance_StatsPanel.lua")
+    check("Test 133a: Sold History pauses its rebuild while dragging",
+        hw:find("self._histDragging = true", 1, true) ~= nil
+            and hw:find("if self._histDragging then", 1, true) ~= nil
+            and hw:find("self._histDragging = false", 1, true) ~= nil,
+        "HistoryWindow OnDragStart must set _histDragging, the OnUpdate must early-return on it, and OnDragStop must clear it (then refresh once) - otherwise the row rebuild hitches the drag during a live session.")
+    check("Test 133b: Loot Log pauses its rebuild while dragging",
+        sp:find("self._lootDragging = true", 1, true) ~= nil
+            and sp:find("if self._lootDragging then", 1, true) ~= nil
+            and sp:find("self._lootDragging = false", 1, true) ~= nil,
+        "Loot Log OnDragStart must set _lootDragging, the OnUpdate must early-return on it, and OnDragStop must clear it (then refresh once).")
 end
 
 -- ---------------------------------------------------------------------------

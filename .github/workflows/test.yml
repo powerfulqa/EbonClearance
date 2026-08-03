@@ -42,39 +42,14 @@ jobs:
           luacheck --version
 
       - name: Lua syntax check
-        # v2.30.0+: post file-split, every shipped source file is checked.
-        # Add new EbonClearance_*.lua files to this list as future
-        # split stages land.
+        # v2.75.0: glob every shipped source file instead of a hand-maintained
+        # list (which had drifted, missing nine files including the decision
+        # core). Mirrors the luacheck step's `EbonClearance_*.lua` glob, so a
+        # new source file is syntax-checked automatically with no list to update.
         run: |
-          luac5.1 -p EbonClearance_Events.lua
-          luac5.1 -p EbonClearance_Comms.lua
-          luac5.1 -p EbonClearance_GuildShare.lua
-          luac5.1 -p EbonClearance_GuildPanel.lua
-          luac5.1 -p EbonClearance_Core.lua
-          luac5.1 -p EbonClearance_Locale.lua
-          luac5.1 -p EbonClearance_Locale_frFR.lua
-          luac5.1 -p EbonClearance_Locale_deDE.lua
-          luac5.1 -p EbonClearance_Companion.lua
-          luac5.1 -p EbonClearance_Protection.lua
-          luac5.1 -p EbonClearance_Vendor.lua
-          luac5.1 -p EbonClearance_Process.lua
-          luac5.1 -p EbonClearance_ProcessBagsPanel.lua
-          luac5.1 -p EbonClearance_MerchantPanel.lua
-          luac5.1 -p EbonClearance_ScavengerPanel.lua
-          luac5.1 -p EbonClearance_SellListPanels.lua
-          luac5.1 -p EbonClearance_KeepDeletePanels.lua
-          luac5.1 -p EbonClearance_ProtectionPanel.lua
-          luac5.1 -p EbonClearance_ItemHighlightingPanel.lua
-          luac5.1 -p EbonClearance_ProfilesPanel.lua
-          luac5.1 -p EbonClearance_MainPanel.lua
-          luac5.1 -p EbonClearance_PanelInfra.lua
-          luac5.1 -p EbonClearance_PanelWidgets.lua
-          luac5.1 -p EbonClearance_ListWidget.lua
-          luac5.1 -p EbonClearance_BagDisplay.lua
-          luac5.1 -p EbonClearance_BugReport.lua
-          luac5.1 -p EbonClearance_Minimap.lua
-          luac5.1 -p EbonClearance_Tooltip.lua
-          luac5.1 -p EbonClearance_BagContextMenu.lua
+          for f in EbonClearance_*.lua; do
+            luac5.1 -p "$f"
+          done
 
       - name: Luacheck lint gate
         # Re-enabled once the ~162 (grown to 259) pre-existing warnings were

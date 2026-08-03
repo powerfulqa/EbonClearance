@@ -913,6 +913,7 @@ NS.RegisterLocale("deDE", {
     ['A settings profile named "|cffffff00%s|r" already exists.'] = 'Ein Einstellungsprofil namens "|cffffff00%s|r" existiert bereits.',
     ['Renamed settings profile "|cffffff00%s|r" to "|cffffff00%s|r".'] = 'Einstellungsprofil "|cffffff00%s|r" in "|cffffff00%s|r" umbenannt.',
     ['Delete settings profile "|cffffff00%s|r"?\n|cffaaaaaaCharacters using it switch to Default. This cannot be undone.|r'] = 'Einstellungsprofil "|cffffff00%s|r" löschen?\n|cffaaaaaaCharaktere, die es verwenden, wechseln zu Default. Das kann nicht rückgängig gemacht werden.|r',
+    ['Overwrite settings profile "|cffffff00%s|r"?\n|cffaaaaaaIts saved settings are replaced with this character\'s current ones. This cannot be undone.|r'] = 'Einstellungsprofil "|cffffff00%s|r" überschreiben?\n|cffaaaaaaSeine gespeicherten Einstellungen werden durch die aktuellen dieses Charakters ersetzt. Das kann nicht rückgängig gemacht werden.|r',
     ["Usage: /ec sprofile save|use|delete|list <name>"] = "Verwendung: /ec sprofile save|use|delete|list <Name>",
 
     -- v2.73.2 auto-mark preview bind gate
@@ -962,6 +963,10 @@ NS.RegisterLocale("deDE", {
     ["EbonClearance Scan Tooltip Debug"] = "EbonClearance Scan-Tooltip-Debug",
     ["Scan debug dump generated. Copy the text from the window."] = "Scan-Debug-Auszug erstellt. Kopiere den Text aus dem Fenster.",
     ["EbonClearance Chance-on-Hit Capture"] = "EbonClearance Chance-bei-Treffer-Erfassung",
+    ["EbonClearance Chance-on-Hit Pair Audit"] = "EbonClearance Chance-bei-Treffer-Paar-Prüfung",
+    ["EbonClearance Candidate Pair Cross-Check"] = "EbonClearance Gegenprüfung der Paar-Kandidaten",
+    ["Cross-check generated. Copy the text from the window."] = "Gegenprüfung erstellt. Kopiere den Text aus dem Fenster.",
+    ["Pair audit generated. Copy the text from the window."] = "Paar-Prüfung erstellt. Kopiere den Text aus dem Fenster.",
     ["Capture-proc dump generated. Copy the text from the window."] = "Proc-Erfassungs-Auszug erstellt. Kopiere den Text aus dem Fenster.",
 
     ["|cff888888Click the text, then Ctrl+C to copy. Safe to leave open while you play.|r"] = "|cff888888Klicke den Text an, dann Strg+C zum Kopieren. Kann während des Spielens geöffnet bleiben.|r",

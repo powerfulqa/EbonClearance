@@ -112,21 +112,38 @@ check(
     "The /ec affixfallback on|off|status command must exist so the fallback can be toggled and verified."
 )
 
--- 7. (v2.74.0) The UI visibility gate exists and is derived from more than
--- the PE addon global. peDetected() alone is a false negative for a player on
--- the affix realm WITHOUT the PE addon: their affix protection still works
--- (the spellbook walk is server-side truth), so hiding the options on that
--- signal alone would remove live features. peFeaturesVisible must therefore
--- also consult the catalog accessor and the known-affix map, and must honour
--- the simulate switch so the non-PE layout is previewable in-game.
+-- 7. (v2.74.0; v2.75.0 SAFETY split) The UI-visibility gate and the FUNCTIONAL
+-- gate are separate predicates. peFeaturesActive() is the real, multi-sourced
+-- answer (peDetected OR catalog OR known-affix map) and must NOT honour the
+-- simulate switch. peFeaturesVisible() is UI-only: it short-circuits on the
+-- simulate switch (so the non-PE layout is previewable via /ec affixfallback)
+-- and otherwise delegates to peFeaturesActive(). Keeping the simulate check OUT
+-- of peFeaturesActive is what stops the preview from disabling real proc
+-- protection / widening merchant targeting on a live realm (fresh-audit finding
+-- 2026-08-03: that path could sell proc weapons the player believed protected).
+-- peDetected() alone is a false negative for a player on the affix realm WITHOUT
+-- the PE addon (the spellbook walk is server-side truth), so both predicates OR
+-- three signals.
 check(
-    "peFeaturesVisible defined and multi-sourced",
+    "peFeaturesActive defined, multi-sourced",
+    prot:find("function EC_compCache.peFeaturesActive()", 1, true) ~= nil
+        and prot:match("peFeaturesActive%(%).-peDetected%(%)") ~= nil
+        and prot:match("peFeaturesActive%(%).-getExtractionCatalog%(%)") ~= nil
+        and prot:match("peFeaturesActive%(%).-knownAffixDescriptions") ~= nil,
+    "EC_compCache.peFeaturesActive() must exist and OR peDetected() with getExtractionCatalog() and the known-affix map."
+)
+local activeBody = prot:match("function EC_compCache%.peFeaturesActive%(%)(.-)\nend")
+check(
+    "peFeaturesActive ignores the simulate switch",
+    activeBody ~= nil and not activeBody:find("simulateExtractionAbsent", 1, true),
+    "peFeaturesActive() must NOT reference simulateExtractionAbsent - the /ec affixfallback UI preview must never reach the functional PE answer, or it disables real item-safety protection."
+)
+check(
+    "peFeaturesVisible is UI-only: short-circuits on simulate, delegates to Active",
     prot:find("function EC_compCache.peFeaturesVisible()", 1, true) ~= nil
         and prot:match("peFeaturesVisible%(%).-simulateExtractionAbsent.-return false") ~= nil
-        and prot:match("peFeaturesVisible%(%).-peDetected%(%)") ~= nil
-        and prot:match("peFeaturesVisible%(%).-getExtractionCatalog%(%)") ~= nil
-        and prot:match("peFeaturesVisible%(%).-knownAffixDescriptions") ~= nil,
-    "EC_compCache.peFeaturesVisible() must exist, short-circuit on simulateExtractionAbsent, and OR peDetected() with getExtractionCatalog() and the known-affix map."
+        and prot:match("peFeaturesVisible%(%).-peFeaturesActive%(%)") ~= nil,
+    "EC_compCache.peFeaturesVisible() must short-circuit to false on simulateExtractionAbsent and otherwise return peFeaturesActive()."
 )
 
 -- 8. (v2.74.0) Every panel that owns a PE-only widget consults the gate, so a
@@ -162,11 +179,15 @@ check(
 --     extraction to release a proc weapon, so every one would be wedged.
 --   * merchantMode - a stored "goblin" would sell at no vendor at all once
 --     the dropdown that set it is gone.
+-- v2.75.0: the runtime gates must call peFeaturesActive(), NOT the
+-- simulate-honouring peFeaturesVisible(). If they read the visible gate,
+-- /ec affixfallback (a UI preview) would disable proc protection and widen
+-- merchant targeting on a live realm - the fresh-audit item-loss path.
 check(
-    "hidden-but-defaulted toggles have matching runtime gates",
-    read("EbonClearance_Decision.lua"):match("peFeaturesVisible.-ctx%.protectChanceOnHitItems") ~= nil
-        and ev:match("EC_IsMerchantAllowed = function%(%).-peFeaturesVisible") ~= nil,
-    "Decision's ctx must force protectChanceOnHitItems off, and EC_IsMerchantAllowed must fall through to all-merchants, when peFeaturesVisible() is false."
+    "hidden-but-defaulted toggles gate on peFeaturesActive (not the UI preview)",
+    read("EbonClearance_Decision.lua"):match("peFeaturesActive.-ctx%.protectChanceOnHitItems") ~= nil
+        and ev:match("EC_IsMerchantAllowed = function%(%).-peFeaturesActive") ~= nil,
+    "Decision's protectChanceOnHitItems gate and EC_IsMerchantAllowed must call peFeaturesActive(), so the /ec affixfallback preview can't disable proc protection or widen merchant targeting on a live realm."
 )
 
 -- 10. (v2.74.0) The two stock looting toggles must NOT live on the companion

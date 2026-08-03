@@ -3,7 +3,12 @@
 A curated backlog of known follow-ups not yet actioned. Each item is
 scoped to be a single-session change unless flagged otherwise.
 
-> **Last refresh:** post-v2.29.0 on 2026-05-19.
+> **Last refresh:** fresh audit post-v2.74.0 on 2026-08-03 (the v2.75.0
+> fresh-audit-fix patch actioned its player-facing defects; item 6's
+> decision-classifier shipped in v2.71.0 - v2.71.3, see its RESOLVED note).
+> The v2.29.0 context below is the prior refresh, kept for history.
+>
+> **Prior refresh:** post-v2.29.0 on 2026-05-19.
 >
 > v2.29.0 shipped the Release 1 cut: bag-slot sell-border tint
 > (default Blizzard + host bag-UI adapter), `/ec sellinfo` predicate-
@@ -112,6 +117,21 @@ scoped to be a single-session change unless flagged otherwise.
 > item level), pinned by Test 118. Reinforces the unify-the-decision plan:
 > the eventual classifier should cover the DELETE verdict too, not only
 > the sell verdict.
+>
+> **RESOLVED - classifier shipped (v2.71.0 - v2.71.3):** the decision was
+> extracted into one pure module, `EbonClearance_Decision.lua`
+> (`NS.Decision.sell(ctx)` + `NS.Decision.deleteEligible(ctx)`), returning
+> reason tokens; the vendor engine, the `/ec sellinfo` trace, and the tooltip
+> all render from it, with drift sentinels + a runtime fixture suite
+> (`tests/test_decision.lua`). Three nuances remain open (fresh audit,
+> 2026-08-03), NOT the old unification blocker: (1) the DECISION is unified but
+> the tooltip's ~900-line label selection and the trace narration are still
+> hand-written mirrors, and the drift sentinel only checks the yes/no class - a
+> wrong *reason* is invisible to it, and it cannot fire when the tooltip emits
+> no label at all; (2) the auto-mark "Will Delete" preview is a fourth decision
+> path that still drifts from the real scan (tome + profession-tool guards are
+> scan-only); (3) external-action attribution covers cursor deletes, not the
+> host bag UI's junk-sell sales. Future work is these three, not the extraction.
 
 ---
 

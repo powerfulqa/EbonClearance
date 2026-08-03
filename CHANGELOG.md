@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.75.0
+
+**A full source audit found and fixed a way to lose an item, plus four more correctness bugs.**
+
+- **The affix-layout preview no longer turns off protection.** `/ec affixfallback on` previews how the settings look on a realm without the affix system. While it was on it also, invisibly, switched off chance-on-hit proc protection and let the addon sell at any merchant, so a vendor run with the preview active could sell a proc weapon you meant to keep. The preview is now purely cosmetic: it changes what the panels draw and nothing about what the addon does to your items. (Internally the UI-visibility check and the real "does this realm have affixes" check are now separate, and only the cosmetic one honours the preview.)
+- **The "Deleted outside EbonClearance" note no longer lies when you cancel.** Sold History records deletes made outside the addon so a missing item can always be traced. For a rare/epic/quest item it wrote that row the moment the confirmation popup appeared, so clicking Cancel left a permanent "deleted" row for an item still sitting in your bags. The row now waits until the item has actually left your bags.
+- **Enable / Disable is now genuinely per-character.** The checkbox, `/ec enable` / `/ec disable`, and the README always described it as per-character, but the flag was account-wide, so turning the addon off on one alt turned it off everywhere. It is now per-character as documented. Existing setups carry over: if you had the addon disabled account-wide, it stays disabled per character (it is never silently switched back on).
+- **Saving a settings profile over an existing one now asks first.** Delete already confirmed; Save used to overwrite a same-name profile silently.
+- **Two smaller robustness fixes:** a settings-profile field added in a future update now falls back to its proper default on an older profile instead of coming back blank, and the decision core no longer reads an item's affix data when every affix rule is switched off.
+- **Dragging the Sold History / Loot Log windows is smooth again.** During a live farming session both windows rebuild their rows about once a second as items are sold, deleted, and looted; that rebuild was firing mid-drag and hitching the move. Both now pause the rebuild while you are dragging and refresh once when you let go.
+- **More chance-on-hit weapons are recognised.** Destiny is now paired to the **Resurgence** affix - Anvil-confirmed, because owning Resurgence (which only Destiny grants) is exactly why the Anvil refuses to re-extract it, even though its proc text gives no hint. Five more weapons from the community affix list are recognised too (Stalvan's Reaper, Gut Ripper, Ravager, Chillpike, Thunderfury), corroborated by the list plus each weapon's real proc line. Two new diagnostics help build and check these: **`/ec paircheck`** reads a candidate weapon's proc line even for items you have never owned, and **`/ec pairaudit`** checks every recorded pairing's itemID against your client to catch a typo.
+
+Engineering: the three-tier settings storage gained a behavioural round-trip test (the twelfth suite), the CI syntax check now globs every source file instead of a hand-maintained list that had drifted (it was missing nine files, including the decision core), and the decision-classifier follow-up is marked resolved in the code-review log.
+
+---
+
+
 ### v2.74.0
 
 **Affix settings now hide themselves on a realm that has no affix system.**

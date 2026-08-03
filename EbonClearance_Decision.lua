@@ -119,7 +119,17 @@ function Decision.sell(ctx)
     -- v2.44.0: affix-rank floor as a STANDALONE sell signal (rank below
     -- floor sells on its own). v2.48.1: hasSellPrice-gated (the vendor
     -- refuses zero-value items). v2.49.0: junkOnly-gated (merchant mode).
-    local affixForRank = (quality and quality >= 3) and ctx.affixData() or nil
+    -- v2.75.0 (fresh-audit fix): resolve affix data ONLY when an affix rule can
+    -- use it. Its three consumers below are the rank floor (affixMinSellRank>0),
+    -- the owned-dupe sell (affixAllowExactDupes), and the Rare/Epic affix
+    -- protection (protectAffixedRareItems, which reuses this same value). Without
+    -- this guard ctx.affixData() (a tooltip scan, cached per itemID) ran for
+    -- EVERY Rare+ item even with all three off, contradicting the core's
+    -- lazy-branch design. With all three off, affixData is never resolved.
+    local needAffix = (ctx.affixMinSellRank and ctx.affixMinSellRank > 0)
+        or ctx.affixAllowExactDupes
+        or ctx.protectAffixedRareItems
+    local affixForRank = (quality and quality >= 3 and needAffix) and ctx.affixData() or nil
     local affixRankPass = not junkOnly
         and hasSellPrice
         and ctx.affixMinSellRank
@@ -426,7 +436,10 @@ local function EC_fillSharedCtx(ctx, DB, ADB, itemID, quality)
     -- with. EC-TRAP: do NOT "simplify" this back to a bare DB read - the
     -- hidden checkbox and this gate have to move together, or the toggle
     -- becomes unreachable while still protecting.
-    local procProtectionApplies = EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible()
+    -- v2.75.0 SAFETY: use peFeaturesActive (real PE presence), NOT
+    -- peFeaturesVisible (which honours the /ec affixfallback UI preview). The
+    -- layout preview must never disable real proc protection on a live realm.
+    local procProtectionApplies = EC_compCache.peFeaturesActive == nil or EC_compCache.peFeaturesActive()
     ctx.protectChanceOnHitItems = (DB.protectChanceOnHitItems and procProtectionApplies) and true or false
     ctx.protectAffixedRareItems = DB.protectAffixedRareItems
     ctx.protectAllTomes = DB.protectAllTomes

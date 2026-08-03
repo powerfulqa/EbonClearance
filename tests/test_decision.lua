@@ -207,6 +207,36 @@ check("keepBoeAffixDupes keeps BoE owned dupes",
         keepBoeAffixDupes = true, bindType = function() return "boe" end })))
 check("GOLDEN (v2.57.2 near item-loss): the iLvl ceiling vetoes affix sell paths",
     isNone(affixed({ affixMinSellRank = 4, saleWithinCeiling = function() return false end })))
+-- v2.75.0 (fresh-audit fix): affix data is resolved lazily. With the rank floor,
+-- dupe-sell, AND affix protection all off, ctx.affixData() (a tooltip scan) must
+-- not be called for a Rare+ item; turning affix protection back on resolves it.
+check("affixData NOT resolved when all affix features are off (lazy)",
+    (function()
+        local calls = 0
+        D.sell(affixed({
+            affixMinSellRank = 0,
+            affixAllowExactDupes = false,
+            protectAffixedRareItems = false,
+            affixData = function()
+                calls = calls + 1
+                return { name = "Iron Will", rank = 2, description = "x" }
+            end,
+        }))
+        return calls == 0
+    end)())
+check("affixData IS resolved when affix protection is on",
+    (function()
+        local calls = 0
+        D.sell(affixed({
+            protectAffixedRareItems = true,
+            whitelistedChar = true,
+            affixData = function()
+                calls = calls + 1
+                return { name = "Iron Will", rank = 2, description = "x" }
+            end,
+        }))
+        return calls >= 1
+    end)())
 
 -- ---- affix protection ------------------------------------------------------
 check("affix protection keeps a whitelisted affixed Rare (no release)",

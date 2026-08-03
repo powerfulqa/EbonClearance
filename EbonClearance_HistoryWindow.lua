@@ -301,8 +301,19 @@ local function historyEnsureWindow()
         win:SetMaxResize(760, 900)
     end
     win:RegisterForDrag("LeftButton")
-    win:SetScript("OnDragStart", win.StartMoving)
-    win:SetScript("OnDragStop", win.StopMovingOrSizing)
+    -- v2.75.0 (fresh-audit follow-up): pause the per-frame row rebuild while the
+    -- window is being dragged. During a live farming session the logs change
+    -- every sell/delete, so the OnUpdate below would otherwise rebuild the rows
+    -- ~once a second mid-drag and hitch the move. Refresh once when the drag ends.
+    win:SetScript("OnDragStart", function(self)
+        self._histDragging = true
+        self:StartMoving()
+    end)
+    win:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        self._histDragging = false
+        historyRefresh(self)
+    end)
     win:Hide()
     win.filter = "all" -- "all" | "sold" | "deleted"
     win.search = ""
@@ -480,6 +491,10 @@ local function historyEnsureWindow()
     -- when idle (one flag check per frame).
     win:SetScript("OnUpdate", function(self, elapsed)
         if not self:IsShown() then
+            return
+        end
+        -- v2.75.0: skip the rebuild while dragging (OnDragStop refreshes once).
+        if self._histDragging then
             return
         end
         self._histTick = (self._histTick or 0) + elapsed

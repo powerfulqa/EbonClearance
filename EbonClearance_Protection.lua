@@ -826,10 +826,16 @@ end
 -- The latch lives on EC_compCache rather than a file-scope local: Lua 5.1
 -- caps main-chunk locals at 200 and this file is close to the line.
 EC_compCache.peSurfacesSeen = false
-function EC_compCache.peFeaturesVisible()
-    if EC_compCache.simulateExtractionAbsent then
-        return false
-    end
+-- v2.75.0 SAFETY split (fresh-audit 2026-08-03: /ec affixfallback could cause
+-- item loss). peFeaturesActive() is the REAL "does this realm have the affix
+-- system?" answer from the three live signals, and it NEVER honours the
+-- simulateExtractionAbsent preview switch. It is the ONLY predicate a FUNCTIONAL
+-- item-safety gate may use - chance-on-hit proc protection (Decision.lua) and
+-- merchant-target gating (EC_IsMerchantAllowed). Previously both read
+-- peFeaturesVisible(), so `/ec affixfallback on` (a UI-layout preview) silently
+-- disabled proc protection and widened merchant targeting on a live PE realm,
+-- and a vendor run could sell proc weapons the player believed were protected.
+function EC_compCache.peFeaturesActive()
     if not EC_compCache.peSurfacesSeen then
         local known = EC_compCache.knownAffixDescriptions
         EC_compCache.peSurfacesSeen = EC_compCache.peDetected()
@@ -837,6 +843,15 @@ function EC_compCache.peFeaturesVisible()
             or (type(known) == "table" and next(known) ~= nil)
     end
     return EC_compCache.peSurfacesSeen and true or false
+end
+-- peFeaturesVisible() gates the UI ONLY. It honours simulateExtractionAbsent so
+-- a PE-client dev can eyeball the non-PE layout via /ec affixfallback; that
+-- preview must never reach a functional gate (use peFeaturesActive there).
+function EC_compCache.peFeaturesVisible()
+    if EC_compCache.simulateExtractionAbsent then
+        return false
+    end
+    return EC_compCache.peFeaturesActive()
 end
 
 -- v2.26.0: dirty-check counter for the ExtractionService merge step.
@@ -1790,14 +1805,18 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     -- so a wrong hardcoded ID can't mask a real autolearn event.
     -- Hammer of Destiny (31322)   -> vanilla proc "Destiny Fulfilled" (38284)
     -- Greatsword of Forlorn Visions (28367) -> vanilla proc "Armor Buff" (34199)
-    -- v2.73.1 (Serv Anvil check + wowhead, 2026-07-31): both register
-    -- "already known" at the Anvil, so they ARE extractable, but the
-    -- Anvil UI names no affix and neither proc text maps to a unique
-    -- 700xxx family. Vanilla proc IDs recorded below are NOT PE affix
-    -- ids (the Arcanite Champion lesson above); Allow Sell is the
-    -- per-item release meanwhile.
-    -- Destiny (647)      -> vanilla proc "Destiny" (17152), +200 Strength for 10 sec
-    -- Windreaper (15853) -> vanilla proc "Windreaper" (20586), Nature DoT 2 sec x 20 sec
+    -- v2.73.1 (Serv Anvil check + wowhead, 2026-07-31): both registered
+    -- "already known" at the Anvil, so they ARE extractable, but at the time
+    -- the Anvil UI named no affix and neither proc text mapped to a unique
+    -- 700xxx family. Vanilla proc IDs are NOT PE affix ids (the Arcanite
+    -- Champion lesson above).
+    -- Destiny (647): RESOLVED v2.75.0 - paired to Resurgence (700097) above.
+    --   Its "already known" state WAS the confirmation: Serv owns Resurgence,
+    --   which only Destiny grants, so the Anvil refuses to re-extract it. Its
+    --   vanilla proc "Destiny" (17152, +200 Strength) is not the affix id.
+    -- Windreaper (15853) -> vanilla proc "Windreaper" (20586), Nature DoT
+    --   2 sec x 20 sec: STILL deferred (no affix pinned yet). Allow Sell is the
+    --   per-item release meanwhile.
     -- Arcanite Champion (12790) IS extractable - it grants "Strength of the
     -- Champion" - but the id seen for that (16916) is the vanilla proc-buff
     -- spell, not the PE affix id EC matches in learnedAffixes (in-game
@@ -1822,14 +1841,69 @@ local EC_CHANCE_PROC_CONFIRMED_ITEMS = {
     --   Rending ("chance to reduce the target's armor"; same
     --   puncture-armor wording as Vibroblade, same 200-armor stacking
     --   proc as Annihilator).
-    -- Destiny (647) and Windreaper (15853) are Anvil-confirmed
-    -- extractable AND already known, but neither proc text matches a
-    -- 700xxx family uniquely - deferred (like Arcanite Champion above)
-    -- until the Anvil's displayed affix name pins their spellIDs.
+    -- Destiny (647): RESOLVED v2.75.0 - paired to Resurgence (700097), see the
+    -- entry + note above. Windreaper (15853) is still Anvil-confirmed extractable
+    -- AND already known but with no affix pinned yet, so it stays deferred (like
+    -- Arcanite Champion above) until its spellID is confirmed.
     [810]   = { spellID = 700085, family = "Glaciation", item = "Hammer of the Northern Wind" },
     [2915]  = { spellID = 700084, family = "Pyromancy",  item = "Taran Icebreaker" },
     [11121] = { spellID = 700086, family = "Affliction", item = "Darkwater Talwar" },
     [13204] = { spellID = 700081, family = "Rending",    item = "Bashguuder" },
+    -- v2.75.0 (Serv Anvil confirmation via already-owned, 2026-08-03): Destiny
+    -- (647) extracts the Resurgence affix (spellID 700097, read straight from
+    -- the captureproc learned-affix catalog dump). This is the case the deferral
+    -- notes below got WRONG. Destiny's proc text ("Increases Strength by 200 for
+    -- 10 sec") reads nothing like the Resurgence affix ("fall below 40% health,
+    -- healed 50% + Strength for 15 sec"), so text-matching filed it next to The
+    -- Untamed Blade and held it back. But the Anvil is the authority: it refuses
+    -- to extract Destiny BECAUSE Serv already owns Resurgence, and the community
+    -- list pairs Resurgence to Destiny alone. Anvil-grade evidence, higher
+    -- confidence than the text-matched community rows further down. Reinforces
+    -- the file's own rule: proc TEXT is never sufficient - the Anvil decides.
+    [647]   = { spellID = 700097, family = "Resurgence", item = "Destiny" },
+    -- v2.75.0 (community affix list + /ec paircheck corroboration,
+    -- 2026-08-03): five rows from the community-maintained Ebonhold affix
+    -- list, each opening a family EC had no paired item for.
+    --
+    -- EVIDENCE GRADE IS LOWER THAN EVERY ROW ABOVE. These are NOT Anvil
+    -- verified - nobody local owns the weapons, and the Anvil needs the
+    -- physical item. What they have instead is two independent sources
+    -- agreeing: the community list's claim, plus the item's real proc line
+    -- (read via /ec paircheck, which pulls a tooltip for any itemID) being
+    -- a mechanic-level match for the affix description, not merely a
+    -- keyword brush. Downgrade or drop any of these the moment an Anvil
+    -- check contradicts it.
+    --
+    -- Why these five and not the other six candidates checked:
+    --   * Bite of Serra'kis - the list files it under Concussion (a stun);
+    --     its proc is a Nature poison DoT. The list is wrong, [6904] above
+    --     stays Venom. Kept as the control that proved the list errs.
+    --   * Blade of the Basilisk, Lord General's Sword, Blackout Truncheon,
+    --     Fist of Stone - "on-hit flat stat buff" procs claimed against
+    --     passive/conditional stat affixes, the shape of The Untamed Blade
+    --     (19334) which the Anvil REFUSED (it sits in NEVER_EXTRACTABLE).
+    --     Held back rather than guessed. CAUTION (v2.75.0): Destiny had this
+    --     EXACT shape and was in this held-back list, yet it turned out to
+    --     extract Resurgence (paired above once Serv Anvil-confirmed it). So
+    --     "looks like The Untamed Blade" is a WEAK signal - these four stay
+    --     held back only until an Anvil check clears each one, not forever.
+    --
+    -- Stalvan's Reaper: "Lowers all attributes of target" vs Frailty's
+    --   "reduce all attributes of the target".
+    -- Gut Ripper: "Wounds the target" vs Execution's "chance to Wound the
+    --   target". (NOT Gutgore Ripper, 17071 - that one the Anvil refuses.)
+    -- Ravager: "attack all nearby enemies... weapon damage" vs
+    --   Bladestorm's "strike all nearby, dealing weapon damage".
+    -- Chillpike: "Blasts a target for Frost damage" vs Permafrost's "blast
+    --   the target dealing Frost damage". Glaciation was the other
+    --   candidate but adds a movement slow this proc does not have.
+    -- Thunderfury: verbatim, down to the affix inheriting the item's own
+    --   "chance to Blasts" phrasing. PE built the affix from this item.
+    [934]   = { spellID = 700092, family = "Frailty",     item = "Stalvan's Reaper" },
+    [2164]  = { spellID = 700090, family = "Execution",   item = "Gut Ripper" },
+    [7717]  = { spellID = 700120, family = "Bladestorm",  item = "Ravager" },
+    [13148] = { spellID = 700096, family = "Permafrost",  item = "Chillpike" },
+    [19019] = { spellID = 700104, family = "Thunderfury", item = "Thunderfury, Blessed Blade of the Windseeker" },
 }
 NS.chanceProcConfirmedItems = EC_CHANCE_PROC_CONFIRMED_ITEMS
 

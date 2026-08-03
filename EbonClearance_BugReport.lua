@@ -2042,11 +2042,234 @@ local function EC_ShowCaptureProcDump()
     )
 end
 
+-- v2.75.0: audit the two hardcoded chance-on-hit tables against the
+-- client. Every row in EC_CHANCE_PROC_CONFIRMED_ITEMS and
+-- EC_CHANCE_PROC_NEVER_EXTRACTABLE carries an itemID plus the item NAME
+-- it was recorded under; this walks both and reports any row where the
+-- client disagrees with the recorded name.
+--
+-- Why this exists: the pairings are entered by hand from captureproc
+-- dumps, community lists and wowhead lookups, and an itemID typo is
+-- invisible by inspection - the wrong weapon simply gets released for
+-- vendoring (or wrongly protected) with no error anywhere. The client is
+-- also the only authority on what actually exists on THIS server, which
+-- a WotLK reference database cannot answer for a custom realm.
+--
+-- MISMATCH is the finding that matters: a real item exists at that ID but
+-- it is not the one the comment claims. UNCACHED just means the client
+-- has never seen it; the row is unverified rather than wrong, and a
+-- re-run after the primer resolves it usually settles it.
+local function EC_BuildProcPairAudit()
+    local lines = {}
+    local function add(s)
+        lines[#lines + 1] = s
+    end
+    local confirmed = NS.chanceProcConfirmedItems or {}
+    local never = NS.chanceProcNeverExtractable or {}
+
+    add("=== EbonClearance Chance-on-Hit Pair Audit ===")
+    add("Version: " .. (NS.GetVersion and NS.GetVersion() or "?"))
+    add("Date: " .. date("%Y-%m-%d %H:%M"))
+    add("")
+    add("Checks each recorded itemID against the client's own item data.")
+    add("MISMATCH = the ID points at a different item than the note claims.")
+    add("UNCACHED = client has no data yet (unverified, not necessarily wrong).")
+    add("")
+
+    local okN, badN, uncachedN = 0, 0, 0
+    -- Bounded priming, same rationale as the loot log: a cold cache would
+    -- otherwise fire one tooltip fetch per row in a single frame.
+    local primesLeft = 40
+    local function realName(itemID)
+        local name = GetItemInfo(itemID)
+        if not name and primesLeft > 0 then
+            primesLeft = primesLeft - 1
+            local st = NS.scanTooltip
+            if st and st.SetHyperlink then
+                pcall(st.SetOwner, st, UIParent, "ANCHOR_NONE")
+                pcall(st.ClearLines, st)
+                pcall(st.SetHyperlink, st, "item:" .. itemID)
+                name = GetItemInfo(itemID)
+            end
+        end
+        return name
+    end
+    local function checkRow(itemID, recorded, tag)
+        local name = realName(itemID)
+        if not name then
+            uncachedN = uncachedN + 1
+            add(string.format("  UNCACHED  [%d] %s (%s)", itemID, tostring(recorded), tag))
+        elseif recorded and name ~= recorded then
+            badN = badN + 1
+            add(string.format('  MISMATCH  [%d] recorded "%s" -> client says "%s" (%s)', itemID, tostring(recorded), name, tag))
+        else
+            okN = okN + 1
+        end
+    end
+
+    -- Sorted so successive runs diff cleanly.
+    local ids = {}
+    for itemID in pairs(confirmed) do
+        ids[#ids + 1] = itemID
+    end
+    table.sort(ids)
+    add("--- Confirmed pairings (" .. #ids .. " rows) ---")
+    for _, itemID in ipairs(ids) do
+        local rec = confirmed[itemID]
+        checkRow(itemID, rec and rec.item, (rec and rec.family) or "?")
+    end
+    add("")
+
+    local nids = {}
+    for itemID in pairs(never) do
+        nids[#nids + 1] = itemID
+    end
+    table.sort(nids)
+    add("--- Never-extractable (" .. #nids .. " rows) ---")
+    for _, itemID in ipairs(nids) do
+        checkRow(itemID, never[itemID], "not extractable")
+    end
+    add("")
+
+    add(string.format("Result: %d OK, %d MISMATCH, %d UNCACHED", okN, badN, uncachedN))
+    if badN > 0 then
+        add("")
+        add("A MISMATCH means the recorded itemID is wrong. Fix the table before")
+        add("trusting that row - as written it acts on the item the ID points at,")
+        add("not the one named beside it.")
+    end
+    if uncachedN > 0 then
+        add("")
+        add("UNCACHED rows were requested from the server on this run. Re-run in a")
+        add("few seconds and most should resolve.")
+    end
+    return table.concat(lines, "\n")
+end
+
+-- v2.75.0: cross-check candidate chance-on-hit pairings sourced from the
+-- community affix list, for items the player does NOT own.
+--
+-- The Anvil is the only thing that proves extractability, and it needs the
+-- physical item - which rules it out for candidates nobody local has. This
+-- is the next-best evidence available: SetHyperlink reads ANY item's
+-- tooltip, so we can pull each candidate's real proc line and compare it
+-- against the claimed affix's own description (from /ec captureproc's
+-- spellbook section). Agreement between two independent sources raises
+-- confidence; disagreement is a hard reject.
+--
+-- EC-TRAP: this table is DELIBERATELY here in the diagnostic and NOT in
+-- EbonClearance_Protection.lua's EC_CHANCE_PROC_CONFIRMED_ITEMS. These
+-- rows are unverified claims. Kept out of the real table, nothing in the
+-- sell path can act on them, so a wrong row costs nothing. Do not
+-- "tidy up" by merging this into the live map - a row only earns that
+-- once its proc text corroborates AND someone Anvil-confirms the item.
+-- Proc text alone has never been sufficient (see the Fiery War Axe note
+-- in Protection.lua).
+local EC_PROC_PAIR_CANDIDATES = {
+    -- Families EC currently has zero paired items for. spellIDs are from
+    -- Serv's own spellbook, so they are real; only the item->family claim
+    -- is unverified.
+    { id = 647, name = "Destiny", family = "Resurgence", spellID = 700097 },
+    { id = 934, name = "Stalvan's Reaper", family = "Frailty", spellID = 700092 },
+    { id = 2164, name = "Gut Ripper", family = "Execution", spellID = 700090 },
+    { id = 7717, name = "Ravager", family = "Bladestorm", spellID = 700120 },
+    { id = 8223, name = "Blade of the Basilisk", family = "Fortification", spellID = 700100 },
+    { id = 11817, name = "Lord General's Sword", family = "Ferocity", spellID = 700094 },
+    { id = 13148, name = "Chillpike", family = "Permafrost", spellID = 700096 },
+    { id = 17943, name = "Fist of Stone", family = "Clarity", spellID = 700111 },
+    { id = 19019, name = "Thunderfury, Blessed Blade of the Windseeker", family = "Thunderfury", spellID = 700104 },
+    { id = 27901, name = "Blackout Truncheon", family = "Bloodlust", spellID = 700093 },
+    -- Control row: the community list puts this under Concussion, EC has it
+    -- Anvil-verified as Venom. Its proc line settles which is right without
+    -- anyone visiting an Anvil, and tells us the list's error rate.
+    { id = 6904, name = "Bite of Serra'kis", family = "Concussion (EC says Venom)", spellID = 700078 },
+}
+
+local function EC_BuildProcPairCheck()
+    local lines = {}
+    local function add(s)
+        lines[#lines + 1] = s
+    end
+    add("=== EbonClearance Candidate Pair Cross-Check ===")
+    add("Version: " .. (NS.GetVersion and NS.GetVersion() or "?"))
+    add("Date: " .. date("%Y-%m-%d %H:%M"))
+    add("")
+    add("Reads each candidate item's REAL proc line straight from the client,")
+    add("including items you have never owned. Compare each proc line against")
+    add("the claimed affix's description in /ec captureproc's spellbook list.")
+    add("")
+    add("Agreement = good corroboration, still not proof of extractability.")
+    add("Disagreement = reject the row.")
+    add("NO DATA = client had nothing yet; it was requested, re-run shortly.")
+    add("")
+
+    local resolved, pending, noProc = 0, 0, 0
+    for _, c in ipairs(EC_PROC_PAIR_CANDIDATES) do
+        local tip = EC_compCache.scanItemID and EC_compCache.scanItemID(c.id)
+        local realName = GetItemInfo(c.id)
+        add(string.format("[%d] claimed: %s -> %s (%d)", c.id, c.name, c.family, c.spellID))
+        if not tip or not realName then
+            pending = pending + 1
+            add("  NO DATA yet - requested from server, re-run in a few seconds.")
+        else
+            if realName ~= c.name then
+                add(string.format('  |cffff4444NAME MISMATCH|r client says "%s"', realName))
+            end
+            local procLine
+            if EC_compCache.scanLines and EC_compCache.lineLooksLikeChanceProc then
+                for i = 1, 40 do
+                    local fs = EC_compCache.scanLines[i]
+                    if not fs then
+                        break
+                    end
+                    local txt = fs:GetText()
+                    if txt and EC_compCache.lineLooksLikeChanceProc(txt) then
+                        procLine = txt
+                        break
+                    end
+                end
+            end
+            if procLine then
+                resolved = resolved + 1
+                add(string.format("  procLine: %q", procLine))
+            else
+                noProc = noProc + 1
+                add("  |cffff4444NO CHANCE-ON-HIT LINE FOUND|r - either the item has no")
+                add("  such proc (list error) or the wording is not recognised.")
+            end
+        end
+        add("")
+    end
+    add(string.format("Result: %d with proc line, %d no proc line, %d awaiting data", resolved, noProc, pending))
+    add("")
+    add("These candidates live ONLY in this diagnostic. Nothing in the sell")
+    add("path reads them, so an incorrect row here cannot affect any item.")
+    return table.concat(lines, "\n")
+end
+
+local function EC_ShowProcPairCheck()
+    EC_ShowCopyFrame(
+        L["EbonClearance Candidate Pair Cross-Check"],
+        EC_BuildProcPairCheck(),
+        L["Cross-check generated. Copy the text from the window."]
+    )
+end
+
+local function EC_ShowProcPairAudit()
+    EC_ShowCopyFrame(
+        L["EbonClearance Chance-on-Hit Pair Audit"],
+        EC_BuildProcPairAudit(),
+        L["Pair audit generated. Copy the text from the window."]
+    )
+end
+
 NS.ShowBugReport = EC_ShowBugReport
 NS.ShowAffixDebugDump = EC_ShowAffixDebugDump
 NS.ShowProcessDebugDump = EC_ShowProcessDebugDump
 NS.ShowScanDebugDump = EC_ShowScanDebugDump
 NS.ShowCaptureProcDump = EC_ShowCaptureProcDump
+NS.ShowProcPairAudit = EC_ShowProcPairAudit
+NS.ShowProcPairCheck = EC_ShowProcPairCheck
 NS.ShowRuleSummary = EC_ShowRuleSummary
 -- v2.49.1: expose the generic copy-window helper so callers outside
 -- EbonClearance_BugReport.lua (e.g. NS.ShowAutolearnPeek in Events.lua)

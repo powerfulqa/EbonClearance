@@ -617,8 +617,9 @@ SettingsProfilesPanel:SetScript("OnShow", function(self)
             content:SetHeight(math.max(1, (shown * 22) + 8))
         end
 
-        saveBtn:SetScript("OnClick", function()
-            local name = saveInput:GetText()
+        -- The actual save + status/sound/refresh. Shared by the direct path
+        -- and the overwrite-confirm path below.
+        local function runSaveProfile(name)
             local ok, msg = NS.SaveSettingsProfile(name)
             statusFS:SetText(ok and ("|cff00ff00" .. msg .. "|r") or ("|cffff4444" .. msg .. "|r"))
             if ok then
@@ -629,6 +630,24 @@ SettingsProfilesPanel:SetScript("OnShow", function(self)
             else
                 PlaySound("igMainMenuOptionCheckBoxOff")
             end
+        end
+
+        saveBtn:SetScript("OnClick", function()
+            local name = saveInput:GetText()
+            -- v2.75.0 (fresh-audit fix): confirm before overwriting an existing
+            -- same-name profile (delete already confirms; save used to clobber
+            -- silently).
+            local existing = NS.SettingsProfileExists and NS.SettingsProfileExists(name)
+            if existing then
+                local dialog = StaticPopup_Show("EC_CONFIRM_OVERWRITE_SPROFILE", existing)
+                if dialog then
+                    dialog.data = function()
+                        runSaveProfile(name)
+                    end
+                end
+                return
+            end
+            runSaveProfile(name)
         end)
 
         saveInput:SetScript("OnEnterPressed", function()

@@ -5,6 +5,19 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.76.0
+
+**`/ec spike` now proves whose stutter it was.**
+
+The frame-hitch report kept only the 20 most recent hitches, so one big freeze was pushed out by twenty later small ones - usually exactly the frame a bug report needed. And although each line showed how many milliseconds EbonClearance spent in each phase, it never said what share of the frame that was. Now (the last engineering gap the competitive review flagged):
+
+- **The worst hitches of the session survive.** A second list keeps the 10 biggest frames, biggest first, evicted by severity - a 400 ms freeze stays visible no matter how many 51 ms blips follow it.
+- **Every line shows EbonClearance's share of the frame** - for example "EC 44 of 260 ms (17%)". A low share is the exoneration case: the stutter came from something else, and now the pasted report proves it. When the share rounds to 0%, the "busiest" label says "something else" instead of naming an EbonClearance phase (found in the field pass: "busiest: Tooltip scan - EC 0 of 613 ms (0%)" read as blame on a frame the addon barely touched).
+- `/ec spike` shows both lists (worst first, then most recent); `/ec bugreport` carries both sections. Session-only as before - clears on `/reload`, nothing is saved.
+- Locked by a new test invariant block (Test 134); French and German lines included.
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.75.0
 
 **A full source audit found and fixed a way to lose an item, plus four more correctness bugs.**

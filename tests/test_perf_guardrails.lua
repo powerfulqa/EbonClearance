@@ -8392,6 +8392,63 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 134 (v2.76.0): worst-N spike ring + EC-share attribution.
+-- ---------------------------------------------------------------------------
+-- The recent spike ring (Test 115) is a severity-blind FIFO: a single 400 ms
+-- hitch is evicted by twenty later 51 ms ones, so the one frame a bug report
+-- needs is usually gone. v2.76.0 adds a worst-10 ring (sorted descending,
+-- evicted by SEVERITY) sharing the same immutable entries, stores ecMs (EC's
+-- total phase work) on each entry at insert, and shows EC's share of every
+-- frame in /ec spike and /ec bugreport - so a pasted report proves whose
+-- stutter it was. Test 115's pins on the recent ring were audited and remain
+-- valid untouched (the FIFO insert/trim lines are byte-identical).
+do
+    local function fileSrc(path)
+        local fh = io.open(path, "rb")
+        if not fh then
+            return ""
+        end
+        local s = fh:read("*a") or ""
+        fh:close()
+        return s
+    end
+    local ev134 = fileSrc("EbonClearance_Events.lua")
+    local br134 = fileSrc("EbonClearance_BugReport.lua")
+    check("Test 134a: worst ring exists, exposed on NS, bounded at 10",
+        ev134:find("NS.worstSpikeLog = {}", 1, true) ~= nil
+            and ev134:find("NS.worstSpikeLogMax = 10", 1, true) ~= nil,
+        "the worst ring MUST be exposed on NS (the bugreport builder consumes it, mirroring NS.recentSpikeLog) and bounded - it is session-only, in-memory, never persisted.")
+    check("Test 134b: worst-ring eviction is by severity, never FIFO",
+        ev134:find("if #worst < NS.worstSpikeLogMax or entry.ms > worst[#worst].ms then", 1, true) ~= nil
+            and ev134:find("while pos > 1 and worst[pos - 1].ms < entry.ms do", 1, true) ~= nil
+            and ev134:find("table.remove(worst)", 1, true) ~= nil,
+        "the worst ring MUST insert sorted descending by ms and trim the TAIL (the smallest), with a replace-min early-out. FIFO eviction here reintroduces the reported bug: one big hitch dies to twenty small ones.")
+    check("Test 134c: EC share captured at insert as ecMs on the shared entry",
+        ev134:find("ecMs = dBag + dVendor + dTip", 1, true) ~= nil
+            and ev134:find("table.insert(EC_spikeLog, 1, entry)", 1, true) ~= nil,
+        "ecMs MUST be stored on the entry at insert (entries are SHARED between the recent and worst rings and immutable afterwards); rendering only divides. Recomputing at render from the phase fields would work today but invites drift if a phase is ever added.")
+    check("Test 134d: /ec spike renders both sections with the clamped share",
+        ev134:find("EC %.0f of %.0f ms (%.0f%%)", 1, true) ~= nil
+            and ev134:find('L["Worst hitches this session (biggest first):"]', 1, true) ~= nil
+            and ev134:find('L["Most recent hitches (newest first):"]', 1, true) ~= nil
+            and ev134:find("math.min(100, ecMs / ms * 100)", 1, true) ~= nil,
+        "ShowFrameSpikes MUST print the worst section (biggest first) then the recent section (newest first), each line carrying EC's share of the frame; the clamp guards the two-clock case (debugprofilestop vs elapsed) ever reading over 100%.")
+    check("Test 134e: bugreport mirrors both sections with the share",
+        br134:find("--- Worst Frame Hitches (this session) ---", 1, true) ~= nil
+            and br134:find("NS.worstSpikeLog", 1, true) ~= nil
+            and br134:find("EC %.0f ms (%.0f%%)", 1, true) ~= nil,
+        "/ec bugreport MUST carry the worst section and the share suffix - the pasted report is where 'whose stutter was it' actually gets answered.")
+    -- 134f: field-verified wart (v2.76.0 in-game pass). An entry can clear the
+    -- 0.1 ms log epsilon yet round to "EC 0 ms (0%)"; naming an EC phase as
+    -- "busiest" on that line reads as blame on a frame the share just
+    -- exonerated. Both surfaces must swap the label for "something else".
+    local ecMs05 = 'ecMs < 0.5 and "something else"'
+    check("Test 134f: near-zero EC share never names an EC phase as busiest",
+        ev134:find(ecMs05, 1, true) ~= nil and br134:find(ecMs05, 1, true) ~= nil,
+        "when ecMs rounds to 0 the busiest label MUST read 'something else' on BOTH surfaces - 'busiest: Tooltip scan - EC 0 of 613 ms (0%)' contradicts itself and blames EC for a frame it did not cause.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

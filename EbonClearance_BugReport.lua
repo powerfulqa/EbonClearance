@@ -823,25 +823,48 @@ local function EC_BuildBugReport()
     end
     add("")
 
-    -- Frame-spike ring (session-only): the worst recent frames EC
-    -- contributed to and which phase was busiest during each. Answers
+    -- Frame-spike rings (session-only): the worst frames of the session
+    -- (severity-sorted, v2.76.0) then the most recent, with EC's share
+    -- of each frame so the report proves whose stutter it was. Answers
     -- "the player reports a stutter - was EC the cause, and where?".
-    add("--- Recent Frame Hitches (this session) ---")
+    -- The same frame can appear in both sections (the rings share
+    -- entries); timestamps disambiguate.
     do
+        local function spikeLine(e)
+            local ms = tonumber(e.ms) or 0
+            local ecMs = tonumber(e.ecMs) or 0
+            local pct = ms > 0 and math.min(100, ecMs / ms * 100) or 0
+            -- Mirror of /ec spike: when EC's total rounds to 0 ms, don't name
+            -- an EC phase as busiest (raw English - bugreport convention).
+            local busiest = ecMs < 0.5 and "something else" or tostring(e.dominant or "?")
+            return string.format("  [%s] %.0f ms - %s - EC %.0f ms (%.0f%%) (bag %.0f / vendor %.0f / tooltip %.0f ms, %.0f FPS)",
+                tostring(e.loggedAt),
+                ms,
+                busiest,
+                ecMs,
+                pct,
+                tonumber(e.bagMs) or 0,
+                tonumber(e.vendorMs) or 0,
+                tonumber(e.tipMs) or 0,
+                tonumber(e.fps) or 0)
+        end
+        add("--- Worst Frame Hitches (this session) ---")
+        local wh = NS.worstSpikeLog or {}
+        if #wh == 0 then
+            add("  (none this session)")
+        else
+            for i = 1, #wh do
+                add(spikeLine(wh[i]))
+            end
+        end
+        add("")
+        add("--- Recent Frame Hitches (this session) ---")
         local rh = NS.recentSpikeLog or {}
         if #rh == 0 then
             add("  (none this session)")
         else
             for i = 1, #rh do
-                local e = rh[i]
-                add(string.format("  [%s] %.0f ms - %s (bag %.0f / vendor %.0f / tooltip %.0f ms, %.0f FPS)",
-                    tostring(e.loggedAt),
-                    tonumber(e.ms) or 0,
-                    tostring(e.dominant or "?"),
-                    tonumber(e.bagMs) or 0,
-                    tonumber(e.vendorMs) or 0,
-                    tonumber(e.tipMs) or 0,
-                    tonumber(e.fps) or 0))
+                add(spikeLine(rh[i]))
             end
         end
     end

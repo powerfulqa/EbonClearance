@@ -3726,6 +3726,12 @@ EC_compCache.spikePhase = EC_spikePhase
 EC_compCache.spikeProf = EC_prof
 NS.recentSpikeLog = EC_spikeLog
 NS.recentSpikeLogMax = EC_SPIKE_LOG_MAX
+-- v2.76.0: the worst-N frames of the session, sorted descending by ms,
+-- so one big hitch is not evicted by twenty later small ones (the
+-- recent ring above is a severity-blind FIFO). Entries are SHARED with
+-- NS.recentSpikeLog - never mutate an entry after insert.
+NS.worstSpikeLog = {}
+NS.worstSpikeLogMax = 10
 
 local EC_spikeFrame = CreateFrame("Frame")
 local EC_spikePrevBag, EC_spikePrevVendor, EC_spikePrevTip = 0, 0, 0
@@ -3759,41 +3765,87 @@ EC_spikeFrame:SetScript("OnUpdate", function(_, elapsed)
     if not dom then
         return
     end
-    table.insert(EC_spikeLog, 1, {
+    -- v2.76.0: ecMs (EC's total work this frame) is captured at insert
+    -- because the entry is shared between the recent and worst rings and
+    -- immutable after this point; the display derives the percentage.
+    -- The phase deltas are cumulative-counter differences, so ecMs >= 0.
+    local entry = {
         ms = elapsed * 1000,
         dominant = dom,
         bagMs = dBag,
         vendorMs = dVendor,
         tipMs = dTip,
+        ecMs = dBag + dVendor + dTip,
         fps = (GetFramerate and GetFramerate()) or 0,
         loggedAt = date("%H:%M:%S"),
-    })
+    }
+    table.insert(EC_spikeLog, 1, entry)
     if #EC_spikeLog > EC_SPIKE_LOG_MAX then
         table.remove(EC_spikeLog)
     end
+    -- Worst ring: sorted insert (descending by ms) with a replace-min
+    -- early-out, then trim the tail. Eviction is by SEVERITY, never
+    -- FIFO - the whole point is that a 400 ms hitch survives twenty
+    -- later 51 ms ones. Strict < in the scan keeps equal-ms entries in
+    -- arrival order (oldest of equals ranks first).
+    local worst = NS.worstSpikeLog
+    if #worst < NS.worstSpikeLogMax or entry.ms > worst[#worst].ms then
+        local pos = #worst + 1
+        while pos > 1 and worst[pos - 1].ms < entry.ms do
+            pos = pos - 1
+        end
+        table.insert(worst, pos, entry)
+        if #worst > NS.worstSpikeLogMax then
+            table.remove(worst)
+        end
+    end
 end)
 
--- Copyable list of recent frame hitches (newest-first) and which EC phase
--- was busiest during each. Backs the /ec spike command. Session-only - the
--- ring clears on /reload.
+-- Copyable list of frame hitches: the worst of the session (biggest
+-- first) then the most recent (newest first), each line showing EC's
+-- share of the frame so a pasted report proves whose stutter it was.
+-- Backs the /ec spike command. Session-only - both rings clear on /reload.
 function NS.ShowFrameSpikes()
     local body
     if #EC_spikeLog == 0 then
         body = L["No frame hitches blamed on EbonClearance this session. Either there were none, or EbonClearance wasn't doing heavy work during any slow frame. Clears on /reload."]
     else
-        local lines = {}
-        for i = 1, #EC_spikeLog do
-            local e = EC_spikeLog[i]
-            lines[i] = string.format(
-                "[%s] %.0f ms hitch - busiest: %s  |cff888888(bag %.0f / vendor %.0f / tooltip %.0f ms, %.0f FPS)|r",
+        -- v2.76.0: the share is derived here from the stored ecMs; the
+        -- clamp guards the two-clock case (debugprofilestop vs elapsed)
+        -- ever pushing it past 100.
+        local function fmtLine(e)
+            local ms = tonumber(e.ms) or 0
+            local ecMs = tonumber(e.ecMs) or 0
+            local pct = ms > 0 and math.min(100, ecMs / ms * 100) or 0
+            -- When EC's total rounds to 0 ms, naming an EC phase as "busiest"
+            -- reads as blame on a frame the share just exonerated. Same
+            -- wording as the Help answer: the stutter came from something
+            -- else. Raw English like the phase labels (line content is
+            -- unlocalized diagnostic text; only the headers are L-wrapped).
+            local busiest = ecMs < 0.5 and "something else" or tostring(e.dominant or "?")
+            return string.format(
+                "[%s] %.0f ms hitch - busiest: %s - EC %.0f of %.0f ms (%.0f%%)  |cff888888(bag %.0f / vendor %.0f / tooltip %.0f ms, %.0f FPS)|r",
                 tostring(e.loggedAt or "?"),
-                tonumber(e.ms) or 0,
-                tostring(e.dominant or "?"),
+                ms,
+                busiest,
+                ecMs,
+                ms,
+                pct,
                 tonumber(e.bagMs) or 0,
                 tonumber(e.vendorMs) or 0,
                 tonumber(e.tipMs) or 0,
                 tonumber(e.fps) or 0
             )
+        end
+        local lines = {}
+        lines[#lines + 1] = L["Worst hitches this session (biggest first):"]
+        for i = 1, #NS.worstSpikeLog do
+            lines[#lines + 1] = fmtLine(NS.worstSpikeLog[i])
+        end
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = L["Most recent hitches (newest first):"]
+        for i = 1, #EC_spikeLog do
+            lines[#lines + 1] = fmtLine(EC_spikeLog[i])
         end
         body = table.concat(lines, "\n")
     end

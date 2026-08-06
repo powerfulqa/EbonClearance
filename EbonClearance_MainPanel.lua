@@ -1237,7 +1237,7 @@ local function BuildMainPanel(panel, content)
         { run = "perf", label = "|cffffff00/ec perf|r  " .. L["Show EC's memory, CPU, cache and list sizes"] },
         {
             run = "spike",
-            label = "|cffffff00/ec spike|r  " .. L["Show recent frame hitches EC caused, and which part was busiest"],
+            label = "|cffffff00/ec spike|r  " .. L["Show the worst and most recent frame hitches EC caused, and EC's share of each"],
         },
         {
             pe = true,

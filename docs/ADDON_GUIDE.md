@@ -584,7 +584,13 @@ Not wired into CI, but enforce in review:
   scan, `vendor` = the worker batch, `tooltip` = the annotation wrapper in the tooltip file).
   Only hitches EC actually contributed to are recorded, so an empty result is itself the answer.
   Session-only; bounded ring; no persistence. Invariants in `tests/test_perf_guardrails.lua`
-  Test 115.
+  Test 115. **v2.76.0**: a second ring, `NS.worstSpikeLog` (cap 10, sorted descending by ms,
+  evicted by SEVERITY not FIFO), keeps the biggest hitches of the session so one 400 ms frame
+  isn't pushed out by twenty later 51 ms ones. Entries are SHARED between the two rings and
+  immutable after insert; each carries `ecMs` (the sum of the three phase deltas, captured at
+  insert) and the display derives EC's share of the frame from it ("EC 44 of 260 ms (17%)") -
+  the exoneration line that proves whose stutter it was. Both `/ec spike` sections and both
+  bugreport sections render it. Invariants in Test 134.
 - `/ec affixfallback <on|off|status>` - affix-source resilience check (v2.56.0). Toggles
   `EC_compCache.simulateExtractionAbsent` and rebuilds the known-affix map, so you can verify
   in-game that affix protection (Known/Needed highlighting, keep/sell) survives when PE's

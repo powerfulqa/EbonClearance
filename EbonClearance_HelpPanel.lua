@@ -352,7 +352,7 @@ local function EC_buildHelpEntries()
     {
         id = "frame-spike",
         q = L["The game stuttered. Was it EbonClearance? (/ec spike)"],
-        a = L["Type /ec spike for a copyable list of recent frame hitches the addon actually contributed to, newest first. Each line shows how long the frame took and which part of the addon was busiest during it (bag update, vendor cycle, or tooltip). If the list is empty right after a stutter, that's the answer too: the addon wasn't doing heavy work during any slow frame. Session-only - it clears on /reload. Use /ec perf for the addon's steady-state memory and CPU instead."],
+        a = L["Type /ec spike for a copyable list of frame hitches the addon actually contributed to. The window shows the worst hitches of the session (biggest first, so one big freeze is never pushed out by small ones) and the most recent ones (newest first). Each line shows how long the frame took, which part of the addon was busiest (bag update, vendor cycle, or tooltip), and how much of the frame was the addon's own work - for example 'EC 44 of 260 ms (17%)'. A low share means the stutter came from something else. If the list is empty right after a stutter, that's the answer too: the addon wasn't doing heavy work during any slow frame. Session-only - it clears on /reload. Use /ec perf for the addon's steady-state memory and CPU instead."],
         panel = nil,
     },
     {

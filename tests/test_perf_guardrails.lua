@@ -8449,6 +8449,70 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Test 135 (v2.77.0): the /ec paircheck proc-text affix suggester is
+-- DIAGNOSTIC-ONLY and must never reach the sell path. A proc-text guess is not
+-- Anvil proof, and two weapons can share a proc while only one is extractable
+-- (Fiery War Axe reads like Taran Icebreaker's Pyromancy yet the Anvil refuses
+-- it). suggestAffixFromProcLine / EC_WEAPON_PROC_SIGNATURES must appear ONLY in
+-- Protection.lua (definition) and BugReport.lua (the diagnostic renderer), never
+-- in the decision core, the vendor cycle, or the Events sell path.
+-- ---------------------------------------------------------------------------
+do
+    local function readf(p)
+        local f = io.open(p, "rb")
+        local s = f and f:read("*a") or ""
+        if f then
+            f:close()
+        end
+        return s
+    end
+    local function count(s, needle)
+        local n, i = 0, 1
+        while true do
+            local j = s:find(needle, i, true)
+            if not j then
+                break
+            end
+            n = n + 1
+            i = j + 1
+        end
+        return n
+    end
+    local prot135 = readf("EbonClearance_Protection.lua")
+    local dec135 = readf("EbonClearance_Decision.lua")
+    local ven135 = readf("EbonClearance_Vendor.lua")
+    local ev135 = readf("EbonClearance_Events.lua")
+    local br135 = readf("EbonClearance_BugReport.lua")
+    -- Positional guarantee: the suggester + signature table live entirely in
+    -- the DIAGNOSTIC region, which sits AFTER the sell-path functions
+    -- (playerHasExtractedProc / chanceProcSpellID are above it), so those never
+    -- reference them. (A raw count is wrong here: the safety-boundary comment
+    -- also names the symbols.)
+    local diagStart = prot135:find("DIAGNOSTIC-ONLY proc-text suggester", 1, true)
+    local firstSuggest = prot135:find("suggestAffixFromProcLine", 1, true)
+    local firstSig = prot135:find("EC_WEAPON_PROC_SIGNATURES", 1, true)
+    check("Test 135a: suggester + signature live only in the diagnostic region",
+        diagStart ~= nil
+            and firstSuggest ~= nil and firstSuggest > diagStart
+            and firstSig ~= nil and firstSig > diagStart,
+        "Every mention of suggestAffixFromProcLine / EC_WEAPON_PROC_SIGNATURES in Protection.lua must sit AFTER the DIAGNOSTIC banner, so the sell-path functions above it (playerHasExtractedProc, chanceProcSpellID) cannot reach them.")
+    check("Test 135b: suggester wired into the /ec paircheck diagnostic",
+        count(br135, "suggestAffixFromProcLine") >= 1,
+        "BugReport.lua's paircheck renderer must call suggestAffixFromProcLine - it is the ONLY intended consumer.")
+    check("Test 135c: suggester never appears in the sell path",
+        count(dec135, "suggestAffixFromProcLine") == 0
+            and count(ven135, "suggestAffixFromProcLine") == 0
+            and count(ev135, "suggestAffixFromProcLine") == 0,
+        "suggestAffixFromProcLine MUST NOT appear in the decision core, the vendor cycle, or Events - a proc-text guess feeding a sell decision is the exact item-safety hazard this suggester is walled off from.")
+    check("Test 135d: the signature table stays local to Protection.lua",
+        count(prot135, "EC_WEAPON_PROC_SIGNATURES") >= 1
+            and count(dec135, "EC_WEAPON_PROC_SIGNATURES") == 0
+            and count(ven135, "EC_WEAPON_PROC_SIGNATURES") == 0
+            and count(ev135, "EC_WEAPON_PROC_SIGNATURES") == 0,
+        "EC_WEAPON_PROC_SIGNATURES is a Protection.lua file-local; it must not be referenced from the decision core, vendor cycle, or Events.")
+end
+
+-- ---------------------------------------------------------------------------
 -- Result.
 -- ---------------------------------------------------------------------------
 print()

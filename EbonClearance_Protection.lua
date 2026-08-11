@@ -2014,6 +2014,138 @@ function EC_compCache.playerHasExtractedProc(bag, slot, itemID, procLine)
     return false, spellID, family
 end
 
+-- v2.77.0: resolve a weapon-affix FAMILY name to its live spell id by reading
+-- the ExtractionService catalog's `weaponOnly` flag (the field EC otherwise
+-- ignores - it derives weapon-only from equipLoc). Returns the 700xxx id or nil
+-- (nil off-Ebonhold / pre-catalog). Used by the /ec paircheck suggester below to
+-- attach a spell id to a suggested family without hardcoding it. Goes through
+-- the single getExtractionCatalog() chokepoint, so it stays quiet under
+-- simulateExtractionAbsent like every other catalog read.
+function EC_compCache.weaponAffixSpellID(family)
+    if not family then
+        return nil
+    end
+    local catalog = EC_compCache.getExtractionCatalog()
+    if type(catalog) ~= "table" then
+        return nil
+    end
+    local want = string.lower(family)
+    for _, r in pairs(catalog) do
+        if type(r) == "table" and r.weaponOnly and type(r.name) == "string" and r.id then
+            -- Weapon affixes are unranked, but strip a trailing roman rank defensively.
+            local base = string.match(r.name, "^(.-)%s+[IVXLC]+$") or r.name
+            if string.lower(base) == want then
+                return r.id
+            end
+        end
+    end
+    return nil
+end
+
+-- =====================================================================
+-- DIAGNOSTIC-ONLY proc-text suggester (v2.77.0).
+-- Canonical chance-on-hit weapon PROC-LINE text per affix family. This is the
+-- text the WEAPON shows ("Chance on hit: Increases Strength..."), which is a
+-- DIFFERENT string from the affix's extraction DESCRIPTION - and that difference
+-- is exactly why description-matching could never identify Destiny (proc
+-- "Increases Strength" vs the Resurgence extraction text about falling below 40%
+-- health). Curated from EC's own /ec captureproc observations + the proc lines
+-- recorded in EC_CHANCE_PROC_CONFIRMED_ITEMS above; grows as more procs are seen.
+--
+-- SAFETY BOUNDARY: this table and suggestAffixFromProcLine below are consumed
+-- ONLY by the /ec paircheck diagnostic. They MUST NOT be read by
+-- playerHasExtractedProc, chanceProcSpellID, EC_IsSellable, the Decision core,
+-- or any vendor path - a proc-text guess is not Anvil proof, and two weapons can
+-- share a proc while only one is extractable (Fiery War Axe reads like Taran
+-- Icebreaker's Pyromancy yet the Anvil REFUSES it; it sits in NEVER_EXTRACTABLE).
+-- Pinned by test_perf_guardrails.lua.
+-- =====================================================================
+local EC_WEAPON_PROC_SIGNATURES = {
+    Resurgence = "increases strength",
+    Affliction = "sends a shadowy bolt causing shadow damage",
+    Pyromancy = "hurls a fiery ball fire damage over time",
+    Glaciation = "launches a bolt of frost slowing movement",
+    Rending = "punctures armor lowering it",
+    Frailty = "lowers all attributes of target",
+    Execution = "wounds the target",
+    Bladestorm = "attack all nearby enemies weapon damage",
+    Permafrost = "blasts a target for frost damage",
+    Thunderfury = "blasts enemy with lightning nature damage jumping nearby",
+    Vampirism = "steals life from target",
+    Venom = "poisons target nature damage over time",
+}
+
+local EC_PROC_GLUE = {
+    ["a"] = true, ["an"] = true, ["and"] = true, ["the"] = true, ["for"] = true,
+    ["by"] = true, ["of"] = true, ["to"] = true, ["your"] = true, ["you"] = true,
+    ["on"] = true, ["it"] = true, ["at"] = true, ["that"] = true, ["with"] = true,
+    ["is"] = true, ["sec"] = true, ["min"] = true,
+}
+
+-- Reduce a proc/description string to a set of meaningful stemmed words. Strips
+-- colour codes, the "Chance on hit:" / "Chance to strike" / "Equip:" prefixes,
+-- numbers, punctuation, glue words, and a trailing plural -s. Returns (set, n).
+local function EC_procWordSet(text)
+    if type(text) ~= "string" or text == "" then
+        return nil, 0
+    end
+    text = string.lower(text)
+    text = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
+    text = string.gsub(text, "|r", "")
+    text = string.gsub(text, "chance on hit", " ")
+    text = string.gsub(text, "chance to strike", " ")
+    text = string.gsub(text, "equip", " ")
+    text = string.gsub(text, "%d+", " ")
+    local set, n = {}, 0
+    for word in string.gmatch(text, "%a+") do
+        if not EC_PROC_GLUE[word] then
+            if string.len(word) > 4 and string.sub(word, -1) == "s" then
+                word = string.sub(word, 1, -2)
+            end
+            if not set[word] then
+                set[word] = true
+                n = n + 1
+            end
+        end
+    end
+    return set, n
+end
+
+-- DIAGNOSTIC ONLY. Suggest the likely affix family for a weapon's chance-on-hit
+-- proc line via word-overlap against EC_WEAPON_PROC_SIGNATURES. Returns
+-- (family, spellID or nil, confidencePct) for the best match over the threshold,
+-- or nil. PURE function of its input: no bag/slot reads, no state writes. NEVER
+-- call from the sell path - see the safety-boundary note on the signature table.
+function EC_compCache.suggestAffixFromProcLine(procLine)
+    local itemSet, itemN = EC_procWordSet(procLine)
+    if not itemSet or itemN == 0 then
+        return nil
+    end
+    local bestFamily, bestCov, bestMatched
+    for family, sig in pairs(EC_WEAPON_PROC_SIGNATURES) do
+        local sigSet, sigN = EC_procWordSet(sig)
+        if sigSet and sigN > 0 then
+            local matched = 0
+            for w in pairs(sigSet) do
+                if itemSet[w] then
+                    matched = matched + 1
+                end
+            end
+            local cov = matched / sigN
+            if matched >= 2 and cov >= 0.7 then
+                if not bestCov or cov > bestCov or (cov == bestCov and matched > bestMatched) then
+                    bestFamily, bestCov, bestMatched = family, cov, matched
+                end
+            end
+        end
+    end
+    if not bestFamily then
+        return nil
+    end
+    local spellID = EC_compCache.weaponAffixSpellID and EC_compCache.weaponAffixSpellID(bestFamily)
+    return bestFamily, spellID, math.floor(bestCov * 100 + 0.5)
+end
+
 -- v2.49.0: scan a bag slot's tooltip for the exact chance-on-hit line.
 -- itemHasChanceOnHit returns bool; this returns the LINE TEXT itself so
 -- the autolearn + seed-map lookup can key on it. Reads from the hidden

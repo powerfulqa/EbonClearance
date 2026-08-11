@@ -2208,7 +2208,49 @@ local EC_PROC_PAIR_CANDIDATES = {
     { id = 6904, name = "Bite of Serra'kis", family = "Concussion (EC says Venom)", spellID = 700078 },
 }
 
-local function EC_BuildProcPairCheck()
+-- Read a weapon's chance-on-hit proc line straight from the client for ANY
+-- itemID (even one never owned). Returns (procLine, realName, hadData).
+local function EC_procLineForItemID(id)
+    local tip = EC_compCache.scanItemID and EC_compCache.scanItemID(id)
+    local realName = GetItemInfo(id)
+    if not tip or not realName then
+        return nil, realName, false
+    end
+    if EC_compCache.scanLines and EC_compCache.lineLooksLikeChanceProc then
+        for i = 1, 40 do
+            local fs = EC_compCache.scanLines[i]
+            if not fs then
+                break
+            end
+            local txt = fs:GetText()
+            if txt and EC_compCache.lineLooksLikeChanceProc(txt) then
+                return txt, realName, true
+            end
+        end
+    end
+    return nil, realName, true
+end
+
+-- Format the DIAGNOSTIC affix suggestion for a proc line, or nil. The
+-- suggestion is a proc-text guess to speed discovery; it is display-only and
+-- nothing in the sell path reads it (see the safety-boundary note on
+-- EC_WEAPON_PROC_SIGNATURES in Protection.lua).
+local function EC_suggestAffixLine(procLine)
+    if not procLine or not EC_compCache.suggestAffixFromProcLine then
+        return nil
+    end
+    local family, spellID, conf = EC_compCache.suggestAffixFromProcLine(procLine)
+    if not family then
+        return nil
+    end
+    local idPart = spellID and ("(" .. spellID .. ")") or "(id not in catalog)"
+    return string.format(
+        "  |cff66ccffSuggested affix:|r %s %s ~%d%% - Anvil-confirm before trusting.",
+        family, idPart, conf or 0
+    )
+end
+
+local function EC_BuildProcPairCheck(queryID)
     local lines = {}
     local function add(s)
         lines[#lines + 1] = s
@@ -2217,44 +2259,56 @@ local function EC_BuildProcPairCheck()
     add("Version: " .. (NS.GetVersion and NS.GetVersion() or "?"))
     add("Date: " .. date("%Y-%m-%d %H:%M"))
     add("")
+
+    if queryID then
+        -- Single-item mode: /ec paircheck <itemID>. Read the item's real proc
+        -- line and SUGGEST the likely affix. Advisory only - never sold on.
+        local procLine, realName, hadData = EC_procLineForItemID(queryID)
+        add(string.format("[%d] %s", queryID, realName or "(name pending)"))
+        if not hadData then
+            add("  NO DATA yet - requested from server, re-run in a few seconds.")
+        elseif procLine then
+            add(string.format("  procLine: %q", procLine))
+            add(EC_suggestAffixLine(procLine)
+                or "  No affix suggestion (proc text not yet in the signature table).")
+        else
+            add("  |cffff4444NO CHANCE-ON-HIT LINE FOUND|r - the item may have no such proc.")
+        end
+        add("")
+        add("The suggestion is a proc-text GUESS to speed discovery. It is NOT")
+        add("Anvil proof and NOTHING in the sell path reads it. Confirm at the")
+        add("Anvil, then add the pairing to CONFIRMED_ITEMS by itemID.")
+        return table.concat(lines, "\n")
+    end
+
     add("Reads each candidate item's REAL proc line straight from the client,")
-    add("including items you have never owned. Compare each proc line against")
-    add("the claimed affix's description in /ec captureproc's spellbook list.")
+    add("including items you have never owned, and SUGGESTS the likely affix.")
+    add("Compare each proc line against the claimed affix in /ec captureproc.")
     add("")
     add("Agreement = good corroboration, still not proof of extractability.")
-    add("Disagreement = reject the row.")
+    add("Disagreement = reject the row. Suggestions are guesses, Anvil decides.")
     add("NO DATA = client had nothing yet; it was requested, re-run shortly.")
+    add("Tip: /ec paircheck <itemID> checks any single weapon.")
     add("")
 
     local resolved, pending, noProc = 0, 0, 0
     for _, c in ipairs(EC_PROC_PAIR_CANDIDATES) do
-        local tip = EC_compCache.scanItemID and EC_compCache.scanItemID(c.id)
-        local realName = GetItemInfo(c.id)
+        local procLine, realName, hadData = EC_procLineForItemID(c.id)
         add(string.format("[%d] claimed: %s -> %s (%d)", c.id, c.name, c.family, c.spellID))
-        if not tip or not realName then
+        if not hadData then
             pending = pending + 1
             add("  NO DATA yet - requested from server, re-run in a few seconds.")
         else
             if realName ~= c.name then
                 add(string.format('  |cffff4444NAME MISMATCH|r client says "%s"', realName))
             end
-            local procLine
-            if EC_compCache.scanLines and EC_compCache.lineLooksLikeChanceProc then
-                for i = 1, 40 do
-                    local fs = EC_compCache.scanLines[i]
-                    if not fs then
-                        break
-                    end
-                    local txt = fs:GetText()
-                    if txt and EC_compCache.lineLooksLikeChanceProc(txt) then
-                        procLine = txt
-                        break
-                    end
-                end
-            end
             if procLine then
                 resolved = resolved + 1
                 add(string.format("  procLine: %q", procLine))
+                local sug = EC_suggestAffixLine(procLine)
+                if sug then
+                    add(sug)
+                end
             else
                 noProc = noProc + 1
                 add("  |cffff4444NO CHANCE-ON-HIT LINE FOUND|r - either the item has no")
@@ -2270,10 +2324,10 @@ local function EC_BuildProcPairCheck()
     return table.concat(lines, "\n")
 end
 
-local function EC_ShowProcPairCheck()
+local function EC_ShowProcPairCheck(queryID)
     EC_ShowCopyFrame(
         L["EbonClearance Candidate Pair Cross-Check"],
-        EC_BuildProcPairCheck(),
+        EC_BuildProcPairCheck(queryID),
         L["Cross-check generated. Copy the text from the window."]
     )
 end

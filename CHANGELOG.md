@@ -5,6 +5,23 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.77.0
+
+**`/ec paircheck` now suggests which affix a weapon's proc is - the thing that made Destiny hard to pair.**
+
+Pairing a chance-on-hit weapon to its affix used to mean reading a `/ec captureproc` dump by eye. The catch (Destiny taught us): a weapon's proc text ("Increases Strength") looks nothing like the affix's extraction description ("when you fall below 40% health..."), so comparing them never worked. So `/ec paircheck` now matches the weapon's PROC text against a small curated table of known weapon procs and tells you the likely affix.
+
+- **`/ec paircheck <itemID>`** reads any single weapon's proc line - even one you have never owned - and prints a suggestion like `Suggested affix: Resurgence (700097) ~100%`. Plain `/ec paircheck` still cross-checks the candidate list, now with a suggestion on each row.
+- **The suggestion is a guess to speed discovery, never a decision.** It is display-only: nothing in the sell path reads it, and you still confirm at the Anvil before a pairing is trusted. A proc-text guess can't be trusted to sell an item (two weapons can share a proc while only one is extractable), so the safety boundary is pinned by a test.
+- Under the hood EC now reads the server catalog's `weaponOnly` flag to resolve an affix family to its live spell id, instead of relying only on hardcoded ids.
+
+Also in this release: **confirmation popups that could open behind the Interface Options window are reachable again**, and the Quickstart's Project-Ebonhold-only questions were corrected.
+
+Engineering: a new runtime suite (`tests/test_proc_suggester.lua`, the 13th) proves the matcher identifies Destiny as Resurgence, and a static boundary test pins that the suggester can never reach the sell decision.
+
+---
+
+
 ### v2.76.0
 
 **`/ec spike` now proves whose stutter it was.**

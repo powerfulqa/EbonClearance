@@ -9006,8 +9006,10 @@ SlashCmdList["EBONCLEARANCE"] = function(msg)
         -- community-sourced pairing can be corroborated without the Anvil
         -- (which needs the physical item). Candidates live in the
         -- diagnostic only; nothing in the sell path reads them.
+        -- v2.77.0: optional itemID arg checks a single weapon and SUGGESTS the
+        -- likely affix from its proc text (advisory only, never sold on).
         if NS.ShowProcPairCheck then
-            NS.ShowProcPairCheck()
+            NS.ShowProcPairCheck(tonumber(rest and rest:match("%d+")))
         else
             PrintNice("|cffff4444Pair cross-check helper unavailable.|r")
         end

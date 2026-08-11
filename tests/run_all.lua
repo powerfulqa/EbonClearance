@@ -13,6 +13,7 @@
 local TESTS = {
     "tests/test_decision.lua",
     "tests/test_dbproxy.lua",
+    "tests/test_proc_suggester.lua",
     "tests/test_layout_reactivity.lua",
     "tests/test_perf_guardrails.lua",
     "tests/test_comment_hygiene.lua",

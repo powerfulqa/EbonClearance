@@ -67,7 +67,14 @@ WhitelistPanel:SetScript("OnShow", function(self)
             end
         end, 0, -10)
 
-        self.listUI = NS.CreateListUI(self, L["Manual Add (Shift-click item or type ID)"], "whitelist", 16, -118)
+        -- v2.76.0 (Serv report): the second argument is the LIST'S NAME, used
+        -- in the Clear All confirmation and every chat message about this
+        -- list - it is not rendered as a heading. It used to be passed the
+        -- add-input's section label, so the confirmation read 'Remove every
+        -- item from "Manual Add (Shift-click item or type ID)"?'. The sibling
+        -- panels already pass real names ("Delete List", "Protected Items",
+        -- "Account-Wide Items"); this one was the odd one out.
+        self.listUI = NS.CreateListUI(self, L["Sell List"], "whitelist", 16, -118)
         self.listUI:ClearAllPoints()
         self.listUI:SetPoint("TOPLEFT", scanRow, "BOTTOMLEFT", 0, -16)
         self.listUI:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 16)

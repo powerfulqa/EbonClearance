@@ -272,6 +272,34 @@ function NS.RaiseTooltipAboveWindows()
     GameTooltip:SetFrameLevel(250)
 end
 
+-- v2.76.0 (Serv report): bring a StaticPopup above the Interface Options
+-- frame. Call on the dialog StaticPopup_Show returns.
+--
+-- EC-TRAP: StaticPopup1 lives at a LOWER strata than the Interface Options
+-- container, so a confirmation raised from any options panel renders
+-- BEHIND the panel that raised it. The popup is modal in intent but not in
+-- effect, so the player is left with an action that silently refuses to
+-- complete and no visible reason - Serv hit this on all four list "Clear
+-- All" buttons and could not reach the Yes button at all.
+--
+-- Every StaticPopup_Show call made from a panel MUST pass its dialog
+-- through here. QuickstartPanel carried this fix inline from v2.38.0; this
+-- is that same trick, shared, so the next popup added to a panel does not
+-- have to rediscover it. Guarded because StaticPopup_Show returns nil when
+-- all popup slots are occupied.
+function NS.RaisePopupAboveOptions(dialog)
+    if not dialog then
+        return
+    end
+    if dialog.SetFrameStrata then
+        dialog:SetFrameStrata("TOOLTIP")
+    end
+    if dialog.Raise then
+        dialog:Raise()
+    end
+    return dialog
+end
+
 -- Shared "Show: [rarity]" filter dropdown for the Loot Log + Sold
 -- History windows. Quality names come from the client's
 -- ITEM_QUALITYn_DESC globals so they are locale-correct without

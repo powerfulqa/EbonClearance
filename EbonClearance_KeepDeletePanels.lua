@@ -509,6 +509,11 @@ DeletionSettingsPanel:SetScript("OnShow", function(self)
             if autoCB:GetChecked() then
                 autoCB:SetChecked(false) -- stay off until confirmed
                 local dialog = StaticPopup_Show("EC_CONFIRM_AUTODELETE")
+                -- Raise above the Interface Options frame or the player cannot
+                -- click Yes (EC-TRAP note in EbonClearance_PanelWidgets.lua).
+                if NS.RaisePopupAboveOptions then
+                    NS.RaisePopupAboveOptions(dialog)
+                end
                 if dialog then
                     dialog.data = function()
                         DB.autoDeleteOnPickup = true

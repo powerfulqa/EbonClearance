@@ -171,6 +171,51 @@ check(
     "These panels own PE-only widgets but never gate them: " .. table.concat(missingGate, ", ")
 )
 
+-- 8b. (v2.76.0) The presence check above is per-FILE, so one gated question
+-- satisfies it for the whole Quickstart - which is exactly how Q2 / Q6 / Q12
+-- shipped ungated while Q8 was gated (Serv report). Pin the individual
+-- companion questions.
+--
+-- The signal is indentation: a gated makeRadioGroup sits inside an
+-- `if ... peFeaturesVisible() then` block, so stylua indents it 12 spaces,
+-- while an ungated one at the builder's top level sits at 8. Q1 and Q9 are
+-- the deliberate controls - both must STAY at 8, because vendor speed and
+-- tome/recipe protection work on any realm. (Q9 especially: v2.74.0 keeps the
+-- tome checkboxes visible off-PE, re-anchoring rather than hiding them, so
+-- profession recipes stay protectable on a plain 3.3.5a server.)
+do
+    local qs = read("EbonClearance_QuickstartPanel.lua")
+    local function indentOf(label)
+        for line in qs:gmatch("[^\n]+") do
+            if line:find(label, 1, true) then
+                return #(line:match("^(%s*)") or "")
+            end
+        end
+        return nil
+    end
+    local gated = { ["Q2. Auto-loot cycle?"] = true, ["Q6. Which merchants"] = true, ["Q12. Auto-summon"] = true }
+    local ungated = { ["Q1. How fast"] = true, ["Q9. Tome / recipe"] = true }
+    local bad = {}
+    for label in pairs(gated) do
+        local ind = indentOf(label)
+        if ind == nil or ind < 12 then
+            bad[#bad + 1] = label .. " (expected gated, indent " .. tostring(ind) .. ")"
+        end
+    end
+    for label in pairs(ungated) do
+        local ind = indentOf(label)
+        if ind == nil or ind >= 12 then
+            bad[#bad + 1] = label .. " (expected UNgated, indent " .. tostring(ind) .. ")"
+        end
+    end
+    check(
+        "Quickstart gates the Scavenger/Goblin questions and leaves the realm-agnostic ones alone",
+        #bad == 0,
+        "v2.76.0: Q2 (auto-loot cycle -> DB.autoLootCycle), Q6 (merchant target) and Q12 (summon Goblin Merchant) all describe Project Ebonhold companions and MUST be inside a peFeaturesVisible branch - their own settings panels are already hidden off-PE, so asking here promised features the settings then denied. Q1 (vendor speed) and Q9 (tome / recipe protection) MUST NOT be gated: both work on any 3.3.5a realm, and the tome controls specifically stay visible off-PE. Offenders: "
+            .. table.concat(bad, ", ")
+    )
+end
+
 -- 9. (v2.74.0) Hiding a setting is not enough when the setting defaults ON
 -- and the thing that would switch it off is now invisible. Two toggles are in
 -- that position, and each needs a matching runtime gate or the player is left

@@ -639,7 +639,17 @@ local function CreateListUI(parent, titleText, setTableName, x, y)
             PlaySound("igMainMenuOptionCheckBoxOff")
             return
         end
-        local dialog = StaticPopup_Show("EC_CONFIRM_CLEAR_LIST", titleText)
+        local nItems = 0
+        for _ in pairs(t) do
+            nItems = nItems + 1
+        end
+        local dialog = StaticPopup_Show("EC_CONFIRM_CLEAR_LIST", tostring(nItems), titleText)
+        -- Without this the confirmation opens BEHIND the Interface Options
+        -- frame and the player cannot click Yes. See the EC-TRAP note on
+        -- the helper in EbonClearance_PanelWidgets.lua.
+        if NS.RaisePopupAboveOptions then
+            NS.RaisePopupAboveOptions(dialog)
+        end
         if dialog then
             dialog.data = function()
                 EC_ClearListWithPrune(NS.GetListTable(setTableName))

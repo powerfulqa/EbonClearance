@@ -804,14 +804,15 @@ local function BuildMainPanel(panel, content)
     byline:SetPoint("TOPLEFT", 16, -32)
     byline:SetText("|cff888866by " .. NS.ADDON_AUTHOR .. "  \194\183  " .. NS.ADDON_URL .. "|r")
 
-    local welcomeLabel = NS.MakeLabel(
-        content,
-        L["Welcome to |cffb6ffb6EbonClearance|r - bag management for Project Ebonhold."],
-        16,
-        -52
-    )
+    -- v2.76.0 (Serv report): the "Welcome to EbonClearance - bag management
+    -- for Project Ebonhold" line is gone. It named PE unconditionally, so on
+    -- a plain 3.3.5a realm (where v2.74.0 hides the PE-only settings) the
+    -- very first line still claimed to be a Project Ebonhold addon. Rather
+    -- than branch the greeting on peFeaturesActive(), the line is dropped
+    -- entirely - it only restated the panel heading and the byline above it,
+    -- so the description now opens the panel and reads correctly everywhere.
     local descLabel2 = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    descLabel2:SetPoint("TOPLEFT", welcomeLabel, "BOTTOMLEFT", 0, -4)
+    descLabel2:SetPoint("TOPLEFT", 16, -52)
     EC_compCache.setPanelWidth(descLabel2, 16)
     descLabel2:SetJustifyH("LEFT")
     descLabel2:SetJustifyV("TOP")

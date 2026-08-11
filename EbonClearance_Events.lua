@@ -7979,7 +7979,10 @@ StaticPopupDialogs["EC_CONFIRM_CLEAR_PROFILE"] = {
 -- (Whitelist - Character / Whitelist - Account / Blacklist / Deletion List).
 -- The %s slot is filled with the list's user-facing title.
 StaticPopupDialogs["EC_CONFIRM_CLEAR_LIST"] = {
-    text = L['Remove every item from "|cffffff00%s|r"?\n|cffaaaaaaThis cannot be undone.|r'],
+    -- v2.76.0 (Serv report): names the count as well as the list. Knowing
+    -- you are about to drop 327 entries is the thing that makes an
+    -- irreversible confirmation worth reading.
+    text = L['Remove all |cffffff00%s|r items from |cffffff00%s|r?\n|cffaaaaaaThis cannot be undone.|r'],
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, data)

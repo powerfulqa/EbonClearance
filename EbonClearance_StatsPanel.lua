@@ -381,6 +381,11 @@ StatsPanel:SetScript("OnShow", function(self)
         panel._updateResetLabel = updateResetLabel
         resetBtn:SetScript("OnClick", function()
             local dialog = StaticPopup_Show("EC_CONFIRM_RESET_LIFETIME")
+            -- Raise above the Interface Options frame or the player cannot
+            -- click Yes (EC-TRAP note in EbonClearance_PanelWidgets.lua).
+            if NS.RaisePopupAboveOptions then
+                NS.RaisePopupAboveOptions(dialog)
+            end
             if dialog then
                 dialog.data = function()
                     if NS.ResetLifetimeStats then

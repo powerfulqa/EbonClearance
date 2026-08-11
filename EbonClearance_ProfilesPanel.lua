@@ -272,6 +272,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
                 row.delBtn:SetScript("OnClick", function()
                     local dialog = StaticPopup_Show("EC_CONFIRM_DELETE_PROFILE", pName)
+                    -- Raise above the Interface Options frame or the player cannot
+                    -- click Yes (EC-TRAP note in EbonClearance_PanelWidgets.lua).
+                    if NS.RaisePopupAboveOptions then
+                        NS.RaisePopupAboveOptions(dialog)
+                    end
                     if dialog then
                         dialog.data = function()
                             local ok, msg = NS.DeleteProfile(pName)
@@ -287,6 +292,11 @@ ProfilesPanel:SetScript("OnShow", function(self)
 
                 row.clearBtn:SetScript("OnClick", function()
                     local dialog = StaticPopup_Show("EC_CONFIRM_CLEAR_PROFILE", pName)
+                    -- Raise above the Interface Options frame or the player cannot
+                    -- click Yes (EC-TRAP note in EbonClearance_PanelWidgets.lua).
+                    if NS.RaisePopupAboveOptions then
+                        NS.RaisePopupAboveOptions(dialog)
+                    end
                     if dialog then
                         dialog.data = function()
                             if DB.whitelistProfiles[pName] then
@@ -586,6 +596,11 @@ SettingsProfilesPanel:SetScript("OnShow", function(self)
 
                 row.delBtn:SetScript("OnClick", function()
                     local dialog = StaticPopup_Show("EC_CONFIRM_DELETE_SPROFILE", pName)
+                    -- Raise above the Interface Options frame or the player cannot
+                    -- click Yes (EC-TRAP note in EbonClearance_PanelWidgets.lua).
+                    if NS.RaisePopupAboveOptions then
+                        NS.RaisePopupAboveOptions(dialog)
+                    end
                     if dialog then
                         dialog.data = function()
                             local ok, msg = NS.DeleteSettingsProfile(pName)
@@ -640,6 +655,11 @@ SettingsProfilesPanel:SetScript("OnShow", function(self)
             local existing = NS.SettingsProfileExists and NS.SettingsProfileExists(name)
             if existing then
                 local dialog = StaticPopup_Show("EC_CONFIRM_OVERWRITE_SPROFILE", existing)
+                -- Raise above the Interface Options frame or the player cannot
+                -- click Yes (EC-TRAP note in EbonClearance_PanelWidgets.lua).
+                if NS.RaisePopupAboveOptions then
+                    NS.RaisePopupAboveOptions(dialog)
+                end
                 if dialog then
                     dialog.data = function()
                         runSaveProfile(name)

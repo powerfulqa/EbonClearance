@@ -1043,10 +1043,25 @@ local function buildPanel(self, content)
             { value = "turbo", label = L["Turbo  |cffff8000(may disconnect on bad connections)|r"] },
         }, refresh)
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "autoLoot", L["Q2. Auto-loot cycle?"], {
-            { value = "on", label = L["Yes - Scavenger loots, then EC vendors when bags fill"] },
-            { value = "off", label = L["No - manual"] },
-        }, refresh)
+        -- v2.76.0 (Serv report): Scavenger / Goblin Merchant questions are
+        -- skipped on a realm without those companions, the same way Q8 / Q8b
+        -- already are. Q2 writes DB.autoLootCycle, whose own controls live on
+        -- the Scavenger panel - and v2.74.0 hides that panel's contents
+        -- entirely off PE, so asking about it here left the Quickstart
+        -- promising a feature the settings then denied.
+        --
+        -- Skipping beats hiding: every group chains off `lastAnchor`, so an
+        -- un-built group leaves no gap and needs no re-anchor. The question
+        -- numbering deliberately keeps its gaps (Q1, Q3, Q4...) rather than
+        -- renumbering - v2.74.0 set that precedent when it skipped Q8, and
+        -- stable numbers keep bug reports and Help references comparable
+        -- across realms.
+        if EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible() then
+            lastAnchor = makeRadioGroup(content, lastAnchor, "autoLoot", L["Q2. Auto-loot cycle?"], {
+                { value = "on", label = L["Yes - Scavenger loots, then EC vendors when bags fill"] },
+                { value = "off", label = L["No - manual"] },
+            }, refresh)
+        end
 
         lastAnchor = makeRadioGroup(
             content,
@@ -1245,11 +1260,18 @@ local function buildPanel(self, content)
         -- doesn't leave a phantom gap below hidden cap rows.
         updateCapBoxesVisible()
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "merchants", L["Q6. Which merchants should EC work at?"], {
-            { value = "goblin", label = L["Goblin Merchant only"] },
-            { value = "any", label = L["Any vendor I open"] },
-            { value = "both", label = L["Both (any vendor, but prefer the Goblin)"] },
-        }, refresh)
+        -- v2.76.0 (Serv report): skipped off PE. All three answers are about
+        -- whether to prefer the Goblin Merchant; without it there is only
+        -- "any vendor I open", so the question has no meaningful choice. The
+        -- Merchant panel's own merchant-target dropdown is already hidden in
+        -- this case (v2.74.0), where every vendor is allowed.
+        if EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible() then
+            lastAnchor = makeRadioGroup(content, lastAnchor, "merchants", L["Q6. Which merchants should EC work at?"], {
+                { value = "goblin", label = L["Goblin Merchant only"] },
+                { value = "any", label = L["Any vendor I open"] },
+                { value = "both", label = L["Both (any vendor, but prefer the Goblin)"] },
+            }, refresh)
+        end
 
         local sec3 = makeSectionHeader(content, L["Section 3: What EC Protects"], lastAnchor, -20)
 
@@ -1342,10 +1364,22 @@ local function buildPanel(self, content)
             { value = "no", label = L["No - close them when done"] },
         }, refresh)
 
-        lastAnchor = makeRadioGroup(content, lastAnchor, "summon", L["Q12. Auto-summon Goblin Merchant when bags fill up?"], {
-            { value = "yes", label = L["Yes"] },
-            { value = "no", label = L["No, I'll summon manually"] },
-        }, refresh)
+        -- v2.76.0 (Serv report): skipped off PE - names the Goblin Merchant
+        -- outright, and DB.summonGreedy has nothing to summon on a realm
+        -- without that companion.
+        if EC_compCache.peFeaturesVisible == nil or EC_compCache.peFeaturesVisible() then
+            lastAnchor = makeRadioGroup(
+                content,
+                lastAnchor,
+                "summon",
+                L["Q12. Auto-summon Goblin Merchant when bags fill up?"],
+                {
+                    { value = "yes", label = L["Yes"] },
+                    { value = "no", label = L["No, I'll summon manually"] },
+                },
+                refresh
+            )
+        end
 
         lastAnchor = makeRadioGroup(
             content,

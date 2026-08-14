@@ -5,6 +5,17 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.77.1
+
+**Fix: affix matching now recognises items whose suffix differs from the spell that grants the affix.**
+
+- Some affixes carry one name on the item and another in your spellbook - the long-documented example: items say "of Inner Light" while the extracted spell is called "Spirit Surge". The family matching added in v2.35.1 treated those as two different affixes, so the rank-known / rank-needed checks could miss a family you actually own and fall back to exact-text matching alone. A canonical name map now joins the known pairs: Inner Light / Spirit Surge, Precision / Cold, Swift Footwork / Feral Grace, Keen Strike / Keen Strikes, Block / Shield Block, Ironhide / Enduring Flesh.
+- The Inner Light pair has been confirmed live; the rest come from the community affix list and are pending in-game confirmation. A wrong pair errs toward keeping the item, but "Allow selling affixes you already have" also honours the map - if you run that option, spot-check one of these drops with `/ec sellinfo` after updating.
+- New test invariants execute the real name normaliser under plain Lua and pin that both name forms of every pair land on the same family key, and that the alias step stays the final step of normalisation.
+- Also recorded for a future Anvil session: eight community-list weapon families with no known carrier item yet, as `/ec paircheck` candidate notes (diagnostic comments only; nothing in the sell path reads them).
+
+No new settings, no schema change, downgrade-safe.
+
 ### v2.77.0
 
 **`/ec paircheck` now suggests which affix a weapon's proc is - the thing that made Destiny hard to pair.**

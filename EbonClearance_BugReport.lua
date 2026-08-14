@@ -2206,6 +2206,16 @@ local EC_PROC_PAIR_CANDIDATES = {
     -- Anvil-verified as Venom. Its proc line settles which is right without
     -- anyone visiting an Anvil, and tells us the list's error rate.
     { id = 6904, name = "Bite of Serra'kis", family = "Concussion (EC says Venom)", spellID = 700078 },
+    -- Families named on the community affix list that EC has NO candidate
+    -- row for yet - each still needs a carrier itemID plus its live spellID
+    -- (from /ec captureproc's spellbook section) before it can join the
+    -- rows above and be cross-checked with /ec paircheck:
+    --   Devastation, Flame Wrath, Hemorrhage, Speed, Sulfuras, Twin Shot,
+    --   Undead, Val'anyr.
+    -- Sulfuras and Val'anyr are presumably carried by their namesake
+    -- legendaries (Sulfuras 17182, Val'anyr 46017 - unverified guesses,
+    -- same shape as the Thunderfury row above); the other six have no
+    -- guessed carrier at all. Leads only - nothing reads these names.
 }
 
 -- Read a weapon's chance-on-hit proc line straight from the client for ANY

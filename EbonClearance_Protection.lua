@@ -681,11 +681,46 @@ EC_compCache.knownAffixDescriptions = {}
 -- Per-session, not persisted.
 EC_compCache.knownAffixFamilyRanks = {}
 
+-- v2.77.x: canonical family aliases. The v2.23.0 note above records the
+-- founding example: PE's item-side suffix ("of Inner Light") and the
+-- engraving spell's name ("Spirit Surge") are unrelated strings for the
+-- SAME affix. v2.35.1's family tiers assumed one name per family, so a
+-- diverging pair silently missed both the (family, rank) tier and the
+-- family-only tier and fell back to description matching - which is
+-- exactly the tier that PE's own item/spell text disagreements can break
+-- (see the Overwhelming Force case below). This table canonicalises the
+-- item-side family to the spell-side family, because the spellbook walk
+-- is the ownership source of truth: knownAffixFamilyRanks is keyed by
+-- spell names, so item-side lookups must land on spell-side keys.
+--
+-- Keys and values are in normalised form (lowercased, no "of ", no rank
+-- numeral); the lookup runs as the LAST step of normaliseAffixFamily so
+-- every producer (spellbook walk, catalog merges) and every consumer
+-- (playerHasAffixFamily / playerHasAffixRank) converges automatically.
+--
+-- Evidence per row: "field-confirmed" rows have been seen live on this
+-- realm; "community affix list" rows are reported divergences pending
+-- in-game confirmation. A wrong alias fails TOWARD protection on the
+-- keep side, but note the owned-dupe release ("Allow selling affixes
+-- you already have", opt-in) also honours these - so a row only stays
+-- here while its pair is plausible, and each should be spot-checked
+-- via /ec sellinfo on a live "of <item name>" drop.
+EC_compCache.AFFIX_FAMILY_ALIASES = {
+    ["inner light"] = "spirit surge", -- field-confirmed (the v2.23.0 founding case)
+    ["precision"] = "cold", -- community affix list; pending in-game confirmation
+    ["swift footwork"] = "feral grace", -- community affix list; pending in-game confirmation
+    ["keen strike"] = "keen strikes", -- singular/plural drift; pending in-game confirmation
+    ["block"] = "shield block", -- two independent reports; pending in-game confirmation
+    ["ironhide"] = "enduring flesh", -- community affix list; pending in-game confirmation
+}
+
 -- v2.35.1: helper. Normalises an affix family name for cross-source
 -- comparison. Strips "of " prefix common on item-parsed names, strips
 -- trailing roman-numeral rank common on spellbook names, lowercases.
 -- For "of Overwhelming Force" and "Overwhelming Force II" the output
 -- is "overwhelming force" for both, which is the match key.
+-- v2.77.x: finally applies AFFIX_FAMILY_ALIASES (above) so item-side
+-- and spell-side names for the same family produce one key.
 function EC_compCache.normaliseAffixFamily(name)
     if type(name) ~= "string" then
         return ""
@@ -708,7 +743,10 @@ function EC_compCache.normaliseAffixFamily(name)
     -- ASCII versions in case PE's data isn't consistent across items.
     name = name:gsub("\226\128\152", "'"):gsub("\226\128\153", "'")
     name = name:gsub("\226\128\147", "-"):gsub("\226\128\148", "-")
-    return name:lower()
+    name = name:lower()
+    -- Alias lookup stays LAST so table keys are matched in fully
+    -- normalised form (pinned by a test invariant).
+    return EC_compCache.AFFIX_FAMILY_ALIASES[name] or name
 end
 
 -- v2.35.1: helper. Pulls (family, rank) out of a raw spell or

@@ -90,7 +90,8 @@ end
 check(
     "Protection raw global read is centralised to the accessor",
     rawProt == 1,
-    "Exactly one non-comment _G.ExtractionService read expected in Protection.lua (inside the accessor); found " .. rawProt
+    "Exactly one non-comment _G.ExtractionService read expected in Protection.lua (inside the accessor); found "
+        .. rawProt
 )
 
 -- 5. The spellbook walk is the primary source: refreshKnownAffixes enumerates
@@ -267,6 +268,86 @@ check(
     "stale PE-not-detected note removed from the panel",
     read("EbonClearance_ProtectionPanel.lua"):find("Project Ebonhold addon not detected", 1, true) == nil,
     "ProtectionPanel should no longer grey-and-explain the PE-absent case; peFeaturesVisible hides those widgets instead."
+)
+
+-- 13. (v2.77.x) Family alias canonicalisation. PE names some engraving
+-- spells differently from the item suffix they produce (the Inner Light /
+-- Spirit Surge divergence documented in Protection.lua since v2.23.0), so
+-- normaliseAffixFamily carries an alias table mapping item-side families to
+-- the spell-side canonical. These checks slice the REAL table + function out
+-- of Protection.lua (the test_dbproxy pattern) and run them under stock
+-- lua5.1, so the convergence behaviour itself is executed, not pattern-matched.
+local aliasTableSrc = prot:match("(EC_compCache%.AFFIX_FAMILY_ALIASES = {.-\n})")
+local normFnSrc = prot:match("(function EC_compCache%.normaliseAffixFamily%(name%).-\nend)")
+check(
+    "alias table + normaliseAffixFamily sliceable from Protection.lua",
+    aliasTableSrc ~= nil and normFnSrc ~= nil,
+    "Could not slice EC_compCache.AFFIX_FAMILY_ALIASES or normaliseAffixFamily out of Protection.lua."
+)
+
+if aliasTableSrc and normFnSrc then
+    local sliceEnv = { EC_compCache = {}, type = type }
+    local chunkSrc = "local EC_compCache = ...\n" .. aliasTableSrc .. "\n" .. normFnSrc
+    local chunk, cerr
+    if _G.loadstring then
+        chunk, cerr = loadstring(chunkSrc)
+        if chunk and _G.setfenv then
+            setfenv(chunk, sliceEnv)
+        end
+    else
+        chunk, cerr = load(chunkSrc, "alias-slice", "t", sliceEnv)
+    end
+    check("alias slice compiles", chunk ~= nil, tostring(cerr))
+    if chunk then
+        chunk(sliceEnv.EC_compCache)
+        local norm = sliceEnv.EC_compCache.normaliseAffixFamily
+        check("alias slice defines normaliseAffixFamily", type(norm) == "function")
+        if type(norm) == "function" then
+            -- Both sides of every alias pair converge on the spell-side key.
+            local pairsToCheck = {
+                { item = "of Inner Light II", spell = "Spirit Surge", key = "spirit surge" },
+                { item = "of Precision", spell = "Cold III", key = "cold" },
+                { item = "of Swift Footwork IV", spell = "Feral Grace", key = "feral grace" },
+                { item = "of Keen Strike", spell = "Keen Strikes II", key = "keen strikes" },
+                { item = "of Block V", spell = "Shield Block", key = "shield block" },
+                { item = "of Ironhide", spell = "Enduring Flesh VI", key = "enduring flesh" },
+            }
+            for _, p in ipairs(pairsToCheck) do
+                check(
+                    'alias converges: "' .. p.item .. '" == "' .. p.spell .. '" == ' .. p.key,
+                    norm(p.item) == p.key and norm(p.spell) == p.key,
+                    string.format(
+                        "got item->%q spell->%q, want both %q",
+                        tostring(norm(p.item)),
+                        tostring(norm(p.spell)),
+                        p.key
+                    )
+                )
+            end
+            -- Non-aliased families pass through unchanged.
+            check(
+                "non-aliased family passes through",
+                norm("of Overwhelming Force") == "overwhelming force"
+                    and norm("Overwhelming Force II") == "overwhelming force"
+            )
+            -- The pre-existing normalisations still hold with the alias step added.
+            check("backslash-apostrophe normalisation unaffected", norm("of Mender\\'s Surge III") == "mender's surge")
+            check("empty/garbage input still safe", norm(nil) == "" and norm("   ") == "")
+        end
+    end
+end
+
+-- 14. (v2.77.x) The alias lookup must be the LAST step of the normaliser -
+-- the table is keyed in fully normalised form, so applying it before the
+-- lowercase / prefix / numeral strips would silently miss every alias.
+check(
+    "alias lookup is the final statement of normaliseAffixFamily",
+    normFnSrc ~= nil
+        and normFnSrc:match(
+                "name = name:lower%(%).-return EC_compCache%.AFFIX_FAMILY_ALIASES%[name%] or name%s*\nend$"
+            )
+            ~= nil,
+    "normaliseAffixFamily must lowercase first and end with `return EC_compCache.AFFIX_FAMILY_ALIASES[name] or name`."
 )
 
 print()

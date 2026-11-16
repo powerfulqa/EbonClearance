@@ -159,6 +159,6 @@ Ideas and bug reports from the Project Ebonhold community shape the addon. Some 
 
 ## Licence
 
-EbonClearance is source-available under its own licence. You may use it, pass on untouched copies (addon packs included) and change your own copy for your own use. You may not share a changed copy, publish a fork or reuse its code in another addon; send fixes and features as pull requests instead. The author credit, the in-game byline, the provenance globals and the `LICENSE` file must stay intact. Releases up to v2.76.0 stay under the earlier attribution licence. The [LICENSE](LICENSE) file has the full terms.
+EbonClearance is source-available under its own licence. You may use it, pass on untouched copies (addon packs included) and change your own copy for your own use. You may not share a changed copy, publish a fork or reuse its code in another addon; send fixes and features as pull requests instead. The author credit, the in-game byline, the provenance globals and the `LICENSE` file must stay intact. Releases up to v2.76.0 stay under the earlier attribution licence. It may not be used to train or feed AI models, or copied or ported elsewhere by AI agents. The [LICENSE](LICENSE) file has the full terms.
 
 Release notes are in [CHANGELOG.md](CHANGELOG.md). [NOTICE.md](NOTICE.md) covers prior art: which patterns were adopted from the 3.3.5a addon scene and which are this project's own.

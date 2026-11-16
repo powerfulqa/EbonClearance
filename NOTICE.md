@@ -146,7 +146,7 @@ to ship or not, separate from EC's release schedule.
 Releases up to v2.76.0 shipped under a custom **source-available
 attribution licence**. Later releases ship under version 2 of
 EbonClearance's own licence, which no longer allows forks or shared
-changes. The structural shape both versions keep (Grant / Attribution /
+changes. Version 3 (2026-11-16) adds an AI and automated-agent clause. The structural shape both versions keep (Grant / Attribution /
 No-Rebrand / No-Warranty / Termination / Severability)
 follows similar source-available licences that have appeared in the
 3.3.5a private-server addon ecosystem before this one. EbonClearance

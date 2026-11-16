@@ -143,9 +143,11 @@ to ship or not, separate from EC's release schedule.
 
 ## Source-available licence pattern
 
-EbonClearance ships under a custom **source-available attribution
-licence**. The structural shape (Grant / Attribution / No-Rebrand /
-Forks / Non-commercial / No-Warranty / Termination / Severability)
+Releases up to v2.76.0 shipped under a custom **source-available
+attribution licence**. Later releases ship under version 2 of
+EbonClearance's own licence, which no longer allows forks or shared
+changes. The structural shape both versions keep (Grant / Attribution /
+No-Rebrand / No-Warranty / Termination / Severability)
 follows similar source-available licences that have appeared in the
 3.3.5a private-server addon ecosystem before this one. EbonClearance
 does not claim its licence structure is original; the structure was
@@ -200,7 +202,8 @@ review the commit log.
   acknowledgement (this file), not original to this project.
 - **Fingerprint and watermark mechanism**: specific to this project.
 
-If you are reading this file in a derivative addon's source tree,
-that addon is required by EbonClearance's
-[LICENSE](LICENSE) to preserve this file in full and link to
-https://github.com/powerfulqa/EbonClearance.
+If you are reading this file in a derivative addon's source tree: a
+derivative of a release up to v2.76.0 is required by that release's
+licence to keep the attribution and link to
+https://github.com/powerfulqa/EbonClearance. Later releases do not allow
+derivatives to be shared at all; see [LICENSE](LICENSE).

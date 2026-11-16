@@ -5,6 +5,15 @@ Detailed per-release notes for [EbonClearance](README.md). For the user-level ov
 ---
 
 
+### v2.78.0
+
+A licence change. No changes to how the addon works. This release also carries the v2.77.0 and v2.77.1 fixes below, which were not released on their own.
+
+- **New licence: Source-Available Licence, version 2.** You may still use EbonClearance freely, pass on untouched copies (addon packs included) and change your own copy for your own use. You may no longer share a changed copy, publish a fork or reuse its code in another addon. Send fixes and features as pull requests instead.
+- **Credits stay in every copy.** The author line, the in-game byline, the provenance globals, `LICENSE` and `AGENTS.md` must stay intact, private copies included.
+- **Earlier releases are not affected.** v2.76.0 and before stay under the earlier attribution licence.
+- `AGENTS.md` (notes for AI coding tools) now ships in the release zip, and `README.md`, `NOTICE.md` and the contributor docs match the new terms.
+
 ### v2.77.1
 
 **Fix: affix matching now recognises items whose suffix differs from the spell that grants the affix.**

@@ -52,7 +52,7 @@ For the deep reference, **read [docs/ADDON_GUIDE.md](docs/ADDON_GUIDE.md)**. It 
 The release is driven by [.github/workflows/release.yml](.github/workflows/release.yml). It triggers on any `v*` tag push (and via `workflow_dispatch` for recovery). The workflow:
 
 1. Rewrites `EbonClearance.toc` (Title colored badge + `## Version:` field) and `EbonClearance_Events.lua`'s `ADDON_VERSION` constant from the tag name. **Manual version-bumps to those files are not needed.**
-2. Packages every `EbonClearance*.lua` file, `EbonClearance.toc`, `Bindings.xml`, and `LICENSE` into `EbonClearance.zip`.
+2. Packages every `EbonClearance*.lua` file, `EbonClearance.toc`, `Bindings.xml`, `LICENSE` and `AGENTS.md` into `EbonClearance.zip`.
 3. Commits the version bump back to `origin/master` as a `Update version to vX.Y.Z [skip ci]` bot commit. **After the workflow runs, your local branch will be 1 commit behind origin; run `git pull --rebase` to catch up before the next commit.**
 4. Extracts the `### vX.Y.Z` stanza from [CHANGELOG.md](CHANGELOG.md) and uses it as the body of the GitHub Release at `https://github.com/powerfulqa/EbonClearance/releases/tag/vX.Y.Z`. If no stanza exists, the workflow falls back to a generic stub: `Patch release. See the previous minor version for the feature description.` The auto-generated `**Full Changelog**: ...compare/...` footer is appended automatically.
 

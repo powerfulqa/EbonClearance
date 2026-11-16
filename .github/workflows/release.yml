@@ -84,7 +84,7 @@ jobs:
           # newly added file (EbonClearance_Comms.lua), which the .toc still
           # referenced - the addon would have failed to load. The glob picks
           # up every current and future split file automatically.
-          cp EbonClearance*.lua EbonClearance.toc Bindings.xml LICENSE EbonClearance/
+          cp EbonClearance*.lua EbonClearance.toc Bindings.xml LICENSE AGENTS.md EbonClearance/
           zip -r EbonClearance.zip EbonClearance/
 
       - name: Commit version update back to repo

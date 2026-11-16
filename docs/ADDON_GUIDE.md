@@ -24,7 +24,7 @@ internet tutorial disagree, follow the guide.
    (`BINDING_HEADER_EBONCLEARANCE`, `BINDING_NAME_EBONCLEARANCE_*`), the
    handlers wired from `Bindings.xml` (`EbonClearance_ToggleSettings`,
    `EbonClearance_ToggleEnabled`, `EbonClearance_ForceSell`), and the
-   provenance globals required by `LICENSE` §2 (`EBONCLEARANCE_IDENT`,
+   provenance globals required by `LICENSE` §5 (`EBONCLEARANCE_IDENT`,
    `EBONCLEARANCE_AUTHOR`, `EBONCLEARANCE_ORIGIN`,
    `__EbonClearance_origin`, `__EbonClearance_author`).
 4. **State machine uses `STATE.*` constants**, never raw strings. See
@@ -47,7 +47,7 @@ internet tutorial disagree, follow the guide.
     name (e.g. `[CreateListUI](../EbonClearance_ListWidget.lua)`) and let readers
     `grep` for the symbol. Line numbers shift on every refactor; symbol
     names don't.
-12. **Do not remove attribution markers.** `LICENSE` §2 lists five
+12. **Do not remove attribution markers.** `LICENSE` §5 lists five
     things every redistribution must preserve: the `## Author:` TOC
     line, the file-header comment block at the top of
     `EbonClearance.lua`, the GUI byline rendered on the main options
@@ -64,7 +64,7 @@ internet tutorial disagree, follow the guide.
 ## Interface: 30300                                # WotLK 3.3.5a; do not bump
 ## Title: ...                                      # colour codes allowed
 ## Notes: ...
-## Author: ...                                     # required by LICENSE §2(a)
+## Author: ...                                     # required by LICENSE §5(a)
 ## X-Website: https://github.com/.../EbonClearance # canonical source
 ## Version: ...
 ## SavedVariables: EbonClearanceDB, EbonClearanceAccountDB
@@ -166,10 +166,10 @@ them in XML at addon-load time.
 ### File layout
 
 One file, roughly in this order:
-- File header comment block (required by LICENSE §2(b); do not remove).
+- File header comment block (required by LICENSE §5(b); do not remove).
 - Constants and cached API upvalues (top).
 - Provenance globals (`EBONCLEARANCE_IDENT/AUTHOR/ORIGIN`, plus two
-  `__EbonClearance_*` aliases - required by LICENSE §2(d)).
+  `__EbonClearance_*` aliases - required by LICENSE §5(d)).
 - Greedy Scavenger chat filters (`EC_GreedyEventFilter`,
   `EC_InstallGreedyMuteOnce`, `ApplyGreedyChatFilter`).
 - Speech-bubble killer (`EC_bubbleFrame`).
@@ -2263,10 +2263,10 @@ Convention for future agents and contributors:
 - If we ever need a per-export-type fingerprint (profiles, settings,
   etc.), reuse `EC_Fingerprint` rather than introducing a second
   hash function. One salt, one helper, one mechanism.
-- Section 2(d) of the LICENSE lists `__EbonClearance_watermark`
+- Section 5(d) of the LICENSE lists `__EbonClearance_watermark`
   alongside the other provenance globals as required-to-preserve in
   derivatives. Adding a new provenance global means updating
-  LICENSE 2(d) and `NOTICE.md`.
+  LICENSE 5(d) and `NOTICE.md`.
 
 The convergent prior-art story for the broader provenance pattern
 (`__<addon>_origin` / `__<addon>_author`) is documented in
@@ -3582,7 +3582,7 @@ refactor.
   concatenate the split files at test time (see the SOURCE_PATH loop
   at the top of each test file after Stage 2 ships) so existing
   invariants apply unchanged.
-- LICENSE §2(b) requires the file-header attribution block: it stays
+- LICENSE §5(b) requires the file-header attribution block: it stays
   on whichever file is loaded first in the `.toc` (currently
   `EbonClearance.lua`; will move to `EbonClearance_Core.lua` in Stage 2).
 - Forward declarations move from file-scope `local foo = function() end`
